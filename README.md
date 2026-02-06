@@ -1,58 +1,77 @@
-# Svelte library
+![KIT•10 Logo](static/favicon.svg)
 
-Everything you need to build a Svelte library, powered by [`sv`](https://npmjs.com/package/sv).
+# KIT•10
 
-Read more about creating a library [in the docs](https://svelte.dev/docs/kit/packaging).
+KIT•10 (pronounced **“kitten”**) is an axis-based framework for **generating design systems**, and this repository contains the **KIT•10 Editor** itself.
 
-## Creating a project
+The editor is where axes are defined, explored, and evaluated into real design output.
 
-If you're seeing this, you've probably already done this step. Congrats!
+---
 
-```sh
-# create a new project in the current directory
-npx sv create
+## What’s in this repo
 
-# create a new project in my-app
-npx sv create my-app
-```
+This repository contains:
 
-## Developing
+- The **KIT•10 Editor**, built with **Svelte**
+- Core framework logic for axis evaluation and derivation
+- Structured outputs (e.g. SCSS)
+- Official **KIT•10 trademarks, marks, and visual assets**
+- Conceptual documentation that defines how the system works
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+This is the *actual tool*, not a demo or placeholder.
 
-```sh
-npm run dev
+---
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
+## What KIT•10 is (short version)
 
-Everything inside `src/lib` is part of your library, everything inside `src/routes` can be used as a showcase or preview app.
+KIT•10 generates design systems from **structured intent**, expressed along orthogonal axes like density, emphasis, contrast, motion, and tone.
 
-## Building
+Instead of manually maintaining tokens and variants, you describe *where the system sits in design space*, and the editor deterministically produces the result.
 
-To build your library:
+If you want the deeper explanation, that lives in the docs.
 
-```sh
-npm pack
-```
+---
 
-To create a production version of your showcase app:
+## Start here
 
-```sh
-npm run build
-```
+- **[CONCEPTS.md](./CONCEPTS.md)** — how KIT•10 models design
+- **[FAQ.md](./FAQ.md)** — what it is, what it isn’t, and common questions
 
-You can preview the production build with `npm run preview`.
+If you’re here for the editor, jump straight into the source.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+---
 
-## Publishing
+## Current state
 
-Go into the `package.json` and give your package the desired name through the `"name"` option. Also consider adding a `"license"` field and point it to a `LICENSE` file which you can create from a template (one popular option is the [MIT license](https://opensource.org/license/mit/)).
+This project is **actively under development**.
 
-To publish your library to [npm](https://www.npmjs.com):
+Expect:
+- Iteration
+- Refactors
+- Moving edges
 
-```sh
-npm publish
-```
+The editor is being shaped through real use, not frozen prematurely.
+
+---
+
+## Trademarks & assets
+
+The KIT•10 name, logo, and related marks included in this repository are **official project assets**.
+
+Their presence here does not imply permission for external use.  
+Details will be clarified alongside licensing.
+
+---
+
+## License
+
+_TBD_
+
+Until a license is chosen, usage rights are reserved.
+
+---
+
+## Name
+
+**KIT•10** → *“kitten”*  
+Yes, that’s intentional.
