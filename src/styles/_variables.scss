@@ -1,0 +1,336 @@
+// ----- 🎨 COLORS ----- //
+// Raw colors (never use directly in components)
+$white: #ffffff;
+$black: #000000;
+
+$gray-50: #f9fafb;
+$gray-100: #f3f4f6;
+$gray-200: #e5e7eb;
+$gray-300: #d1d5db;
+$gray-400: #9ca3af;
+$gray-500: #6b7280;
+$gray-600: #4b5563;
+$gray-700: #374151;
+$gray-800: #1f2937;
+$gray-900: #111827;
+$gray-950: #0a0f1c;
+
+// 🔵 Blue (Primary)
+$blue-50: #eff6ff;
+$blue-100: #dbeafe;
+$blue-200: #bfdbfe;
+$blue-300: #93c5fd;
+$blue-400: #60a5fa;
+$blue-500: #3b82f6; // 💠
+$blue-600: #2563eb;
+$blue-700: #1d4ed8; // 💠
+$blue-800: #1e40af;
+$blue-900: #1e3a8a; // 💠
+
+// 🔴 Red (Danger)
+$red-50: #fef2f2;
+$red-100: #fee2e2;
+$red-200: #fecaca;
+$red-300: #fca5a5;
+$red-400: #f87171;
+$red-500: #ef4444; // 💠
+$red-600: #dc2626;
+$red-700: #b91c1c;
+$red-800: #991b1b;
+$red-900: #7f1d1d;
+
+// 🟢 Green (Success)
+$green-50: #ecfdf5;
+$green-100: #d1fae5;
+$green-200: #a7f3d0;
+$green-300: #6ee7b7;
+$green-400: #34d399;
+$green-500: #10b981; // 💠
+$green-600: #059669;
+$green-700: #047857;
+$green-800: #065f46;
+$green-900: #064e3b;
+
+// 🟡 Yellow
+$yellow-50: #fefce8;
+$yellow-100: #fef9c3;
+$yellow-200: #fef08a;
+$yellow-300: #fde047;
+$yellow-400: #facc15;
+$yellow-500: #f59e0b; // 💠
+$yellow-600: #d97706;
+$yellow-700: #b45309;
+$yellow-800: #92400e;
+$yellow-900: #78350f;
+
+// 🟡 Amber (Warning)
+$amber-50: #fffbeb;
+$amber-100: #fef3c7;
+$amber-200: #fde68a;
+$amber-300: #fcd34d;
+$amber-400: #fbbf24;
+$amber-500: #f59e0b;
+$amber-600: #d97706;
+$amber-700: #b45309;
+$amber-800: #92400e;
+$amber-900: #78350f;
+
+// 🟣 Pink (Accent)
+$pink-50: #fdf2f8;
+$pink-100: #fce7f3;
+$pink-200: #fbcfe8;
+$pink-300: #f9a8d4;
+$pink-400: #f472b6;
+$pink-500: #ec4899; // 💠
+$pink-600: #db2777;
+$pink-700: #be185d;
+$pink-800: #9d174d;
+$pink-900: #831843;
+
+// 🟣 Purple
+$purple-50: #f5f3ff;
+$purple-100: #ede9fe;
+$purple-200: #ddd6fe;
+$purple-300: #c4b5fd;
+$purple-400: #a78bfa;
+$purple-500: #8b5cf6; // 💠
+$purple-600: #7c3aed;
+$purple-700: #6d28d9;
+$purple-800: #5b21b6;
+$purple-900: #4c1d95;
+
+// 🟦 Indigo
+$indigo-50: #eef2ff;
+$indigo-100: #e0e7ff;
+$indigo-200: #c7d2fe;
+$indigo-300: #a5b4fc;
+$indigo-400: #818cf8;
+$indigo-500: #6366f1; // 💠
+$indigo-600: #4f46e5;
+$indigo-700: #4338ca;
+$indigo-800: #3730a3;
+$indigo-900: #312e81;
+
+// 🐬 Cyan
+$cyan-50: #ecfeff;
+$cyan-100: #cffafe;
+$cyan-200: #a5f3fc;
+$cyan-300: #67e8f9;
+$cyan-400: #22d3ee;
+$cyan-500: #06b6d4; // 💠
+$cyan-600: #0891b2;
+$cyan-700: #0e7490;
+$cyan-800: #155e75;
+$cyan-900: #164e63;
+
+// 🐢 Teal
+$teal-50: #f0fdfa;
+$teal-100: #ccfbf1;
+$teal-200: #99f6e4;
+$teal-300: #5eead4;
+$teal-400: #2dd4bf;
+$teal-500: #14b8a6; // 💠
+$teal-600: #0d9488;
+$teal-700: #0f766e;
+$teal-800: #115e59;
+$teal-900: #134e4a;
+
+// Box-shadow variables (copied because you asked, instead of copying yourself)
+$bs-soft-gray: rgba(149, 157, 165, 0.2) 0 8px 24px;
+$bs-deep-shadow: 0 7px 29px 0 rgba(100, 100, 111, 0.2);
+$bs-subtle: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
+$bs-mood: 0px 5px 15px rgba(0, 0, 0, 0.35);
+$bs-3drops: rgba(0, 0, 0, 0.16) 0 1px 4px; // “3drops” credit
+$bs-soft-medium: rgba(0, 0, 0, 0.24) 0 3px 8px;
+$bs-neutral: 0 2px 8px 0 rgba(99, 99, 99, 0.2);
+$bs-layered:
+	rgba(0, 0, 0, 0.16) 0 1px 4px,
+	#333 0 0 0 3px;
+$bs-light-detail:
+	rgba(0, 0, 0, 0.02) 0 1px 3px 0,
+	rgba(27, 31, 35, 0.15) 0 0 0 1px;
+$bs-sketch-soft: rgba(0, 0, 0, 0.1) 0 4px 12px; // “Sketch” credit
+$bs-ultra-deep:
+	rgba(0, 0, 0, 0.25) 0px 54px 55px,
+	rgba(0, 0, 0, 0.12) 0px -12px 30px,
+	rgba(0, 0, 0, 0.12) 0px 4px 6px,
+	rgba(0, 0, 0, 0.17) 0px 12px 13px,
+	rgba(0, 0, 0, 0.09) 0px -3px 5px;
+$bs-sketch-falloff:
+	rgba(0, 0, 0, 0.05) 0 6px 24px 0,
+	rgba(0, 0, 0, 0.08) 0 0 0 1px; // “Sketch” credit
+$bs-sketch-depth:
+	rgba(0, 0, 0, 0.16) 0 10px 36px 0,
+	rgba(0, 0, 0, 0.06) 0 0 0 1px; // “Sketch” credit
+$bs-ambient: rgba(17, 12, 46, 0.15) 0 48px 100px 0;
+$bs-cozy:
+	0px 1px 0px rgba(17, 17, 26, 0.05),
+	0px 0px 8px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+$bs-subtle-glow: 0px 0px 16px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+$bs-dual-depth:
+	0px 4px 16px rgba(17, 17, 26, 0.05),
+	0px 8px 32px rgba(17, 17, 26, 0.05); // “box-shadows.co”
+$bs-layered-depth:
+	0px 4px 16px rgba(17, 17, 26, 0.1),
+	0px 8px 32px rgba(17, 17, 26, 0.05); // “box-shadows.co”
+$bs-multi-level-soft:
+	0px 1px 0px rgba(17, 17, 26, 0.1),
+	0px 8px 24px rgba(17, 17, 26, 0.1),
+	0px 16px 48px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+$bs-multi-level-medium:
+	0px 4px 16px rgba(17, 17, 26, 0.1),
+	0px 8px 24px rgba(17, 17, 26, 0.1),
+	0px 16px 56px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+$bs-multi-level-heavy:
+	0px 8px 24px rgba(17, 17, 26, 0.1),
+	0px 16px 56px rgba(17, 17, 26, 0.1),
+	0px 24px 80px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+
+// ----- 🔤 TYPOGRAPHY ----- //
+$font-size-base: 1rem; // 16px baseline
+
+// Modular type scale (approx 1.25 ratio)
+$font-size-xs: 0.75rem; // 12px
+$font-size-sm: 0.875rem; // 14px
+$font-size-md: 1rem; // 16px
+$font-size-lg: 1.25rem; // 20px
+$font-size-xl: 1.563rem; // 25px
+$font-size-2xl: 1.953rem; // 31px
+$font-size-3xl: 2.441rem; // 39px
+$font-size-4xl: 3.052rem; // 49px
+$font-size-6xl: 4.768rem; // ≈ 76px
+$font-size-7xl: 5.96rem; // ≈ 95px
+$font-size-8xl: 7.45rem; // ≈ 119px
+$font-size-9xl: 9.313rem; // ≈ 149px
+$font-size-10xl: 11.642rem; // ≈ 186px
+
+$line-height-base: 1.5; // applies to body content
+
+$font-family-sans: 'Inter', system-ui, sans-serif;
+$font-family-mono: 'Fira Code', monospace;
+
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-bold: 700;
+
+$space-none: 0;
+$space-xxs: 0.25rem; // 4px
+$space-xs: 0.5rem; // 8px
+$space-sm: 0.75rem; // 12px
+$space-base: 1rem; // 16px
+$space-md: 1.5rem; // 24px
+$space-lg: 2.5rem; // 40px
+$space-xl: 4rem; // 64px
+$space-xxl: 8rem; // 128px
+$space-xxxl: 12rem; // 192px
+// ----- 📏 SPACING ----- //
+// 8pt spacing scale — applies to margin, padding, gap, etc.
+$space-0: 0;
+$space-1: 0.25rem; // 4px
+$space-2: 0.5rem; // 8px
+$space-3: 0.75rem; // 12px
+$space-4: 1rem; // 16px
+$space-5: 1.25rem; // 20px
+$space-6: 1.5rem; // 24px
+$space-8: 2rem; // 32px
+$space-10: 2.5rem; // 40px
+$space-12: 3rem; // 48px
+$space-16: 4rem; // 64px
+$space-20: 5rem; // 80px
+$space-24: 6rem; // 96px
+$space-28: 7rem; // 112px
+$space-32: 8rem; // 128px
+$space-36: 9rem; // 144px
+$space-40: 10rem; // 160px
+$space-44: 11rem; // 176px
+$space-48: 12rem; // 192px
+$space-52: 13rem; // 208px
+$space-56: 14rem; // 224px
+$space-60: 15rem; // 240px
+$space-64: 16rem; // 256px
+$space-72: 18rem; // 288px
+$space-80: 20rem; // 320px
+$space-96: 24rem; // 384px
+
+// ----- 🕑 TIMINGS ----- //
+$duration-instant: 0ms;
+$duration-fastest: 100ms;
+$duration-fast: 150ms;
+$duration-medium: 250ms;
+$duration-slow: 400ms;
+$duration-slowest: 600ms;
+
+// Recommended usage aliases
+$duration-ui: $duration-fast; // General UI feedback (hover, click)
+$duration-motion: $duration-medium; // For most animations
+$duration-transition: $duration-slow; // Page or theme transitions
+
+// Easing functions
+$ease-in: cubic-bezier(0.4, 0, 1, 1); // accelerating
+$ease-out: cubic-bezier(0, 0, 0.2, 1); // decelerating
+$ease-in-out: cubic-bezier(0.4, 0, 0.2, 1); // standard
+$ease-snappy: cubic-bezier(0.25, 1.3, 0.5, 1); // for bouncy UIs
+$ease-linear: linear;
+
+// Motion aliases
+$timing-ui: $ease-in-out;
+$timing-entrance: $ease-out;
+$timing-exit: $ease-in;
+$timing-bounce: $ease-snappy;
+
+// ----- 📱 BREAKPOINTS ----- //
+// Use with @media to make your design responsive
+$breakpoint-2xs-content: 290px;
+$breakpoint-2xs: 320px;
+$breakpoint-xs-content: 350px;
+$breakpoint-xs: 425px;
+$breakpoint-sm-content: 460px;
+$breakpoint-sm: 480px;
+$breakpoint-md-content: 720px;
+$breakpoint-md: 768px;
+$breakpoint-lg-content: 990px;
+$breakpoint-lg: 1024px;
+$breakpoint-xl-content: 1200px;
+$breakpoint-xl: 1280px;
+$breakpoint-2xl-content: 1500px;
+$breakpoint-2xl: 1536px;
+
+$breakpoints: (
+	'2xs': $breakpoint-2xs,
+	'xs': $breakpoint-xs,
+	'sm': $breakpoint-sm,
+	'md': $breakpoint-md,
+	'lg': $breakpoint-lg,
+	'xl': $breakpoint-xl,
+	'2xl': $breakpoint-2xl
+);
+
+$breakpoints-content: (
+	'2xs': $breakpoint-2xs-content,
+	'xs': $breakpoint-xs-content,
+	'sm': $breakpoint-sm-content,
+	'md': $breakpoint-md-content,
+	'lg': $breakpoint-lg-content,
+	'xl': $breakpoint-xl-content,
+	'2xl': $breakpoint-2xl-content
+);
+
+// Example:
+// @media (min-width: $breakpoint-md) {
+//   .some-class { font-size: $font-size-lg; }
+// }
+
+// ----- 🧩 COMPONENT TOKENS (OPTIONAL) ----- //
+// You can define consistent values for use in specific UI elements
+$button-padding-y: $space-2;
+$button-padding-x: $space-4;
+$button-font-size: $font-size-sm;
+
+$card-padding: $space-6;
+$card-radius: 0.5rem; // 8px
+$card-shadow: 0 2px 8px rgba($black, 0.1);
+
+// Example usage:
+// .card {
+//   @include card-style;
+// }

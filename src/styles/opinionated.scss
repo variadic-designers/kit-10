@@ -1,0 +1,49 @@
+/* Opiniontated defaults */
+
+@use '_variables.scss' as v;
+@use '_layouts.scss' as layouts;
+
+@mixin hover-primary--color {
+	color: var(--color-success);
+}
+
+@mixin hover-primary--bg {
+	background-color: var(--color-primary-hover);
+}
+
+@mixin html-body() {
+	html,
+	body {
+		box-sizing: border-box;
+
+		/* Readable fonts yes please */
+		font-family: system-ui, sans-serif;
+		line-height: 1.5;
+		-webkit-font-smoothing: antialiased;
+
+		// don't uncomment cuz it breaks smoothscroll
+		// @include layouts.viewport-full-height();
+		// @include layouts.viewport-full-height-capped();
+		// @include layouts.viewport-full-height-lockdown();
+		overscroll-behavior: none;
+	}
+
+	// *::before,
+	// *::after,
+	* {
+		box-sizing: border-box;
+
+		margin: 0;
+		padding: 0;
+	}
+}
+
+@mixin no-default($selector...) {
+	// variadic
+	// Loop through each selector
+	@each $sel in $selector {
+		:not(.no-default:has(#{$sel})) #{$sel} {
+			@content;
+		}
+	}
+}

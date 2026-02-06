@@ -1,0 +1,54 @@
+@use './_variables' as v;
+@use './_utils' as utils;
+@use './_layouts' as layouts;
+@use './_semantics' as a11y;
+@use './opinionated' as opinionated;
+@use 'sass:map';
+
+@mixin declare-view-transition() {
+	// view transitions
+	view-transition-name: var(--vt);
+}
+
+@mixin declare-motions-basic() {
+	// Media-query-based automatic color scheme
+	@media (prefers-reduced-motion: no-preference) {
+		// @include utils.declare-scoped-vars('[data-prefers-reduced-motion]', $merged-light, $color-prefix);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		// @include utils.declare-scoped-vars('[data-prefers-reduced-motion]', $merged-dark, $color-prefix);
+	}
+
+	/*
+	@include utils.declare-scoped-vars(
+		"[data-prefers-reduced-motion][data-compel-reduced-motion='reduce']",
+		$merged-light,
+		$color-prefix
+	);
+
+	@include utils.declare-scoped-vars(
+		"[data-prefers-reduced-motion][data-compel-reduced-motion='no-reduce']",
+		$merged-dark,
+		$color-prefix
+	);
+  */
+}
+
+// TODO: make this robust, not just aware of systems preference but overrides too
+// This is important for accessibility
+@mixin reduced-motion-aware($reduced-motion: false) {
+	@if $reduced-motion {
+		@media (prefers-reduced-motion: reduce) {
+			@content;
+		}
+	} @else {
+		@media (prefers-reduced-motion: no-preference) {
+			[data-prefers-reduced-motion][data-compel-reduced-motion] {
+				@content;
+			}
+
+			@content;
+		}
+	}
+}

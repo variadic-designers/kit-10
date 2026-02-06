@@ -1,0 +1,71 @@
+@use './_variables.scss' as v;
+
+// Apply focus ring styles using a CSS variable
+@mixin focus-ring-styles($color-var: '--color-focus-ring') {
+	outline-offset: 2px;
+	transition: outline-color 0.2s ease;
+
+	&:focus:not(:focus-visible) {
+		outline: none;
+	}
+
+	&:focus-visible {
+		outline: 2px solid var(#{$color-var});
+	}
+}
+
+// Batch apply focus ring to common elements
+@mixin apply-focus-rings($color-var: '--color-focus-ring') {
+	input[type='text'],
+	input[type='email'],
+	input[type='password'],
+	input[type='url'],
+	input[type='search'],
+	input[type='number'],
+	input[type='tel'],
+	input[type='date'],
+	input[type='time'],
+	input[type='datetime-local'],
+	input[type='month'],
+	input[type='week'],
+	input[type='file'],
+	input[type='checkbox'],
+	input[type='radio'],
+	textarea,
+	select,
+	button,
+	summary {
+		@include focus-ring-styles($color-var);
+	}
+}
+
+// Phase 1: visually hidden & inert (animatable)
+@mixin hide-animatable {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+}
+
+@mixin reveal-animatable {
+	opacity: 1;
+	visibility: visible;
+	pointer-events: auto;
+}
+
+// Phase 2: fully gone (no layout, no a11y)
+@mixin hide-complete {
+	display: none !important;
+}
+
+// Deprecated: Use animations-reduced-motion-aware
+@mixin prefers-reduced-motion($reduced-motion: false) {
+	@if $reduced-motion {
+		@media (prefers-reduced-motion: reduce) {
+			@content;
+		}
+	} @else {
+		@media (prefers-reduced-motion: no-preference) {
+			@content;
+		}
+	}
+}

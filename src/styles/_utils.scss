@@ -1,0 +1,22 @@
+// 🛠 Generates the --key: value; pair for each entry in your theme map
+@mixin declare-vars($map, $prefix: '--') {
+	@each $key, $value in $map {
+		#{$prefix}-#{$key}: #{$value};
+	}
+}
+
+@mixin declare-scoped-vars($selector, $map, $prefix: '--') {
+	#{$selector} {
+		@include declare-vars($map, $prefix);
+	}
+}
+
+@mixin no-default($selector...) {
+	// variadic
+	// Loop through each selector
+	@each $sel in $selector {
+		:not(.no-default:has(#{$sel})) #{$sel} {
+			@content;
+		}
+	}
+}

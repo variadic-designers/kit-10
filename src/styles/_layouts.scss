@@ -1,0 +1,154 @@
+@use './variables' as v;
+@use 'sass:map';
+
+$full-viewport-height-compatibility: 100vh; // Fallback
+$full-viewport-height-dynamic: 100dvh; // Dynamic, adapts as UI shows/hides
+$full-viewport-height-guaranteed: 100svh; // Smallest guaranteed visible height
+
+@mixin viewport-full-height {
+	& {
+		min-height: $full-viewport-height-compatibility;
+	}
+
+	@supports (height: #{$full-viewport-height-dynamic}) {
+		& {
+			min-height: $full-viewport-height-dynamic;
+		}
+	}
+
+	@supports (height: #{$full-viewport-height-guaranteed}) {
+		& {
+			min-height: $full-viewport-height-guaranteed;
+		}
+	}
+}
+
+@mixin viewport-full-height-capped {
+	& {
+		max-height: $full-viewport-height-compatibility;
+	}
+
+	@supports (height: #{$full-viewport-height-dynamic}) {
+		& {
+			max-height: $full-viewport-height-dynamic;
+		}
+	}
+
+	@supports (height: #{$full-viewport-height-guaranteed}) {
+		& {
+			max-height: $full-viewport-height-guaranteed;
+		}
+	}
+}
+
+@mixin viewport-full-height-lockdown {
+	& {
+		height: $full-viewport-height-compatibility;
+		min-height: $full-viewport-height-compatibility;
+		max-height: $full-viewport-height-compatibility;
+	}
+
+	@supports (height: #{$full-viewport-height-dynamic}) {
+		& {
+			height: $full-viewport-height-dynamic;
+			min-height: $full-viewport-height-dynamic;
+			max-height: $full-viewport-height-dynamic;
+		}
+	}
+
+	@supports (height: #{$full-viewport-height-guaranteed}) {
+		& {
+			height: $full-viewport-height-guaranteed;
+			min-height: $full-viewport-height-guaranteed;
+			max-height: $full-viewport-height-guaranteed;
+		}
+	}
+}
+
+@mixin no-padding {
+	padding: 0;
+}
+
+@mixin padding-even($space: v.$space-3) {
+	padding: $space;
+}
+
+@mixin padding-lengthy($space-block: v.$space-3, $space-inline: v.$space-5) {
+	padding: $space-block $space-inline;
+}
+
+@mixin no-margin {
+	margin: 0;
+}
+
+@mixin no-margin-padding {
+	@include no-padding();
+	@include no-margin();
+}
+
+@mixin flex-column {
+	display: flex;
+	flex-direction: column;
+}
+
+@mixin grid-center {
+	display: grid;
+	place-items: center;
+}
+
+@mixin respond-between($min, $max) {
+	$min-size: map.get(v.$breakpoints, $min);
+	$max-size: map.get(v.$breakpoints, $max);
+	@if $min-size and $max-size {
+		@media (min-width: $min-size) and (max-width: $max-size) {
+			@content;
+		}
+	} @else {
+		@warn "Invalid breakpoints: #{$min}, #{$max}";
+	}
+}
+
+@mixin respond-max($breakpoint) {
+	$size: map.get(v.$breakpoints, $breakpoint);
+
+	@if $size {
+		@media (max-width: $size) {
+			@content;
+		}
+	} @else {
+		@warn "⚠️ Unknown breakpoint: #{$breakpoint}";
+	}
+}
+
+@mixin respond($breakpoint) {
+	$size: map.get(v.$breakpoints, $breakpoint);
+
+	@if $size {
+		@media (min-width: $size) {
+			& {
+				@content;
+			}
+		}
+	} @else {
+		@warn "⚠️ Unknown breakpoint: #{$breakpoint}";
+	}
+}
+
+@mixin corsette() {
+	@each $ident, $bp in v.$breakpoints {
+		$content: map-get(v.$breakpoints-content, $ident);
+
+		@include respond($ident) {
+			max-width: $content;
+			margin-inline: auto;
+		}
+	}
+}
+
+/*  // Mobile-first Usage
+		@include layouts.respond-between('0', 'sm') {}
+		@include layouts.respond-between('sm', 'md') {}
+		@include layouts.respond-between('md', 'lg') {}
+		@include layouts.respond('lg') {}
+		@include layouts.respond('2xl') {}
+*/

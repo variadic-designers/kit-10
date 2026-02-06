@@ -1,0 +1,10 @@
+// Re-export foundational design tokens and styles for shared use
+// Mind the dependency ordering
+@forward './_utils' as tool-*; // Ubiquotous utility mixins
+@forward './_variables' as x-*; // Raw values: spacing, breakpoints, colors
+@forward './_layouts' as layout-*; // Flex/grid layouts, containers
+@forward './_theming' as theming-*; // Basic Light/Dark Theme (mixins, helpers)
+@forward './_motion' as animations-*; // Motion options (mixins, helpers)
+@forward './_semantics' as a11y-*; // Text, headings, visual semantics
+@forward './_inputs' as input-*; // Form/input styling
+@forward './_fonts' as fonts-*; // Form/input styling

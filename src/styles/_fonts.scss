@@ -1,0 +1,48 @@
+@mixin alternate-style() {
+	font-feature-settings: 'salt' 1;
+}
+
+@mixin stack($font, $type: sans) {
+	@if $type == sans {
+		font-family:
+			#{$font},
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			Roboto,
+			'Helvetica Neue',
+			Arial,
+			sans-serif;
+	} @else if $type == serif {
+		font-family:
+			#{$font},
+			Georgia,
+			Cambria,
+			'Times New Roman',
+			Times,
+			serif;
+	} @else if $type == mono {
+		font-family:
+			#{$font},
+			SFMono-Regular,
+			Menlo,
+			Monaco,
+			Consolas,
+			'Liberation Mono',
+			'Courier New',
+			monospace;
+	} @else {
+		@warn "Unknown font type `#{$type}`. Defaulting to sans-serif fallback.";
+		font-family:
+			#{$font},
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			Roboto,
+			'Helvetica Neue',
+			Arial,
+			sans-serif;
+	}
+}
