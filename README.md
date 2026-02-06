@@ -1,4 +1,7 @@
-![KIT•10 Logo](static/logo.svg)
+
+<p align="center">
+  <img src="static/favicon.svg" alt="KIT•10 Logo" width="200" />
+</p>
 
 # KIT•10
 
@@ -19,10 +22,6 @@ This repository contains:
 - Conceptual documentation that defines how the system works
   
 ---
-
-<p align="left">
-  <img src="static/favicon.svg" alt="KIT•10 Logo" width="200" />
-</p>
 
 ## What KIT•10 is (short version)
 
