@@ -1,4 +1,4 @@
-![KIT•10 Logo](static/favicon.svg)
+![KIT•10 Logo](static/logo.svg)
 
 # KIT•10
 
@@ -17,10 +17,12 @@ This repository contains:
 - Structured outputs (e.g. SCSS)
 - Official **KIT•10 trademarks, marks, and visual assets**
 - Conceptual documentation that defines how the system works
-
-This is the *actual tool*, not a demo or placeholder.
-
+  
 ---
+
+<p align="left">
+  <img src="static/favicon.svg" alt="KIT•10 Logo" width="200" />
+</p>
 
 ## What KIT•10 is (short version)
 
