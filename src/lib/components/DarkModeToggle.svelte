@@ -83,7 +83,7 @@
 >
 	<i
 		class="fa-solid fa-{ariaChecked === 'mixed'
-			? 'star-half-stroke'
+			? 'circle-half-stroke'
 			: ariaChecked === 'true'
 				? 'moon'
 				: 'sun'}"

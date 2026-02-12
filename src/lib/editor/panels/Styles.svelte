@@ -86,7 +86,7 @@
 				fields: { key: string; displayText?: string }[],
 				kits: ComponentFlat[]
 			)}
-				<details class="style-section">
+				<details class="style-section" open>
 					<summary class="style-section__heading">
 						<h3>{category}</h3>
 						<i class="fa-solid fa-angle-down style-section__collapse-icon"></i>

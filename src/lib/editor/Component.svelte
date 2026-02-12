@@ -24,16 +24,18 @@
 	// Instance of a Component / Kit
 	export interface ComponentView extends ComponentViewExport {
 		source_index: number;
-    sources_index?: number[];
 		params: AxesSet;
 		discriminator: number;
+		// Update of Kits
+		sources_index?: number[];
+		paramses?: AxesSet;
 		// Alias of Component
 		name: string;
 		selected?: 'primary' | 'secondary';
 		children?: ComponentView[];
 		hide?: boolean;
 		lock?: boolean;
-		// primitive: ComponentPrimitive
+		primitive?: ComponentPrimitive;
 	}
 
 	// A View on the Project Root
@@ -90,11 +92,8 @@
 			.map(([key, value]) => `${key}: ${value};`)
 			.join('');
 	});
-
-	let dragging = $state(false);
 </script>
 
-<!-- style="--calculated-width: '{offsetX}px ↔'; --calculated-height: '{offsetY}px ↕'; --x: {newPositionX}px; --y: {newPositionY}px;" -->
 <div
 	style="{rootVariables}; {cssVariables}"
 	class="canvas__component"
@@ -105,18 +104,6 @@
 	<div class="canvas__component__meta name">
 		{name}
 	</div>
-	<!-- <button class="canvas__component__meta width" aria-label="Always display width" -->
-	<!-- 	>{offsetX}px ↔</button -->
-	<!-- > -->
-	<!-- <button class="canvas__component__meta height" aria-label="Always display height" -->
-	<!-- 	>{offsetY}px ↕</button -->
-	<!-- > -->
-
-	<!-- <button class="canvas__component__drag top left" aria-label="Resize top and left"></button> -->
-	<!-- <button class="canvas__component__drag top right" aria-label="Resize top and right"></button> -->
-	<!-- <button class="canvas__component__drag bottom left" aria-label="Resize bottom and left"></button> -->
-	<!-- <button class="canvas__component__drag bottom right" aria-label="Resize bottom and right" -->
-	<!-- ></button> -->
 
 	<button class="canvas__component__move" aria-label="Resize bottom and right"
 		><i class="fa-solid fa-grip-lines"></i></button
@@ -140,7 +127,6 @@
 		cursor: pointer;
 		width: var(--width);
 		height: var(--height);
-		// margin: var(--margin);
 
 		// Necessary for labels
 		position: relative;
@@ -197,58 +183,23 @@
       */
 		}
 
-		&__drag {
-			display: none;
-		}
-
-		&:hover {
-			box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-text-muted);
-
-			/*
-			.canvas__component__drag {
-				box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-text-muted);
-				background: var(--color-bg);
-			}
-
-			.canvas__component__meta,
-			.canvas__component__drag,
-			&::after,
-			&::before {
-				display: block;
-			}
-      */
-		}
-
 		&--selected {
-			// box-shadow: 1 0 0 calc(2px / var(--scale-factor)) var(--color-primary);
-
-			.canvas__component__drag {
-				box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-primary);
-				background: var(--color-primary);
-			}
+			box-shadow: 0 0 1px calc(2px / var(--scale-factor)) var(--color-primary);
+			border-radius: var(--border-radius);
 
 			.canvas__component__move {
 				display: grid;
 			}
+
 			.canvas__component__meta,
-			.canvas__component__drag,
 			&::after,
 			&::before {
 				display: block;
 			}
 
-			// weird override but aight
 			&:hover {
 				box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-primary);
-
-				.canvas__component__drag {
-					box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-primary);
-					background: var(--color-primary-hover);
-
-					&:hover {
-						background: white;
-					}
-				}
+				border-radius: var(--border-radius);
 			}
 		}
 
@@ -278,47 +229,6 @@
 			}
 		}
 
-		&__drag {
-			position: absolute;
-			border: unset;
-			border-radius: calc($x-space-xs / var(--scale-factor) / 9);
-
-			--size: #{$x-space-md};
-			width: calc(var(--size) / var(--scale-factor) / 2);
-			height: calc(var(--size) / var(--scale-factor) / 2);
-
-			--offset: calc(var(--size) / -8);
-
-			/* Top-left corner centering logic */
-			&.top.left {
-				top: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-				left: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-
-				cursor: nw-resize;
-			}
-
-			&.top.right {
-				top: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-				right: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-
-				cursor: ne-resize;
-			}
-
-			&.bottom.left {
-				bottom: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-				left: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-
-				cursor: sw-resize;
-			}
-
-			&.bottom.right {
-				bottom: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-				right: calc(-0.6 * var(--size) / var(--scale-factor) / 2);
-
-				cursor: se-resize;
-			}
-		}
-
 		&__raw {
 			background-color: var(--background);
 			border: var(--border);
@@ -331,13 +241,6 @@
 
 			overflow-y: var(--overflow-y, initial);
 			overflow-x: var(--overflow-x, hidden);
-
-			/*
-      display: grid;
-      grid-template-columns: 1fr;
-      grid-template-rows: 1fr;
-      place-items: center;
-      */
 
 			&__text {
 				// display: inline;

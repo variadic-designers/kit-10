@@ -43,10 +43,12 @@ const projects: Kit10Project[] = [
 		],
 		tokenLibraries: {
 			'colours-of-css': {
+				displayName: 'Colours of CSS',
 				tokens: Colours.tokens
 			},
 
 			'gaps-linear-4': {
+				displayName: 'Gaps Linear 4',
 				tokens: [
 					{ name: 'space-0', displayName: 'Space 0', value: '0' },
 					{ name: 'space-1', displayName: 'Space 1', value: '0.25rem' }, // 4px
@@ -97,7 +99,6 @@ const projects: Kit10Project[] = [
 								height: 'max-content',
 								'border-radius': '0.5rem',
 								'font-size': '1rem',
-								// translate: '50% 50%',
 
 								background: 'inherit'
 							},
@@ -207,7 +208,8 @@ const projects: Kit10Project[] = [
 							},
 							style: {
 								border: '2px solid #EEE',
-								color: '#EEE'
+								color: '#EEE',
+								'--oklab-name': '#420'
 							},
 							specificity: 1
 						},
@@ -305,8 +307,8 @@ const projects: Kit10Project[] = [
 						{
 							axes: { sticky: 'true' },
 							style: {
-								position: 'sticky',
-								top: '0'
+								// position: 'sticky',
+								// top: '0'
 							},
 							specificity: 3
 						}

@@ -306,7 +306,7 @@
 			}
 
 			&:hover {
-				background: var(--color-panel-border);
+				background: var(--color-panel-header-fill);
 			}
 
 			&--highlighted {
@@ -326,8 +326,10 @@
 			cursor: text;
 			font-size: $x-font-size-md;
 			background:
-				radial-gradient(closest-side, var(--color-panel-header) 90%, transparent 100%) 0 0/ 3px 3px,
-				var(--color-surface); /* Base color */
+				radial-gradient(closest-side, var(--color-panel-header-fill) 90%, transparent 100%) 0 0/ 3px
+					3px,
+				var(--color-panel-header-border); /* Base color */
+			background: var(--color-panel-header-fill);
 
 			&::placeholder {
 				font-size: $x-font-size-md;

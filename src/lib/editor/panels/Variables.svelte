@@ -24,6 +24,7 @@
 	};
 
 	export type TokenLibraryNode = {
+		displayName?: string;
 		tokens?: Token[];
 		children?: { [namespace: string]: TokenLibraryNode };
 	};
@@ -48,6 +49,7 @@
 </script>
 
 <script lang="ts">
+	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 	import { contextMenu } from '../contextMenu';
 	import type { ContextMenuContent } from '../contextMenuStore';
 	import Panel from '../Panel.svelte';
@@ -225,75 +227,81 @@
 >
 	{#snippet content()}
 		{#if selectedKit}
-			<h3 class="token-heading">{kits[selectedKit.source_index].name}</h3>
-			<button class="token token--top token--bottom">+</button>
+			<div class="token-section">
+				<h3 class="token-heading">{kits[selectedKit.source_index].name}</h3>
+				<button class="token token--top token--bottom">+</button>
+			</div>
 		{/if}
 
-		<h3 class="token-heading">Project</h3>
-		<ul class="tokens-used">
-			{#each tokens as token}
-				<li class="tokens-used__item">
-					{#each resolveValue(token, tokenLibraries).trace as t, i}
-						<button class:token--top={i === 0} class:token--pathing={i !== 0} class="token">
-							{#if i === 0}
-								<!-- <i class="fa-solid fa-palette"></i> -->
-								<i class="fa-solid fa-arrows-left-right-to-line"></i>
-							{/if}
-							{t?.displayName ?? t?.name ?? 'Not Found'}
-						</button>
-						<i class="fa-solid fa-angle-left"></i>
-					{/each}
-					<button class="token token--resolved"
-						>{resolveValue(token, tokenLibraries).evaluation ?? '??'}</button
-					>
-				</li>
-			{/each}
-		</ul>
-
-		<h3 class="token-heading">Libraries</h3>
-		<ul class="tokens-library">
-			{#snippet renderLibrary(lib: TokenLibrary, level: number)}
-				{#each Object.entries(lib) as [namespace, node]}
-					<details open>
-						<summary
-							class="token token--resolved token--namespace"
-							style="--level: {level};"
-							use:contextMenu={tokenContextMenu}
+		<div class="token-section">
+			<h3 class="token-heading">Project</h3>
+			<ul class="tokens-used">
+				{#each tokens as token}
+					<li class="tokens-used__item">
+						{#each resolveValue(token, tokenLibraries).trace as t, i}
+							<button class:token--top={i === 0} class:token--pathing={i !== 0} class="token">
+								{#if i === 0}
+									<!-- <i class="fa-solid fa-palette"></i> -->
+									<i class="fa-solid fa-arrows-left-right-to-line"></i>
+								{/if}
+								{t?.displayName ?? t?.name ?? 'Not Found'}
+							</button>
+							<i class="fa-solid fa-angle-left"></i>
+						{/each}
+						<button class="token token--resolved"
+							>{resolveValue(token, tokenLibraries).evaluation ?? '??'}</button
 						>
-							<i class="fa-solid fa-book"></i>
-							{namespace}
-						</summary>
-
-						<div class="token--module">
-							<!-- Render tokens inside this namespace -->
-							{#if node.tokens}
-								{#each node.tokens as t}
-									{@const icon = t.type === 'color' ? 'square-full' : 'arrows-left-right-to-line'}
-
-									<button
-										class="token token--resolved token-leaf"
-										style="--level: {level + 1}; --color-icon: {t.value}"
-										use:contextMenu={tokenContextMenu}
-										title={t.value}
-									>
-										<!-- <i class="fa-solid fa-palette"></i> -->
-										<i class="fa-solid fa-{icon}"></i>
-										{t.displayName}
-									</button>
-								{/each}
-							{/if}
-
-							<!-- Render nested children -->
-							{#if node.children}
-								{@render renderLibrary(node.children, level + 1)}
-							{/if}
-						</div>
-					</details>
+					</li>
 				{/each}
-			{/snippet}
+			</ul>
+		</div>
 
-			{@render renderLibrary(tokenLibraries, 0)}
-		</ul>
+		<div class="token-section">
+			<h3 class="token-heading">Libraries</h3>
+			<ul class="tokens-library">
+				{#snippet renderLibrary(lib: TokenLibrary, level: number)}
+					{#each Object.entries(lib) as [namespace, node]}
+						<details open>
+							<summary
+								class="token token--resolved token--namespace"
+								style="--level: {level};"
+								use:contextMenu={tokenContextMenu}
+							>
+								<i class="fa-solid fa-book"></i>
+								{namespace}
+							</summary>
+
+							<div class="token--module">
+								<!-- Render tokens inside this namespace -->
+								{#if node.tokens}
+									{#each node.tokens as t}
+										{@const icon = t.type === 'color' ? 'square-full' : 'arrows-left-right-to-line'}
+
+										<button
+											class="token token--resolved token-leaf"
+											style="--level: {level + 1}; --color-icon: {t.value}"
+											use:contextMenu={tokenContextMenu}
+											title={t.value}
+										>
+											<!-- <i class="fa-solid fa-palette"></i> -->
+											<i class="fa-solid fa-{icon}"></i>
+											{t.displayName}
+										</button>
+									{/each}
+								{/if}
+
+								<!-- Render nested children -->
+								{#if node.children}
+									{@render renderLibrary(node.children, level + 1)}
+								{/if}
+							</div>
+						</details>
+					{/each}
+				{/snippet}
+
+				{@render renderLibrary(tokenLibraries, 0)}
+			</ul>
+		</div>
 	{/snippet}
 </Panel>
 

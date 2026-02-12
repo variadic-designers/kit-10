@@ -20,7 +20,14 @@
 		content: Snippet;
 	};
 
-	let { name, collapsed = $bindable(false),tooltip, contextMenuContent, toolbar, content }: PanelProps = $props();
+	let {
+		name,
+		collapsed = $bindable(false),
+		tooltip,
+		contextMenuContent,
+		toolbar,
+		content
+	}: PanelProps = $props();
 </script>
 
 <div class="panel" class:panel--collapsed={$collapse}>
@@ -28,7 +35,9 @@
 		<h2 title={tooltip} use:contextMenu={contextMenuContent}>
 			{name}
 		</h2>
-		<button onclick={() => collapsed=!true} class="drag" aria-label="Drag panel"><i class="fa-solid fa-grip-lines"></i></button>
+		<button onclick={() => (collapsed = !true)} class="drag" aria-label="Drag panel"
+			><i class="fa-solid fa-grip-lines"></i></button
+		>
 	</header>
 
 	{#if toolbar}
@@ -55,15 +64,9 @@
 		&__header {
 			display: flex;
 			align-items: center;
-			background: var(--color-panel-header);
-			background:
-				radial-gradient(closest-side, var(--color-panel-header) 90%, transparent 100%) 0 0/ 3px 3px,
-				var(--color-surface); /* Base color */
+			background: var(--color-panel-header-fill);
 
-			border: 1px solid var(--color-panel-header);
 			user-select: none;
-
-			box-shadow: 0 1px 5px var(--color-bg);
 		}
 
 		.drag {
@@ -110,6 +113,7 @@
 		&__content {
 			max-height: 100rem;
 			transition: max-height 200ms ease-out;
+			border-inline: 2px solid var(--color-panel-header-fill);
 
 			@include layout-respond('lg') {
 				font-size: $x-font-size-md;

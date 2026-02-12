@@ -44,13 +44,19 @@
 				icon: 'fa-solid fa-icons',
 				onClick: () => console.log('Add')
 			},
-      'hr',
+			{
+				name: 'add',
+				displayText: 'Set Mode',
+				icon: 'fa-solid fa-screwdriver',
+				onClick: () => console.log('Add')
+			},
+			'hr',
 			{
 				name: 'add',
 				displayText: 'Remove',
 				icon: 'fa-solid fa-trash',
 				onClick: () => console.log('Add')
-			},
+			}
 		];
 	};
 </script>
@@ -62,9 +68,9 @@
 				<li class="kit-field">
 					<label use:contextMenu={kitcontextMenuContent}>
 						<span class="kit-field__name">
-
-						<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
-            {kit.name}</span>
+							<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
+							{kit.name}</span
+						>
 						<input class="kit-field__radio" type="radio" value={kit.name} name="compose" />
 					</label>
 				</li>
@@ -75,11 +81,6 @@
 
 <style lang="scss">
 	@use '_index' as *;
-
-	i {
-		color: var(--color-warning);
-		font-size: $x-font-size-lg;
-	}
 
 	.kits {
 		@include layout-flex-column();
@@ -92,13 +93,12 @@
 		}
 		padding-block: calc($x-space-xs / 4);
 
-    &__icon {
-      color: var(--color-text-muted);
-      font-size: $x-font-size-md;
-    }
+		&__icon {
+			font-size: $x-font-size-md;
+		}
 
 		&__name {
-			@include fonts-stack('Satoshi-Regular', sans);
+			@include fonts-stack('Satoshi-Light', sans);
 			padding-left: $x-space-sm;
 			font-weight: 600;
 			letter-spacing: 1px;

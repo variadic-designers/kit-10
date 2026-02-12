@@ -269,11 +269,6 @@
 		position: relative;
 		user-select: none;
 
-		&:hover .axis__name__value {
-			color: var(--color-primary-hover);
-			box-shadow: 0 2px var(--color-surface);
-		}
-
 		&[open] {
 			.axis__name__collapse-icon {
 				rotate: -180deg;
@@ -303,25 +298,29 @@
 			color: var(--color-pure-alt);
 
 			h3 {
-				grid-area: 0 0 1 1;
+				grid-area: 1 / 1 / 1 / 2;
 				text-transform: uppercase;
 				@include fonts-stack('Satoshi-Bold', sans);
-				padding-block: $x-space-xs;
+				padding-block: calc($x-space-xs / 2);
 			}
 
 			&__value {
-				padding-inline: $x-space-xs;
-				grid-area: 0 1 1 2;
+				padding-inline: $x-space-sm;
+				grid-area: 1 / 2 / 1 / 3;
 				min-width: 2rem;
 				font-size: $x-font-size-md;
 				font-weight: 800;
 				@include fonts-stack('Satoshi-Regular', sans);
 				color: var(--color-primary);
-				box-shadow: 0px 1px var(--color-surface-alt);
+				border: 1px solid var(--color-surface-alt);
+				background: var(--color-surface-alt);
 				text-transform: capitalize;
+				border-radius: $x-space-xs;
 
 				&--unset {
 					color: var(--color-text-muted);
+					border: 1px solid var(--color-panel-header-fill);
+					background: var(--color-panel-header-fill);
 				}
 			}
 

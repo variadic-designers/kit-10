@@ -191,7 +191,6 @@
 					>
 						<i class="fa-{hideFontAwesomeType} fa-{hideFontAwesomeChar}"></i>
 					</button>
-
 				</div>
 
 				{#if component.children}
@@ -257,15 +256,14 @@
 		position: relative;
 		// border-left: 2px solid var(--color-surface);
 		font-size: $x-font-size-md;
-    align-items: center
+		align-items: center;
 
 		&__icon {
-			color: var(--color-text-muted);
 			font-size: $x-font-size-md;
 		}
 
 		&__name {
-			@include fonts-stack('Satoshi-Regular', sans);
+			@include fonts-stack('Satoshi-Light', sans);
 			padding-left: $x-space-xs;
 			font-weight: 600;
 			letter-spacing: 1px;
@@ -281,6 +279,10 @@
 
 		&--selected {
 			// border-left: 2px solid var(--color-primary);
+
+			.component__name {
+				@include fonts-stack('Satoshi-Regular', sans);
+			}
 
 			> * {
 				color: var(--color-primary);
