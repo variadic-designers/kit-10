@@ -4,7 +4,7 @@
 
 KIT•10 (pronounced **“kitten”**) is a framework and editor for building design systems from structured inputs instead of manually curated tokens and variants.
 
-You don’t design *each* result.  
+You don’t design _each_ result.  
 You define how the system behaves, and the results are derived.
 
 ---
@@ -32,7 +32,7 @@ The editor exists so you can explore what they do without memorizing theory firs
 
 Tokens are outputs.
 
-KIT•10 operates *before* tokens exist.  
+KIT•10 operates _before_ tokens exist.  
 It generates them by evaluating intent.
 
 You can still ship tokens. You just don’t have to hand-maintain them.
@@ -46,6 +46,7 @@ No.
 It replaces repetitive decision-making, not judgment.
 
 Designers still:
+
 - define axes
 - choose mappings
 - set constraints

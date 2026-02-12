@@ -21,6 +21,7 @@ Changing input values moves the position and produces a different result.
 An axis represents a single dimension of design intent.
 
 Examples:
+
 - Density
 - Emphasis
 - Contrast
@@ -29,6 +30,7 @@ Examples:
 - Formality
 
 Axes may be:
+
 - Continuous or discrete
 - Numeric or symbolic
 
@@ -53,6 +55,7 @@ Axis evaluation is deterministic.
 Given the same inputs, the system must always produce the same outputs.
 
 This applies across:
+
 - Value derivation
 - Cascades
 - Exports
@@ -99,6 +102,7 @@ Tokens should not require manual adjustment.
 ## Variadic structure
 
 The system does not assume:
+
 - A fixed number of axes
 - A fixed schema
 - A fixed output structure

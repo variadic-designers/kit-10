@@ -18,7 +18,7 @@ This repository contains:
 - Official **KIT•10 trademarks, marks, and visual assets**
 - Conceptual documentation that defines how the system works
 
-This is the *actual tool*, not a demo or placeholder.
+This is the _actual tool_, not a demo or placeholder.
 
 ---
 
@@ -26,7 +26,7 @@ This is the *actual tool*, not a demo or placeholder.
 
 KIT•10 generates design systems from **structured intent**, expressed along orthogonal axes like density, emphasis, contrast, motion, and tone.
 
-Instead of manually maintaining tokens and variants, you describe *where the system sits in design space*, and the editor deterministically produces the result.
+Instead of manually maintaining tokens and variants, you describe _where the system sits in design space_, and the editor deterministically produces the result.
 
 If you want the deeper explanation, that lives in the docs.
 
@@ -46,6 +46,7 @@ If you’re here for the editor, jump straight into the source.
 This project is **actively under development**.
 
 Expect:
+
 - Iteration
 - Refactors
 - Moving edges
@@ -73,5 +74,5 @@ Until a license is chosen, usage rights are reserved.
 
 ## Name
 
-**KIT•10** → *“kitten”*  
+**KIT•10** → _“kitten”_  
 Yes, that’s intentional.
