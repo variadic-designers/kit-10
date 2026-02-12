@@ -1,6 +1,5 @@
 <script>
 	import { page } from '$app/state';
-	import { locales, localizeHref } from '$lib/paraglide/runtime';
 
 	import { initializeTheme, getTheme } from '../lib/theming.ts';
 	import { initializeReducedMotion } from '../lib/reduced-motion.ts';
@@ -18,11 +17,6 @@
 
 {#key getTheme()}
 	{@render children()}
-	<!-- {#each locales as locale} -->
-	<!-- 	<a href={localizeHref(page.url.pathname, { locale })}> -->
-	<!-- 		{locale} -->
-	<!-- 	</a> -->
-	<!-- {/each} -->
 {/key}
 
 <style lang="scss" global>
