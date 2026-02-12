@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="static/favicon.svg" alt="KIT•10 Logo" width="200" />
 </p>

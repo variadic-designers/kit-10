@@ -8,10 +8,7 @@ const config = {
 	// for more information about preprocessors
 	preprocess: sveltePreprocess({
 		scss: {
-			includePaths: [
-        path.resolve('src/styles'),
-        path.resolve('.kit10/live'),
-      ],
+			includePaths: [path.resolve('src/styles'), path.resolve('.kit10/live')]
 		}
 	}),
 
@@ -25,7 +22,7 @@ const config = {
 			$utils: './src/utils',
 			$fonts: './src/lib/fonts',
 			$static: './static',
-			$lib: './src/',
+			$lib: './src/'
 			// $styles: './src/styles',
 		}
 	}
