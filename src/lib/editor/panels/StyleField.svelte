@@ -33,58 +33,62 @@
 	import { contextMenu } from '../contextMenu.ts';
 	import type { AxesSet, StyleSource } from '../../cascadeAxesMap.ts';
 
-	const menu = [
-		{
-			name: 'custom axis',
-			description: 'Save as Token',
-			displayText: 'Tokenize',
-			icon: 'fa-solid fa-square-binary'
-		},
-		{
-			name: 'custom axis',
-			description: '',
-			displayText: 'Unwrap',
-			icon: 'fa-solid fa-box-open',
-			disabled: true
-		},
+	const menu = () => {
+		return [
+			{
+				name: 'custom axis',
+				description: 'Save as Token',
+				displayText: 'Tokenize',
+				icon: 'fa-solid fa-square-binary'
+			},
+			{
+				name: 'custom axis',
+				description: '',
+				displayText: 'Unwrap',
+				icon: 'fa-solid fa-box-open',
+				disabled: true
+			},
 
-		'hr',
-		{
-			name: 'custom axis',
-			description: 'Add custom axis',
-			displayText: 'Remove',
-			icon: 'fa-solid fa-trash',
-			destructive: true
-		}
-	];
+			'hr',
+			{
+				name: 'custom axis',
+				description: 'Add custom axis',
+				displayText: 'Remove',
+				icon: 'fa-solid fa-trash',
+				destructive: true
+			}
+		];
+	};
 
-	const styleOptions = [
-		{
-			name: 'cut selected styles',
-			description: '',
-			displayText: 'Cut Selected',
-			icon: 'fa-solid fa-scissors'
-		},
-		{
-			name: 'copy selected styles',
-			description: '',
-			displayText: 'Copy Selected',
-			icon: 'fa-solid fa-copy'
-		},
-		'hr',
-		{
-			name: 'remove style tracking',
-			description: '',
-			displayText: 'Remove Track',
-			icon: 'fa-solid fa-delete-left'
-		},
-		{
-			name: 'delete style value',
-			description: '',
-			displayText: 'Delete Value',
-			icon: 'fa-solid fa-trash'
-		}
-	];
+	const styleOptions = () => {
+		return [
+			{
+				name: 'cut selected styles',
+				description: '',
+				displayText: 'Cut Selected',
+				icon: 'fa-solid fa-scissors'
+			},
+			{
+				name: 'copy selected styles',
+				description: '',
+				displayText: 'Copy Selected',
+				icon: 'fa-solid fa-copy'
+			},
+			'hr',
+			{
+				name: 'remove style tracking',
+				description: '',
+				displayText: 'Remove Track',
+				icon: 'fa-solid fa-delete-left'
+			},
+			{
+				name: 'delete style value',
+				description: '',
+				displayText: 'Delete Value',
+				icon: 'fa-solid fa-trash'
+			}
+		];
+	};
 
 	const editValue = $state({
 		now: false,
@@ -153,7 +157,7 @@
 			console.log('Tried to add style to set');
 		}}
 	>
-		<i class="fa-solid fa-diamond"></i>
+		<i class="fa-solid fa-pentagon"></i>
 	</button>
 
 	{#if editValue.now}
@@ -176,7 +180,7 @@
 					editValue.now = false;
 
 					if (selectedKit) {
-						const layers = kits[selectedKit.source_index].sets.layers;
+						const layers = kits[selectedKit.resolve[0].source_index].sets.layers;
 
 						// Normalize: no set specified means {}
 						const targetAxes = set ?? {};

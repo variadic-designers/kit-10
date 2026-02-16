@@ -22,7 +22,7 @@
 
 	let {
 		name,
-		collapsed = $bindable(false),
+		collapsed = $bindable(true),
 		tooltip,
 		contextMenuContent,
 		toolbar,

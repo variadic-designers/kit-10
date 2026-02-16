@@ -93,7 +93,7 @@ const projects: Kit10Project[] = [
 						{
 							axes: {},
 							style: {
-								padding: '1rem 2rem',
+								padding: '0.5rem 1.5rem',
 								color: '#222',
 								width: 'max-content',
 								height: 'max-content',
@@ -318,87 +318,151 @@ const projects: Kit10Project[] = [
 		],
 		kitViews: [
 			{
-				source_index: 0,
 				rootPosition: { x: -300, y: 20 },
 				name: 'CTA - Primary',
-				params: { '@builtin-darkmode': 'dark', '@builtin-btn-emphasis': 'secondary' },
-				discriminator: 1
-			},
-			{
-				source_index: 0,
-				rootPosition: { x: 100, y: 20 },
-				params: { '@builtin-darkmode': 'light', '@builtin-btn-emphasis': 'secondary' },
-				name: 'CTA - Secondary',
-				discriminator: 0
-			},
-			{
-				source_index: 1,
-				rootPosition: { x: 100, y: 220 },
-				params: { '@builtin-darkmode': 'dark' },
-				name: 'Responsive Screen',
-				discriminator: 1,
-				children: [
+				resolve: [
 					{
-						source_index: 2,
+						source_index: 0,
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative'
+						}
+					}
+				],
+				discriminator: 1,
+				primitive: {
+					kind: 'text',
+					text: 'Approve Request'
+				}
+			},
+			{
+				rootPosition: { x: 100, y: 20 },
+				resolve: [
+					{
+						source_index: 0,
 						params: {
 							'@builtin-darkmode': 'light',
 							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative',
-							sticky: 'true'
-						},
-						name: 'Nav',
-						discriminator: 3
-					},
-					{
-						source_index: 2,
-						params: {
-							'@builtin-darkmode': 'dark',
-							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative'
-						},
-						name: 'Hero',
-						discriminator: 3
-					},
-					{
-						source_index: 2,
-						params: {
-							'@builtin-darkmode': 'dark',
-							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative'
-						},
-						name: 'First section',
-						discriminator: 4,
-						children: [
-							{
-								source_index: 0,
-								rootPosition: { x: 100, y: 20 },
-								params: { '@builtin-darkmode': 'light', '@builtin-btn-emphasis': 'secondary' },
-								name: 'CTA - Primary',
-								discriminator: 0
-							}
-						]
-					},
-					{
-						source_index: 2,
-						params: {
-							'@builtin-darkmode': 'dark',
-							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative'
-						},
-						name: 'Second section',
-						discriminator: 5
-					},
-					{
-						source_index: 2,
-						params: {
-							'@builtin-darkmode': 'dark',
-							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative'
-						},
-						name: 'Third section',
-						discriminator: 6
+							'@builtin-btn-tone': 'destructive'
+						}
 					}
-				]
+				],
+				name: 'CTA - Secondary',
+				discriminator: 0,
+				primitive: {
+					kind: 'text',
+					text: 'Deny Request'
+				}
+			},
+			{
+				rootPosition: { x: 100, y: 220 },
+				resolve: [
+					{
+						source_index: 1,
+						params: { '@builtin-darkmode': 'dark' }
+					}
+				],
+				name: 'Responsive Screen',
+				discriminator: 1,
+				primitive: {
+					kind: 'container',
+					children: [
+						{
+							resolve: [
+								{
+									source_index: 2,
+									params: {
+										'@builtin-darkmode': 'light',
+										'@builtin-btn-emphasis': 'secondary',
+										'@builtin-btn-tone': 'confirmative',
+										sticky: 'true'
+									}
+								}
+							],
+							name: 'Nav',
+							discriminator: 3
+						},
+						{
+							resolve: [
+								{
+									source_index: 2,
+									params: {
+										'@builtin-darkmode': 'dark',
+										'@builtin-btn-emphasis': 'secondary',
+										'@builtin-btn-tone': 'confirmative'
+									}
+								}
+							],
+							name: 'Hero',
+							discriminator: 3
+						},
+						{
+							resolve: [
+								{
+									source_index: 2,
+									params: {
+										'@builtin-darkmode': 'dark',
+										'@builtin-btn-emphasis': 'secondary',
+										'@builtin-btn-tone': 'confirmative'
+									}
+								}
+							],
+							name: 'First section',
+							discriminator: 4,
+							primitive: {
+								kind: 'container',
+								children: [
+									{
+										resolve: [
+											{
+												source_index: 0,
+												params: {
+													'@builtin-darkmode': 'dark',
+													'@builtin-btn-emphasis': 'tertiary'
+												}
+											}
+										],
+										name: 'CTA - Primary',
+										discriminator: 0,
+										primitive: {
+											kind: 'text',
+											text: 'Belay Request'
+										}
+									}
+								]
+							}
+						},
+						{
+							resolve: [
+								{
+									source_index: 2,
+									params: {
+										'@builtin-darkmode': 'dark',
+										'@builtin-btn-emphasis': 'secondary',
+										'@builtin-btn-tone': 'confirmative'
+									}
+								}
+							],
+							name: 'Second section',
+							discriminator: 5
+						},
+						{
+							resolve: [
+								{
+									source_index: 2,
+									params: {
+										'@builtin-darkmode': 'dark',
+										'@builtin-btn-emphasis': 'secondary',
+										'@builtin-btn-tone': 'confirmative'
+									}
+								}
+							],
+							name: 'Third section',
+							discriminator: 6
+						}
+					]
+				}
 			}
 		]
 	},

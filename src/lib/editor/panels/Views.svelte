@@ -15,15 +15,18 @@
 	const deselectAll = (list: ComponentView[]) => {
 		for (const c of list) {
 			delete c.selected;
-			if (c.children) deselectAll(c.children);
+			if (c.primitive?.kind === 'container') deselectAll(c.primitive.children);
 		}
 	};
 
-	const selectKit = (target: ComponentView) => {
-		deselectAll(kitViews);
-
-		// select the target
-		target.selected = 'primary';
+	const selectKit = (target: ComponentView, untoggle = true) => {
+		if (untoggle && target.selected) {
+			target.selected = undefined;
+		} else {
+			// select the target
+			deselectAll(kitViews);
+			target.selected = 'primary';
+		}
 	};
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [
@@ -154,6 +157,11 @@
 				{@const hideFontAwesomeChar = component['hide'] ? 'eye-slash' : 'eye'}
 				{@const lockFontAwesomeChar = component['lock'] ? 'lock' : 'lock-open'}
 
+				{@const kitViewIcon =
+					component.primitive?.kind === 'text'
+						? 'fa-solid fa-italic'
+						: 'fa-regular fa-window-maximize'}
+
 				<div class="component-field">
 					<button
 						style="--coords: 'x: {component.rootPosition?.x ?? 0} y: {component.rootPosition?.y ??
@@ -164,7 +172,7 @@
 						aria-label={component.name}
 						onclick={() => selectKit(component)}
 					>
-						<i class="component__icon fa-regular fa-window-maximize"></i>
+						<i class="component__icon {kitViewIcon}"></i>
 						<div class="component__name" contenteditable="false">
 							{component.name ?? kits[component.source_index].name ?? 'Unnamed'}
 						</div>
@@ -193,8 +201,8 @@
 					</button>
 				</div>
 
-				{#if component.children}
-					{#each component.children as child}
+				{#if component.primitive?.kind === 'container'}
+					{#each component.primitive.children as child}
 						{@render kitter(child, level + 1)}
 					{/each}
 				{/if}
@@ -279,10 +287,6 @@
 
 		&--selected {
 			// border-left: 2px solid var(--color-primary);
-
-			.component__name {
-				@include fonts-stack('Satoshi-Regular', sans);
-			}
 
 			> * {
 				color: var(--color-primary);

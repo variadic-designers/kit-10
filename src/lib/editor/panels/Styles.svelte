@@ -24,20 +24,30 @@
 		kits = $bindable()
 	}: StylesPanel = $props();
 
-	const stylesContextMenu = [
-		{
-			name: 'custom rule',
-			description: 'Add custom style rule',
-			displayText: 'Custom Style Rule',
-			icon: 'fa-solid fa-plus'
-		}
-	];
+	const stylesContextMenu = () => {
+		return [
+			{
+				name: 'custom rule',
+				description: 'Add custom style rule',
+				displayText: 'Custom Style Rule',
+				icon: 'fa-solid fa-plus'
+			}
+		];
+	};
 
 	const { finalStyle, trace } = $derived.by((): CascadeResult => {
 		if (selectedKitCascadeResult) {
 			return selectedKitCascadeResult;
 		}
 		return { finalStyle: {}, trace: [] };
+	});
+
+	const contentField = $derived.by(() => {
+		if (selectedKit) {
+			return selectedKit.primitive.kind === 'text'
+				? { key: 'text', displayText: 'Text' }
+				: { key: 'children', displayText: 'Children' };
+		}
 	});
 
 	// backtracks trace to find source layer then transform to color
@@ -80,63 +90,75 @@
 >
 	{#snippet content()}
 		<!-- <pre>{JSON.stringify(trace, null, 2)}</pre> -->
-		<div style="display:contents">
-			{#snippet styleSection(
-				category: string,
-				fields: { key: string; displayText?: string }[],
-				kits: ComponentFlat[]
-			)}
-				<details class="style-section" open>
-					<summary class="style-section__heading">
-						<h3>{category}</h3>
-						<i class="fa-solid fa-angle-down style-section__collapse-icon"></i>
-					</summary>
+		{#if selectedKit}
+			<div style="display:contents">
+				{#snippet styleSection(
+					category: string,
+					fields: { key: string; displayText?: string }[],
+					kits: ComponentFlat[]
+				)}
+					<details class="style-section" open>
+						<summary class="style-section__heading">
+							<h3>{category}</h3>
+							<i class="fa-solid fa-angle-down style-section__collapse-icon"></i>
+						</summary>
 
-					<div class="style-section__content">
-						{#each fields as field, i}
-							<StyleField
-								{kits}
-								{selectedKit}
-								displayText={field.displayText ?? field.key}
-								{...track(field.key)}
-								key={field.key}
-								value={finalStyle[field.key]}
-								position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
-							/>
-						{/each}
-					</div>
-				</details>
-			{/snippet}
+						<div class="style-section__content">
+							{#each fields as field, i}
+								<StyleField
+									{kits}
+									{selectedKit}
+									displayText={field.displayText ?? field.key}
+									{...track(field.key)}
+									key={field.key}
+									value={finalStyle[field.key]}
+									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+								/>
+							{/each}
+						</div>
+					</details>
+				{/snippet}
 
-			{@render styleSection(
-				'layout',
-				[{ key: 'padding', displayText: 'Pad' }, { key: 'width' }, { key: 'height' }],
-				kits
-			)}
+				{@render styleSection(
+					'layout',
+					[{ key: 'padding', displayText: 'Pad' }, { key: 'width' }, { key: 'height' }],
+					kits
+				)}
 
-			{@render styleSection(
-				'box',
-				[
-					{ key: 'background', displayText: 'Fill' },
-					{ key: 'border' },
-					{ key: 'border-radius', displayText: 'Radius' },
-					{ key: 'outline' }
-				],
-				kits
-			)}
+				{@render styleSection(
+					'box',
+					[
+						{ key: 'background', displayText: 'Fill' },
+						{ key: 'border' },
+						{ key: 'border-radius', displayText: 'Radius' },
+						{ key: 'outline' }
+					],
+					kits
+				)}
 
-			{@render styleSection(
-				'text',
-				[
-					{ key: 'color', displayText: 'Fill' },
-					{ key: 'font-size', displayText: 'Size' },
-					{ key: 'font-weight', displayText: 'Weight' },
-					{ key: 'text-align', displayText: 'Align' },
-					{ key: 'text-decoration', displayText: 'Decor' }
-				],
-				kits
-			)}
-		</div>
+				{@render styleSection(
+					'text',
+					[
+						{ key: 'color', displayText: 'Fill' },
+						{ key: 'font-size', displayText: 'Size' },
+						{ key: 'font-weight', displayText: 'Weight' },
+						{ key: 'text-align', displayText: 'Align' },
+						{ key: 'text-decoration', displayText: 'Decor' }
+					],
+					kits
+				)}
+
+				{@render styleSection(
+					'content',
+					[
+						selectedKit.primitive?.kind === 'text'
+							? { key: 'text', displayText: 'Text' }
+							: { key: 'children', displayText: 'Children' }
+					],
+					kits
+				)}
+			</div>
+		{/if}
 	{/snippet}
 </Panel>
 

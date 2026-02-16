@@ -202,66 +202,72 @@
 		};
 	}
 
-	let menu = [
-		{
-			name: 'add',
-			displayText: 'Undo',
-			icon: 'fa-solid fa-rotate-right',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'Details',
-			icon: 'fa-solid fa-question',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'New View',
-			icon: 'fa-solid fa-diamond',
-			onClick: () => console.log('Add')
-		},
+	let menu = () => {
+		return [
+			{
+				name: 'add',
+				displayText: 'Undo',
+				icon: 'fa-solid fa-rotate-right',
+				onClick: () => console.log('Add')
+			},
+			'hr',
+			{
+				name: 'add',
+				displayText: 'Details',
+				icon: 'fa-solid fa-question',
+				onClick: () => console.log('Add')
+			},
+			{
+				name: 'add',
+				displayText: 'New View',
+				icon: 'fa-solid fa-diamond',
+				onClick: () => console.log('Add')
+			},
 
-		{
-			name: 'trash',
-			displayText: 'Clone',
-			icon: 'fa-solid fa-clone',
-			onClick: () => console.log('Remove')
-		},
-		'hr',
-		{
-			name: 'trash',
-			displayText: 'Enumerate Views',
-			icon: 'fa-solid fa-layer-group',
-			onClick: () => console.log('Remove')
-		},
-		{
-			name: 'zoom',
-			displayText: 'Show Mappings',
-			icon: 'fa-solid fa-sliders',
-			onClick: () => console.log('Zoom')
-		},
-		'hr',
-		{
-			name: 'trash',
-			displayText: 'Delete View',
-			icon: 'fa-solid fa-trash-can',
-			onClick: () => console.log('Remove')
-		}
-	];
+			{
+				name: 'trash',
+				displayText: 'Clone',
+				icon: 'fa-solid fa-clone',
+				onClick: () => console.log('Remove')
+			},
+			'hr',
+			{
+				name: 'trash',
+				displayText: 'Enumerate Views',
+				icon: 'fa-solid fa-layer-group',
+				onClick: () => console.log('Remove')
+			},
+			{
+				name: 'zoom',
+				displayText: 'Show Mappings',
+				icon: 'fa-solid fa-sliders',
+				onClick: () => console.log('Zoom')
+			},
+			'hr',
+			{
+				name: 'trash',
+				displayText: 'Delete View',
+				icon: 'fa-solid fa-trash-can',
+				onClick: () => console.log('Remove')
+			}
+		];
+	};
 
-	function selectComponent(target: ComponentView) {
-		// deselect everything
+	const selectView = (target: ComponentView, untoggle = true) => {
 		const deselectAll = (list: ComponentView[]) => {
 			for (const c of list) {
 				delete c.selected;
 				if (c.children) deselectAll(c.children);
 			}
 		};
-		deselectAll(kitViews);
-		target.selected = 'primary';
-	}
+		if (untoggle && target.selected) {
+			target.selected = undefined;
+		} else {
+			// select the target
+			deselectAll(kitViews);
+			target.selected = 'primary';
+		}
+	};
 
 	import { type KitProps } from './/Component.svelte';
 </script>
@@ -281,32 +287,11 @@
 >
 	<div id="canvas" class="canvas">
 		{#snippet kitView(v: ComponentView, isRoot: boolean)}
-			<KitView
-				name={v.name ?? kits[v.source_index].name ?? 'Source missing'}
-				sets={kits[v.source_index].sets ?? { layers: [], axisRank: [] }}
-				selected={v.selected}
-				params={v.params}
-				hide={v.hide}
-				{...isRoot ? { rootPosition: v.rootPosition } : {}}
-			>
-				{#if v.children}
-					{#each v.children as viewChild}
-						{@render kitView(viewChild, false)}
-					{/each}
-				{/if}
-			</KitView>
+			<KitView {...v} {kits}></KitView>
 		{/snippet}
 
 		{#each kitViews as view}
-			<div
-				class="select"
-				onclick={() => {
-					selectComponent(view);
-				}}
-				use:contextMenu={menu}
-			>
-				{@render kitView(view, true)}
-			</div>
+			{@render kitView(view, true)}
 		{/each}
 	</div>
 	<!-- <Tools /> -->
@@ -325,31 +310,8 @@
 	.canvas-container {
 		overflow: hidden;
 		position: relative;
-		background-color: var(--color-bg);
 
-		/*
-		background-image:
-			repeating-linear-gradient(
-				45deg,
-				var(--color-bg) 25%,
-				transparent 25%,
-				transparent 75%,
-				var(--color-bg) 75%,
-				var(--color-bg)
-			),
-			repeating-linear-gradient(
-				0deg,
-				var(--color-bg) 25%,
-				var(--color-bg) 25%,
-				var(--color-surface) 75%,
-				var(--color-bg) 75%,
-				var(--color-bg)
-			);
-		background-position:
-			0 0,
-			10px 10px;
-		background-size: 1.2rem 1.2rem;
-    */
+		background-color: var(--color-bg);
 
 		.zoom-level {
 			position: absolute;

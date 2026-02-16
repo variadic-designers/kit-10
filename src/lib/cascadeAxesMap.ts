@@ -219,9 +219,9 @@ export type MultiCascadeResult = {
 	crossOverrides: CrossManagerOverride[];
 };
 
-export const resolveMany = (managers: AxesManager[], context: AxesSet): MultiCascadeResult => {
+export const resolveMany = (managers: AxesManager[], context: AxesSet[]): MultiCascadeResult => {
 	const perManager = managers.map((manager, index) => {
-		const result = resolve(manager, context);
+		const result = resolve(manager, context[index]);
 		return {
 			managerIndex: index,
 			manager,

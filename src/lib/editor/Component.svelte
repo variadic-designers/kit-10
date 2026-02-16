@@ -21,21 +21,27 @@
 		exportParams?: AxesSet;
 	}
 
+	export interface ViewResolve {
+		// For finding the kit
+		source_index: number;
+		// an its respective params
+		params: AxesSet;
+	}
+
 	// Instance of a Component / Kit
-	export interface ComponentView extends ComponentViewExport {
+	export interface ComponentView extends ComponentViewExport, ComponentRoot {
 		source_index: number;
 		params: AxesSet;
 		discriminator: number;
 		// Update of Kits
-		sources_index?: number[];
-		paramses?: AxesSet;
+		resolve: ViewResolve[];
 		// Alias of Component
 		name: string;
 		selected?: 'primary' | 'secondary';
 		children?: ComponentView[];
 		hide?: boolean;
 		lock?: boolean;
-		primitive?: ComponentPrimitive;
+		primitive: ComponentPrimitive;
 	}
 
 	// A View on the Project Root
@@ -53,13 +59,34 @@
 </script>
 
 <script lang="ts">
-	import { resolve, type AxesManager, type AxesSet } from '../cascadeAxesMap.ts';
+	import { resolveMany, type AxesManager, type AxesSet } from '../cascadeAxesMap.ts';
 	import { type Snippet } from 'svelte';
+	import Component from './Component.svelte';
 
-	const { name, sets, params, hide, rootPosition, selected, children }: KitProps = $props();
+	const {
+		source_index,
+		params,
+		// discriminator,
+		// Update of Kits
+		resolve,
+		// Alias of Component
+		name,
+		selected,
+		hide,
+		lock,
+		primitive,
+		// root
+		rootPosition,
+		// kit Definitions
+		kits
+	}: ComponentView & { kits: ComponentFlat[] } = $props();
 
 	const { finalStyle, trace } = $derived.by(() => {
-		return resolve(sets, params);
+		// return resolve((kits[source_index] ?? { layers: [], axisRank: [] }).sets, params);
+		return resolveMany(
+			resolve.map((r) => kits[r.source_index].sets),
+			resolve.map((r) => r.params)
+		);
 	});
 
 	const rootVariables = $derived.by(() => {
@@ -94,47 +121,81 @@
 	});
 </script>
 
-<div
+<!-- <button class="canvas__component__move" aria-label="Resize bottom and right" -->
+<!-- 	><i class="fa-solid fa-grip-lines"></i></button -->
+<!-- > -->
+<!---->
+<!-- <div contenteditable="true" spellcheck="false" class="canvas__component__raw__text"> -->
+<!-- 	Sample Text -->
+<!-- </div> -->
+
+<svelte:element
+	this={primitive?.kind === 'text' ? 'span' : 'div'}
 	style="{rootVariables}; {cssVariables}"
 	class="canvas__component"
 	class:canvas__component--selected={selected !== undefined}
 	class:canvas__component--root={!!rootPosition}
 	class:canvas__component--hide={!!hide}
+	contenteditable="false"
 >
-	<div class="canvas__component__meta name">
-		{name}
-	</div>
+	{#if primitive?.kind === 'container'}
+		{#each primitive.children as child}
+			<Component {...child} rootPosition={undefined} {kits} />
+		{/each}
+	{/if}
 
-	<button class="canvas__component__move" aria-label="Resize bottom and right"
-		><i class="fa-solid fa-grip-lines"></i></button
-	>
-
-	<div style={cssVariables} class="canvas__component__raw">
-		<!-- spellcheck is disabled so squiggly lines disappear -->
-		<div contenteditable="true" spellcheck="false" class="canvas__component__raw__text">
-			Sample Text
-		</div>
-		{#if children}
-			{@render children()}
-		{/if}
-	</div>
-</div>
+	{#if primitive?.kind === 'text'}
+		{primitive.text}
+	{/if}
+</svelte:element>
 
 <style lang="scss">
 	@use '_index' as *;
+	// Global is required to bypass vite's omitted styles -->
+	// allowing `.canvas__component > *` selector to take effect -->
+	:global(.canvas__component > *) {
+		--width: initial;
+		--height: initial;
+		--border: initial;
+		--background: initial;
+		--border-radius: initial;
+		--color: initial;
+		--padding: initial;
+		--margin: initial;
+		--font-size: initial;
+		--text-decoration: initial;
+		--overflow-y: initial;
+		--overflow-x: initial;
+		--position: initial;
+		--top: initial;
+	}
 
 	.canvas__component {
 		cursor: pointer;
 		width: var(--width);
 		height: var(--height);
-
-		// Necessary for labels
-		position: relative;
+		box-sizing: border-box;
 
 		position: var(--position);
 		top: var(--top);
 
-		// grid-area: 1 / 1 / 2 / 2;
+		background-color: var(--background);
+		border: var(--border);
+		border-radius: var(--border-radius);
+		color: var(--color);
+		padding: var(--padding);
+
+		overflow-y: var(--overflow-y, initial);
+		overflow-x: var(--overflow-x, hidden);
+
+		@include fonts-stack('Satoshi-Regular', sans);
+		@include fonts-alternate-style();
+		font-size: var(--font-size);
+		text-decoration: var(--text-decoration);
+
+		&--hide {
+			display: none;
+		}
 
 		&--root {
 			translate: calc(var(--root-position-x) + var(--offsetX))
@@ -143,144 +204,18 @@
 			position: absolute;
 		}
 
-		&__meta {
-			$f-size: $x-font-size-sm;
-
-			font-size: calc($f-size * var(--scale-factor));
-			@include fonts-stack('Satoshi-Bold', sans);
-			color: var(--color-text);
-			color: white;
-			mix-blend-mode: exclusion;
-			border: unset;
-			padding: 2px;
-			border-radius: 2px;
-			cursor: pointer;
-			position: absolute;
-			background: inherit;
-			display: none;
-			min-width: 200%;
-
-			&.name {
-				content: var(--name);
-				top: calc($f-size * -2.5 / var(--scale-factor));
-				left: 0;
-				color: var(--color-primary);
-
-				@include fonts-stack('Satoshi-Bold', sans);
-				font-size: calc($x-font-size-md / var(--scale-factor));
-			}
-
-			/*
-			&.width {
-				top: 120%;
-				left: calc(40% * var(--scale-factor) * 0.8);
-			}
-
-			&.height {
-				top: calc(40% * var(--scale-factor) * 0.8);
-				left: calc(-65% * 1 / var(--scale-factor));
-			}
-      */
-		}
-
+		// TODO: Replace with SVG
+		/*
 		&--selected {
-			box-shadow: 0 0 1px calc(2px / var(--scale-factor)) var(--color-primary);
+			// box-shadow: 0 0 1px calc(2px / var(--scale-factor)) var(--color-primary);
 			border-radius: var(--border-radius);
-
-			.canvas__component__move {
-				display: grid;
-			}
-
-			.canvas__component__meta,
-			&::after,
-			&::before {
-				display: block;
-			}
+			border: 2px solid var(--color-primary);
 
 			&:hover {
 				box-shadow: 0 0 0 calc(2px / var(--scale-factor)) var(--color-primary);
 				border-radius: var(--border-radius);
 			}
 		}
-
-		&__move {
-			i {
-				font-size: calc($x-font-size-md / var(--scale-factor));
-			}
-
-			width: max-content;
-			height: max-content;
-			top: calc($x-font-size-sm * -1.8 / var(--scale-factor));
-			right: 0;
-
-			cursor: grab;
-			background: unset;
-			outline: unset;
-			color: var(--color-primary);
-
-			display: none;
-			position: absolute;
-			border: unset;
-
-			place-items: center;
-
-			&:active {
-				cursor: grabbing;
-			}
-		}
-
-		&__raw {
-			background-color: var(--background);
-			border: var(--border);
-			border-radius: var(--border-radius);
-			color: var(--color);
-			padding: var(--padding);
-
-			width: 100%;
-			height: 100%;
-
-			overflow-y: var(--overflow-y, initial);
-			overflow-x: var(--overflow-x, hidden);
-
-			&__text {
-				// display: inline;
-				//all: unset;
-				border: unset;
-				outline: unset;
-
-				@include fonts-stack('Satoshi-Regular', sans);
-				@include fonts-alternate-style();
-				font-size: var(--font-size);
-				cursor: text;
-				text-decoration: var(--text-decoration);
-
-				font-weight: 800;
-
-				&:focus {
-					backdrop-filter: brightness(0.8);
-				}
-			}
-		}
-
-		&--hide {
-			display: none;
-		}
-
-		> * {
-			--width: initial;
-			--height: initial;
-			--border: initial;
-			--background: initial;
-			--border-radius: initial;
-			--color: initial;
-			--padding: initial;
-			--margin: initial;
-			--font-size: initial;
-			--text-decoration: initial;
-			--overflow-y: initial;
-			--overflow-x: initial;
-			--position: initial;
-			--top: initial;
-		}
+    */
 	}
 </style>

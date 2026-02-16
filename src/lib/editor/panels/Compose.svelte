@@ -11,8 +11,6 @@
 
 	const { selectedKit, kits = $bindable() }: ComposePanelProps = $props();
 
-	const mode = $derived(selectedKit ? `Compose` : 'Kits');
-
 	const tooltip = $derived.by(() => {
 		const subject = selectedKit ? `View: \`${selectedKit.name}\`` : 'Selected View';
 
@@ -61,20 +59,28 @@
 	};
 </script>
 
-<Panel name={mode} contextMenuContent={composeContextMenuContent} {tooltip}>
+<Panel name="Compose" contextMenuContent={composeContextMenuContent} {tooltip}>
 	{#snippet content()}
+		{@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']}
 		<ol class="kits">
-			{#each kits as kit}
-				<li class="kit-field">
-					<label use:contextMenu={kitcontextMenuContent}>
-						<span class="kit-field__name">
-							<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
-							{kit.name}</span
-						>
-						<input class="kit-field__radio" type="radio" value={kit.name} name="compose" />
-					</label>
-				</li>
-			{/each}
+			{#if selectedKit}
+				{#each selectedKit.resolve.map((r) => kits[r.source_index]) as kit, i}
+					<li class="kit-field">
+						<label use:contextMenu={kitcontextMenuContent}>
+							<span class="kit-field__name">
+								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
+								{kit.name}</span
+							>
+							<input class="kit-field__radio" type="radio" value={kit.name} name="compose" />
+							<i class="kit-field__layer-icon kit-field__icon fa-solid {icons[i]}"></i>
+
+							<button>
+								<i class="kit-field__icon fa-regular fa-eye"></i>
+							</button>
+						</label>
+					</li>
+				{/each}
+			{/if}
 		</ol>
 	{/snippet}
 </Panel>
@@ -88,13 +94,27 @@
 
 	.kit-field {
 		@include layout-flex-column();
+		user-select: none;
+
 		label {
 			flex-grow: 1;
+			display: flex;
+			align-items: center;
 		}
+
 		padding-block: calc($x-space-xs / 4);
 
 		&__icon {
 			font-size: $x-font-size-md;
+		}
+
+		&__layer-icon {
+			padding-inline: $x-space-xs;
+			min-width: max-content;
+			font-size: $x-font-size-sm;
+			color: var(--color-text-muted);
+			-webkit-text-stroke-width: 2px;
+			-webkit-text-stroke-color: black;
 		}
 
 		&__name {
@@ -103,6 +123,7 @@
 			font-weight: 600;
 			letter-spacing: 1px;
 			color: var(--color-text);
+			flex-grow: 1;
 		}
 
 		&:has(input[type='radio']:checked) {
@@ -128,6 +149,7 @@
 
 		input[type='radio'] {
 			opacity: 0;
+			position: absolute;
 		}
 	}
 </style>

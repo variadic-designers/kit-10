@@ -55,7 +55,7 @@
 	type AxisProps = {
 		axis: AxisDefinition;
 		selectedKit: ComponentView;
-		cascadeResult: CascadeResult;
+		cascadeResult: MultiCascadeResult;
 		layers: any;
 		layerWidgets: any;
 
@@ -80,8 +80,8 @@
 		for (const view of views) {
 			if (predicate(view)) return view;
 
-			if (view.children && view.children.length > 0) {
-				const found = findComponentView(view.children, predicate);
+			if (view.primitive?.kind === 'container' && view.primitive.children.length > 0) {
+				const found = findComponentView(view.primitive.children, predicate);
 				if (found) return found;
 			}
 		}
@@ -98,7 +98,7 @@
 			});
 
 			if (recalc) {
-				recalc.params[axis] = axisValue;
+				recalc.resolve[0].params[axis] = axisValue;
 			}
 		};
 	};
@@ -112,7 +112,12 @@
 		return aKeys.every((key) => a[key] === b[key]);
 	}
 
-	import type { Axis, AxisVariantLayerTrace, CascadeResult } from '../../cascadeAxesMap.ts';
+	import type {
+		Axis,
+		AxisVariantLayerTrace,
+		CascadeResult,
+		MultiCascadeResult
+	} from '../../cascadeAxesMap.ts';
 	// Decider for what color to display on the layer indicator
 	const layerColorDecider: (
 		axisVariant: string
@@ -179,7 +184,9 @@
 
 	const value = $derived(
 		axis.variants.find((v) => {
-			return selectedKit.params[axis.id] === (v.id ?? v.name.toLowerCase().replace(' ', '-'));
+			return (
+				selectedKit.resolve[0].params[axis.id] === (v.id ?? v.name.toLowerCase().replace(' ', '-'))
+			);
 		})
 	);
 </script>
@@ -201,7 +208,7 @@
 				type="radio"
 				onclick={recalcParams(axis.id, id)}
 				name="{selectedKit.discriminator}-{axis.id?.toLowerCase() ?? axis.name.toLowerCase()}"
-				checked={id === selectedKit.params[axis.id]}
+				checked={id === selectedKit.resolve[0].params[axis.id]}
 			/>
 		</label>
 
@@ -250,7 +257,7 @@
 			{@const variantId = variant.id ?? variant.name.toLowerCase().replace(' ', '-')}
 
 			<!-- whether exact variant is selected -->
-			{@const focused = selectedKit.params[axis.id] === variantId}
+			{@const focused = selectedKit.resolve[0].params[axis.id] === variantId}
 
 			<!-- Get this man a layer finder -->
 			{@const layered = layerColorDecider(axis.id + ':' + variantId)}

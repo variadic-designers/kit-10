@@ -32,8 +32,8 @@
 		function findPrimary(view: ComponentView): ComponentView | null {
 			if (view.selected === 'primary') return view;
 
-			if (view.children) {
-				for (const child of view.children) {
+			if (view.primitive?.kind === 'container') {
+				for (const child of view.primitive.children) {
 					const found = findPrimary(child);
 					if (found) return found;
 				}
@@ -48,9 +48,13 @@
 		}
 	});
 
-	const selectedKitCascadeResult: CascadeResult | undefined = $derived.by(() => {
+	const selectedKitCascadeResult: MultiCascadeResult | undefined = $derived.by(() => {
 		if (selectedKit) {
-			return resolve(kits[selectedKit.source_index].sets, selectedKit.params);
+			// return resolve(kits[selectedKit.source_index].sets, selectedKit.params);
+			return resolveMany(
+				selectedKit.resolve.map((r) => kits[r.source_index].sets),
+				selectedKit.resolve.map((r) => r.params)
+			);
 		}
 	});
 
@@ -74,7 +78,8 @@
 	import AxesPanel from './panels/Axes.svelte';
 	import ProjectPanel from './panels/Project.svelte';
 	import ComposePanel from './panels/Compose.svelte';
-	import { resolve, type CascadeResult } from '$lib/cascadeAxesMap.ts';
+	import { resolveMany, type MultiCascadeResult } from '$lib/cascadeAxesMap.ts';
+	// import { resolve, type CascadeResult } from '$lib/cascadeAxesMap.ts';
 </script>
 
 <svelte:head>

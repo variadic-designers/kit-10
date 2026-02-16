@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { ComponentFlat, ComponentView } from '../Component.svelte';
 	import Panel from '../Panel.svelte';
-	import { type AxesSet, type CascadeResult } from '../../cascadeAxesMap.ts';
+	import { type MultiCascadeResult } from '../../cascadeAxesMap.ts';
 	import { stringSetToHSV } from './Axis.svelte';
 	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
 
 	type AxesPanel = {
 		selectedKit?: ComponentView;
-		selectedKitCascadeResult?: CascadeResult;
+		selectedKitCascadeResult?: MultiCascadeResult;
 		kits: ComponentFlat[];
 		kitViews: ComponentView[];
 	};
@@ -51,8 +51,8 @@
 				icon: 'fa-solid fa-angles-down',
 				onClick: detailCollapse(false)
 			},
-			'hr',
-
+			'hr'
+			/*
 			...builtinAxes.map((axis) => {
 				if (axis) {
 					let disabled = false;
@@ -78,6 +78,7 @@
 					return 'hr';
 				}
 			})
+      */
 		];
 	};
 
@@ -117,7 +118,8 @@
 	const layers: AxisVariantLayerTrace | undefined = $derived.by(() => {
 		if (selectedKit) {
 			// select the target
-			const source = kits[selectedKit.source_index];
+			// const source = kits[selectedKit.source_index];
+			const source = kits[selectedKit.resolve[0].source_index];
 
 			if (source) {
 				// Start iterating per axis
@@ -251,18 +253,21 @@
 			{/if}
 		</div>
 
-		{#if !selectedKit || !selectedKitCascadeResult}{:else if kits[selectedKit.source_index]}
+		{#if !selectedKit || !selectedKitCascadeResult}
+			<!-- BRO -->
+		{:else if selectedKit.resolve}
+			{@const currentKit = kits[selectedKit.resolve[0].source_index]}
 			<!-- Add Axis to Selected Kit -->
-			{#if kits[selectedKit.source_index].sets.axisRank.length === 0}
+			{#if currentKit.sets.axisRank.length === 0}
 				<p>
 					<i class="fa-solid fa-up-long"></i> Add Axis to
-					<strong>{selectedKit.name ?? kits[selectedKit.source_index].name}</strong>
+					<strong>{selectedKit.name ?? currentKit.name}</strong>
 				</p>
 			{/if}
 
 			{#key selectedKit}
 				<!-- Use key to rerender selected variant properly -->
-				{#each kits[selectedKit.source_index].sets.axisRank as axis}
+				{#each currentKit.sets.axisRank as axis}
 					<Axis
 						{layers}
 						{layerWidgets}
