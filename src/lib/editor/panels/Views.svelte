@@ -1,64 +1,35 @@
 <script lang="ts">
 	import type { ComponentFlat, ComponentView, ComponentViewRoot } from '../Component.svelte';
+	import type { EditorSelection } from '../Editor.svelte';
 	import Panel from '../Panel.svelte';
 	import { contextMenu } from '../contextMenu.ts';
 	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import V from './views.ts';
 
 	type ViewsPanel = {
-		selectedKit?: ComponentViewRoot;
-		kits: ComponentFlat[];
-		kitViews: ComponentView[];
+		selection: EditorSelection;
+		views: string[];
+		viewsPool: Record<string, ComponentView>;
 	};
 
-	const { selectedKit, kits = $bindable(), kitViews = $bindable() }: ViewsPanel = $props();
-	// deselect everything
-	const deselectAll = (list: ComponentView[]) => {
-		for (const c of list) {
-			delete c.selected;
-			if (c.primitive?.kind === 'container') deselectAll(c.primitive.children);
-		}
-	};
-
-	const selectKit = (target: ComponentView, untoggle = true) => {
-		if (untoggle && target.selected) {
-			target.selected = undefined;
-		} else {
-			// select the target
-			deselectAll(kitViews);
-			target.selected = 'primary';
-		}
-	};
+	const {
+		selection = $bindable(),
+		views = $bindable(),
+		viewsPool = $bindable()
+	}: ViewsPanel = $props();
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [
 		{
 			name: 'add',
-			displayText: 'Kit',
+			displayText: 'Box',
 			icon: 'fa-regular fa-window-maximize',
-			onClick: () => {
-				let index = kits.push({
-					name: 'Unnamed',
-					discriminator: 0,
-					sets: {
-						layers: [],
-						axisRank: []
-					}
-				});
-
-				kitViews.push({
-					source_index: index - 1,
-					params: {},
-					rootPosition: {
-						x: 0,
-						y: 0
-					}
-				});
-			}
+			onClick: () => {}
 		},
 		'hr',
 		{
 			name: 'add',
 			displayText: 'Text',
-			icon: 'fa-solid fa-bold',
+			icon: 'fa-solid fa-italic',
 			onClick: () => console.log('Add')
 		},
 		{
@@ -101,9 +72,8 @@
 			displayText: 'Deselect',
 			icon: 'fa-solid fa-minus',
 			onClick: () => {
-				if (selectedKit) {
-					deselectAll(kitViews);
-				}
+				selection.selectedViewPrimary = null;
+				selection.selectedKitIndex = null;
 			}
 		},
 		'hr',
@@ -111,129 +81,130 @@
 			name: 'add',
 			displayText: 'New View',
 			icon: 'fa-solid fa-diamond',
-			onClick: () => {
-				if (selectedKit) {
-					kitViews.push({
-						source_index: selectedKit.source_index,
-						params: selectedKit.params,
-						discriminator: 5,
-						name: selectedKit.name,
-						rootPosition: { x: 0, y: 0 }
-					});
-				}
-			}
+			onClick: () => {}
 		},
 
 		{
 			name: 'trash',
 			displayText: 'Clone View',
 			icon: 'fa-solid fa-clone',
-			onClick: () => {
-				if (selectedKit) {
-				}
-			}
+			onClick: () => {}
 		},
 		'hr',
 		{
 			name: 'trash',
 			displayText: 'Delete View',
 			icon: 'fa-solid fa-trash-can',
-			onClick: () => {
-				if (selectedKit) {
-				}
-			}
+			onClick: () => {}
 		}
 	];
 
-	const newKit: { name: string } | undefined = $state();
+	import { selectView } from './views.ts';
+
+	import { setDebugMode, dndzone } from 'svelte-dnd-action';
+	setDebugMode(true);
 </script>
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">
 	{#snippet content()}
-		<div class="components">
-			{#snippet kitter(component: ComponentView, level: number)}
-				{@const hideVerb = component['hide'] ? 'Show' : 'Hide'}
-				{@const hideFontAwesomeType = component['selected'] ? 'solid' : 'regular'}
-				{@const hideFontAwesomeChar = component['hide'] ? 'eye-slash' : 'eye'}
-				{@const lockFontAwesomeChar = component['lock'] ? 'lock' : 'lock-open'}
+		<ul class="views">
+			{#snippet kitter(view: ComponentView, level: number, id: string)}
+				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
+				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}
+				{@const hideFontAwesomeChar = view['hide'] ? 'eye-slash' : 'eye'}
+				{@const lockFontAwesomeChar = view['lock'] ? 'lock' : 'lock-open'}
 
-				{@const kitViewIcon =
-					component.primitive?.kind === 'text'
-						? 'fa-solid fa-italic'
-						: 'fa-regular fa-window-maximize'}
+				{@const viewIcon =
+					view.primitive?.kind === 'text' ? 'fa-solid fa-italic' : 'fa-regular fa-window-maximize'}
 
-				<div class="component-field">
+				<li class="view-field">
 					<button
-						style="--coords: 'x: {component.rootPosition?.x ?? 0} y: {component.rootPosition?.y ??
-							0}'; --level: {level}"
-						class="component"
-						class:component--selected={component.selected}
+						style="--level: {level}"
+						class="view"
+						class:view--selected={selection.selectedViewPrimary === id}
 						use:contextMenu={menu}
-						aria-label={component.name}
-						onclick={() => selectKit(component)}
+						aria-label={view.name}
+						onclick={selectView(view, id, selection)}
 					>
-						<i class="component__icon {kitViewIcon}"></i>
-						<div class="component__name" contenteditable="false">
-							{component.name ?? kits[component.source_index].name ?? 'Unnamed'}
+						<i class="view__icon {viewIcon}"></i>
+						<div class="view__name" contenteditable="false">
+							{view.name ?? 'Unnamed'}
 						</div>
 					</button>
 
 					<button
 						onclick={() => {
-							component['lock'] = !!!component['lock'];
+							view['lock'] = !!!view['lock'];
 						}}
-						class="component-option component-option--lock"
-						title="{hideVerb} '{component.name}'"
-						aria-label="{hideVerb} '{component.name}'"
+						class="view-option view-option--lock"
+						title="{hideVerb} '{view.name}'"
+						aria-label="{hideVerb} '{view.name}'"
 					>
 						<i class="fa-solid fa-{lockFontAwesomeChar}"></i>
 					</button>
 
 					<button
 						onclick={() => {
-							component['hide'] = !!!component['hide'];
+							view['hide'] = !!!view['hide'];
 						}}
-						class="component-option component-option--hide"
-						title="{hideVerb} '{component.name}'"
-						aria-label="{hideVerb} '{component.name}'"
+						class="view-option view-option--hide"
+						title="{hideVerb} '{view.name}'"
+						aria-label="{hideVerb} '{view.name}'"
 					>
 						<i class="fa-{hideFontAwesomeType} fa-{hideFontAwesomeChar}"></i>
 					</button>
-				</div>
+				</li>
 
-				{#if component.primitive?.kind === 'container'}
-					{#each component.primitive.children as child}
-						{@render kitter(child, level + 1)}
+				{#if view.primitive?.kind === 'container'}
+					{#each view.primitive.children as child}
+						{#if viewsPool[child]}
+							{@render kitter(viewsPool[child], level + 1, child)}
+						{:else}
+							<li class="view-field">
+								<button class="view">
+									<i class="view__icon fa-solid fa-question"></i>
+									<div class="view__name" contenteditable="false">
+										'Unable to resolve #{child.split('-')[0]}'
+									</div>
+								</button>
+							</li>
+						{/if}
 					{/each}
 				{/if}
 			{/snippet}
 
-			{#each kitViews as kit}
-				{@render kitter(kit, 0)}
+			{#each views as view, i}
+				{@const viewFound = viewsPool[view]}
+
+				{#if viewFound}
+					{@render kitter(viewFound, 0, view)}
+				{:else}
+					Unresolved View. ID: {view}
+				{/if}
 			{/each}
-		</div>
+		</ul>
 	{/snippet}
 </Panel>
 
 <style lang="scss">
 	@use '_index' as *;
 
-	.components {
+	.views {
 		@include layout-flex-column();
 		overflow-x: auto;
 		scrollbar-width: thin;
 	}
 
-	.component-field {
+	.view-field {
 		display: flex;
 		padding-left: $x-space-sm;
 
-		&:has(.component--selected) {
+		&:has(.view--selected) {
 			background-color: var(--color-surface-alt);
 		}
 	}
 
-	.component-option {
+	.view-option {
 		background: inherit;
 		color: var(--color-text-muted);
 		border: unset;
@@ -249,7 +220,7 @@
 		}
 	}
 
-	.component {
+	.view {
 		padding-left: calc($x-space-lg * (-0 + var(--level) * 0.45));
 		padding-block: calc($x-space-xs * 0.25);
 
@@ -262,7 +233,6 @@
 		width: 100%;
 		cursor: pointer;
 		position: relative;
-		// border-left: 2px solid var(--color-surface);
 		font-size: $x-font-size-md;
 		align-items: center;
 
@@ -279,15 +249,13 @@
 		}
 
 		&:hover {
-			.component__icon,
-			.component__name {
+			.view__icon,
+			.view__name {
 				color: var(--color-primary);
 			}
 		}
 
 		&--selected {
-			// border-left: 2px solid var(--color-primary);
-
 			> * {
 				color: var(--color-primary);
 			}
@@ -295,27 +263,15 @@
 			&:hover {
 				border-color: var(--color-primary-hover);
 
-				.component__icon,
-				.component__name {
+				.view__icon,
+				.view__name {
 					color: var(--color-primary-hover);
 				}
 			}
 		}
 
-		&::after {
-			content: var(--coords);
-			color: var(--color-text-muted);
-			position: absolute;
-			right: $x-space-md;
-			display: none;
-		}
-
 		&:hover {
 			color: var(--color-primary);
-
-			&::after {
-				display: block;
-			}
 		}
 	}
 </style>
