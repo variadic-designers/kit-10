@@ -12,7 +12,7 @@
 		viewsPool: Record<string, ComponentView>;
 	};
 
-	const {
+	let {
 		selection = $bindable(),
 		views = $bindable(),
 		viewsPool = $bindable()
@@ -103,11 +103,33 @@
 
 	import { setDebugMode, dndzone } from 'svelte-dnd-action';
 	setDebugMode(true);
+
+	let wrappedViews = views.map((v) => {
+		return { id: v };
+	});
+
+	function handleDnd(parentId: string | null, newItems: { id: string }[]) {
+		const newIds = newItems.map((i) => i.id);
+
+		if (parentId === null) {
+			views = newIds;
+
+			// use existing objects from map
+			// wrappedViews.length = 0;
+		} else if (viewsPool[parentId].primitive.kind === 'container') {
+			// viewsPool[parentId].primitive.children = newIds;
+		}
+	}
 </script>
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">
 	{#snippet content()}
-		<ul class="views">
+		<ul
+			class="views"
+			use:dndzone={{ items: wrappedViews, type: 'views' }}
+			onconsider={(e) => handleDnd(null, e.detail.items)}
+			onfinalize={(e) => handleDnd(null, e.detail.items)}
+		>
 			{#snippet kitter(view: ComponentView, level: number, id: string)}
 				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
 				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}

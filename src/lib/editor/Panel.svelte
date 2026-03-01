@@ -35,8 +35,10 @@
 		<h2 title={tooltip} use:contextMenu={contextMenuContent}>
 			{name}
 		</h2>
-		<button onclick={() => (collapsed = !true)} class="drag" aria-label="Drag panel"
-			><i class="fa-solid fa-grip-lines"></i></button
+		<button
+			onclick={() => (collapsed = !true)}
+			class="drag"
+			aria-label="drag-handle for {name} panel"><i class="fa-solid fa-grip-lines"></i></button
 		>
 	</header>
 
@@ -55,7 +57,6 @@
 	@use '_index' as *;
 
 	.panel {
-		// padding-bottom: $x-space-xs;
 		position: relative;
 
 		outline-offset: $x-space-xs;
@@ -113,7 +114,6 @@
 		&__content {
 			max-height: 100rem;
 			transition: max-height 200ms ease-out;
-			border-inline: 2px solid var(--color-panel-header-fill);
 
 			@include layout-respond('lg') {
 				font-size: $x-font-size-md;

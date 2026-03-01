@@ -6,23 +6,23 @@
 		resolve,
 		type CascadeResult,
 		type AxesSet,
-		type TraceEntry
+		type TraceEntry,
+		type ManagerTraceEntry
 	} from '../../cascadeAxesMap.ts';
 	import { stringSetToHSV } from './Axis.svelte';
+	import type { EditorSelection } from '../Editor.svelte';
+	import type { TokenLibrary } from './Variables.svelte';
 
 	type StylesPanel = {
-		selectedKit?: ComponentView;
-		selectedKitCascadeResult?: CascadeResult;
-		kitViews: ComponentView[];
-		kits: ComponentFlat[];
+		selection: EditorSelection;
+		views: string[];
+		viewsPool: Record<string, ComponentView>;
+		kits: string[];
+		kitsPool: Record<string, ComponentFlat>;
+		tokens: TokenLibrary;
 	};
 
-	const {
-		selectedKit,
-		selectedKitCascadeResult,
-		kitViews = $bindable(),
-		kits = $bindable()
-	}: StylesPanel = $props();
+	const { selection, views, viewsPool, kitsPool, kits, tokens }: StylesPanel = $props();
 
 	const stylesContextMenu = () => {
 		return [
@@ -36,50 +36,56 @@
 	};
 
 	const { finalStyle, trace } = $derived.by((): CascadeResult => {
-		if (selectedKitCascadeResult) {
-			return selectedKitCascadeResult;
+		if (selection.selectedViewCascadeResult) {
+			return selection.selectedViewCascadeResult;
 		}
 		return { finalStyle: {}, trace: [] };
 	});
 
 	const contentField = $derived.by(() => {
-		if (selectedKit) {
-			return selectedKit.primitive.kind === 'text'
+		if (selection.selectedViewPrimary) {
+			return viewsPool[selection.selectedViewPrimary].primitive.kind === 'text'
 				? { key: 'text', displayText: 'Text' }
 				: { key: 'children', displayText: 'Children' };
 		}
 	});
 
 	// backtracks trace to find source layer then transform to color
-	const track = (key: string): { set?: AxesSet; color: string } => {
+	const track = (key: string): { set?: AxesSet; color: string; stack: number } => {
 		// guarantees css key `t` exists somewhere
 		if (finalStyle[key]) {
-			let t: TraceEntry | undefined;
+			let t: (TraceEntry & ManagerTraceEntry) | undefined;
 
 			// reverse find()
-			for (let i = trace.length - 1; i >= 0; i--) {
+			for (let i = trace.length - 1; i >= -1; i--) {
 				const entry = trace[i];
 
 				if (Object.keys(entry.applied).includes(key)) {
-					t = entry;
-					break; // stop at the first match from the end
-				}
-			}
+					t = { ...entry, managerIndex: i };
 
-			console.log(`Found Source: ${JSON.stringify(t.source)}`);
-			if (Object.keys(t.source).length === 0) {
-				// tracked on no axes set
-				return { set: {}, color: 'var(--color-diamond-color-tracked--empty)' };
-			}
-			if (t) {
-				const hsv = stringSetToHSV(Object.keys(t.source));
-				console.log(`HSV: ${JSON.stringify(hsv)}`);
-				return { set: t.source, color: `hsl(${hsv.h}, ${hsv.s}%, ${hsv.v}%)` };
+					console.log(`Found Source: ${JSON.stringify(t?.source)}`);
+
+					if (t) {
+						const hsv = stringSetToHSV(Object.keys(t.source));
+						console.log(`HSV: ${JSON.stringify(hsv)}`);
+						if (Object.keys(t.source).length === 0) {
+							// tracked on no axes set
+							return { set: {}, color: 'var(--color-diamond-color-tracked--empty)', stack: 0 };
+						}
+						return {
+							set: t.source,
+							color: `hsl(${hsv.h}, ${hsv.s}%, ${hsv.v}%)`,
+							stack: t.managerIndex
+						};
+					}
+
+					// break; // stop at the first match from the end
+				}
 			}
 		}
 
 		// does not have an entry
-		return { color: 'var(--color-bg)' };
+		return { color: 'var(--color-bg)', stack: 0 };
 	};
 </script>
 
@@ -90,12 +96,12 @@
 >
 	{#snippet content()}
 		<!-- <pre>{JSON.stringify(trace, null, 2)}</pre> -->
-		{#if selectedKit}
+		{#if selection.selectedViewPrimary}
 			<div style="display:contents">
 				{#snippet styleSection(
 					category: string,
 					fields: { key: string; displayText?: string }[],
-					kits: ComponentFlat[]
+					kitsPool: Record<string, ComponentFlat>
 				)}
 					<details class="style-section" open>
 						<summary class="style-section__heading">
@@ -106,12 +112,14 @@
 						<div class="style-section__content">
 							{#each fields as field, i}
 								<StyleField
-									{kits}
-									{selectedKit}
+									{kitsPool}
+									{viewsPool}
+									{selection}
 									displayText={field.displayText ?? field.key}
 									{...track(field.key)}
 									key={field.key}
 									value={finalStyle[field.key]}
+									{tokens}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 								/>
 							{/each}
@@ -122,7 +130,7 @@
 				{@render styleSection(
 					'layout',
 					[{ key: 'padding', displayText: 'Pad' }, { key: 'width' }, { key: 'height' }],
-					kits
+					kitsPool
 				)}
 
 				{@render styleSection(
@@ -133,7 +141,7 @@
 						{ key: 'border-radius', displayText: 'Radius' },
 						{ key: 'outline' }
 					],
-					kits
+					kitsPool
 				)}
 
 				{@render styleSection(
@@ -145,18 +153,18 @@
 						{ key: 'text-align', displayText: 'Align' },
 						{ key: 'text-decoration', displayText: 'Decor' }
 					],
-					kits
+					kitsPool
 				)}
 
-				{@render styleSection(
-					'content',
-					[
-						selectedKit.primitive?.kind === 'text'
-							? { key: 'text', displayText: 'Text' }
-							: { key: 'children', displayText: 'Children' }
-					],
-					kits
-				)}
+				<!-- {@render styleSection( -->
+				<!-- 	'content', -->
+				<!-- 	[ -->
+				<!-- 		kitsPool[viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid].primitive?.kind === 'text' -->
+				<!-- 			? { key: 'text', displayText: 'Text' } -->
+				<!-- 			: { key: 'children', displayText: 'Children' } -->
+				<!-- 	], -->
+				<!-- 	kitsPool -->
+				<!-- )} -->
 			</div>
 		{/if}
 	{/snippet}

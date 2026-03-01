@@ -1,35 +1,87 @@
 <script lang="ts" module>
-	/*
-	export type TokenLibrary = {
-		[namespace: string]: Token[] | TokenLibrary
-	}*/
+	export type TokenValueKind = 'string' | 'number' | 'range' | TokenValueKind[];
 
-	export type TokenValue = string;
+	export type ResolutionType = 'expression' | 'upstream';
 
-	export type Token = {
+	export type SemVer = {
+		major: number;
+		minor?: number;
+		patch?: number;
+	};
+
+	export type Schema = {
+		meta: {
+			name: string;
+			description: string;
+			version: SemVer;
+		};
+		definitions: {
+			[ident: string]: TokenValueKind;
+		};
+	};
+
+	const axisSchema: Schema = {
+		meta: {
+			name: 'Axis',
+			description: 'The required shape for an Axis',
+			version: { major: 0 }
+		},
+		definitions: {
+			name: 'string',
+			id: 'string',
+			description: 'string'
+		}
+	};
+
+	export type TokenValueBare = string;
+
+	export type TokenValueResolveSimple = {
+		resolve: string;
+	};
+
+	export type TokenValueResolveFormat = {
+		fmt?: (number | string)[];
+		resolve: string[];
+	};
+
+	export type TokenIdent = {
 		name: string;
 		displayName: string;
-		value:
-			| TokenValue
-			| {
-					resolve: string;
-			  }
-			| {
-					alias: string;
-			  };
+	};
 
+	export interface Token extends TokenIdent {
+		value: TokenValueBare | TokenValueResolveSimple | TokenValueResolveFormat;
 		semantic?: false;
 		description?: string;
 		type?: string;
+	}
+
+	const ICONS: Record<string, string> = {
+		color: 'fa-square-full',
+		spacing: 'fa-arrows-left-right-to-line'
 	};
+
+	export const tokenIcon = (type?: string): string => ICONS[type ?? ''] || 'fa-question';
 
 	export type TokenLibraryNode = {
 		displayName?: string;
+		description?: string;
+		name: string;
 		tokens?: Token[];
+		schema?: Schema;
 		children?: { [namespace: string]: TokenLibraryNode };
 	};
 
 	export type TokenLibrary = { [namespace: string]: TokenLibraryNode };
+
+	export type TokenResolutionResult =
+		| {
+				kind: 'success';
+				result: Token;
+		  }
+		| {
+				kind: 'failed';
+		  };
 
 	export type TokenResolution = {
 		evaluation?: string;
@@ -42,9 +94,11 @@
 		tokens: Token[];
 		tokenLibraries: TokenLibrary;
 
+		/*
 		selectedKit?: ComponentView;
 		kitViews: ComponentView[];
 		kits: ComponentFlat[];
+    */
 	};
 </script>
 
@@ -79,19 +133,21 @@
 	function trace(token: Token, tokenLibraries: TokenLibrary): (Token | 'failed resolution')[] {
 		const chain: (Token | 'failed resolution')[] = [token];
 
-		if (typeof token.value === 'string') {
+		if (token.value.kind === 'bare') {
 			return chain;
+		} else if (token.value.kind === 'simple') {
+			const ref = token.value.resolve;
+			const next = findTokenByPath(tokenLibraries, ref);
+
+			if (!next) {
+				chain.push('failed resolution');
+				return chain;
+			}
+
+			return [...chain, ...trace(next, tokenLibraries)];
 		}
 
-		const ref = token.value.resolve;
-		const next = findTokenByPath(tokenLibraries, ref);
-
-		if (!next) {
-			chain.push('failed resolution');
-			return chain;
-		}
-
-		return [...chain, ...trace(next, tokenLibraries)];
+		return [...chain, 'failed resolution'];
 	}
 
 	function resolveValue(token: Token, tokenLibraries: TokenLibrary): TokenResolution {
@@ -105,32 +161,31 @@
 					? last.value
 					: undefined; // should not happen if definitions are correct
 
-		return {
-			trace: tr,
-			evaluation
-		};
+		let result: TokenResolution = { trace: tr };
+
+		if (last !== 'failed resolution') {
+			if (last.value.kind === 'bare') {
+				result = { ...result, evaluation: last.value.raw };
+			}
+		}
+
+		return result;
 	}
 
-	const {
-		tokens = $bindable(),
-		tokenLibraries = $bindable(),
-		selectedKit,
-		kits = $bindable(),
-		kitViews = $bindable()
-	}: TokenPanelProps = $props();
+	const { tokens = $bindable(), tokenLibraries = $bindable() }: TokenPanelProps = $props();
 
-	let tokenPanelContextMenu: ContextMenuContent = [
+	let tokenPanelContextMenu: ContextMenuContent = () => [
 		{
 			name: 'add',
 			displayText: 'Import',
-			icon: 'fa-solid fa-upload',
+			icon: 'fa-solid fa-download',
 			onClick: () => console.log('Add')
 		},
 		'hr',
 		{
 			name: 'add',
 			displayText: 'Text',
-			icon: 'fa-solid fa-font',
+			icon: 'fa-solid fa-italic',
 			onClick: () => console.log('Add')
 		},
 		{
@@ -175,50 +230,81 @@
 		}
 	];
 
-	let tokenContextMenu: ContextMenuContent = [
-		{
-			name: 'add',
-			displayText: 'Rename',
-			icon: 'fa-solid fa-italic',
-			onClick: () => console.log('Add')
-		},
+	let tokenContextMenu: ContextMenuContent = () => {
+		return [
+			{
+				name: 'add',
+				displayText: 'Rename',
+				icon: 'fa-solid fa-italic',
+				onClick: () => console.log('Add')
+			},
 
-		{
-			name: 'add',
-			displayText: 'To New',
-			icon: 'fa-solid fa-arrow-up-right-from-square',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Pin',
-			icon: 'fa-solid fa-thumbtack',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		{
-			name: 'trash',
-			displayText: 'Copy',
-			icon: 'fa-solid fa-copy',
-			onClick: () => console.log('Remove')
-		},
-		{
-			name: 'trash',
-			displayText: 'Paste',
-			disabled: true,
-			icon: 'fa-solid fa-clipboard',
-			onClick: () => console.log('Remove')
-		},
-		'hr',
-		{
-			name: 'trash',
-			displayText: 'Delete',
-			tone: 'destructive',
-			icon: 'fa-solid fa-trash-can',
-			onClick: () => console.log('Remove')
-		}
-	];
+			{
+				name: 'add',
+				displayText: 'To New',
+				icon: 'fa-solid fa-arrow-up-right-from-square',
+				onClick: () => console.log('Add')
+			},
+			{
+				name: 'add',
+				displayText: 'Pin',
+				icon: 'fa-solid fa-thumbtack',
+				onClick: () => console.log('Add')
+			},
+			'hr',
+			{
+				name: 'trash',
+				displayText: 'Copy',
+				icon: 'fa-solid fa-copy',
+				onClick: () => console.log('Remove')
+			},
+			{
+				name: 'trash',
+				displayText: 'Paste',
+				disabled: true,
+				icon: 'fa-solid fa-clipboard',
+				onClick: () => console.log('Remove')
+			},
+			'hr',
+			{
+				name: 'trash',
+				displayText: 'Delete',
+				tone: 'destructive',
+				icon: 'fa-solid fa-trash-can',
+				onClick: () => console.log('Remove')
+			}
+		];
+	};
+
+	import { drag } from '../dragDrop.ts';
+	const tokenDrag = drag<Token>();
 </script>
+
+{#snippet tokenEnumeration(tokens: Token[])}
+	{#each tokens as token}
+		<li class="tokens-used__item">
+			{#each resolveValue(token, tokenLibraries).trace as t, i}
+				<button class:token--top={i === 0} class:token--pathing={i !== 0} class="token">
+					{#if i === 0}
+						<i class="fa-solid fa-arrows-left-right-to-line"></i>
+					{/if}
+
+					<span>
+						{#if t}
+							t.displayName ?? t.name ?? 'Unnamed'
+						{:else}
+							'Not Found'
+						{/if}
+					</span>
+				</button>
+				<i class="fa-solid fa-angle-left"></i>
+			{/each}
+			<button class="token token--resolved"
+				>{resolveValue(token, tokenLibraries).evaluation ?? '??'}</button
+			>
+		</li>
+	{/each}
+{/snippet}
 
 <Panel
 	contextMenuContent={tokenPanelContextMenu}
@@ -226,66 +312,47 @@
 	tooltip="Design tokens in use and Libraries"
 >
 	{#snippet content()}
-		{#if selectedKit}
-			<div class="token-section">
-				<h3 class="token-heading">{kits[selectedKit.source_index].name}</h3>
-				<button class="token token--top token--bottom">+</button>
-			</div>
-		{/if}
-
 		<div class="token-section">
-			<h3 class="token-heading">Project</h3>
-			<ul class="tokens-used">
-				{#each tokens as token}
-					<li class="tokens-used__item">
-						{#each resolveValue(token, tokenLibraries).trace as t, i}
-							<button class:token--top={i === 0} class:token--pathing={i !== 0} class="token">
-								{#if i === 0}
-									<!-- <i class="fa-solid fa-palette"></i> -->
-									<i class="fa-solid fa-arrows-left-right-to-line"></i>
-								{/if}
-								{t?.displayName ?? t?.name ?? 'Not Found'}
-							</button>
-							<i class="fa-solid fa-angle-left"></i>
-						{/each}
-						<button class="token token--resolved"
-							>{resolveValue(token, tokenLibraries).evaluation ?? '??'}</button
-						>
-					</li>
-				{/each}
-			</ul>
-		</div>
-
-		<div class="token-section">
-			<h3 class="token-heading">Libraries</h3>
 			<ul class="tokens-library">
 				{#snippet renderLibrary(lib: TokenLibrary, level: number)}
 					{#each Object.entries(lib) as [namespace, node]}
-						<details open>
+						<details class="token token-namespace" open>
 							<summary
-								class="token token--resolved token--namespace"
+								class="token-namespace__header"
 								style="--level: {level};"
+								title={node.description}
 								use:contextMenu={tokenContextMenu}
 							>
-								<i class="fa-solid fa-book"></i>
-								{namespace}
+								<span>
+									<i class="fa-solid fa-book"></i>
+
+									<span>
+										{node.displayName}
+									</span>
+								</span>
+
+								<i class="fa-solid fa-angle-down"></i>
 							</summary>
 
 							<div class="token--module">
 								<!-- Render tokens inside this namespace -->
 								{#if node.tokens}
-									{#each node.tokens as t}
+									{#each node.tokens as t, i}
 										{@const icon = t.type === 'color' ? 'square-full' : 'arrows-left-right-to-line'}
 
 										<button
 											class="token token--resolved token-leaf"
 											style="--level: {level + 1}; --color-icon: {t.value}"
+											title={JSON.stringify(t.value, null, 2)}
 											use:contextMenu={tokenContextMenu}
-											title={t.value}
+											id={`token-{i}`}
+											use:tokenDrag={{ className: 'token--dragged', payload: t }}
 										>
 											<!-- <i class="fa-solid fa-palette"></i> -->
-											<i class="fa-solid fa-{icon}"></i>
-											{t.displayName}
+											<span class="token__name">
+												<i class="fa-solid fa-{icon}"></i>
+												{t.displayName ?? t.name}
+											</span>
 										</button>
 									{/each}
 								{/if}
@@ -305,120 +372,103 @@
 	{/snippet}
 </Panel>
 
-<style lang="scss">
+<style lang="scss" global>
 	@use '_index' as *;
 
-	.token-heading {
-		@include fonts-stack('Satoshi-Bold', sans);
-		font-size: $x-font-size-sm;
-		text-transform: uppercase;
-		letter-spacing: 1px;
+	.token-namespace {
+		@include layout-flex-column();
 
-		padding: $x-space-xs 0 0 $x-space-sm;
+		summary {
+			all: unset;
+			list-style: none;
+			display: flex;
+
+			width: 100%;
+			padding-block: calc($x-space-xs / 4);
+
+			span {
+				flex-grow: 1;
+			}
+
+			i.fa-angle-down {
+				transition: rotate 200ms ease-out;
+			}
+		}
+
+		&[open] {
+			summary {
+				padding-bottom: calc($x-space-xs / 2);
+				align-items: center;
+
+				i.fa-angle-down {
+					rotate: 180deg;
+				}
+			}
+		}
+
+		width: 100%;
 	}
 
-	.tokens-library,
-	.tokens-used,
 	.token--module {
-		padding: $x-space-sm 0 $x-space-xs $x-space-sm;
+		@include layout-flex-column();
+		overflow-y: auto;
+		max-height: 16vh;
+		scrollbar-width: thin;
+		padding: $x-space-xs 0 0 $x-space-sm;
 	}
 
 	.tokens-library {
 		@include layout-flex-column();
-		gap: $x-space-xs;
-		background: inherit;
-	}
-
-	.token--module {
-		@include layout-flex-column();
-		gap: calc($x-space-xs / 2);
-		overflow-y: auto;
-		max-height: 16vh;
-		scrollbar-width: thin;
-		margin-top: $x-space-xs;
-	}
-
-	.tokens-used {
-		@include layout-flex-column();
-		// gap: calc($x-space-xs / 2);
-		padding-bottom: $x-space-sm;
-		margin-bottom: $x-space-sm;
-		overflow-x: auto;
-		scrollbar-width: thin;
-
-		&__item {
-			display: flex;
-			align-items: center;
-			width: max-content;
-
-			position: sticky;
-
-			> i {
-				font-size: $x-font-size-sm;
-				color: var(--color-icon, --color-text-muted);
-			}
-		}
+		gap: 2px;
 	}
 
 	.token {
-		background: var(--color-bg);
+		// all: unset;
 		color: var(--color-text);
+		user-select: none;
 		border: unset;
+
+		&__name {
+			border: 2px solid transparent;
+			padding-inline: $x-space-xs;
+		}
+
+		&:nth-of-type(even) {
+			background: var(--color-pure);
+			background:
+				radial-gradient(closest-side, var(--color-surface) 90%, transparent 100%) 0 0 / 3px 3px,
+				var(--color-surface-alt);
+		}
+
+		&:nth-of-type(odd) {
+			background: var(--color-surface);
+		}
+
+		.token.token--dragged {
+			.token__name {
+				color: var(--color-primary);
+			}
+			max-width: max-content;
+		}
+
 		padding-block: calc($x-space-xs * 0.5);
-		padding-inline: $x-space-xs;
-		border: 1px solid var(--color-bg);
-		border-radius: 2px;
 		text-align: left;
-		margin-left: calc(var(--level) * $x-space-xs);
-		width: max-content;
 
-		// outline for colors
-		.fa-square-full {
-			-webkit-text-stroke: 1px black;
-			rotate: 180deg;
-		}
-
-		&--top {
-			position: sticky;
-			left: 0;
-			min-width: 13ch;
-			overflow-x: auto;
-
-			border-bottom: 1px solid var(--color-surface);
-		}
-
-		&:not(&--top) {
-			min-width: 12ch;
-		}
-
-		&--resolved,
-		&--pathing {
-			background: inherit;
-			border: 1px solid var(--color-bg);
-			cursor: zoom-in;
-		}
-
-		// margin-left: calc($x-space-md * (0.5 + var(--level)));
 		@include fonts-stack('Satoshi-Regular', sans);
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;
 
-		cursor: pointer;
-
-		i {
-			color: var(--color-icon, --color-text-muted);
-			font-size: $x-font-size-md;
-			padding-right: calc($x-space-xs * 0.5);
-		}
-
 		&:hover {
 			// border-left-color: var(--color-primary);
+			// color: var(--color-icon, var(--color-primary));
 			color: var(--color-primary);
+		}
 
-			i {
-				color: var(--color-primary);
-			}
+		i.fa-square-full,
+		i.fa-cube {
+			-webkit-text-stroke: 1px black;
+			color: var(--color-icon, var(--color-text));
 		}
 	}
 </style>

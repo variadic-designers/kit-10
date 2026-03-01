@@ -12,43 +12,133 @@ const projects: Kit10Project[] = [
 		title: 'Meowzer',
 		description: 'Engineered for meowing',
 		viewPortFocus: { x: 200, y: 400 },
-		tokens: [
-			{
-				name: 'x-space-xl',
-				displayName: 'Space SM',
-				value: { resolve: 'gaps-linear-4/space-1' }
-			},
-			{
-				name: 'x-space-md',
-				displayName: 'Space MD',
-				value: { resolve: 'gaps-linear-4/space-2' }
-			},
-			{
-				name: 'x-space-lg',
-				displayName: 'Space LG',
-				value: { resolve: 'gaps-linear-4/space-5' }
-			},
-			{
-				name: 'color-primary',
-				displayName: 'Primary',
-				type: 'color',
-				value: { resolve: 'colours-of-css/light-coral' }
-			},
-			{
-				name: 'color-secondary',
-				displayName: 'Secondary',
-				type: 'color',
-				value: { resolve: 'colours-of-css/alice-blue' }
+		children: {
+			'builtin-axes': {
+				name: '%key',
+				displayName: 'BuiltIn Axes',
+				children: {
+					'@builtin-darkmode': {
+						//  schema: {},
+						displayName: 'Dark Mode',
+						name: '%key',
+						tokens: [
+							{
+								name: 'id',
+								value: '%key'
+							},
+							{
+								name: 'name',
+								value: '%here.displayName'
+							},
+							{
+								name: 'description',
+								value: 'Support for light and dark mode theming'
+							},
+							{
+								name: 'axesKind',
+								value: 'exclusive'
+							}
+						],
+						children: {
+							variants: {
+								name: '%key',
+								displayName: 'Variants',
+								children: {
+									light: {
+										name: '%key',
+										displayName: 'Light'
+									},
+									dark: {
+										name: '%key',
+										displayName: 'Dark'
+									}
+								}
+							}
+						}
+					}
+				}
 			}
-		],
+		},
 		tokenLibraries: {
+			meowzer: {
+				displayName: 'Meowzer',
+				description: 'Project level token library',
+				tokens: [
+					{
+						name: 'button--padding',
+						displayName: 'Button Padding',
+						type: 'spacing',
+						value: {
+							kind: 'format',
+							fmt: [0, ' ', 1],
+							resolve: ['gaps-linear-4/space-1', 'gaps-linear-4/space2']
+						}
+					},
+					{
+						name: 'x-space-xl',
+						displayName: 'Space SM',
+						value: { kind: 'simple', resolve: 'gaps-linear-4/space-1' }
+					},
+					{
+						name: 'x-space-md',
+						displayName: 'Space MD',
+						value: { resolve: 'gaps-linear-4/space-2' }
+					},
+					{
+						name: 'x-space-lg',
+						displayName: 'Space LG',
+						value: { resolve: 'gaps-linear-4/space-5' }
+					},
+					{
+						name: 'color-primary',
+						displayName: 'Primary',
+						type: 'color',
+						value: { resolve: 'colours-of-css/light-coral' }
+					},
+					{
+						name: 'color-secondary',
+						displayName: 'Secondary',
+						type: 'color',
+						value: { resolve: 'colours-of-css/alice-blue' }
+					}
+				]
+			},
+
 			'colours-of-css': {
 				displayName: 'Colours of CSS',
+				description: 'All named colours of css in oklab form',
 				tokens: Colours.tokens
 			},
 
+			/*
+			'web-basics-axes': {
+				displayName: 'Colours of CSS',
+        schema: ['00000000-0001-700-25e9-9ee9da6e39c'],
+        tokenLibraries: {
+          '@builtin-darkmode': {
+            displayName: 'Dark Mode',
+            tokens: {
+              description: 'Support for Light and Dark mode states',
+              kind: 'variant',
+              variants: ['light', 'dark']
+            },
+          }
+
+          '@builtin-interaction': {
+            displayName: 'Interaction',
+            tokens: {
+              description: 'Response to user interaction',
+              kind: 'variant',
+              variants: ['hover', 'dark']
+            },
+          }
+        }
+			}
+      */
+
 			'gaps-linear-4': {
 				displayName: 'Gaps Linear 4',
+				description: 'Definitions of gaps in the scale of 4 in rem units',
 				tokens: [
 					{ name: 'space-0', displayName: 'Space 0', value: '0' },
 					{ name: 'space-1', displayName: 'Space 1', value: '0.25rem' }, // 4px
@@ -79,8 +169,8 @@ const projects: Kit10Project[] = [
 				]
 			}
 		},
-		kits: [
-			{
+		kitsPool: {
+			'f47ac10b-58cc-4372-a567-0e02b2c3d479': {
 				name: 'Button',
 				discriminator: 0,
 				sets: {
@@ -93,16 +183,13 @@ const projects: Kit10Project[] = [
 						{
 							axes: {},
 							style: {
-								padding: '0.5rem 1.5rem',
+								padding: { resolve: 'meowzer/button--padding' },
 								color: '#222',
 								width: 'max-content',
 								height: 'max-content',
 								'border-radius': '0.5rem',
-								'font-size': '1rem',
-
-								background: 'inherit'
-							},
-							specificity: 0
+								'font-size': '1rem'
+							}
 						},
 
 						{
@@ -111,8 +198,7 @@ const projects: Kit10Project[] = [
 							},
 							style: {
 								'text-align': 'center'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -121,8 +207,7 @@ const projects: Kit10Project[] = [
 							},
 							style: {
 								'font-weight': '800'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -131,8 +216,7 @@ const projects: Kit10Project[] = [
 							},
 							style: {
 								'font-weight': '800'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -144,8 +228,7 @@ const projects: Kit10Project[] = [
 							style: {
 								background: '#EEE',
 								color: '#222'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -157,8 +240,7 @@ const projects: Kit10Project[] = [
 							style: {
 								border: '2px solid #222',
 								color: '#222'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -170,8 +252,7 @@ const projects: Kit10Project[] = [
 							style: {
 								border: '2px solid #E33',
 								color: '#E33'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -183,8 +264,7 @@ const projects: Kit10Project[] = [
 							style: {
 								border: '2px solid #3E3',
 								color: '#3E3'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -196,8 +276,7 @@ const projects: Kit10Project[] = [
 							style: {
 								background: '#222',
 								color: '#EEE'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -210,8 +289,7 @@ const projects: Kit10Project[] = [
 								border: '2px solid #EEE',
 								color: '#EEE',
 								'--oklab-name': '#420'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -223,8 +301,7 @@ const projects: Kit10Project[] = [
 							style: {
 								border: '2px solid #E22',
 								color: '#E22'
-							},
-							specificity: 1
+							}
 						},
 
 						{
@@ -236,14 +313,13 @@ const projects: Kit10Project[] = [
 							style: {
 								border: '2px solid #2E2',
 								color: '#2E2'
-							},
-							specificity: 1
+							}
 						}
 					]
 				}
 			},
-			{
-				name: 'Screenie',
+			'9c858901-8a57-4791-81fe-4c455b099bc9': {
+				name: 'Page',
 				discriminator: 1,
 				sets: {
 					axisRank: [builtinAxes[0]],
@@ -254,27 +330,24 @@ const projects: Kit10Project[] = [
 								width: '1366px',
 								height: '768px',
 								'overflow-y': 'auto'
-							},
-							specificity: 0
+							}
 						},
 						{
 							axes: { '@builtin-darkmode': 'light' },
 							style: {
 								background: '#FFF'
-							},
-							specificity: 1
+							}
 						},
 						{
 							axes: { '@builtin-darkmode': 'dark' },
 							style: {
 								background: '#333'
-							},
-							specificity: 1
+							}
 						}
 					]
 				}
 			},
-			{
+			'2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b': {
 				name: 'Page Section',
 				discriminator: 1,
 				sets: {
@@ -287,46 +360,82 @@ const projects: Kit10Project[] = [
 								height: '20rem',
 								'overflow-y': 'auto',
 								border: '2px solid #111'
-							},
-							specificity: 0
+							}
 						},
 						{
 							axes: { '@builtin-darkmode': 'light' },
 							style: {
 								background: '#FFF'
-							},
-							specificity: 1
+							}
 						},
 						{
 							axes: { '@builtin-darkmode': 'dark' },
 							style: {
 								background: '#333'
-							},
-							specificity: 2
+							}
 						},
 						{
 							axes: { sticky: 'true' },
 							style: {
-								// position: 'sticky',
-								// top: '0'
+								position: 'sticky',
+								top: '0'
+							}
+						}
+					]
+				}
+			},
+			'6fa459ea-ee8a-3ca4-894e-db77e160355e': {
+				name: 'Chaos',
+				discriminator: 0,
+				sets: {
+					axisRank: [builtinAxes[0]],
+					layers: [
+						{
+							axes: {
+								'@builtin-darkmode': 'light'
 							},
-							specificity: 3
+							style: {
+								'text-decoration': 'underline'
+							}
+						},
+						{
+							axes: {
+								'@builtin-darkmode': 'dark'
+							},
+							style: {
+								'text-decoration': 'line-through'
+							}
 						}
 					]
 				}
 			}
-		],
-		kitViews: [
-			{
+		},
+		viewsPool: {
+			'3e5f1c2a-9b44-4f6e-8c7a-2c9e6b1d4f0a': {
+				rootPosition: { x: -400, y: 20 },
+				name: 'Nonny Burger',
+				resolve: [],
+				primitive: {
+					kind: 'container',
+					children: []
+				}
+			},
+			'a8d7b4c9-2f3e-4a1d-9b65-71e2c4f8d0aa': {
 				rootPosition: { x: -300, y: 20 },
 				name: 'CTA - Primary',
 				resolve: [
 					{
-						source_index: 0,
+						source_uuid: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
 						params: {
 							'@builtin-darkmode': 'dark',
-							'@builtin-btn-emphasis': 'secondary',
-							'@builtin-btn-tone': 'confirmative'
+							'@builtin-btn-emphasis': 'primary',
+							'@builtin-btn-tone': 'neutral'
+						}
+					},
+					{
+						source_uuid: '6fa459ea-ee8a-3ca4-894e-db77e160355e',
+						params: {
+							'@builtin-darkmode': 'light'
 						}
 					}
 				],
@@ -336,11 +445,11 @@ const projects: Kit10Project[] = [
 					text: 'Approve Request'
 				}
 			},
-			{
+			'5b9e2f6d-8c14-4a77-b3e1-0d4f6c2a9e81': {
 				rootPosition: { x: 100, y: 20 },
 				resolve: [
 					{
-						source_index: 0,
+						source_uuid: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
 						params: {
 							'@builtin-darkmode': 'light',
 							'@builtin-btn-emphasis': 'secondary',
@@ -355,11 +464,11 @@ const projects: Kit10Project[] = [
 					text: 'Deny Request'
 				}
 			},
-			{
+			'd4c1a6e9-5b8f-4e72-9a30-2f7c8b1d6e54': {
 				rootPosition: { x: 100, y: 220 },
 				resolve: [
 					{
-						source_index: 1,
+						source_uuid: '9c858901-8a57-4791-81fe-4c455b099bc9',
 						params: { '@builtin-darkmode': 'dark' }
 					}
 				],
@@ -368,102 +477,120 @@ const projects: Kit10Project[] = [
 				primitive: {
 					kind: 'container',
 					children: [
-						{
-							resolve: [
-								{
-									source_index: 2,
-									params: {
-										'@builtin-darkmode': 'light',
-										'@builtin-btn-emphasis': 'secondary',
-										'@builtin-btn-tone': 'confirmative',
-										sticky: 'true'
-									}
-								}
-							],
-							name: 'Nav',
-							discriminator: 3
-						},
-						{
-							resolve: [
-								{
-									source_index: 2,
-									params: {
-										'@builtin-darkmode': 'dark',
-										'@builtin-btn-emphasis': 'secondary',
-										'@builtin-btn-tone': 'confirmative'
-									}
-								}
-							],
-							name: 'Hero',
-							discriminator: 3
-						},
-						{
-							resolve: [
-								{
-									source_index: 2,
-									params: {
-										'@builtin-darkmode': 'dark',
-										'@builtin-btn-emphasis': 'secondary',
-										'@builtin-btn-tone': 'confirmative'
-									}
-								}
-							],
-							name: 'First section',
-							discriminator: 4,
-							primitive: {
-								kind: 'container',
-								children: [
-									{
-										resolve: [
-											{
-												source_index: 0,
-												params: {
-													'@builtin-darkmode': 'dark',
-													'@builtin-btn-emphasis': 'tertiary'
-												}
-											}
-										],
-										name: 'CTA - Primary',
-										discriminator: 0,
-										primitive: {
-											kind: 'text',
-											text: 'Belay Request'
-										}
-									}
-								]
-							}
-						},
-						{
-							resolve: [
-								{
-									source_index: 2,
-									params: {
-										'@builtin-darkmode': 'dark',
-										'@builtin-btn-emphasis': 'secondary',
-										'@builtin-btn-tone': 'confirmative'
-									}
-								}
-							],
-							name: 'Second section',
-							discriminator: 5
-						},
-						{
-							resolve: [
-								{
-									source_index: 2,
-									params: {
-										'@builtin-darkmode': 'dark',
-										'@builtin-btn-emphasis': 'secondary',
-										'@builtin-btn-tone': 'confirmative'
-									}
-								}
-							],
-							name: 'Third section',
-							discriminator: 6
-						}
+						// 5 children of view[3]
+						'e4f1a2b3-7c6d-4e9f-8a12-3b5d6f7a8c9e',
+						'9a1b2c3d-4e5f-6789-0abc-def123456789',
+						'd2c3b4a5-6f7e-4891-8c2b-0d1e3f4a5b6c',
+						'7f8e9d1c-2b3a-4c5e-9f0a-1b2c3d4e5f6a',
+						'1a2b3c4d-5e6f-4789-8abc-0def12345678'
 					]
 				}
+			},
+			// 5 children of 'd4c1a6e9-5b8f-4e72-9a30-2f7c8b1d6e54'
+			'e4f1a2b3-7c6d-4e9f-8a12-3b5d6f7a8c9e': {
+				resolve: [
+					{
+						source_uuid: '2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b',
+						params: {
+							'@builtin-darkmode': 'light',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative',
+							sticky: 'true'
+						}
+					}
+				],
+				name: 'Nav',
+				discriminator: 3,
+				primitive: {
+					kind: 'container',
+					children: ['4a1b2c3d-4e5f-6789-0abc-def123456789']
+				}
+			},
+			'9a1b2c3d-4e5f-6789-0abc-def123456789': {
+				resolve: [
+					{
+						source_uuid: '2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b',
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative'
+						}
+					}
+				],
+				name: 'Hero',
+				discriminator: 3
+			},
+
+			'd2c3b4a5-6f7e-4891-8c2b-0d1e3f4a5b6c': {
+				resolve: [
+					{
+						source_uuid: '2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b',
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative'
+						}
+					}
+				],
+				name: 'First section',
+				discriminator: 4,
+				primitive: {
+					kind: 'container',
+					children: ['4b7f2d9a-1c3e-4f6b-8a5d-9e2c1b7f0d3a']
+				}
+			},
+			'7f8e9d1c-2b3a-4c5e-9f0a-1b2c3d4e5f6a': {
+				resolve: [
+					{
+						source_uuid: '2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b',
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative'
+						}
+					}
+				],
+				name: 'Second section',
+				discriminator: 5
+			},
+			'1a2b3c4d-5e6f-4789-8abc-0def12345678': {
+				resolve: [
+					{
+						source_uuid: '2c1f7a6e-7a6d-4c2b-b4e2-9f7a1e5c8d3b',
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'secondary',
+							'@builtin-btn-tone': 'confirmative'
+						}
+					}
+				],
+				name: 'Third section',
+				discriminator: 6
+			},
+			'4b7f2d9a-1c3e-4f6b-8a5d-9e2c1b7f0d3a': {
+				resolve: [
+					{
+						source_uuid: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
+						params: {
+							'@builtin-darkmode': 'dark',
+							'@builtin-btn-emphasis': 'tertiary'
+						}
+					}
+				],
+				name: 'CTA - Primary',
+				discriminator: 0,
+				primitive: {
+					kind: 'text',
+					text: 'Belay Request'
+				}
 			}
+		},
+		views: [
+			// 4 Parents
+			'3e5f1c2a-9b44-4f6e-8c7a-2c9e6b1d4f0a',
+			'a8d7b4c9-2f3e-4a1d-9b65-71e2c4f8d0aa',
+			'5b9e2f6d-8c14-4a77-b3e1-0d4f6c2a9e81',
+			'd4c1a6e9-5b8f-4e72-9a30-2f7c8b1d6e54'
 		]
 	},
 	{

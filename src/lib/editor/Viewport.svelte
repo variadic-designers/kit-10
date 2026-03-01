@@ -6,11 +6,14 @@
 	type ViewportProps = {
 		offsetX: Writable<number>;
 		offsetY: Writable<number>;
-		kits: ComponentFlat[];
-		kitViews: ComponentViewRoot[];
+
+		kits: string[];
+		kitsPool: Record<string, ComponentFlat>;
+		views: string[];
+		viewsPool: Record<string, ComponentView>;
 	};
 
-	const { offsetX, offsetY, kits = $bindable(), kitViews = $bindable() }: ViewportProps = $props();
+	const { offsetX, offsetY, kits, kitsPool, views, viewsPool }: ViewportProps = $props();
 
 	import { contextMenu } from './contextMenu';
 
@@ -252,24 +255,6 @@
 			}
 		];
 	};
-
-	const selectView = (target: ComponentView, untoggle = true) => {
-		const deselectAll = (list: ComponentView[]) => {
-			for (const c of list) {
-				delete c.selected;
-				if (c.children) deselectAll(c.children);
-			}
-		};
-		if (untoggle && target.selected) {
-			target.selected = undefined;
-		} else {
-			// select the target
-			deselectAll(kitViews);
-			target.selected = 'primary';
-		}
-	};
-
-	import { type KitProps } from './/Component.svelte';
 </script>
 
 <main
@@ -286,11 +271,14 @@
 	use:contextMenu={menu}
 >
 	<div id="canvas" class="canvas">
-		{#snippet kitView(v: ComponentView, isRoot: boolean)}
-			<KitView {...v} {kits}></KitView>
+		{#snippet kitView(v: string, isRoot: boolean)}
+			{@const viewFound = viewsPool[v]}
+			{#if viewFound}
+				<KitView {...viewFound} {viewsPool} {kitsPool}></KitView>
+			{/if}
 		{/snippet}
 
-		{#each kitViews as view}
+		{#each views as view}
 			{@render kitView(view, true)}
 		{/each}
 	</div>

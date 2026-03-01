@@ -3,7 +3,7 @@
 		| { kind: 'text'; text: string }
 		| { kind: 'image'; src: string; alt?: string; resolutions?: string[] }
 		| { kind: 'svg'; content: Snippet } // or however you represent SVGs
-		| { kind: 'container'; children: ComponentView[] };
+		| { kind: 'container'; children: string[] };
 
 	// Component definition
 	export interface ComponentFlat {
@@ -23,50 +23,39 @@
 
 	export interface ViewResolve {
 		// For finding the kit
-		source_index: number;
+		source_uuid: string;
 		// an its respective params
 		params: AxesSet;
 	}
 
 	// Instance of a Component / Kit
-	export interface ComponentView extends ComponentViewExport, ComponentRoot {
-		source_index: number;
-		params: AxesSet;
+	export interface ComponentView extends ComponentViewExport, ComponentRoot, ComponentViewRuntime {
+		name: string;
 		discriminator: number;
 		// Update of Kits
 		resolve: ViewResolve[];
-		// Alias of Component
-		name: string;
-		selected?: 'primary' | 'secondary';
-		children?: ComponentView[];
 		hide?: boolean;
 		lock?: boolean;
 		primitive: ComponentPrimitive;
 	}
 
+	export interface ComponentViewRuntime {
+		selectedResolver?: number;
+		selected?: 'primary' | 'secondary';
+	}
+
 	// A View on the Project Root
 	export interface ComponentViewRoot extends ComponentView, ComponentRoot {}
-
-	export type KitProps = {
-		name: string;
-		sets: AxesManager;
-		params: AxesSet;
-		hide?: boolean;
-		rootPosition?: { x: number; y: number };
-		selected?: 'primary' | 'secondary';
-		children?: Snippet;
-	};
 </script>
 
 <script lang="ts">
 	import { resolveMany, type AxesManager, type AxesSet } from '../cascadeAxesMap.ts';
 	import { type Snippet } from 'svelte';
+	// Cursed but works for our use
 	import Component from './Component.svelte';
 
 	const {
-		source_index,
-		params,
-		// discriminator,
+		discriminator,
 		// Update of Kits
 		resolve,
 		// Alias of Component
@@ -78,13 +67,18 @@
 		// root
 		rootPosition,
 		// kit Definitions
-		kits
-	}: ComponentView & { kits: ComponentFlat[] } = $props();
+		kitsPool,
+		viewsPool
+	}: ComponentView & {
+		kitsPool: Record<string, ComponentFlat>;
+		viewsPool: Record<string, ComponentView>;
+	} = $props();
 
 	const { finalStyle, trace } = $derived.by(() => {
-		// return resolve((kits[source_index] ?? { layers: [], axisRank: [] }).sets, params);
 		return resolveMany(
-			resolve.map((r) => kits[r.source_index].sets),
+			resolve.map((r) => {
+				return kitsPool[r.source_uuid].sets;
+			}),
 			resolve.map((r) => r.params)
 		);
 	});
@@ -104,9 +98,11 @@
 			['--border-radius', finalStyle['border-radius']],
 			['--color', finalStyle.color],
 			['--padding', finalStyle.padding],
+			// No Margins. a bit opinionated but reduces guesswork
 			// ['--margin', finalStyle.margin],
 			['--font-size', finalStyle['font-size']],
 			['--text-decoration', finalStyle['text-decoration']],
+			['--text-align', finalStyle['text-align']],
 			['--overflow-y', finalStyle['overflow-y'] ?? 'initial'],
 			['--overflow-x', finalStyle['overflow-x'] ?? 'initial'],
 
@@ -140,7 +136,11 @@
 >
 	{#if primitive?.kind === 'container'}
 		{#each primitive.children as child}
-			<Component {...child} rootPosition={undefined} {kits} />
+			{@const viewFound = viewsPool[child]}
+
+			{#if viewFound}
+				<Component {...viewFound} rootPosition={undefined} {kitsPool} {viewsPool} />
+			{/if}
 		{/each}
 	{/if}
 
@@ -158,12 +158,14 @@
 		--height: initial;
 		--border: initial;
 		--background: initial;
+		--background-color: initial;
 		--border-radius: initial;
 		--color: initial;
 		--padding: initial;
 		--margin: initial;
 		--font-size: initial;
 		--text-decoration: initial;
+		--text-align: initial;
 		--overflow-y: initial;
 		--overflow-x: initial;
 		--position: initial;
@@ -192,6 +194,7 @@
 		@include fonts-alternate-style();
 		font-size: var(--font-size);
 		text-decoration: var(--text-decoration);
+		text-align: var(--text-align);
 
 		&--hide {
 			display: none;

@@ -48,57 +48,50 @@
 </script>
 
 <script lang="ts">
-	import type { AxisDefinition } from '../../axesBuiltIn.ts';
+	import type { AxisDefinition, TrackedVariant } from '../../axesBuiltIn.ts';
 	import type { ComponentView, ComponentFlat } from '../Component.svelte';
 	import { contextMenu } from '../contextMenu.ts';
 
 	type AxisProps = {
 		axis: AxisDefinition;
-		selectedKit: ComponentView;
-		cascadeResult: MultiCascadeResult;
+		selection: EditorSelection;
+		/*
 		layers: any;
 		layerWidgets: any;
+    */
 
-		kits: ComponentFlat[];
-		kitViews: ComponentView[];
+		kits: string[];
+		views: string[];
+		viewsPool: Record<string, ComponentView>;
 	};
 
 	let {
 		axis,
-		cascadeResult,
-		selectedKit,
+		selection,
+		/*
 		layers,
 		layerWidgets,
+    */
 		kits = $bindable(),
-		kitViews = $bindable()
+		views = $bindable(),
+		viewsPool = $bindable()
 	}: AxisProps = $props();
 
-	function findComponentView(
-		views: ComponentView[],
-		predicate: (view: ComponentView) => boolean
-	): ComponentView | undefined {
-		for (const view of views) {
-			if (predicate(view)) return view;
-
-			if (view.primitive?.kind === 'container' && view.primitive.children.length > 0) {
-				const found = findComponentView(view.primitive.children, predicate);
-				if (found) return found;
-			}
-		}
-
-		return undefined;
-	}
-
-	export const recalcParams = (axis: string, axisValue: string) => {
+	export const recalcParams = (axis: string, value: string) => {
 		return () => {
-			if (!selectedKit) return;
+			if (!selection.selectedViewPrimary || selection.selectedKitIndex === null) {
+				console.warn(`Attempted to recalc ${axis}:${value} `);
+				console.warn(`${!selection.selectedViewPrimary} ${!selection.selectedKitIndex}`);
+				return;
+			}
 
-			const recalc = findComponentView(kitViews, (view) => {
-				return view.name === selectedKit.name && view.discriminator === selectedKit.discriminator;
-			});
+			const view = viewsPool[selection.selectedViewPrimary];
 
-			if (recalc) {
-				recalc.resolve[0].params[axis] = axisValue;
+			const resolution = view.resolve[selection.selectedKitIndex];
+			if (resolution.params[axis] === value) {
+				resolution.params[axis] = undefined;
+			} else {
+				resolution.params[axis] = value;
 			}
 		};
 	};
@@ -118,6 +111,9 @@
 		CascadeResult,
 		MultiCascadeResult
 	} from '../../cascadeAxesMap.ts';
+	import type { EditorSelection } from '../Editor.svelte';
+
+	/*
 	// Decider for what color to display on the layer indicator
 	const layerColorDecider: (
 		axisVariant: string
@@ -129,11 +125,11 @@
 			let layerColours = layerOrdering.map((layerShape, i) => {
 				let found = layerEntries.layers.find((l) => shallowEqual(layerShape, l));
 
-				if (found) {
+				if (found && selection.selectedViewCascadeResult) {
 					const hsv = stringSetToHSV(found);
 					const color = `hsl(${hsv.h}, ${hsv.s}%, ${hsv.v}%)`;
 
-					const activated = cascadeResult.trace.find((t) => {
+					const activated = selection.selectedViewCascadeResult.trace.find((t) => {
 						if (Object.keys(t.source).length === 0) {
 							return false;
 						}
@@ -162,6 +158,7 @@
 			return layerWidgets.flat().map(() => undefined);
 		}
 	};
+  */
 
 	const axisContextMenu = [
 		{
@@ -184,20 +181,27 @@
 
 	const value = $derived(
 		axis.variants.find((v) => {
-			return (
-				selectedKit.resolve[0].params[axis.id] === (v.id ?? v.name.toLowerCase().replace(' ', '-'))
-			);
+			if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
+				return (
+					viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].params[
+						axis.id
+					] === (v.id ?? v.name.toLowerCase().replace(' ', '-'))
+				);
+			}
+			return false;
 		})
 	);
 </script>
+
+<!-- focused?: boolean, -->
+<!-- layered?: ({ color: string; activated: boolean } | undefined)[] -->
 
 <!-- A collapsible widget for axis variant tracking and selection for the axes set parameter -->
 {#snippet axisField(
 	axis: AxisDefinition,
 	id: string,
 	name: string,
-	focused?: boolean,
-	layered?: ({ color: string; activated: boolean } | undefined)[]
+	value: TrackedVariant | undefined
 )}
 	<div class="axis-field">
 		<!-- Activated axis variant -->
@@ -207,34 +211,34 @@
 				class="axis-field__radio"
 				type="radio"
 				onclick={recalcParams(axis.id, id)}
-				name="{selectedKit.discriminator}-{axis.id?.toLowerCase() ?? axis.name.toLowerCase()}"
-				checked={id === selectedKit.resolve[0].params[axis.id]}
+				name="{selection.selectedViewPrimary}-{axis.id?.toLowerCase() ?? axis.name.toLowerCase()}"
+				checked={id === (value?.id ?? value?.name.toLowerCase())}
 			/>
 		</label>
 
 		<span class="layers">
 			<!-- Layer of axis variant -->
-			{#if layered}
-				{#each layered as layers, i}
-					<div
-						class="axis-field-container"
-						class:axis-field-container--last={layered.length - 1 === i}
-					>
-						<button
-							class="axis-field__layer"
-							class:axis-field__layer--focused={focused}
-							class:axis-field__layer--ticked={layers?.activated}
-							class:axis-field__layer--undefined={!!!layers}
-							style={layers ? '--axis-field__layer-color: ' + layers.color : ''}
-							disabled={!focused || !layered}
-							aria-label="Add variant to params"
-							title={JSON.stringify(layered, null, 2)}
-						>
-							<i class="fa-solid fa-diamond"></i>
-						</button>
-					</div>
-				{/each}
-			{/if}
+			<!-- {#if layered} -->
+			<!-- 	{#each layered as layers, i} -->
+			<!-- 		<div -->
+			<!-- 			class="axis-field-container" -->
+			<!-- 			class:axis-field-container--last={layered.length - 1 === i} -->
+			<!-- 		> -->
+			<!-- 			<button -->
+			<!-- 				class="axis-field__layer" -->
+			<!-- 				class:axis-field__layer--focused={focused} -->
+			<!-- 				class:axis-field__layer--ticked={layers?.activated} -->
+			<!-- 				class:axis-field__layer--undefined={!!!layers} -->
+			<!-- 				style={layers ? '--axis-field__layer-color: ' + layers.color : ''} -->
+			<!-- 				disabled={!focused || !layered} -->
+			<!-- 				aria-label="Add variant to params" -->
+			<!-- 				title={JSON.stringify(layered, null, 2)} -->
+			<!-- 			> -->
+			<!-- 				<i class="fa-solid fa-diamond"></i> -->
+			<!-- 			</button> -->
+			<!-- 		</div> -->
+			<!-- 	{/each} -->
+			<!-- {/if} -->
 		</span>
 	</div>
 {/snippet}
@@ -256,14 +260,14 @@
 		{#each axis.variants as variant, i}
 			{@const variantId = variant.id ?? variant.name.toLowerCase().replace(' ', '-')}
 
-			<!-- whether exact variant is selected -->
-			{@const focused = selectedKit.resolve[0].params[axis.id] === variantId}
-
 			<!-- Get this man a layer finder -->
-			{@const layered = layerColorDecider(axis.id + ':' + variantId)}
+			<!-- {@const layered = layerColorDecider(axis.id + ':' + variantId)} -->
 
 			<li>
-				{@render axisField(axis, variantId, variant.name, focused, layered)}
+				<!-- {JSON.stringify(layered)} -->
+				{#key value}
+					{@render axisField(axis, variantId, variant.name, value)}
+				{/key}
 			</li>
 		{/each}
 	</ul>
@@ -301,7 +305,7 @@
 			padding-inline: $x-space-sm;
 			cursor: pointer;
 			font-size: $x-font-size-xs;
-			gap: $x-space-md;
+			gap: $x-space-sm;
 			color: var(--color-pure-alt);
 
 			h3 {
@@ -322,7 +326,7 @@
 				border: 1px solid var(--color-surface-alt);
 				background: var(--color-surface-alt);
 				text-transform: capitalize;
-				border-radius: $x-space-xs;
+				border-radius: calc($x-space-xs / 2);
 
 				&--unset {
 					color: var(--color-text-muted);

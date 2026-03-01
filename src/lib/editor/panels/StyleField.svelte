@@ -2,16 +2,20 @@
 	import { type ComponentView, type ComponentFlat } from '../Component.svelte';
 	import { tick } from 'svelte';
 
-	type StyleFieldValue124 = string;
+	type StyleFieldValue = string | { resolve: string };
 
 	type StyleFieldProps = {
 		key: string;
 		displayText: string;
-		kits: ComponentFlat[];
 		set?: AxesSet;
 		color?: string;
-		selectedKit?: ComponentView;
-		value?: StyleFieldValue124;
+		stack: number;
+		tokens: TokenLibrary;
+
+		selection: EditorSelection;
+		kitsPool: Record<string, ComponentFlat>;
+		viewsPool: Record<string, ComponentView>;
+		value?: StyleFieldValue;
 		highlighted?: boolean;
 
 		// Styling
@@ -21,17 +25,21 @@
 	let {
 		key,
 		displayText,
-		kits = $bindable(),
+		kitsPool = $bindable(),
+		viewsPool,
 		color,
 		set,
-		selectedKit,
+		selection,
 		value,
+		stack,
 		highlighted = $bindable(false),
-		position = 'mid'
+		position = 'mid',
+		tokens
 	}: StyleFieldProps = $props();
 
 	import { contextMenu } from '../contextMenu.ts';
 	import type { AxesSet, StyleSource } from '../../cascadeAxesMap.ts';
+	import type { EditorSelection } from '../Editor.svelte';
 
 	const menu = () => {
 		return [
@@ -123,6 +131,46 @@
 	const isEmpty = $derived(false);
 
 	const layers = $derived(0);
+
+	import { dropzone } from '../dragDrop.ts';
+	import { tokenIcon, type Token, type TokenLibrary } from './Variables.svelte';
+
+	// Action for receiving Tokens
+	const tokenDrop = dropzone<Token>();
+	const softResolve = (path: string, library: TokenLibrary): Token | undefined => {
+		const [head, ...rest] = path.split('/');
+		// console.log(`About to resolve from library ${head}, with the rest ${JSON.stringify(rest,null, 2)}`)
+
+		if (!head) return; // namespace doesn't exist for some reason
+
+		console.log(library, head, library[head]);
+
+		const node = library[head];
+
+		if (!node) {
+			console.error(`Top Level ${head} missing`);
+			return;
+		}
+
+		// if no more path, we can only check tokens at this level
+		if (rest.length === 0) {
+			return undefined; // nothing left to resolve
+		}
+
+		const nextSegment = rest[0];
+
+		// 1️⃣ Check children recursively
+		if (node.children && node.children[nextSegment]) {
+			return softResolve(rest.join('/'), node.children);
+		}
+
+		// 2️⃣ If this is the last segment, also check tokens
+		if (node.tokens && rest.length === 1) {
+			return node.tokens.find((t) => t.name === nextSegment);
+		}
+
+		return undefined; // not found
+	};
 </script>
 
 <div
@@ -131,7 +179,7 @@
 	class:option124--bottom={position === 'bottom'}
 	class:option124--mid={position !== 'top' && position !== 'bottom'}
 >
-	{#if selectedKit}
+	{#if selection.selectedViewPrimary}
 		<!-- {JSON.stringify(kits[selectedKit.source_index].sets.layers.map((s) => { return Object.keys(s.axes) }), null, 2)} -->
 	{/if}
 
@@ -157,7 +205,15 @@
 			console.log('Tried to add style to set');
 		}}
 	>
-		<i class="fa-solid fa-pentagon"></i>
+		<i
+			class:fa-diamond={stack <= 1}
+			class:fa-pentagon={stack === 2}
+			class:fa-hexagon={stack === 3}
+			class:fa-heptagon={stack === 4}
+			class:fa-octagon={stack === 5}
+			class="fa-solid"
+		>
+		</i>
 	</button>
 
 	{#if editValue.now}
@@ -166,7 +222,7 @@
 			title="Edit Value"
 			bind:this={inputRef}
 			bind:value={editValue.content}
-			placeholder={value}
+			placeholder={typeof value === 'string' ? value : undefined}
 			class="option124__value option124__value--edit"
 			onclick={() => {
 				console.log('Tried token to style');
@@ -179,8 +235,12 @@
 				if (e.key === 'Enter') {
 					editValue.now = false;
 
-					if (selectedKit) {
-						const layers = kits[selectedKit.resolve[0].source_index].sets.layers;
+					if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
+						const layers =
+							kitsPool[
+								viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex]
+									.source_uuid
+							].sets.layers;
 
 						// Normalize: no set specified means {}
 						const targetAxes = set ?? {};
@@ -216,19 +276,41 @@
 		/>
 	{:else}
 		<button
-			title="Attach Variable"
+			title="Attach Token"
 			class="option124__value"
 			class:option124__value--new={!value}
 			onclick={() => {
 				console.log('Tryna start editing');
 				startEditing();
 			}}
+			disabled={!!!selection.selectedViewPrimary}
 			use:contextMenu={menu}
-			disabled={!!!selectedKit}
+			use:tokenDrop={{
+				dragOverClassName: 'option124__value--dragged-over',
+				ondrop: (t: Token) => {
+					console.log(JSON.stringify(t, null, 2));
+				}
+			}}
 		>
 			{#if value}
-				{value}
-			{:else if !!!selectedKit}
+				{#if typeof value !== 'string'}
+					{@const resolution = softResolve(value.resolve, tokens)}
+					{#if resolution}
+						<span class="token--found">
+							<i class="fa-solid {tokenIcon(resolution.type)}"></i>
+							{resolution.displayName}
+						</span>
+					{:else}
+						<span class="token--unfound">
+							{value.resolve}
+						</span>
+					{/if}
+				{:else}
+					<span>
+						{value}
+					</span>
+				{/if}
+			{:else if !!!selection.selectedViewPrimary}
 				<em>
 					<i class="fa-solid fa-minus"></i>
 					Select a Kit
@@ -328,12 +410,32 @@
 			border-radius: 1px;
 			color: var(--color-add-var-text);
 			cursor: text;
-			font-size: $x-font-size-md;
+			font-size: $x-font-size-sm;
 			background:
 				radial-gradient(closest-side, var(--color-panel-header-fill) 90%, transparent 100%) 0 0/ 3px
 					3px,
 				var(--color-panel-header-border); /* Base color */
 			background: var(--color-panel-header-fill);
+
+			&:has(span.token--found) {
+				background: var(--color-surface-alt);
+			}
+
+			span.token--found {
+				color: var(--color-primary);
+			}
+
+			span.token--unfound {
+				color: var(--color-danger);
+			}
+
+			&--dragged-over {
+				background: var(--color-surface-alt);
+
+				&:has(span.token--found) {
+					background: var(--color-pure);
+				}
+			}
 
 			&::placeholder {
 				font-size: $x-font-size-md;
@@ -356,6 +458,11 @@
 					color: var(--color-primary);
 				}
 			}
+		}
+
+		&.token--found {
+			color: var(--color-primary);
+			text-decoration: underline;
 		}
 
 		&--top > * {

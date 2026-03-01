@@ -3,19 +3,15 @@
 	import type { ComponentView, ComponentFlat } from '../Component.svelte';
 	import { contextMenu } from '../contextMenu.ts';
 	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import type { EditorSelection } from '../Editor.svelte';
 
 	type ComposePanelProps = {
-		selectedKit?: ComponentView;
-		kits: ComponentFlat[];
+		selection: EditorSelection;
+		viewsPool: Record<string, ComponentView>;
+		kitsPool: Record<string, ComponentFlat>;
 	};
 
-	const { selectedKit, kits = $bindable() }: ComposePanelProps = $props();
-
-	const tooltip = $derived.by(() => {
-		const subject = selectedKit ? `View: \`${selectedKit.name}\`` : 'Selected View';
-
-		return `Compose Kits on ${subject}`;
-	});
+	const { viewsPool, selection = $bindable(), kitsPool }: ComposePanelProps = $props();
 
 	const composeContextMenuContent: ContextMenuContentGenerator = () => {
 		return [
@@ -59,22 +55,38 @@
 	};
 </script>
 
-<Panel name="Compose" contextMenuContent={composeContextMenuContent} {tooltip}>
+<Panel name="Compose" contextMenuContent={composeContextMenuContent} tooltip="Compose Current View">
 	{#snippet content()}
-		{@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']}
+		<!-- {@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']} -->
+		{@const icons = ['fa-octagon', 'fa-septagon', 'fa-hexagon', 'fa-pentagon', 'fa-diamond']}
 		<ol class="kits">
-			{#if selectedKit}
-				{#each selectedKit.resolve.map((r) => kits[r.source_index]) as kit, i}
+			{#if selection.selectedViewPrimary && viewsPool[selection.selectedViewPrimary]}
+				{@const kits = viewsPool[selection.selectedViewPrimary].resolve.map(
+					(r) => kitsPool[r.source_uuid]
+				)}
+
+				{#each kits as kit, i}
 					<li class="kit-field">
 						<label use:contextMenu={kitcontextMenuContent}>
 							<span class="kit-field__name">
 								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
 								{kit.name}</span
 							>
-							<input class="kit-field__radio" type="radio" value={kit.name} name="compose" />
-							<i class="kit-field__layer-icon kit-field__icon fa-solid {icons[i]}"></i>
+							<input
+								class="kit-field__radio"
+								type="radio"
+								value={kit.name}
+								name="compose"
+								checked={selection.selectedKitIndex === i}
+								onclick={() => (selection.selectedKitIndex = i)}
+							/>
+							<i
+								class="kit-field__layer-icon kit-field__icon fa-solid {icons[
+									icons.length - kits.length + i
+								]}"
+							></i>
 
-							<button>
+							<button aria-label="Hide/Unhide Kit">
 								<i class="kit-field__icon fa-regular fa-eye"></i>
 							</button>
 						</label>
@@ -113,8 +125,9 @@
 			min-width: max-content;
 			font-size: $x-font-size-sm;
 			color: var(--color-text-muted);
+			color: transparent;
 			-webkit-text-stroke-width: 2px;
-			-webkit-text-stroke-color: black;
+			-webkit-text-stroke-color: var(--color-text);
 		}
 
 		&__name {
@@ -129,7 +142,9 @@
 		&:has(input[type='radio']:checked) {
 			background: var(--color-surface-alt);
 
-			.kit-field__icon,
+			.kit-field__icon {
+				-webkit-text-stroke-color: var(--color-primary);
+			}
 			.kit-field__name {
 				color: var(--color-primary);
 			}

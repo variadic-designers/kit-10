@@ -21,8 +21,11 @@ export type Kit10ProjectTokens = {
 };
 
 export type Kit10ProjectCore = {
-	kits: ComponentFlat[];
-	kitViews: ComponentView[];
+	kitsPool: Record<string, ComponentFlat>; // UUID -> component
+	viewsPool: Record<string, ComponentView>; // UUID -> view
+
+	kits: string[];
+	views: string[]; // maintains order of views
 };
 
 export interface Kit10Project extends Kit10ProjectMeta, Kit10ProjectTokens, Kit10ProjectCore {}

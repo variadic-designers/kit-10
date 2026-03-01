@@ -1,22 +1,33 @@
+<script lang="ts" module>
+	export type Layer = AxesSet;
+
+	export interface LayerWidget {
+		priority: number;
+		layer: Layer;
+		rank: AxisDefinition[];
+	}
+</script>
+
 <script lang="ts">
 	import type { ComponentFlat, ComponentView } from '../Component.svelte';
 	import Panel from '../Panel.svelte';
-	import { type MultiCascadeResult } from '../../cascadeAxesMap.ts';
 	import { stringSetToHSV } from './Axis.svelte';
 	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
 
 	type AxesPanel = {
-		selectedKit?: ComponentView;
-		selectedKitCascadeResult?: MultiCascadeResult;
-		kits: ComponentFlat[];
-		kitViews: ComponentView[];
+		selection: EditorSelection;
+		views: string[];
+		kits: string[];
+		viewsPool: Record<string, ComponentView>;
+		kitsPool: Record<string, ComponentFlat>;
 	};
 
-	const {
-		selectedKit,
-		selectedKitCascadeResult,
-		kits = $bindable(),
-		kitViews = $bindable()
+	let {
+		selection,
+		kits,
+		views,
+		kitsPool = $bindable(),
+		viewsPool = $bindable()
 	}: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
@@ -57,8 +68,10 @@
 				if (axis) {
 					let disabled = false;
 
-					if (selectedKit) {
-						const axisExistsAlready = kits[selectedKit.source_index].sets.axisRank.some((a) => {
+					if (selectedKit && selectedKit.selectedResolver) {
+						const axisExistsAlready = kits[
+							selectedKit.resolve[selectedKit.selectedResolver].source_index
+						].sets.axisRank.some((a) => {
 							const aKey = a.id ?? a.name?.toLowerCase();
 							return aKey === axis.id;
 						});
@@ -77,21 +90,20 @@
 				} else {
 					return 'hr';
 				}
-			})
-      */
+			})*/
 		];
 	};
 
 	function addAxis(axis: AxisDefinition) {
 		return () => {
-			if (selectedKit) {
+			if (selectedKit && selectedKit.selectedResolver) {
 				// select the target
-				const source = kits[selectedKit.source_index];
+				const source = kits[selectedKit.resolve[selectedKit.selectedResolver]?.source_index];
 
 				if (source) {
 					source.sets.axisRank.push(axis);
 
-					// add(source.sets, selectedKit.params, {})
+					add(source.sets, selectedKit.resolve[selectedKit.selectedResolver].params, {});
 
 					/*
 					recalcParams(
@@ -111,15 +123,27 @@
 	} from '../../axesBuiltIn.ts';
 	import type { ContextMenuContent } from '../contextMenuStore.ts';
 	import Axis from './Axis.svelte';
-	import { type AxisVariantLayerTrace } from '../../cascadeAxesMap.ts';
+	import { type AxesSet, type AxisVariantLayerTrace } from '../../cascadeAxesMap.ts';
+	import type { EditorSelection } from '../Editor.svelte';
 
 	// Basically backtracks kit Definitions to find respective
 	// Layers for each axis variant
+	/*
 	const layers: AxisVariantLayerTrace | undefined = $derived.by(() => {
-		if (selectedKit) {
+		if (
+			!selection.selectedViewPrimary ||
+			selection.selectedKitIndex === null ||
+			!viewsPool[selection.selectedViewPrimary] ||
+      !viewsPool[selection.selectedViewPrimary].resolve ||
+			!viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid ||
+			!kitsPool[
+				viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid
+			]
+		) {
 			// select the target
-			// const source = kits[selectedKit.source_index];
-			const source = kits[selectedKit.resolve[0].source_index];
+			const view = viewsPool[selection.selectedViewPrimary];
+			const source_uuid = view.resolve[selection.selectedKitIndex].source_uuid;
+			const source = kitsPool[source_uuid];
 
 			if (source) {
 				// Start iterating per axis
@@ -215,70 +239,39 @@
 		}
 	});
 
+
 	$effect(() => {
 		console.log('Selected layer: ' + JSON.stringify(layers, null, 2));
 		console.log('Selected layer unique: ' + JSON.stringify(layersCollapsed, null, 2));
 	});
+  */
 </script>
 
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
-		<div class="layers">
-			{#if layerWidgets}
-				{#each layerWidgets as layer}
-					<div class="layer__specificity">
-						{#each layer as l}
-							{@const hsv = stringSetToHSV(l)}
-
-							<label
-								style="--colour:hsl({hsv.h}, {hsv.s}%, {hsv.v}%);"
-								title={JSON.stringify(l, null, 2)}
-								class="layer layer--valued"
-								aria-label="&lcub; &rcub;"
-							>
-								<i class="layer--new__icon fa-solid fa-diamond"></i>
-								<input
-									type="radio"
-									value={JSON.stringify(l)}
-									name="layers"
-									onclick={() => {
-										layerEditing.activeLayer = l;
-										layerEditing.ephemeral = undefined;
-									}}
-								/>
-							</label>
-						{/each}
-					</div>
-				{/each}
-			{/if}
-		</div>
-
-		{#if !selectedKit || !selectedKitCascadeResult}
+		{#if !selection.selectedViewPrimary || selection.selectedKitIndex === null || !selection.selectedViewCascadeResult}
 			<!-- BRO -->
-		{:else if selectedKit.resolve}
-			{@const currentKit = kits[selectedKit.resolve[0].source_index]}
+			<!-- <p>{!selection.selectedViewPrimary}</p> -->
+			<!-- <p>{!selection.selectedKitIndex !== null}</p> -->
+			<!-- <p>{!selection.selectedViewCascadeResult}</p> -->
+		{:else}
+			{@const currentView = viewsPool[selection.selectedViewPrimary]}
+			{@const currentKitIndex = currentView.resolve[selection.selectedKitIndex]}
+			{@const currentKit = kitsPool[currentKitIndex.source_uuid]}
+
 			<!-- Add Axis to Selected Kit -->
 			{#if currentKit.sets.axisRank.length === 0}
 				<p>
 					<i class="fa-solid fa-up-long"></i> Add Axis to
-					<strong>{selectedKit.name ?? currentKit.name}</strong>
+					<strong>{currentKit.name}</strong>
 				</p>
 			{/if}
 
-			{#key selectedKit}
-				<!-- Use key to rerender selected variant properly -->
-				{#each currentKit.sets.axisRank as axis}
-					<Axis
-						{layers}
-						{layerWidgets}
-						cascadeResult={selectedKitCascadeResult}
-						{selectedKit}
-						{axis}
-						{kits}
-						{kitViews}
-					/>
-				{/each}
-			{/key}
+			<!-- Use key to rerender selected variant properly -->
+			{#each currentKit.sets.axisRank as axis}
+				<!-- <p>{JSON.stringify(axis.id, null, 2)}</p> -->
+				<Axis {selection} {axis} {kits} {views} bind:viewsPool />
+			{/each}
 		{/if}
 	{/snippet}
 </Panel>

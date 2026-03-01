@@ -1,3 +1,14 @@
+<script lang="ts" module>
+	export interface EditorSelection {
+		selectedViewPrimary: string | null;
+		selectedViewSecondary: string[];
+
+		selectedKitIndex: number | null;
+
+		selectedViewCascadeResult: MultiCascadeResult | null;
+	}
+</script>
+
 <script lang="ts">
 	import ContextMenu from '$lib/editor/ContextMenu.svelte';
 
@@ -5,15 +16,25 @@
 
 	import { getTheme } from '$lib/theming.ts';
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
-	import { contextMenu } from '$lib/components/contextMenu.ts';
-	import type { Kit10ProjectEditor } from '$lib/types.ts';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.ts';
+	import type { Kit10ProjectEditor, Kit10Project } from '$lib/types.ts';
 
 	import type { ComponentView } from '$lib/editor/Component.svelte';
 
 	const project: Kit10ProjectEditor = $props();
 
-	let { title, description, kits, kitViews, tokens, tokenLibraries, selectedLayer, viewPortFocus } =
-		$state(project);
+	let {
+		title,
+		description,
+		kits,
+		kitsPool,
+		views,
+		viewsPool,
+		tokens,
+		tokenLibraries,
+		selectedLayer,
+		viewPortFocus
+	}: Kit10ProjectEditor = $state(project);
 
 	let offsetX = writable(viewPortFocus?.x ?? 0);
 	let offsetY = writable(viewPortFocus?.y ?? 0);
@@ -27,50 +48,45 @@
 		}
 	});
 
-	const selectedKit: ComponentView | undefined = $derived.by(() => {
-		// Recursive helper to find a ComponentView with selected = 'primary'
-		function findPrimary(view: ComponentView): ComponentView | null {
-			if (view.selected === 'primary') return view;
-
-			if (view.primitive?.kind === 'container') {
-				for (const child of view.primitive.children) {
-					const found = findPrimary(child);
-					if (found) return found;
-				}
-			}
-
-			return null;
-		}
-
-		for (const view of kitViews) {
-			const found = findPrimary(view);
-			if (found) return found;
-		}
+	let selection: EditorSelection = $state({
+		selectedViewPrimary: null,
+		selectedViewSecondary: [],
+		selectedKitIndex: null,
+		selectedViewCascadeResult: null
 	});
 
-	const selectedKitCascadeResult: MultiCascadeResult | undefined = $derived.by(() => {
-		if (selectedKit) {
-			// return resolve(kits[selectedKit.source_index].sets, selectedKit.params);
-			return resolveMany(
-				selectedKit.resolve.map((r) => kits[r.source_index].sets),
-				selectedKit.resolve.map((r) => r.params)
-			);
+	$effect(() => {
+		if (
+			selection.selectedViewPrimary &&
+			viewsPool[selection.selectedViewPrimary] &&
+			viewsPool[selection.selectedViewPrimary].resolve.length > 0
+		) {
+			const view = viewsPool[selection.selectedViewPrimary];
+
+			const sets = view.resolve.map((r) => kitsPool[r.source_uuid].sets);
+			const params = view.resolve.map((r) => r.params);
+
+			selection.selectedViewCascadeResult = resolveMany(sets, params);
+		} else {
+			selection.selectedViewCascadeResult = null;
 		}
 	});
 
 	import Viewport from './Viewport.svelte';
 
-	const navContextMenu = [
-		{
-			name: 'donation',
-			displayText: 'Donate',
-			icon: 'fa-solid fa-gift',
-			onClick: () => ({
-				link: 'https://ko-fi.com/yorqat',
-				tab: '_blank'
-			})
-		}
-	];
+	const navContextMenu: ContextMenuContentGenerator = () => {
+		return [
+			{
+				name: 'donation',
+				displayText: 'Donate',
+				icon: 'fa-solid fa-gift',
+				onClick: () => ({
+					link: 'https://ko-fi.com/yorqat',
+					tab: '_blank'
+				})
+			}
+		];
+	};
 
 	import ViewsPanel from './panels/Views.svelte';
 	import StylesPanel from './panels/Styles.svelte';
@@ -92,7 +108,7 @@
 	/>
 </svelte:head>
 
-<div id="ui-kitten" data-prefers-color-scheme data-compel-color-scheme={getTheme()}>
+<div id="kit10" data-prefers-color-scheme data-compel-color-scheme={getTheme()}>
 	<ContextMenu />
 
 	<div id="nav" use:contextMenu={navContextMenu}>
@@ -112,20 +128,21 @@
 		</div>
 	</div>
 
-	<Viewport {offsetX} {offsetY} bind:kits bind:kitViews />
+	<Viewport {offsetX} {offsetY} {kits} {views} {kitsPool} {viewsPool} />
 
 	<aside class="management scroll-scheme">
-		<ViewsPanel bind:kits bind:kitViews {selectedKit} />
-		<ComposePanel bind:kits {selectedKit} />
-		<AxesPanel bind:kits bind:kitViews {selectedKit} {selectedKitCascadeResult} />
+		<ViewsPanel {views} {viewsPool} bind:selection />
+		<ComposePanel {viewsPool} {kitsPool} bind:selection />
+		<AxesPanel {kits} {views} {kitsPool} bind:viewsPool {selection} />
 	</aside>
 
 	<aside class="logical-mapper scroll-scheme"></aside>
 
 	<aside class="configurable scroll-scheme">
 		<ProjectPanel />
-		<StylesPanel bind:kits bind:kitViews {selectedKit} {selectedKitCascadeResult} />
-		<TokensPanel bind:kits bind:kitViews {selectedKit} bind:tokens bind:tokenLibraries />
+		<StylesPanel tokens={tokenLibraries} {kits} {kitsPool} {views} {viewsPool} {selection} />
+		<TokensPanel bind:tokens bind:tokenLibraries />
+		<!-- <pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre> -->
 	</aside>
 </div>
 
@@ -227,7 +244,8 @@
 		@include theming-impose-schemes-basic();
 		@include theming-impose-scroll-scheme();
 
-		#ui-kitten {
+		#kit10 {
+			background-color: var(--color-panel-header-fill);
 			/*
 		cursor:
 			url("data:image/svg+xml;utf8,\
@@ -371,7 +389,7 @@ d='M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 		.configurable {
 			@include layout-flex-column();
 			@include layout-respond('lg') {
-				// gap: $x-space-xs;
+				// gap:
 			}
 
 			@include layout-respond-max('lg') {

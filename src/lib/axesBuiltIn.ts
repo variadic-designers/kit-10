@@ -4,16 +4,26 @@ export interface TrackedVariant {
 	tooltip: string;
 }
 
-export type TrackerExclusiveVariant = TrackedVariant;
+export interface TrackedRange {
+	maximum?: number;
+	minimum?: number;
+}
 
-export type CustomExclusiveVarint = {};
+export interface TrackedDiscrete {}
+
+export type AxisValue = TrackedVariant[] | TrackedRange | TrackedDiscrete;
+
+export interface AxisArgs {
+	[ident: string]: {};
+}
 
 export interface AxisDefinition {
 	category: 'Static' | 'Dynamic';
 	id: string;
 	name: string;
 	description: string;
-	variants: TrackerExclusiveVariant[];
+	args?: string[];
+	variants: AxisValue;
 }
 
 export const builtinAxes: (AxisDefinition | null)[] = [
@@ -41,7 +51,7 @@ export const builtinAxes: (AxisDefinition | null)[] = [
 		id: '@builtin-interaction',
 		description: 'Response to user interaction',
 		variants: [
-			{ name: 'Default', id: 'default', tooltip: 'No interaction state' },
+			// { name: 'Default', id: 'default', tooltip: 'No interaction state' },
 			// { name: 'Disabled', id: 'disabled', tooltip: 'Suppressed interaction' },
 			{ name: 'Hover', id: 'hover', tooltip: 'When the pointer is over the element' },
 			{ name: 'Focus', id: 'focus', tooltip: 'When the element receives focus' },

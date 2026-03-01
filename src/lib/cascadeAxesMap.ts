@@ -8,6 +8,8 @@
 
 // TODO: Some functions are overengineered. Simplify to fit design intentions
 
+import type { Token } from './editor/panels/Variables.svelte';
+
 /** A single axis can contain one or multiple variant values */
 export type Axis = string | string[];
 
@@ -17,11 +19,23 @@ export type AxisVariantLayerTrace = {
 };
 
 /** An AxesSet represents the active combination of axis states */
+/*
+ *  {
+ *    'darkmode': 'light',
+ *    'btn-tone': 'neutral',
+ *    'btn-hierarchy': 'primary',
+ *  }
+ */
 export type AxesSet = Partial<{
 	[axisName: string]: Axis;
 }>;
 
 /** Basic CSS-style rule dictionary */
+/*
+ * {
+ *   'padding': '0.5rem 2rem'
+ * }
+ * */
 export type Style = Partial<{
 	[property: string]: string;
 }>;
@@ -31,7 +45,6 @@ export type StyleSource = {
 	axesSignature: string;
 	axes: AxesSet;
 	style: Style;
-	specificity: number;
 };
 
 export interface StyleSourceRuntime extends StyleSource {
@@ -173,6 +186,11 @@ export const matches = (context: AxesSet, ruleAxes: AxesSet): boolean => {
 	}
 	return true;
 };
+
+export interface LayerCaste {
+	managerIndex: number;
+	specificity: number;
+}
 
 export const resolve = (axesManager: AxesManager, context: AxesSet): CascadeResult => {
 	const matched = axesManager.layers
