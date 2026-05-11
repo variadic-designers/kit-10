@@ -27,4 +27,5 @@ vite.config.ts.timestamp-*
 src/lib/paraglide
 project.inlang/cache/
 
+# Kit 10
 .kit10/
