@@ -71,22 +71,25 @@ const projects: Kit10Project[] = [
 						value: {
 							kind: 'format',
 							fmt: [0, ' ', 1],
-							resolve: ['gaps-linear-4/space-1', 'gaps-linear-4/space2']
+							resolve: ['gaps-linear-4/space-1', 'gaps-linear-4/space-6']
 						}
 					},
 					{
 						name: 'x-space-xl',
 						displayName: 'Space SM',
+						type: 'spacing',
 						value: { kind: 'simple', resolve: 'gaps-linear-4/space-1' }
 					},
 					{
 						name: 'x-space-md',
 						displayName: 'Space MD',
+						type: 'spacing',
 						value: { resolve: 'gaps-linear-4/space-2' }
 					},
 					{
 						name: 'x-space-lg',
 						displayName: 'Space LG',
+						type: 'spacing',
 						value: { resolve: 'gaps-linear-4/space-5' }
 					},
 					{
@@ -140,32 +143,32 @@ const projects: Kit10Project[] = [
 				displayName: 'Gaps Linear 4',
 				description: 'Definitions of gaps in the scale of 4 in rem units',
 				tokens: [
-					{ name: 'space-0', displayName: 'Space 0', value: '0' },
-					{ name: 'space-1', displayName: 'Space 1', value: '0.25rem' }, // 4px
-					{ name: 'space-2', displayName: 'Space 2', value: '0.5rem' }, // 8px
-					{ name: 'space-3', displayName: 'Space 3', value: '0.75rem' }, // 12px
-					{ name: 'space-4', displayName: 'Space 4', value: '1rem' }, // 16px
-					{ name: 'space-5', displayName: 'Space 5', value: '1.25rem' }, // 20px
-					{ name: 'space-6', displayName: 'Space 6', value: '1.5rem' }, // 24px
-					{ name: 'space-8', displayName: 'Space 8', value: '2rem' }, // 32px
-					{ name: 'space-10', displayName: 'Space 10', value: '2.5rem' }, // 40px
-					{ name: 'space-12', displayName: 'Space 12', value: '3rem' }, // 48px
-					{ name: 'space-16', displayName: 'Space 16', value: '4rem' }, // 64px
-					{ name: 'space-20', displayName: 'Space 20', value: '5rem' }, // 80px
-					{ name: 'space-24', displayName: 'Space 24', value: '6rem' }, // 96px
-					{ name: 'space-28', displayName: 'Space 28', value: '7rem' }, // 112px
-					{ name: 'space-32', displayName: 'Space 32', value: '8rem' }, // 128px
-					{ name: 'space-36', displayName: 'Space 36', value: '9rem' }, // 144px
-					{ name: 'space-40', displayName: 'Space 40', value: '10rem' }, // 160px
-					{ name: 'space-44', displayName: 'Space 44', value: '11rem' }, // 176px
-					{ name: 'space-48', displayName: 'Space 48', value: '12rem' }, // 192px
-					{ name: 'space-52', displayName: 'Space 52', value: '13rem' }, // 208px
-					{ name: 'space-56', displayName: 'Space 56', value: '14rem' }, // 224px
-					{ name: 'space-60', displayName: 'Space 60', value: '15rem' }, // 240px
-					{ name: 'space-64', displayName: 'Space 64', value: '16rem' }, // 256px
-					{ name: 'space-72', displayName: 'Space 72', value: '18rem' }, // 288px
-					{ name: 'space-80', displayName: 'Space 80', value: '20rem' }, // 320px
-					{ name: 'space-96', displayName: 'Space 96', value: '24rem' } // 384px
+					{ name: 'space-0', type: 'spacing', displayName: 'Space 0', value: '0' },
+					{ name: 'space-1', type: 'spacing', displayName: 'Space 1', value: '0.25rem' }, // 4px
+					{ name: 'space-2', type: 'spacing', displayName: 'Space 2', value: '0.5rem' }, // 8px
+					{ name: 'space-3', type: 'spacing', displayName: 'Space 3', value: '0.75rem' }, // 12px
+					{ name: 'space-4', type: 'spacing', displayName: 'Space 4', value: '1rem' }, // 16px
+					{ name: 'space-5', type: 'spacing', displayName: 'Space 5', value: '1.25rem' }, // 20px
+					{ name: 'space-6', type: 'spacing', displayName: 'Space 6', value: '1.5rem' }, // 24px
+					{ name: 'space-8', type: 'spacing', displayName: 'Space 8', value: '2rem' }, // 32px
+					{ name: 'space-10', type: 'spacing', displayName: 'Space 10', value: '2.5rem' }, // 40px
+					{ name: 'space-12', type: 'spacing', displayName: 'Space 12', value: '3rem' }, // 48px
+					{ name: 'space-16', type: 'spacing', displayName: 'Space 16', value: '4rem' }, // 64px
+					{ name: 'space-20', type: 'spacing', displayName: 'Space 20', value: '5rem' }, // 80px
+					{ name: 'space-24', type: 'spacing', displayName: 'Space 24', value: '6rem' }, // 96px
+					{ name: 'space-28', type: 'spacing', displayName: 'Space 28', value: '7rem' }, // 112px
+					{ name: 'space-32', type: 'spacing', displayName: 'Space 32', value: '8rem' }, // 128px
+					{ name: 'space-36', type: 'spacing', displayName: 'Space 36', value: '9rem' }, // 144px
+					{ name: 'space-40', type: 'spacing', displayName: 'Space 40', value: '10rem' }, // 160px
+					{ name: 'space-44', type: 'spacing', displayName: 'Space 44', value: '11rem' }, // 176px
+					{ name: 'space-48', type: 'spacing', displayName: 'Space 48', value: '12rem' }, // 192px
+					{ name: 'space-52', type: 'spacing', displayName: 'Space 52', value: '13rem' }, // 208px
+					{ name: 'space-56', type: 'spacing', displayName: 'Space 56', value: '14rem' }, // 224px
+					{ name: 'space-60', type: 'spacing', displayName: 'Space 60', value: '15rem' }, // 240px
+					{ name: 'space-64', type: 'spacing', displayName: 'Space 64', value: '16rem' }, // 256px
+					{ name: 'space-72', type: 'spacing', displayName: 'Space 72', value: '18rem' }, // 288px
+					{ name: 'space-80', type: 'spacing', displayName: 'Space 80', value: '20rem' }, // 320px
+					{ name: 'space-96', type: 'spacing', displayName: 'Space 96', value: '24rem' } // 384px
 				]
 			}
 		},

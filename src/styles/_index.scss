@@ -8,3 +8,11 @@
 @forward './_semantics' as a11y-*; // Text, headings, visual semantics
 @forward './_inputs' as input-*; // Form/input styling
 @forward './_fonts' as fonts-*; // Form/input styling
+
+input:focus,
+input:focus-visible {
+	max-inline-size: max-content;
+	outline: unset;
+	border: unset;
+	backdrop-filter: brightness(0.9);
+}

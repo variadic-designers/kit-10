@@ -4,26 +4,53 @@
 	import Panel from '../Panel.svelte';
 	import { contextMenu } from '../contextMenu.ts';
 	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
-	import V from './views.ts';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
 		views: string[];
 		viewsPool: Record<string, ComponentView>;
-	};
+	} & { 
+    editorReady: EditorState; 
+    editorActivity: EditorActivity;
+    api: Api;
+  };
 
 	let {
 		selection = $bindable(),
 		views = $bindable(),
-		viewsPool = $bindable()
+		viewsPool = $bindable(),
+
+		// new API
+    api,
+		editorReady,
+		editorActivity = $bindable()
 	}: ViewsPanel = $props();
+
+	export const selectView = (id: string, name: string) => {
+    if (editorActivity.activeViewId !== id) {
+		  editorActivity.activeViewId = id;
+    }
+	};
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [
 		{
 			name: 'add',
 			displayText: 'Box',
 			icon: 'fa-regular fa-window-maximize',
-			onClick: () => {}
+			onClick: () => {
+				if (!editorActivity.activeProjectId) {
+					console.log('No active Project');
+					return;
+				}
+
+				api
+					.createViewInProject(editorActivity.activeProjectId, 'Idk')
+					.then((p) => {
+						if (p) {
+							selectView(p.id, p.name);
+						}
+					});
+			}
 		},
 		'hr',
 		{
@@ -53,160 +80,134 @@
 		}
 	];
 
-	let menu = () => [
-		{
-			name: 'add',
-			displayText: 'Mark as Export',
-			icon: 'fa-solid fa-file-export',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'Rename',
-			icon: 'fa-solid fa-italic',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Deselect',
-			icon: 'fa-solid fa-minus',
-			onClick: () => {
-				selection.selectedViewPrimary = null;
-				selection.selectedKitIndex = null;
+	let menu = (viewId: string): ContextMenuContentGenerator => {
+		return () => [
+			{
+				name: 'add',
+				displayText: 'Mark as Export',
+				icon: 'fa-solid fa-file-export',
+				onClick: () => console.log('Add')
+			},
+			'hr',
+			{
+				name: 'add',
+				displayText: 'Rename',
+				icon: 'fa-solid fa-italic',
+				onClick: () => console.log('Add')
+			},
+			{
+				name: 'add',
+				displayText: 'Deselect',
+				icon: 'fa-solid fa-minus',
+				onClick: () => {
+					selection.selectedViewPrimary = null;
+					selection.selectedKitIndex = null;
+				}
+			},
+			'hr',
+			{
+				name: 'add',
+				displayText: 'New View',
+				icon: 'fa-solid fa-diamond',
+				onClick: () => {}
+			},
+
+			{
+				name: 'trash',
+				displayText: 'Clone View',
+				icon: 'fa-solid fa-clone',
+				onClick: () => {}
+			},
+			'hr',
+			{
+				name: 'trash',
+				displayText: 'Delete View',
+				icon: 'fa-solid fa-trash-can',
+				onClick: () => {
+					apiapi
+						.deleteView(viewId)
+						.then((v) => {
+							console.log(`Deleted view#${viewId}`);
+						});
+				}
 			}
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'New View',
-			icon: 'fa-solid fa-diamond',
-			onClick: () => {}
-		},
+		];
+	};
 
-		{
-			name: 'trash',
-			displayText: 'Clone View',
-			icon: 'fa-solid fa-clone',
-			onClick: () => {}
-		},
-		'hr',
-		{
-			name: 'trash',
-			displayText: 'Delete View',
-			icon: 'fa-solid fa-trash-can',
-			onClick: () => {}
+	import type { Api, EditorState } from 'manager';
+	import { type EditorActivity, liveQuery } from '../Editor.svelte';
+
+	// Select view on project switch
+	$effect(() => {
+		if (viewsQuery.rows[0] && editorActivity.activeProjectId && editorActivity.activeWorkspaceId) {
+			editorActivity.activeViewId = viewsQuery.rows[0].viewId;
+		} else {
+			editorActivity.activeViewId = null;
 		}
-	];
-
-	import { selectView } from './views.ts';
-
-	import { setDebugMode, dndzone } from 'svelte-dnd-action';
-	setDebugMode(true);
-
-	let wrappedViews = views.map((v) => {
-		return { id: v };
 	});
 
-	function handleDnd(parentId: string | null, newItems: { id: string }[]) {
-		const newIds = newItems.map((i) => i.id);
-
-		if (parentId === null) {
-			views = newIds;
-
-			// use existing objects from map
-			// wrappedViews.length = 0;
-		} else if (viewsPool[parentId].primitive.kind === 'container') {
-			// viewsPool[parentId].primitive.children = newIds;
-		}
-	}
+	const viewsQuery = liveQuery(
+		(api, activity) => {
+			return api.getViewsByProjectId(activity.activeProjectId);
+		},
+	);
 </script>
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">
 	{#snippet content()}
-		<ul
-			class="views"
-			use:dndzone={{ items: wrappedViews, type: 'views' }}
-			onconsider={(e) => handleDnd(null, e.detail.items)}
-			onfinalize={(e) => handleDnd(null, e.detail.items)}
-		>
-			{#snippet kitter(view: ComponentView, level: number, id: string)}
+		<!-- <pre>{JSON.stringify(viewsQuery, null, 2)}</pre> -->
+		<ul class="views">
+			{#if viewsQuery.rows}
+				{#each viewsQuery.rows as v (v.viewId)}
+					{@render kitter(v, 0)}
+				{/each}
+			{/if}
+		</ul>
+	{/snippet}
+</Panel>
+
+{#snippet kitter(v, level: number)}
+	<!--
 				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
 				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}
 				{@const hideFontAwesomeChar = view['hide'] ? 'eye-slash' : 'eye'}
 				{@const lockFontAwesomeChar = view['lock'] ? 'lock' : 'lock-open'}
+        -->
 
-				{@const viewIcon =
-					view.primitive?.kind === 'text' ? 'fa-solid fa-italic' : 'fa-regular fa-window-maximize'}
+	{@const viewIcon =
+		v.primitive?.kind === 'text' ? 'fa-solid fa-italic' : 'fa-regular fa-window-maximize'}
 
+	<li class="view-field">
+		<button
+			style="--level: {level}"
+			class="view"
+			class:view--selected={editorActivity.activeViewId === v.viewId}
+			use:contextMenu={menu(v.viewId)}
+			aria-label={v.viewName}
+			onclick={() => selectView(v.viewId, v.viewName)}
+		>
+			<i class="view__icon {viewIcon}"></i>
+			<div class="view__name" contenteditable="false">
+				{v.viewName ?? 'Literally Nothing'}
+			</div>
+		</button>
+	</li>
+
+	{#if v.primitive?.kind === 'container'}
+		{#each v.primitive.children as child}
+			{#if viewsPool[child]}
+				{@render kitter(viewsPool[child], level + 1, child)}
+			{:else}
 				<li class="view-field">
-					<button
-						style="--level: {level}"
-						class="view"
-						class:view--selected={selection.selectedViewPrimary === id}
-						use:contextMenu={menu}
-						aria-label={view.name}
-						onclick={selectView(view, id, selection)}
-					>
-						<i class="view__icon {viewIcon}"></i>
-						<div class="view__name" contenteditable="false">
-							{view.name ?? 'Unnamed'}
-						</div>
-					</button>
-
-					<button
-						onclick={() => {
-							view['lock'] = !!!view['lock'];
-						}}
-						class="view-option view-option--lock"
-						title="{hideVerb} '{view.name}'"
-						aria-label="{hideVerb} '{view.name}'"
-					>
-						<i class="fa-solid fa-{lockFontAwesomeChar}"></i>
-					</button>
-
-					<button
-						onclick={() => {
-							view['hide'] = !!!view['hide'];
-						}}
-						class="view-option view-option--hide"
-						title="{hideVerb} '{view.name}'"
-						aria-label="{hideVerb} '{view.name}'"
-					>
-						<i class="fa-{hideFontAwesomeType} fa-{hideFontAwesomeChar}"></i>
+					<button class="view" title="Unable to resolve #{child}">
+						<i class="view__icon fa-solid fa-question"></i>
+						<div class="view__name" contenteditable="false"></div>
 					</button>
 				</li>
-
-				{#if view.primitive?.kind === 'container'}
-					{#each view.primitive.children as child}
-						{#if viewsPool[child]}
-							{@render kitter(viewsPool[child], level + 1, child)}
-						{:else}
-							<li class="view-field">
-								<button class="view">
-									<i class="view__icon fa-solid fa-question"></i>
-									<div class="view__name" contenteditable="false">
-										'Unable to resolve #{child.split('-')[0]}'
-									</div>
-								</button>
-							</li>
-						{/if}
-					{/each}
-				{/if}
-			{/snippet}
-
-			{#each views as view, i}
-				{@const viewFound = viewsPool[view]}
-
-				{#if viewFound}
-					{@render kitter(viewFound, 0, view)}
-				{:else}
-					Unresolved View. ID: {view}
-				{/if}
-			{/each}
-		</ul>
-	{/snippet}
-</Panel>
+			{/if}
+		{/each}
+	{/if}
+{/snippet}
 
 <style lang="scss">
 	@use '_index' as *;

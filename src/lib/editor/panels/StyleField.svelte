@@ -137,13 +137,14 @@
 
 	// Action for receiving Tokens
 	const tokenDrop = dropzone<Token>();
+
 	const softResolve = (path: string, library: TokenLibrary): Token | undefined => {
 		const [head, ...rest] = path.split('/');
 		// console.log(`About to resolve from library ${head}, with the rest ${JSON.stringify(rest,null, 2)}`)
 
 		if (!head) return; // namespace doesn't exist for some reason
 
-		console.log(library, head, library[head]);
+		// console.log(library, head, library[head]);
 
 		const node = library[head];
 
@@ -171,6 +172,42 @@
 
 		return undefined; // not found
 	};
+
+	const confirmUpdateStyle = () => {
+		editValue.now = false;
+
+		if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
+			const layers =
+				kitsPool[
+					viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid
+				].sets.layers;
+
+			// Normalize: no set specified means {}
+			const targetAxes = set ?? {};
+
+			// Find the layer matching the target axes
+			const layer = layers.find((l) => {
+				console.log(
+					`Comparing layer axes ${JSON.stringify(l.axes)} to target ${JSON.stringify(targetAxes)}`
+				);
+				return shallowEqual(l.axes, targetAxes);
+			});
+
+			console.log(`Tried to edit ${JSON.stringify(layer)}, with ${key}: ${editValue.content}`);
+
+			if (layer) {
+				layer.style[key] = editValue.content;
+			} else {
+				// Optional: if no matching layer exists, you could create it
+				layers.push({
+					axesSignature: '',
+					axes: {},
+					style: { [key]: editValue.content }
+				});
+				console.warn('No layer found for target axes, edit skipped');
+			}
+		}
+	};
 </script>
 
 <div
@@ -190,6 +227,7 @@
 		onclick={() => {
 			highlighted = !highlighted;
 		}}
+		draggable={highlighted}
 	>
 		{displayText ?? key}
 	</button>
@@ -233,43 +271,7 @@
 			}}
 			onkeydown={(e) => {
 				if (e.key === 'Enter') {
-					editValue.now = false;
-
-					if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
-						const layers =
-							kitsPool[
-								viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex]
-									.source_uuid
-							].sets.layers;
-
-						// Normalize: no set specified means {}
-						const targetAxes = set ?? {};
-
-						// Find the layer matching the target axes
-						const layer = layers.find((l) => {
-							console.log(
-								`Comparing layer axes ${JSON.stringify(l.axes)} to target ${JSON.stringify(targetAxes)}`
-							);
-							return shallowEqual(l.axes, targetAxes);
-						});
-
-						console.log(
-							`Tried to edit ${JSON.stringify(layer)}, with ${key}: ${editValue.content}`
-						);
-
-						if (layer) {
-							layer.style[key] = editValue.content;
-						} else {
-							// Optional: if no matching layer exists, you could create it
-							layers.push({
-								axesSignature: '',
-								axes: {},
-								specificity: 0,
-								style: { [key]: editValue.content }
-							});
-							console.warn('No layer found for target axes, edit skipped');
-						}
-					}
+					confirmUpdateStyle();
 				}
 			}}
 			use:contextMenu={menu}
@@ -289,6 +291,7 @@
 				dragOverClassName: 'option124__value--dragged-over',
 				ondrop: (t: Token) => {
 					console.log(JSON.stringify(t, null, 2));
+					const path = `meowzer/${t.name}`;
 				}
 			}}
 		>
@@ -343,20 +346,13 @@
 		padding-inline: $x-space-sm;
 
 		@include layout-respond('md') {
-			font-size: $x-font-size-md;
+			font-size: $x-font-size-sm;
 			letter-spacing: 1px;
 			gap: $x-space-xs;
 		}
 
 		@include layout-respond-max('xl') {
 			font-size: $x-font-size-sm;
-		}
-
-		&__track,
-		&__style-name,
-		&__value {
-			// padding-block: calc($x-space-xs / 4);
-			// padding-inline: calc($x-space-xs / 4);
 		}
 
 		&__track {
@@ -402,14 +398,13 @@
 
 		&__value {
 			all: unset;
-			padding: 2px;
+			padding: calc($x-space-xs / 2);
 			text-align: center;
 			flex-basis: 60%;
 			flex-shrink: 1;
 			position: relative;
 			border-radius: 1px;
 			color: var(--color-add-var-text);
-			cursor: text;
 			font-size: $x-font-size-sm;
 			background:
 				radial-gradient(closest-side, var(--color-panel-header-fill) 90%, transparent 100%) 0 0/ 3px
@@ -465,11 +460,13 @@
 			text-decoration: underline;
 		}
 
+		$border-rad: calc($x-space-xs / 2);
+
 		&--top > * {
-			border-radius: $x-space-xs $x-space-xs 0 0;
+			border-radius: $border-rad $border-rad 0 0;
 		}
 		&--bottom > * {
-			border-radius: 0 0 $x-space-xs $x-space-xs;
+			border-radius: 0 0 $border-rad $border-rad;
 		}
 
 		&--top > *,

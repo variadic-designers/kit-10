@@ -20,6 +20,7 @@
 		kits: string[];
 		viewsPool: Record<string, ComponentView>;
 		kitsPool: Record<string, ComponentFlat>;
+    api: Api;
 	};
 
 	let {
@@ -27,7 +28,9 @@
 		kits,
 		views,
 		kitsPool = $bindable(),
-		viewsPool = $bindable()
+		viewsPool = $bindable(),
+
+    api,
 	}: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
@@ -125,6 +128,7 @@
 	import Axis from './Axis.svelte';
 	import { type AxesSet, type AxisVariantLayerTrace } from '../../cascadeAxesMap.ts';
 	import type { EditorSelection } from '../Editor.svelte';
+	import type { Api } from 'manager';
 
 	// Basically backtracks kit Definitions to find respective
 	// Layers for each axis variant
@@ -249,8 +253,8 @@
 
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
+			BRO
 		{#if !selection.selectedViewPrimary || selection.selectedKitIndex === null || !selection.selectedViewCascadeResult}
-			<!-- BRO -->
 			<!-- <p>{!selection.selectedViewPrimary}</p> -->
 			<!-- <p>{!selection.selectedKitIndex !== null}</p> -->
 			<!-- <p>{!selection.selectedViewCascadeResult}</p> -->

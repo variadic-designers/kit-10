@@ -123,6 +123,15 @@ export const calculateSpecificity = (axesManager: axesManager, axes: AxesSet): n
 	return score;
 };
 
+export const calculateSpecificity2 = (
+	axesManager: axesManager,
+	axes: AxesSet,
+	axisRank: AxesDefinition[],
+	managerIndex: number
+): number => {
+	return 0;
+};
+
 export const areAxesSetsEquivalent = (a: AxesSet, b: AxesSet): boolean => {
 	const keysA = Object.keys(a).sort();
 	const keysB = Object.keys(b).sort();

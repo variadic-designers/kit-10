@@ -129,7 +129,7 @@
 
 				{@render styleSection(
 					'layout',
-					[{ key: 'padding', displayText: 'Pad' }, { key: 'width' }, { key: 'height' }],
+					[{ key: 'padding', displayText: 'Padding' }, { key: 'width' }, { key: 'height' }],
 					kitsPool
 				)}
 

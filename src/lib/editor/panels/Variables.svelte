@@ -1,4 +1,34 @@
 <script lang="ts" module>
+	import { jsonArrayFrom } from 'manager';
+
+	function buildLibraryTree(flatData: any[]) {
+		const map = new Map();
+		const roots = [];
+
+		// Step 1: Initialize all nodes in the map and inject the childlibraries array
+		for (const item of flatData) {
+			map.set(item.id, { ...item, childlibraries: [] });
+		}
+
+		// Step 2: Link children to their parents
+		for (const item of flatData) {
+			const node = map.get(item.id);
+
+			if (item.parent_library_id === null) {
+				// It's a top-level library
+				roots.push(node);
+			} else {
+				// It's a child, push it into its parent's array
+				const parent = map.get(item.parent_library_id);
+				if (parent) {
+					parent.childlibraries.push(node);
+				}
+			}
+		}
+
+		return roots;
+	}
+
 	export type TokenValueKind = 'string' | 'number' | 'range' | TokenValueKind[];
 
 	export type ResolutionType = 'expression' | 'upstream';
@@ -33,13 +63,18 @@
 		}
 	};
 
-	export type TokenValueBare = string;
+	export type TokenValueBare = {
+		kind: 'raw';
+		value: string;
+	};
 
 	export type TokenValueResolveSimple = {
+		kind: 'simple';
 		resolve: string;
 	};
 
 	export type TokenValueResolveFormat = {
+		kind: 'format';
 		fmt?: (number | string)[];
 		resolve: string[];
 	};
@@ -93,19 +128,13 @@
 	export type TokenPanelProps = {
 		tokens: Token[];
 		tokenLibraries: TokenLibrary;
-
-		/*
-		selectedKit?: ComponentView;
-		kitViews: ComponentView[];
-		kits: ComponentFlat[];
-    */
 	};
 </script>
 
 <script lang="ts">
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
-	import { contextMenu } from '../contextMenu';
-	import type { ContextMenuContent } from '../contextMenuStore';
+	import { contextMenu } from '../contextMenu.js';
+	import type { ContextMenuContent } from '../contextMenuStore.js';
 	import Panel from '../Panel.svelte';
 
 	function findTokenByPath(library: TokenLibrary, path: string): Token | undefined {
@@ -133,7 +162,7 @@
 	function trace(token: Token, tokenLibraries: TokenLibrary): (Token | 'failed resolution')[] {
 		const chain: (Token | 'failed resolution')[] = [token];
 
-		if (token.value.kind === 'bare') {
+		if (token.value.kind === 'raw') {
 			return chain;
 		} else if (token.value.kind === 'simple') {
 			const ref = token.value.resolve;
@@ -172,7 +201,62 @@
 		return result;
 	}
 
-	const { tokens = $bindable(), tokenLibraries = $bindable() }: TokenPanelProps = $props();
+	import { type EditorState } from 'manager';
+	import { query } from '../Editor.svelte';
+
+	let libraries: any = $state();
+	// const libraries_: any = $derived(buildLibraryTree(libraries.rows));
+
+	/*
+	$effect(() => {
+		let unsubscribe: (() => void) | undefined;
+
+		const baseSelect = editorReady.dialect
+			.selectFrom('token_libraries')
+			.innerJoin('projects', 'projects.id', 'token_libraries.project_id')
+			.select(['token_libraries.id', 'token_libraries.name', 'token_libraries.project_id']);
+		// .where('projects.selected', '=', 'primary');
+
+		// 2. The Recursive execution
+		const flatLibraries = editorReady.dialect
+			.withRecursive('library_tree', (db) =>
+				// Inject your variable directly here as the starting point
+				baseSelect.unionAll(
+					db
+						.selectFrom('token_libraries')
+						.innerJoin('library_tree', 'library_tree.id', 'tokens.project_id')
+						.select(['token_libraries.id', 'token_libraries.name', 'token_libraries.project_id'])
+				)
+			)
+			// 3. Grab the flattened tree and bundle the tokens
+			.selectFrom('library_tree')
+			.select((eb) => [
+				'library_tree.id',
+				'library_tree.name',
+				'library_tree.project_id',
+				jsonArrayFrom(
+					eb.selectFrom('tokens').selectAll().whereRef('library_id', '=', 'library_tree.id')
+				).as('tokens')
+			]);
+
+		query(editorReady, baseSelect, (rows) => {
+			// libraries = buildLibraryTree(rows);
+			libraries = rows;
+		}).then((lq) => {
+			unsubscribe = lq.unsubscribe;
+		});
+
+		return () => {
+			unsubscribe?.();
+		};
+	});
+  */
+
+	const {
+		tokens = $bindable(),
+		tokenLibraries = $bindable(),
+		editorReady
+	}: TokenPanelProps & { editorReady: EditorState } = $props();
 
 	let tokenPanelContextMenu: ContextMenuContent = () => [
 		{
@@ -278,6 +362,51 @@
 
 	import { drag } from '../dragDrop.ts';
 	const tokenDrag = drag<Token>();
+
+	let new_library = $state('');
+	let new_token_name = $state('');
+	let new_token_value = $state('');
+
+	const newLibrary = (e: SubmitEvent, id: string) => {
+		e.preventDefault();
+
+		/*
+		editorReady.dialect
+			.selectFrom('projects')
+			.select(['id'])
+			// .where('projects.selected', '=', 'primary')
+			.executeTakeFirst()
+			.then((p) => {
+				if (p) {
+					editorReady.dialect
+						.insertInto('token_libraries')
+						.values({
+							project_id: p.id,
+							name: new_library ?? 'Unnamed'
+						})
+						.execute();
+
+					new_library = '';
+				}
+			});
+      */
+	};
+
+	const newToken = (e: SubmitEvent, id: string) => {
+		e.preventDefault();
+
+		editorReady.dialect
+			.insertInto('tokens')
+			.values({
+				library_id: id,
+				name: new_token_name ?? 'Unnamed',
+				value: new_token_value
+			})
+			.execute();
+
+		new_token_name = '';
+		new_token_value = '';
+	};
 </script>
 
 {#snippet tokenEnumeration(tokens: Token[])}
@@ -312,6 +441,27 @@
 	tooltip="Design tokens in use and Libraries"
 >
 	{#snippet content()}
+		<pre>{JSON.stringify(libraries, null, 2)}</pre>
+
+		{#if libraries}
+			<form onsubmit={(e) => newLibrary(e, libraries[0].id)}>
+				<label>
+					<input type="text" bind:value={new_library} />
+				</label>
+				<button type="submit" disabled={!new_library}>New Library</button>
+			</form>
+
+			<form onsubmit={(e) => newToken(e, libraries[0].id)}>
+				<label>
+					<input type="text" bind:value={new_token_name} />
+				</label>
+				<label>
+					<input type="text" bind:value={new_token_value} />
+				</label>
+				<button type="submit" disabled={!new_token_value || !new_token_name}>New Token</button>
+			</form>
+		{/if}
+
 		<div class="token-section">
 			<ul class="tokens-library">
 				{#snippet renderLibrary(lib: TokenLibrary, level: number)}
@@ -383,8 +533,9 @@
 			list-style: none;
 			display: flex;
 
-			width: 100%;
 			padding-block: calc($x-space-xs / 4);
+			padding-inline: $x-space-sm $x-space-sm;
+			align-items: center;
 
 			span {
 				flex-grow: 1;
@@ -392,6 +543,7 @@
 
 			i.fa-angle-down {
 				transition: rotate 200ms ease-out;
+				font-size: $x-font-size-xs;
 			}
 		}
 
@@ -454,7 +606,7 @@
 		padding-block: calc($x-space-xs * 0.5);
 		text-align: left;
 
-		@include fonts-stack('Satoshi-Regular', sans);
+		@include fonts-stack('Satoshi-Light', sans);
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;

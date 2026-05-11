@@ -87,12 +87,13 @@
 
 		h2 {
 			display: inline-block;
-			@include fonts-stack('Satoshi-Black', sans);
+			@include fonts-stack('Satoshi-Light', sans);
 			text-transform: uppercase;
 			color: var(--color-text-muted);
 			flex-grow: 1;
 			padding-block: $x-space-xs;
 			padding-left: $x-space-xs;
+			letter-spacing: 1px;
 
 			@include layout-respond-max('lg') {
 				font-size: $x-font-size-sm;
