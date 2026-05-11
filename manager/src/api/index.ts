@@ -14,10 +14,7 @@ export interface QueryOrdering {
 		| undefined
 	>;
 
-	detachKitFromComposition: (
-		kitId: string,
-		viewId: string
-	) => Promise<void>;
+	detachKitFromComposition: (kitId: string, viewId: string) => Promise<void>;
 }
 
 export interface QueryAction {
@@ -162,11 +159,11 @@ export interface QueryBuilder {
 			kitId: string;
 			kitName: string;
 			kitIndex: number;
-      kitView: string;
+			kitView: string;
 		}
 	>;
 
-  getKitsExceptFromViewId: (viewId: string) => SelectQueryBuilder<
+	getKitsExceptFromViewId: (viewId: string) => SelectQueryBuilder<
 		Schema,
 		'kits',
 		{
@@ -253,13 +250,13 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		});
 	},
 
-  detachKitFromComposition: async (kitId: string, viewId: string) => {
-      await db
-        .deleteFrom('compositions')
-        .where('compositions.kit_id', '=', kitId)
-        .where('compositions.view_id', '=', viewId)
-        .execute();
-  },
+	detachKitFromComposition: async (kitId: string, viewId: string) => {
+		await db
+			.deleteFrom('compositions')
+			.where('compositions.kit_id', '=', kitId)
+			.where('compositions.view_id', '=', viewId)
+			.execute();
+	},
 
 	deleteView: async (viewId: string) => {
 		await db.deleteFrom('views').where('views.id', '=', viewId).execute();
@@ -351,23 +348,20 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.select([
 				'kits.id as kitId',
 				'kits.name as kitName',
-        'compositions.view_id as kitView',
+				'compositions.view_id as kitView',
 				'compositions.priority_index as kitIndex'
 			]);
 
 		return query;
 	},
 
-  getKitsExceptFromViewId: (viewId) => {
-    const query = db
-      .selectFrom('compositions')
-      .innerJoin('kits', 'kits.id', 'compositions.kit_id')
-      .where('compositions.view_id', '!=', viewId)
-			.select([
-				'kits.id as kitId',
-				'kits.name as kitName',
-			]);
+	getKitsExceptFromViewId: (viewId) => {
+		const query = db
+			.selectFrom('compositions')
+			.innerJoin('kits', 'kits.id', 'compositions.kit_id')
+			.where('compositions.view_id', '!=', viewId)
+			.select(['kits.id as kitId', 'kits.name as kitName']);
 
-    return query;
-  }
+		return query;
+	}
 });
