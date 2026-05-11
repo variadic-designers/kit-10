@@ -35,7 +35,7 @@ Axes may be:
 - Numeric or symbolic
 
 Each axis should represent exactly one idea.  
-Axes should not overlap in meaning.
+An Axis by itself should not overlap in meaning with other axis.
 
 ---
 
@@ -77,15 +77,13 @@ Changes must be the result of upstream input changes.
 
 Every derived value should be traceable to the axis inputs that produced it.
 
-If a value cannot be traced back to intent, it should not exist.
-
 ---
 
 ## Components
 
-Components are not primary entities.
+UI Components are not primary entities.
 
-A component is rendered by evaluating the current axis state.  
+A component is rendered by evaluating the current axis state(s).
 Component variants are expressions of different axis positions.
 
 ---
@@ -95,7 +93,7 @@ Component variants are expressions of different axis positions.
 Tokens may be emitted as outputs.
 
 They are derived artifacts and are not authoritative.  
-Tokens should not require manual adjustment.
+Tokens do not require manual adjustment.
 
 ---
 
@@ -113,9 +111,9 @@ Axes may be added or removed without restructuring the framework.
 
 ## Intent encoding
 
-Inputs describe intent, not appearance.
+Inputs describe intent, not necessarily appearance.
 
-Visual characteristics are derived from axis evaluation rather than specified directly.
+Visual characteristics are derived from axis choice evaluation rather than specified directly.
 
 ---
 
