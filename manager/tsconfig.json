@@ -1,0 +1,32 @@
+{
+	"compilerOptions": {
+		"declaration": true,
+		"emitDeclarationOnly": false,
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"target": "ES2022",
+		"module": "NodeNext", // Match the downstream
+		"moduleResolution": "NodeNext", // Ensure imports work correctly
+		"outDir": "dist",
+		"paths": {},
+		"noUnusedLocals": true,
+		"noUnusedParameters": false,
+		"allowUnusedLabels": false,
+		"noUncheckedSideEffectImports": true,
+		"noFallthroughCasesInSwitch": true,
+		"allowUnreachableCode": false,
+		// optional
+		"noUncheckedIndexedAccess": true,
+		"noPropertyAccessFromIndexSignature": true,
+		"erasableSyntaxOnly": true,
+		//
+		"noImplicitOverride": true,
+		"noErrorTruncation": false,
+		"exactOptionalPropertyTypes": true,
+
+		"allowJs": false
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "dist", "src/tokens/**/*"]
+}
