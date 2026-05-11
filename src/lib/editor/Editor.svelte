@@ -45,7 +45,7 @@
 	import { queryBuilder } from 'manager';
 
 	export function liveQuery<T>(
-		query: (api: Api, activity: EditorActivity) => EditorQueryBuilder<T>,
+		query: (api: Api, activity: EditorActivity) => EditorQueryBuilder<T>
 	) {
 		// Internal reactive state
 		let rows = $state<T[]>([]);
@@ -55,12 +55,12 @@
 		$effect(() => {
 			// Track the query and params defensively
 			let unsubscribe: (() => Promise<void>) | null = null;
-      const editor = editorLoading;
-      const activity = editorActivity;
+			const editor = editorLoading;
+			const activity = editorActivity;
 
-      if (!editor) {
-        return;
-      }
+			if (!editor) {
+				return;
+			}
 
 			isFetching = true;
 
@@ -109,7 +109,6 @@
 	import { writable } from 'svelte/store';
 	import type { ContextMenuContentGenerator } from './contextMenuStore.ts';
 	import type { Kit10ProjectEditor, Kit10Project } from '$lib/types.js';
-
 
 	const project: Kit10ProjectEditor = $props();
 
@@ -192,7 +191,6 @@
 	import type { EditorState, EditorQueryBuilder, EditorCore, Api, EditorDialect } from 'manager';
 	import { initializeEditorState } from 'manager';
 
-
 	onMount(async () => {
 		await initializeEditorState().then((e) => {
 			if (e) {
@@ -205,11 +203,11 @@
 
 	$effect(() => {
 		const activity = {
-	  	activeWorkspaceId: editorActivity.activeWorkspaceId,
-	  	activeProjectId: editorActivity.activeProjectId,
-	  	activeViewId: editorActivity.activeViewId,
-		  activeKitId: editorActivity.activeKitId,
-    };
+			activeWorkspaceId: editorActivity.activeWorkspaceId,
+			activeProjectId: editorActivity.activeProjectId,
+			activeViewId: editorActivity.activeViewId,
+			activeKitId: editorActivity.activeKitId
+		};
 
 		console.table(activity);
 	});
@@ -253,26 +251,19 @@
 	{/snippet}
 
 	{#snippet management(editorReady)}
-    {@const api = queryBuilder(editorReady.dialect)}
+		{@const api = queryBuilder(editorReady.dialect)}
 
 		<ProjectPanel {api} {editorReady} bind:editorActivity />
 
 		<ViewsPanel {api} {editorReady} bind:editorActivity {views} {viewsPool} bind:selection />
 
-		<ComposePanel
-			{api}
-			bind:editorActivity
-			{editorReady}
-			{viewsPool}
-			{kitsPool}
-			bind:selection
-		/>
+		<ComposePanel {api} bind:editorActivity {editorReady} {viewsPool} {kitsPool} bind:selection />
 
 		<AxesPanel {api} {kits} {views} {kitsPool} bind:viewsPool {selection} />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}
-    {@const api = queryBuilder(editorReady.dialect)}
+		{@const api = queryBuilder(editorReady.dialect)}
 
 		<StylesPanel tokens={tokenLibraries} {kits} {kitsPool} {views} {viewsPool} {selection} />
 

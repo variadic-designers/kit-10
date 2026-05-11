@@ -9,9 +9,7 @@
 
 	const { editorReady, editorActivity = $bindable() }: MainMenuProps = $props();
 
-	const workspaceQuery = liveQuery(
-		(api) => api.getAllWorkspaces(),
-	);
+	const workspaceQuery = liveQuery((api) => api.getAllWorkspaces());
 
 	import { type Snippet } from 'svelte';
 

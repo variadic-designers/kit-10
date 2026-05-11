@@ -32,48 +32,55 @@
 				icon: 'fa-solid fa-box-open',
 				onClick: () => {
 					if (editorActivity.activeViewId && editorActivity.activeProjectId) {
-            console.log('About to create kit');
+						console.log('About to create kit');
 						api.createKitInProject(editorActivity.activeProjectId, 'Cool Kit').then((k) => {
-              console.log(`About to attach kit ${k.id}`);
+							console.log(`About to attach kit ${k.id}`);
 							if (k && editorActivity.activeViewId) {
 								api.attachKitToComposition(k.id, editorActivity.activeViewId).then((kc) => {
-                  if (kc) {
-                    console.log(`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`);
-                  } else {
-                    console.error(`Failed to attach kit ${k.id}`);
-                  }
-                });
+									if (kc) {
+										console.log(
+											`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`
+										);
+									} else {
+										console.error(`Failed to attach kit ${k.id}`);
+									}
+								});
 							}
 						});
 					}
 				}
 			},
 
-      'hr',
-      
-      ...(kitsUnusedQuery.rows.map((k) => {
-        kitsQuery.rows;
-        return {
-          name: k.kitName,
-          displayText: k.kitName,
-          icon: 'fa-solid fa-puzzle-piece',
-          onClick: () => {
-            if (editorActivity.activeViewId) {
-              api.attachKitToComposition(k.kitId, editorActivity.activeViewId).then((kc) => {
-                  if (kc) {
-                    console.log(`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`);
-                  } else {
-                    console.error(`Failed to attach kit ${k.id}`);
-                  }
-              });
-            }
-          },
-        }
-      }))
+			'hr',
+
+			...kitsUnusedQuery.rows.map((k) => {
+				kitsQuery.rows;
+				return {
+					name: k.kitName,
+					displayText: k.kitName,
+					icon: 'fa-solid fa-puzzle-piece',
+					onClick: () => {
+						if (editorActivity.activeViewId) {
+							api.attachKitToComposition(k.kitId, editorActivity.activeViewId).then((kc) => {
+								if (kc) {
+									console.log(
+										`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`
+									);
+								} else {
+									console.error(`Failed to attach kit ${k.id}`);
+								}
+							});
+						}
+					}
+				};
+			})
 		];
 	});
 
-	const kitcontextMenuContent: (kitId: string, viewId: string) => ContextMenuContentGenerator  = (kitId, viewId) => {
+	const kitcontextMenuContent: (kitId: string, viewId: string) => ContextMenuContentGenerator = (
+		kitId,
+		viewId
+	) => {
 		return () => [
 			{
 				name: 'add',
@@ -99,29 +106,30 @@
 				displayText: 'Remove',
 				icon: 'fa-solid fa-trash',
 				onClick: () => {
-          api.detachKitFromComposition(kitId, viewId);
-        }
+					api.detachKitFromComposition(kitId, viewId);
+				}
 			}
 		];
 	};
 
-	const kitsQuery = liveQuery(
-		(api, activity) => {
-			return api.getKitCompositionByViewId(activity.activeViewId);
-		},
-	);
+	const kitsQuery = liveQuery((api, activity) => {
+		return api.getKitCompositionByViewId(activity.activeViewId);
+	});
 
-	const kitsUnusedQuery = liveQuery(
-		(api, activity) => {
-      // funny way to be reactive ngl
-      kitsQuery.rows;
-			return api.getKitsExceptFromViewId(activity.activeViewId);
-		},
-	);
+	const kitsUnusedQuery = liveQuery((api, activity) => {
+		// funny way to be reactive ngl
+		kitsQuery.rows;
+		return api.getKitsExceptFromViewId(activity.activeViewId);
+	});
 
 	// Select kit on project switch
 	$effect(() => {
-		if (kitsQuery.rows[0] && editorActivity.activeViewId && editorActivity.activeProjectId && editorActivity.activeWorkspaceId) {
+		if (
+			kitsQuery.rows[0] &&
+			editorActivity.activeViewId &&
+			editorActivity.activeProjectId &&
+			editorActivity.activeWorkspaceId
+		) {
 			editorActivity.activeKitId = kitsQuery.rows[0].kitId;
 		} else {
 			editorActivity.activeKitId = null;
@@ -134,13 +142,13 @@
 		<!-- {@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']} -->
 		{@const icons = ['fa-octagon', 'fa-septagon', 'fa-hexagon', 'fa-pentagon', 'fa-diamond']}
 		<ol class="kits">
-      <!--
+			<!--
 			<pre>{JSON.stringify(kitsQuery, null, 2)}</pre>
       -->
 
-      {#if kitsQuery.rows}
-        {#each kitsQuery.rows as k, i}
-          <li class="kit-field" title={k.kitId}>
+			{#if kitsQuery.rows}
+				{#each kitsQuery.rows as k, i}
+					<li class="kit-field" title={k.kitId}>
 						<label use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)}>
 							<span class="kit-field__name">
 								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
@@ -159,21 +167,20 @@
 									icons.length - kitsQuery.rows.length + i
 								]}"
 							></i>
-              
-              <!--
+
+							<!--
 							<button aria-label="Hide/Unhide Kit">
 								<i class="kit-field__icon fa-regular fa-eye"></i>
 							</button>
               -->
 						</label>
 					</li>
-        {/each}
+				{/each}
+			{:else}
+				No rows
+			{/if}
 
-        {:else}
-          No rows
-      {/if}
-      
-      <!--
+			<!--
 			{#if selection.selectedViewPrimary && viewsPool[selection.selectedViewPrimary]}
 				{@const kits = viewsPool[selection.selectedViewPrimary].resolve.map(
 					(r) => kitsPool[r.source_uuid]

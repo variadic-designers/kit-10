@@ -20,7 +20,7 @@
 		kits: string[];
 		viewsPool: Record<string, ComponentView>;
 		kitsPool: Record<string, ComponentFlat>;
-    api: Api;
+		api: Api;
 	};
 
 	let {
@@ -30,7 +30,7 @@
 		kitsPool = $bindable(),
 		viewsPool = $bindable(),
 
-    api,
+		api
 	}: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
@@ -253,7 +253,7 @@
 
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
-			BRO
+		BRO
 		{#if !selection.selectedViewPrimary || selection.selectedKitIndex === null || !selection.selectedViewCascadeResult}
 			<!-- <p>{!selection.selectedViewPrimary}</p> -->
 			<!-- <p>{!selection.selectedKitIndex !== null}</p> -->

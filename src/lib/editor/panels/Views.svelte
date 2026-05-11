@@ -9,11 +9,11 @@
 		selection: EditorSelection;
 		views: string[];
 		viewsPool: Record<string, ComponentView>;
-	} & { 
-    editorReady: EditorState; 
-    editorActivity: EditorActivity;
-    api: Api;
-  };
+	} & {
+		editorReady: EditorState;
+		editorActivity: EditorActivity;
+		api: Api;
+	};
 
 	let {
 		selection = $bindable(),
@@ -21,15 +21,15 @@
 		viewsPool = $bindable(),
 
 		// new API
-    api,
+		api,
 		editorReady,
 		editorActivity = $bindable()
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, name: string) => {
-    if (editorActivity.activeViewId !== id) {
-		  editorActivity.activeViewId = id;
-    }
+		if (editorActivity.activeViewId !== id) {
+			editorActivity.activeViewId = id;
+		}
 	};
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [
@@ -43,13 +43,11 @@
 					return;
 				}
 
-				api
-					.createViewInProject(editorActivity.activeProjectId, 'Idk')
-					.then((p) => {
-						if (p) {
-							selectView(p.id, p.name);
-						}
-					});
+				api.createViewInProject(editorActivity.activeProjectId, 'Idk').then((p) => {
+					if (p) {
+						selectView(p.id, p.name);
+					}
+				});
 			}
 		},
 		'hr',
@@ -124,11 +122,9 @@
 				displayText: 'Delete View',
 				icon: 'fa-solid fa-trash-can',
 				onClick: () => {
-					apiapi
-						.deleteView(viewId)
-						.then((v) => {
-							console.log(`Deleted view#${viewId}`);
-						});
+					apiapi.deleteView(viewId).then((v) => {
+						console.log(`Deleted view#${viewId}`);
+					});
 				}
 			}
 		];
@@ -146,11 +142,9 @@
 		}
 	});
 
-	const viewsQuery = liveQuery(
-		(api, activity) => {
-			return api.getViewsByProjectId(activity.activeProjectId);
-		},
-	);
+	const viewsQuery = liveQuery((api, activity) => {
+		return api.getViewsByProjectId(activity.activeProjectId);
+	});
 </script>
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">

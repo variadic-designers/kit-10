@@ -9,14 +9,12 @@
 	const {
 		editorReady,
 		editorActivity = $bindable(),
-		api,
-  }: { editorReady: EditorState; editorActivity: EditorActivity, api: Api } = $props();
+		api
+	}: { editorReady: EditorState; editorActivity: EditorActivity; api: Api } = $props();
 
-	const projectsQuery = liveQuery(
-		(api, activity) => {
-			return api.getProjectsByWorkspaceId(activity.activeWorkspaceId);
-		}
-	);
+	const projectsQuery = liveQuery((api, activity) => {
+		return api.getProjectsByWorkspaceId(activity.activeWorkspaceId);
+	});
 
 	// Reset selection
 	$effect(() => {
@@ -86,10 +84,10 @@
 	};
 
 	const selectProject = (id: string, name: string) => {
-    if (editorActivity.activeProjectId !== id) {
-		  editorActivity.activeProjectId = id;
-		  editorActivity.activeProjectName = name;
-    }
+		if (editorActivity.activeProjectId !== id) {
+			editorActivity.activeProjectId = id;
+			editorActivity.activeProjectName = name;
+		}
 	};
 </script>
 
