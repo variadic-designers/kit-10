@@ -7,7 +7,7 @@ node_modules
 .wrangler
 /.svelte-kit
 /build
-/dist
+dist
 
 # OS
 .DS_Store
@@ -28,4 +28,4 @@ src/lib/paraglide
 project.inlang/cache/
 
 # Kit 10
-.kit10/
+/.kit10/
