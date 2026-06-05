@@ -35,6 +35,7 @@
 		"svelte": "^5.0.0"
 	},
 	"devDependencies": {
+		"@extism/extism": "2.0.0-rc13",
 		"@sveltejs/adapter-vercel": "^6.2.0",
 		"@sveltejs/kit": "^2.49.1",
 		"@sveltejs/package": "^2.5.7",
@@ -50,8 +51,10 @@
 		"typescript": "^5.9.3",
 		"uuid": "^13.0.0",
 		"vite": "^7.2.6",
+		"vite-plugin-cross-origin-isolation": "^0.1.6",
 		"vite-plugin-devtools-json": "^1.0.0",
-		"vitest": "^4.0.15"
+		"vitest": "^4.0.15",
+		"yaml": "^2.9.0"
 	},
 	"keywords": [
 		"svelte"

@@ -46,7 +46,7 @@
 <div class="quick-preferences">
 	<DarkModeToggle />
 	<button popovertarget="profile" class="pfp">
-		<img src="https://cataas.com/cat/closeup" alt="user profile" />
+		<img src="https://cataas.com/cat/closeup" crossorigin="anonymous" alt="user profile" />
 	</button>
 
 	{#if editorLoading}

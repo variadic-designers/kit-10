@@ -4,9 +4,10 @@ import { searchForWorkspaceRoot } from 'vite';
 
 import { sveltekit } from '@sveltejs/kit/vite';
 import k10 from './plugin/vite-kit10-plugin.js';
+import crossOriginIsolation from 'vite-plugin-cross-origin-isolation';
 
 export default defineConfig({
-	plugins: [k10(), sveltekit(), devtoolsJson()],
+	plugins: [k10(), sveltekit(), devtoolsJson(), crossOriginIsolation()],
 
 	optimizeDeps: {
 		exclude: ['@electric-sql/pglite']
@@ -17,10 +18,6 @@ export default defineConfig({
 	},
 
 	server: {
-		headers: {
-			'Cross-Origin-Embedder-Policy': 'require-corp',
-			'Cross-Origin-Opener-Policy': 'same-origin'
-		},
 		fs: {
 			allow: [searchForWorkspaceRoot(process.cwd())]
 		}
