@@ -2,8 +2,9 @@
 	import type { ComponentFlat, ComponentView, ComponentViewRoot } from '../Component.svelte';
 	import type { EditorSelection } from '../Editor.svelte';
 	import Panel from '../Panel.svelte';
-	import { contextMenu } from '../contextMenu.ts';
-	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import Renameable from '$lib/components/Renameable.svelte';
+	import type { Api } from 'manager';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -78,6 +79,8 @@
 		}
 	];
 
+	let viewEditing: Record<string, boolean> = $state({});
+
 	let menu = (viewId: string): ContextMenuContentGenerator => {
 		return () => [
 			{
@@ -90,8 +93,10 @@
 			{
 				name: 'add',
 				displayText: 'Rename',
-				icon: 'fa-solid fa-italic',
-				onClick: () => console.log('Add')
+				icon: 'fa-solid fa-i-cursor',
+				onClick: () => {
+					viewEditing[viewId] = true;
+				}
 			},
 			{
 				name: 'add',
@@ -122,7 +127,7 @@
 				displayText: 'Delete View',
 				icon: 'fa-solid fa-trash-can',
 				onClick: () => {
-					apiapi.deleteView(viewId).then((v) => {
+					api.deleteView(viewId).then((v) => {
 						console.log(`Deleted view#${viewId}`);
 					});
 				}
@@ -181,8 +186,17 @@
 			onclick={() => selectView(v.viewId, v.viewName)}
 		>
 			<i class="view__icon {viewIcon}"></i>
-			<div class="view__name" contenteditable="false">
-				{v.viewName ?? 'Literally Nothing'}
+			<div class="view__name">
+				<Renameable
+					editing={viewEditing[v.viewId] === true}
+					value={v.viewName ?? ''}
+					onCommit={(name) => {
+						api.renameView(v.viewId, name);
+						viewEditing[v.viewId] = false;
+					}}
+				>
+					{v.viewName ?? 'Literally Nothing'}
+				</Renameable>
 			</div>
 		</button>
 	</li>

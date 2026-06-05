@@ -1,8 +1,8 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
 	import type { ComponentView, ComponentFlat } from '../Component.svelte';
-	import { contextMenu } from '../contextMenu.ts';
-	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import Renameable from '$lib/components/Renameable.svelte';
 	import { liveQuery, type EditorActivity, type EditorSelection } from '../Editor.svelte';
 	import { type Api, type EditorState } from 'manager';
 
@@ -77,6 +77,8 @@
 		];
 	});
 
+	let kitEditing: Record<string, boolean> = $state({});
+
 	const kitcontextMenuContent: (kitId: string, viewId: string) => ContextMenuContentGenerator = (
 		kitId,
 		viewId
@@ -85,8 +87,10 @@
 			{
 				name: 'add',
 				displayText: 'Rename',
-				icon: 'fa-solid fa-italic',
-				onClick: () => console.log('Add')
+				icon: 'fa-solid fa-i-cursor',
+				onClick: () => {
+					kitEditing[kitId] = true;
+				}
 			},
 			{
 				name: 'add',
@@ -152,7 +156,16 @@
 						<label use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)}>
 							<span class="kit-field__name">
 								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
-								{k.kitName}</span
+								<Renameable
+									editing={kitEditing[k.kitId] === true}
+									value={k.kitName}
+									onCommit={(name) => {
+										api.renameKit(k.kitId, name);
+										kitEditing[k.kitId] = false;
+									}}
+								>
+									{k.kitName}
+								</Renameable></span
 							>
 							<input
 								class="kit-field__radio"

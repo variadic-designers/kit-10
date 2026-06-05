@@ -1,9 +1,9 @@
 <script lang="ts">
-	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
 	import type { EditorState } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
-	import { contextMenu } from '../contextMenu.ts';
 	import { queryBuilder, type Api } from 'manager';
 
 	const {
@@ -60,6 +60,10 @@
 		];
 	};
 
+	import YAML from 'yaml';
+
+	let projectEditing: Record<string, boolean> = $state({});
+
 	const projectListingContextMenu: (projectId: string) => ContextMenuContentGenerator = (
 		projectId
 	) => {
@@ -69,7 +73,7 @@
 				displayText: 'Rename',
 				icon: 'fa-solid fa-i-cursor',
 				onClick: () => {
-					api.renameProject(projectId, 'Bleh');
+					projectEditing[projectId] = true;
 				}
 			},
 			{
@@ -78,6 +82,16 @@
 				icon: 'fa-solid fa-trash',
 				onClick: () => {
 					api.deleteProject(projectId);
+				}
+			},
+			{
+				name: 'export_project',
+				displayText: 'Export',
+				icon: 'fa-solid fa-file-export',
+				onClick: () => {
+					api.exportProject(projectId).then((p) => {
+						console.log(YAML.stringify(p, null, 8));
+					});
 				}
 			}
 		];
@@ -101,58 +115,24 @@
 					use:contextMenu={projectListingContextMenu(p.projectId)}
 					title={`by ${p.author} - ${p.license}`}
 				>
-					<span class="project-listing__name"
-						><i class="fa-solid fa-diagram-project"></i>
-						<span id="editable-{p.projectId}">{p.projectName}</span></span
+				<span class="project-listing__name"
+					><i class="fa-solid fa-diagram-project"></i>
+					<Renameable
+						editing={projectEditing[p.projectId] === true}
+						value={p.projectName}
+						onCommit={(name) => {
+							api.renameProject(p.projectId, name);
+							editorActivity.activeProjectName = name;
+							projectEditing[p.projectId] = false;
+						}}
 					>
+						{p.projectName}
+					</Renameable></span
+				>
 					<span class="project-listing__description"> - {p.description}</span>
 				</button>
-
-				<!--
-				<form style="display:flex"
-						onsubmit={async (e) => {
-              await api.renameProject(p.projectId, p.projectName);
-            }}
-        >
-					<input
-						placeholder={p.projectName}
-            bind:value={p.projectName}
-					/>
-					<button type="submit">Rename</button>
-				</form>
-
-        -->
 			</li>
 		{/each}
-
-		<!--
-		{#if projectsQuery.rows}
-			{#each projectsQuery.rows as project (project.id)}
-				<li class="project-listing">
-					<button
-						onclick={selectProject(project.id, project.name)}
-						class:selected={project.id === editorActivity.activeProjectId}
-						use:contextMenu={projectListingContextMenu(project.id)}
-						title={`by ${project.author} - ${project.license}`}
-					>
-						<span class="project-listing__name"
-							><i class="fa-solid fa-diagram-project"></i>
-							<span id="editable-{project.id}">{project.name}</span></span
-						>
-						<span class="project-listing__description"> - {project.description}</span>
-					</button>
-				</li>
-			{/each}
-
-			{#each projectsQuery.rows as project (project.id)}
-
-			{/each}
-		{:else if projectsQuery.isFetching}
-			<span>WAIT</span>
-		{:else if projectsQuery.error}
-			<span>{projectsQuery.error}</span>
-		{/if}
-    -->
 	{/snippet}
 </Panel>
 

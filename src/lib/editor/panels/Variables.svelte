@@ -133,8 +133,8 @@
 
 <script lang="ts">
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
-	import { contextMenu } from '../contextMenu.js';
-	import type { ContextMenuContent } from '../contextMenuStore.js';
+	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
+	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
 
 	function findTokenByPath(library: TokenLibrary, path: string): Token | undefined {
@@ -499,10 +499,18 @@
 											use:tokenDrag={{ className: 'token--dragged', payload: t }}
 										>
 											<!-- <i class="fa-solid fa-palette"></i> -->
-											<span class="token__name">
-												<i class="fa-solid fa-{icon}"></i>
-												{t.displayName ?? t.name}
-											</span>
+			<span class="token__name">
+				<i class="fa-solid fa-{icon}"></i>
+				<Renameable
+					value={t.displayName ?? t.name ?? 'Unnamed'}
+					onCommit={(name) => {
+						// TODO M4.3: wire to api.updateTokenAlias(tokenId, name)
+						console.log(`Rename token to: ${name}`);
+					}}
+				>
+					{t.displayName ?? t.name ?? 'Unnamed'}
+				</Renameable>
+			</span>
 										</button>
 									{/each}
 								{/if}
