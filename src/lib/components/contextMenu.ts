@@ -1,28 +1,33 @@
-// contextMenu.ts
-import type { Action } from 'svelte/action';
-import { openContextMenu } from './contextMenuStore';
+// Context menu Svelte action
+import { openContextMenu, type ContextMenu } from './contextMenuStore.js';
 
-export const contextMenu: Action<HTMLElement, ContextMenu> = (node, data) => {
-	function handleContextMenu(e: MouseEvent) {
+export type { ContextMenuContent, ContextMenuContentGenerator, ContextMenu, MenuItem } from './contextMenuStore.js';
+
+export function contextMenu(node: HTMLElement, content: ContextMenu) {
+	function handler(e: MouseEvent) {
 		e.preventDefault();
-		openContextMenu(e.clientX, e.clientY, node, data);
+		e.stopPropagation();
+		openContextMenu(e.clientX, e.clientY, node, content);
 	}
 
-	function handleKey(e: KeyboardEvent) {
+	function keyHandler(e: KeyboardEvent) {
 		if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
 			e.preventDefault();
 			const rect = node.getBoundingClientRect();
-			openContextMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, node);
+			openContextMenu(rect.left + rect.width / 2, rect.top + rect.height / 2, node, content);
 		}
 	}
 
-	node.addEventListener('contextmenu', handleContextMenu);
-	node.addEventListener('keydown', handleKey);
+	node.addEventListener('contextmenu', handler);
+	node.addEventListener('keydown', keyHandler);
 
 	return {
+		update(newContent: ContextMenu) {
+			content = newContent;
+		},
 		destroy() {
-			node.removeEventListener('contextmenu', handleContextMenu);
-			node.removeEventListener('keydown', handleKey);
+			node.removeEventListener('contextmenu', handler);
+			node.removeEventListener('keydown', keyHandler);
 		}
 	};
-};
+}

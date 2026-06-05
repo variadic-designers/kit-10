@@ -13,9 +13,7 @@
 
 	import { type Snippet } from 'svelte';
 
-	import type { ContextMenuContentGenerator } from './contextMenuStore.ts';
-
-	import { contextMenu } from './contextMenu.ts';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	const workspacesMenu: ContextMenuContentGenerator = () => {
 		return [
 			{

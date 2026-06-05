@@ -12,7 +12,7 @@
 	import type { ComponentFlat, ComponentView } from '../Component.svelte';
 	import Panel from '../Panel.svelte';
 	import { stringSetToHSV } from './Axis.svelte';
-	import type { ContextMenuContentGenerator } from '../contextMenuStore.ts';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 
 	type AxesPanel = {
 		selection: EditorSelection;
@@ -124,7 +124,7 @@
 		type AxisDefinition,
 		builtinAxes
 	} from '../../axesBuiltIn.ts';
-	import type { ContextMenuContent } from '../contextMenuStore.ts';
+	import type { ContextMenuContent } from '$lib/components/contextMenu';
 	import Axis from './Axis.svelte';
 	import { type AxesSet, type AxisVariantLayerTrace } from '../../cascadeAxesMap.ts';
 	import type { EditorSelection } from '../Editor.svelte';

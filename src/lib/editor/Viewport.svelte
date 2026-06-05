@@ -15,7 +15,7 @@
 
 	const { offsetX, offsetY, kits, kitsPool, views, viewsPool }: ViewportProps = $props();
 
-	import { contextMenu } from './contextMenu';
+	import { contextMenu } from '$lib/components/contextMenu';
 
 	// canvas
 	let scale = writable(1); // zoom level

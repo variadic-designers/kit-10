@@ -50,7 +50,7 @@
 <script lang="ts">
 	import type { AxisDefinition, TrackedVariant } from '../../axesBuiltIn.ts';
 	import type { ComponentView, ComponentFlat } from '../Component.svelte';
-	import { contextMenu } from '../contextMenu.ts';
+	import { contextMenu } from '$lib/components/contextMenu';
 
 	type AxisProps = {
 		axis: AxisDefinition;

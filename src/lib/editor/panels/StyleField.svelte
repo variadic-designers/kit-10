@@ -37,7 +37,7 @@
 		tokens
 	}: StyleFieldProps = $props();
 
-	import { contextMenu } from '../contextMenu.ts';
+	import { contextMenu } from '$lib/components/contextMenu';
 	import type { AxesSet, StyleSource } from '../../cascadeAxesMap.ts';
 	import type { EditorSelection } from '../Editor.svelte';
 

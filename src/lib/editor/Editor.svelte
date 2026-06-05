@@ -107,7 +107,7 @@
 
 <script lang="ts">
 	import { writable } from 'svelte/store';
-	import type { ContextMenuContentGenerator } from './contextMenuStore.ts';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import type { Kit10ProjectEditor, Kit10Project } from '$lib/types.js';
 
 	const project: Kit10ProjectEditor = $props();
@@ -184,6 +184,8 @@
 	import AxesPanel from './panels/Axes.svelte';
 	import ProjectPanel from './panels/Project.svelte';
 	import ComposePanel from './panels/Compose.svelte';
+  import PluginsPanel from './panels/Plugins.svelte';
+
 	import Nav from './Nav.svelte';
 	import { resolveMany, type MultiCascadeResult } from '$lib/cascadeAxesMap.js';
 	import { onMount } from 'svelte';
@@ -268,6 +270,8 @@
 		<StylesPanel tokens={tokenLibraries} {kits} {kitsPool} {views} {viewsPool} {selection} />
 
 		<TokensPanel {editorReady} bind:tokens bind:tokenLibraries />
+    
+    <PluginsPanel />
 
 		<pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
 	{/snippet}
