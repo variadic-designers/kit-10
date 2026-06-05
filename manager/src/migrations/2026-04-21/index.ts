@@ -296,7 +296,8 @@ export async function up(dialect: DAny) {
 			col.notNull().references('projects.id').onDelete('restrict')
 		)
 		.addColumn('alias', 'varchar(255)')
-		.addColumn('value', 'jsonb')
+		.addColumn('value', 'text')
+		.addColumn('resolution', 'text')
 		.execute();
 }
 

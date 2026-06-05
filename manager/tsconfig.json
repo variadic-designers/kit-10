@@ -28,5 +28,5 @@
 		"allowJs": false
 	},
 	"include": ["src/**/*"],
-	"exclude": ["node_modules", "dist", "src/tokens/**/*"]
+	"exclude": ["node_modules", "dist", "src/tokens/**/*", "src/**/*.test.ts"]
 }
