@@ -1,80 +1,87 @@
-import { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Generated } from 'kysely';
+import { Kysely, sql } from 'kysely';
+import type { Generated, JSONColumnType } from 'kysely';
 
-// when there's loose expectations during transitory migration steps
 export type DAny = Kysely<any>;
 export type D2026_04_21 = Kysely<DB2026_04_21>;
 
-// Target schema
 export interface DB2026_04_21 {
-	// Production stack
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
-	// Composition stack
 	views: ViewsTable;
 	compositions: CompositionsTable;
 	kits: KitsTable;
 
-	// Argument stack
-	axis_args: AxisArgsTable;
-	axes_consumed: AxesConsumedTable;
 	axes: AxisTable;
+	axis_values: AxisValuesTable;
+	axes_consumed: AxesConsumedTable;
+	axis_args: AxisArgsTable;
 
-	// Resolution stack
+	render_snippets: RenderSnippetsTable;
+	layers: LayersTable;
+	layer_axis_values: LayerAxisValuesTable;
 	axis_sets: never;
-	render_snippets: never;
 
-	// Declarative stack
-	design_tokens: never;
+	tokens: TokensTable;
 }
 
 // ------------------------------
 
 export interface WorkspacesTable {
-	id: Generated<string>; // UUIDv7
+	id: Generated<string>;
 	name: string;
 	description: string | null;
 	last_active: Generated<Date>;
 }
 
 export interface ProjectsTable {
-	id: Generated<string>; // UUIDv7
+	id: Generated<string>;
 	name: string;
 	description: string | null;
 	last_modified: Generated<Date>;
 	license: Generated<string>;
 	author: string;
-
 	workspace_id: Generated<string>;
 }
 
-// ------------------------------
-
 export interface ViewsTable {
-	id: Generated<string>; // UUIDv7
+	id: Generated<string>;
 	name: string;
 	last_modified: Generated<Date>;
 	project_id: string;
-
 	lock: boolean;
 	hide: boolean;
 }
 
-// Composition Table for kit precedence
 export interface CompositionsTable {
 	priority_index: number;
-
 	kit_id: string;
 	view_id: string;
 }
 
 export interface KitsTable {
-	id: Generated<string>; // UUIDv7
+	id: Generated<string>;
 	name: string;
 	project_id: string;
 	last_modified: Generated<Date>;
+}
+
+// ------------------------------
+
+export interface AxisTable {
+	id: Generated<string>;
+	project_id: string;
+	name: string | null;
+	description: string | null;
+	kind: string | null;
+	hint: JSONColumnType<string[]> | null;
+	default_value: JSONColumnType<Value> | null;
+}
+
+export interface AxisValuesTable {
+	id: Generated<string>;
+	axis_id: string;
+	value: string;
 }
 
 export interface AxesConsumedTable {
@@ -84,7 +91,6 @@ export interface AxesConsumedTable {
 }
 
 // ------------------------------
-import { JSONColumnType } from 'kysely';
 
 interface ValueType {
 	type: 'literal' | 'range';
@@ -105,29 +111,55 @@ type Value = Literal | Range;
 
 export interface AxisArgsTable {
 	value: JSONColumnType<Value> | null;
-
 	axis_id: string;
 	kit_id: string;
 	view_id: string;
 }
 
-export interface AxisTable {
-	id: Generated<string>; // UUIDv7
-	project_id: string;
+// ------------------------------
+
+export interface RenderSnippetsTable {
+	id: Generated<string>;
+	kit_id: string;
+	style: JSONColumnType<Record<string, string>>;
+	last_modified: Generated<Date>;
+}
+
+export interface LayersTable {
+	id: Generated<string>;
+	kit_id: string;
+	render_snippet_id: string;
+	last_modified: Generated<Date>;
+}
+
+export interface LayerAxisValuesTable {
+	layer_id: string;
+	axis_value_id: string;
 }
 
 // ------------------------------
 
-export async function up(dialect: D2026_04_21) {
-	const workspaces = dialect.schema
+export interface TokensTable {
+	id: Generated<string>;
+	project_id: string;
+	alias: string | null;
+	value: string | null;
+	resolution: string | null;
+}
+
+// ------------------------------
+
+export async function up(dialect: DAny) {
+	await dialect.schema
 		.createTable('workspaces')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
 		.addColumn('name', 'text', (col) => col.notNull())
 		.addColumn('description', 'text', (col) => col.defaultTo(null))
-		.addColumn('last_active', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`));
+		.addColumn('last_active', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
+		.execute();
 
-	const projects = dialect.schema
+	await dialect.schema
 		.createTable('projects')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
@@ -138,9 +170,35 @@ export async function up(dialect: D2026_04_21) {
 		.addColumn('author', 'text', (col) => col.notNull())
 		.addColumn('workspace_id', 'uuid', (col) =>
 			col.references('workspaces.id').onDelete('cascade').notNull()
-		);
+		)
+		.execute();
 
-	const views = dialect.schema
+	await dialect.schema
+		.createTable('axes')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
+		.addColumn('project_id', 'uuid', (col) =>
+			col.notNull().references('projects.id').onDelete('restrict')
+		)
+		.addColumn('name', 'text')
+		.addColumn('description', 'text')
+		.addColumn('kind', 'text')
+		.addColumn('hint', 'jsonb')
+		.addColumn('default_value', 'jsonb')
+		.execute();
+
+	await dialect.schema
+		.createTable('axis_values')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
+		.addColumn('axis_id', 'uuid', (col) =>
+			col.notNull().references('axes.id').onDelete('cascade')
+		)
+		.addColumn('value', 'text', (col) => col.notNull())
+		.addUniqueConstraint('unique_value_per_axis', ['axis_id', 'value'])
+		.execute();
+
+	await dialect.schema
 		.createTable('views')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
@@ -148,78 +206,112 @@ export async function up(dialect: D2026_04_21) {
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('cascade'))
 		.addColumn('lock', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
-		.addColumn('hide', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`));
+		.addColumn('hide', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
+		.execute();
 
-	const kits = dialect.schema
+	await dialect.schema
 		.createTable('kits')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('name', 'varchar(255)', (col) => col.notNull())
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
-		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('restrict'));
+		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('restrict'))
+		.execute();
 
-	const composition = dialect.schema
+	await dialect.schema
 		.createTable('compositions')
 		.ifNotExists()
 		.addColumn('priority_index', 'integer', (col) => col.notNull())
 		.addColumn('view_id', 'uuid', (col) => col.notNull().references('views.id').onDelete('cascade'))
 		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('no action'))
 		.addUniqueConstraint('unique_priority_per_view', ['view_id', 'priority_index'])
-		.addPrimaryKeyConstraint('composition_pk', ['view_id', 'kit_id']);
+		.addPrimaryKeyConstraint('composition_pk', ['view_id', 'kit_id'])
+		.execute();
 
-	const axes_consumed = dialect.schema
+	await dialect.schema
 		.createTable('axes_consumed')
 		.ifNotExists()
 		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('cascade'))
 		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('restrict'))
 		.addColumn('priority_index', 'integer', (col) => col.notNull())
 		.addPrimaryKeyConstraint('axis_consumed_pk', ['kit_id', 'axis_id'])
-		.addUniqueConstraint('unique_priority_of_axis_per_kit', ['kit_id', 'priority_index']);
+		.addUniqueConstraint('unique_priority_of_axis_per_kit', ['kit_id', 'priority_index'])
+		.execute();
 
-	const axis_args = dialect.schema
+	await dialect.schema
 		.createTable('axis_args')
 		.ifNotExists()
 		.addColumn('view_id', 'uuid', (col) => col.notNull().references('views.id').onDelete('cascade'))
 		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('cascade'))
 		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('restrict'))
 		.addColumn('value', 'jsonb')
-		.addPrimaryKeyConstraint('axis_args_pk', ['view_id', 'axis_id', 'kit_id']);
+		.addPrimaryKeyConstraint('axis_args_pk', ['view_id', 'axis_id', 'kit_id'])
+		.execute();
 
-	const axes = dialect.schema
-		.createTable('axes')
+	await dialect.schema
+		.createTable('render_snippets')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
+		.addColumn('kit_id', 'uuid', (col) =>
+			col.notNull().references('kits.id').onDelete('cascade')
+		)
+		.addColumn('style', 'jsonb', (col) => col.notNull())
+		.addColumn('last_modified', 'timestamptz', (col) =>
+			col.notNull().defaultTo(sql<Date>`now()`)
+		)
+		.execute();
+
+	await dialect.schema
+		.createTable('layers')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
+		.addColumn('kit_id', 'uuid', (col) =>
+			col.notNull().references('kits.id').onDelete('cascade')
+		)
+		.addColumn('render_snippet_id', 'uuid', (col) =>
+			col.notNull().references('render_snippets.id').onDelete('cascade')
+		)
+		.addColumn('last_modified', 'timestamptz', (col) =>
+			col.notNull().defaultTo(sql<Date>`now()`)
+		)
+		.execute();
+
+	await dialect.schema
+		.createTable('layer_axis_values')
+		.ifNotExists()
+		.addColumn('layer_id', 'uuid', (col) =>
+			col.notNull().references('layers.id').onDelete('cascade')
+		)
+		.addColumn('axis_value_id', 'uuid', (col) =>
+			col.notNull().references('axis_values.id').onDelete('restrict')
+		)
+		.addPrimaryKeyConstraint('layer_axis_values_pk', ['layer_id', 'axis_value_id'])
+		.execute();
+
+	await dialect.schema
+		.createTable('tokens')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('project_id', 'uuid', (col) =>
 			col.notNull().references('projects.id').onDelete('restrict')
-		);
-
-	await workspaces.execute();
-	await projects.execute();
-	await kits.execute();
-	await views.execute();
-	await axes.execute();
-	await composition.execute();
-	await axis_args.execute();
-	await axes_consumed.execute();
+		)
+		.addColumn('alias', 'varchar(255)')
+		.addColumn('value', 'jsonb')
+		.execute();
 }
 
-// Back to Zero
 export async function down(dialect: DAny) {
-	const workspaces = dialect.schema.dropTable('workspaces');
-	const projects = dialect.schema.dropTable('projects');
-	const views = dialect.schema.dropTable('views');
-	const kits = dialect.schema.dropTable('kits');
-	const composition = dialect.schema.dropTable('compositions');
-	const axis_args = dialect.schema.dropTable('axis_args');
-	const axes = dialect.schema.dropTable('axis');
-	const axes_consumed = dialect.schema.dropTable('axes_consumed');
-
-	await workspaces.execute();
-	await projects.execute();
-	await views.execute();
-	await kits.execute();
-	await composition.execute();
-	await axis_args.execute();
-	await axes.execute();
-	await axes_consumed.execute();
+	await dialect.schema.dropTable('layer_axis_values').ifExists().execute();
+	await dialect.schema.dropTable('layers').ifExists().execute();
+	await dialect.schema.dropTable('render_snippets').ifExists().execute();
+	await dialect.schema.dropTable('axis_args').ifExists().execute();
+	await dialect.schema.dropTable('axes_consumed').ifExists().execute();
+	await dialect.schema.dropTable('axis_values').ifExists().execute();
+	await dialect.schema.dropTable('compositions').ifExists().execute();
+	await dialect.schema.dropTable('kits').ifExists().execute();
+	await dialect.schema.dropTable('views').ifExists().execute();
+	await dialect.schema.dropTable('tokens').ifExists().execute();
+	await dialect.schema.dropTable('axes').ifExists().execute();
+	await dialect.schema.dropTable('projects').ifExists().execute();
+	await dialect.schema.dropTable('workspaces').ifExists().execute();
 }

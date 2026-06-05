@@ -8,11 +8,9 @@ import { PgliteDialect } from '@soapbox/kysely-pglite';
 
 export type { SelectQueryBuilder } from 'kysely';
 
-import type { Schema, SchemaDialect, SchemaTS } from './schema.js';
+import type { SchemaDialect, SchemaTS } from './schema.js';
 
 export { queryBuilder } from './api/index.js';
-
-export { type Api } from './api/index.js';
 
 export interface EditorState {
 	core: EditorCore;
@@ -35,7 +33,7 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 
 		console.log('PGlite Handshake successful!');
 
-		const dialect = new Kysely<Schema>({
+		const dialect: SchemaDialect = new Kysely({
 			dialect: new PgliteDialect({
 				database: pgWorker
 			})
@@ -49,7 +47,6 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 	}
 };
 
-// Might be cringe..
 import { up } from './migrations/2026-04-21/index.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
@@ -73,3 +70,4 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 };
 
 export { jsonArrayFrom } from 'kysely/helpers/postgres';
+export { type Api } from './api/index.js';
