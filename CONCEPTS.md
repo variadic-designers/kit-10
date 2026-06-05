@@ -16,9 +16,29 @@ Changing input values moves the position and produces a different result.
 
 ---
 
+## Views
+
+A View represents a UI's form at a given set of conditions.
+
+A View can consume multiple Kits at once, instantiating each Kit with independent Axis values.
+
+Views are the top-level compositional unit. They define *what* is rendered by assembling and parameterizing Kits.
+
+---
+
+## Kits
+
+A Kit is an ordered bundle of Axes representing a cohesive design concern.
+
+A Kit is not a component — it is a parameterized behavioral unit that a View instantiates.
+
+Each Kit instance within a View carries its own independent Axis state.
+
+---
+
 ## Axes
 
-An axis represents a single dimension of design intent.
+An axis represents a single dimension of design intent within a Kit.
 
 Examples:
 
@@ -32,19 +52,60 @@ Examples:
 Axes may be:
 
 - Continuous or discrete
-- Numeric or symbolic
+- Numeric, categorical, or ranged
 
 Each axis should represent exactly one idea.  
-An Axis by itself should not overlap in meaning with other axis.
+An Axis by itself should not overlap in meaning with another Axis.
 
 ---
 
-## Axis evaluation
+## Layers
 
-Design values are not selected directly.
+A Layer is a resolution intermediary that sits between Axes and Render output.
 
-Outputs are produced by evaluating multiple axes together.  
-No single axis should be sufficient to define a final value.
+A Layer maps Axis conditions to rendered results:
+
+- A `one-axis → render` mapping applies broadly.
+- A `two-axis → render` mapping applies with higher specificity.
+
+Layers are not limited to single-axis mappings.  
+Multi-axis mappings override less specific ones when both apply.
+
+---
+
+## Specificity
+
+Specificity is a three-tier, non-overlapping hierarchy. Higher tiers always win, regardless of values in lower tiers.
+
+| Tier | Basis | Description |
+|------|-------|-------------|
+| 1 (lowest) | **Axis ordering within a Kit** | Within a Kit, Axes are ordered by priority. An Axis at position 2 overrides one at position 1 for conflicting render results. This is the finest unit of specificity. |
+| 2 | **Axis count in the Layer condition** | The number of Axes in a Layer's mapping. A `two-axis → render` Layer always overrides any `one-axis → render` Layer. A `three-axis → render` overrides `two-axis`, and so on. |
+| 3 (highest) | **Kit precedence** | A View consumes multiple Kits in priority order. When two Kits produce a render result for the same property, the higher-priority Kit wins — regardless of axis count or axis ordering within either Kit. |
+
+These tiers are non-overlapping: no amount of lower-tier specificity can beat a higher tier. The system behaves as a composite value where each tier is its own digit, analogous to `(kit_priority, axis_count, axis_order)`.
+
+---
+
+## Render Tokens
+
+A Render Token is the final output artifact — a backend-opinionated shape produced by resolving Layers.
+
+Render Tokens encode the structure that a specific rendering target expects (framework, platform, or output format).
+
+They are derived artifacts and are not authoritative.  
+Render Tokens do not require manual adjustment.
+
+---
+
+## Cascade
+
+Intent flows through the system in a defined order:
+
+Views → Kit instances → Axes → Layers (specificity resolution) → Render Tokens
+
+There are no implicit overrides.  
+Changes must be the result of upstream input changes.
 
 ---
 
@@ -57,43 +118,14 @@ Given the same inputs, the system must always produce the same outputs.
 This applies across:
 
 - Value derivation
-- Cascades
-- Exports
-
----
-
-## Cascades
-
-Intent flows through the system in a defined order:
-
-axes → mappings → derived values → outputs
-
-There are no implicit overrides.  
-Changes must be the result of upstream input changes.
+- Layer resolution
+- Render exports
 
 ---
 
 ## Traceability
 
-Every derived value should be traceable to the axis inputs that produced it.
-
----
-
-## Components
-
-UI Components are not primary entities.
-
-A component is rendered by evaluating the current axis state(s).
-Component variants are expressions of different axis positions.
-
----
-
-## Tokens
-
-Tokens may be emitted as outputs.
-
-They are derived artifacts and are not authoritative.  
-Tokens do not require manual adjustment.
+Every derived value and Render Token should be traceable to the Axis inputs and Layer mappings that produced it.
 
 ---
 
@@ -101,11 +133,13 @@ Tokens do not require manual adjustment.
 
 The system does not assume:
 
-- A fixed number of axes
+- A fixed number of Views
+- A fixed number of Kits per View
+- A fixed number of Axes per Kit
 - A fixed schema
 - A fixed output structure
 
-Axes may be added or removed without restructuring the framework.
+Views, Kits, and Axes may be added or removed without restructuring the framework.
 
 ---
 
@@ -113,7 +147,7 @@ Axes may be added or removed without restructuring the framework.
 
 Inputs describe intent, not necessarily appearance.
 
-Visual characteristics are derived from axis choice evaluation rather than specified directly.
+Visual characteristics are derived from Axis evaluation and Layer resolution rather than specified directly.
 
 ---
 
