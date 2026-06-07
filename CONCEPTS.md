@@ -75,6 +75,8 @@ Layer: { dark: true, high_contrast: true }    → { background: #000; color: #FF
 
 When the current axis state satisfies all conditions of a Layer, that Layer applies. A Layer with more conditions in its set applies with higher specificity — so in the example above, when both `dark` and `high_contrast` are true, the two-condition Layer overrides the one-condition Layer.
 
+Override is per-property, not per-Layer. A more-specific Layer only replaces the properties it declares; properties from less-specific Layers that are not contested remain in effect. Nothing is deleted — only contested properties are replaced.
+
 Multi-axis mappings always override less specific ones when both apply. This is the axis-count tier of specificity (see Specificity).
 
 ---
