@@ -66,7 +66,11 @@ An Axis by itself should not overlap in meaning with another Axis.
 
 A Layer is a rule: a set of axis conditions, each pairing an axis with a specific value, mapped to a render result.
 
-A Layer requires **at least one** axis condition to be valid. There is no upper limit on how many axis conditions a Layer may carry.
+A Layer may carry zero or more axis conditions. There is no upper limit.
+
+A **null Layer** — one with no axis conditions — always applies, since it has no conditions to satisfy. Its specificity is zero at every tier. This makes it the lowest-priority fallback: its properties are only used when no other Layer provides them.
+
+Null Layers are not recommended for production use, but they serve a practical purpose during prototyping: they let users define rough default outcomes before discovering which axes matter, then refactor intent into proper axis-conditioned Layers.
 
 ```
 Layer: { dark: true }                        → { background: #333; color: #dedede }
