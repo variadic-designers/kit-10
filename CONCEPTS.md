@@ -49,10 +49,13 @@ Examples:
 - Tone
 - Formality
 
-Axes may be:
+Axes are arbitrary — the system imposes no semantic constraints on what an axis represents. Any design dimension expressible in one of the following shapes is valid:
 
-- Continuous or discrete
-- Numeric, categorical, or ranged
+- **Categorical** — a discrete set of named values (e.g., tone: neutral / destructive / confirmative); no ordering is implied between values
+- **Numeric / Ranged** — a continuous or bounded numeric spectrum (e.g., viewport width: 0–∞, animation budget: 0–1); ranges may overlap or nest
+- **Discrete** — an unconstrained value with no predefined set
+
+The only constraint on axes is representational, not semantic: they must be expressible in one of the shapes above.
 
 Each axis should represent exactly one idea.  
 An Axis by itself should not overlap in meaning with another Axis.
