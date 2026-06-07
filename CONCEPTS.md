@@ -95,6 +95,13 @@ When two Layers have the **same axis count**, their relative specificity is dete
 
 These tiers are non-overlapping: no amount of lower-tier specificity can beat a higher tier. The system behaves as a composite value where each tier is its own digit, analogous to `(kit_priority, axis_count, compounded_axis_order)`.
 
+When two Layers share the same specificity, they are either **mutually exclusive** or **orthogonal**:
+
+- **Mutually exclusive** — both Layers condition on the same axis but different values (e.g., `{theme: dark}` vs `{theme: light}`). Only one can match the current axis state at a time, so they never contest the same property in a single resolution.
+- **Orthogonal** — the Layers condition on different axes (e.g., `{theme: dark}` vs `{density: compact}`). Both can match simultaneously. If they declare different properties, they merge cleanly. If they contest the same property, tier 1 (axis ordering) resolves it.
+
+Identical specificity never produces ambiguity.
+
 ---
 
 ## Render Tokens
