@@ -125,7 +125,9 @@ Render Tokens do not require manual adjustment.
 
 Tokens are project-level named values (e.g., `colors.brand: #3b82f6`). They exist outside the cascade — they are not resolved through Layer specificity and are not scoped to Kits or Views.
 
-Tokens serve as a shared value palette within a project. Layers may reference tokens by alias, but the token system itself is flat and unordered.
+Tokens serve as a shared value palette within a project. They are not a separate resolution path — they participate in the cascade by being referenced as render result values. A Layer's property declarations may use token aliases in place of literal values.
+
+Unbounded tokens (those without axis conditions) naturally reside on the null Layer, where they serve as baseline values that more-specific Layers can override per-property.
 
 ---
 
