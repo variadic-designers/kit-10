@@ -83,6 +83,13 @@ No ambiguity, no guessing. See [CONCEPTS.md](CONCEPTS.md) → Specificity for th
 
 ## Does this replace designers?
 
-No. It replaces repetitive decision-making.
+No. It replaces repetitive decision-making — but the implications go further than "you write fewer variants."
 
-Designers still define the Views, Kits, Axes, and Layers. KIT•10 applies those decisions in traceable patterns so you avoid variant explosion and override purgatory. You define the rules once; the engine generates every combination.
+Because every output is derived from rules, not hand-authored, the entire workflow shifts:
+
+- **Design decisions become traceable.** Every property in the output can be traced back to which rule produced it and which axis values triggered it. No more "why is this button blue?" archeology.
+- **Refactoring becomes safe.** Adding an axis doesn't break existing rules. Moving an axis up or down in a Kit changes priority predictably. Removing a rule only removes what it declared — everything else carries forward.
+- **Design systems become portable.** A Kit is self-contained. Share it across projects, swap it into a different View, or reskin an entire product by replacing one Kit with another while keeping the same axis structure.
+- **Consistency is structural, not manual.** In a token system, consistency depends on people remembering to use the right token. In KIT•10, consistency is guaranteed by the resolution engine — if `{emphasis: primary}` always maps to the same properties, it will because there's only one rule for it, not thirty hand-maintained tokens.
+
+Designers still make the decisions. KIT•10 makes those decisions composable, traceable, and scalable without extra effort.
