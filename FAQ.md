@@ -66,6 +66,21 @@ KIT•10 is N-axial. Adding a new dimension (density, emphasis, viewport width, 
 
 ---
 
+## Why would I use this instead of Figma or Framer?
+
+Figma and Framer are mature tools for drawing and prototyping UI. They excel at visual composition. They don't excel at managing design system logic across many states, themes, and viewports.
+
+When your design system grows past a handful of variants, you hit:
+
+- **Variant explosion.** A button with 3 themes × 3 sizes × 3 states = 27 Figma components. Add one more axis and you're maintaining 54. KIT•10 writes 7 Layers and the engine generates every combination.
+- **No reuse across projects.** Figma components live in one file. Reskinning means duplicating and manually editing. KIT•10 Kits are self-contained behavioral bundles — drop the same Kit into another View with different axis values and you get a different skin without redefining anything.
+- **Manual synchronization.** Theme changes in Figma require updating every affected component. In KIT•10, changing a Layer propagates to every View that consumes the Kit.
+- **Dead-end output.** Figma tokens export as flat CSS. Framer ships React components. KIT•10's Render Tokens are backend-opinionated — the community can build export backends for CSS custom properties, Tailwind config, Style Dictionary JSON, Flutter ThemeData, SCSS mixins, or any format the rendering target expects. The same design system logic exports everywhere.
+
+KIT•10 is not a drawing tool. It's a system logic tool. You design the rules once; the engine produces render-ready output for any platform.
+
+---
+
 ## Does this replace designers?
 
 No. It replaces repetitive decision-making.
