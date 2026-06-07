@@ -81,6 +81,8 @@ When the current axis state satisfies all conditions of a Layer, that Layer appl
 
 Override is per-property, not per-Layer. A more-specific Layer only replaces the properties it declares; properties from less-specific Layers that are not contested remain in effect. Nothing is deleted — only contested properties are replaced.
 
+A Layer has exactly one render result. The render result is a set of individual property declarations (e.g., `background: #333` and `color: #dedede` are separate entries), not a monolithic blob. This per-property granularity is what makes per-property override possible.
+
 Multi-axis mappings always override less specific ones when both apply. This is the axis-count tier of specificity (see Specificity).
 
 ---
@@ -116,6 +118,27 @@ Render Tokens encode the structure that a specific rendering target expects (fra
 
 They are derived artifacts and are not authoritative.  
 Render Tokens do not require manual adjustment.
+
+---
+
+## Tokens
+
+Tokens are project-level named values (e.g., `colors.brand: #3b82f6`). They exist outside the cascade — they are not resolved through Layer specificity and are not scoped to Kits or Views.
+
+Tokens serve as a shared value palette within a project. Layers may reference tokens by alias, but the token system itself is flat and unordered.
+
+---
+
+## Range conditions
+
+A Layer condition on a ranged axis does not match by equality — it matches by evaluation. For example, a condition `{viewport_width: ≥1024}` is satisfied when the current axis arg for viewport width is any value ≥ 1024, not just exactly 1024.
+
+The resolution engine evaluates each Layer condition against the current axis args:
+- **Categorical conditions** match by value identity.
+- **Range conditions** match by evaluating the operator against the axis arg's current value.
+- **Discrete conditions** match by value identity with no predefined set.
+
+This evaluation happens at resolution time, not at storage time.
 
 ---
 

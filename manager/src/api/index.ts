@@ -35,9 +35,9 @@ export interface QueryAxis {
 }
 
 export interface QueryAxisValue {
-	createAxisValue: (axisId: string, value: string) => Promise<{ id: string; axis_id: string; value: string } | undefined>;
+	createAxisValue: (axisId: string, value: any) => Promise<{ id: string; axis_id: string; value: any } | undefined>;
 	deleteAxisValue: (axisValueId: string) => Promise<void>;
-	getAxisValuesByAxisId: (axisId: string) => SelectQueryBuilder<Schema, 'axis_values', { axisValueId: string; value: string }>;
+	getAxisValuesByAxisId: (axisId: string) => SelectQueryBuilder<Schema, 'axis_values', { axisValueId: string; value: any }>;
 }
 
 export interface QueryAxisConsumed {
@@ -52,19 +52,26 @@ export interface QueryAxisArgs {
 	getAllAxisArgs: (viewId: string, kitId: string) => SelectQueryBuilder<Schema, 'axis_args', { axisId: string; kitId: string; viewId: string; value: any }>;
 }
 
-export interface QueryRenderSnippet {
-	createRenderSnippet: (kitId: string, style: Record<string, string>) => Promise<{ id: string; kit_id: string; style: Record<string, string>; last_modified: Date } | undefined>;
-	updateRenderSnippetStyle: (snippetId: string, style: Record<string, string>) => Promise<void>;
-	deleteRenderSnippet: (snippetId: string) => Promise<void>;
-	getRenderSnippetsByKitId: (kitId: string) => SelectQueryBuilder<Schema, 'render_snippets', { snippetId: string; snippetStyle: Record<string, string>; lastModified: Date }>;
-}
-
 export interface QueryLayer {
-	createLayer: (kitId: string, renderSnippetId: string) => Promise<{ id: string; kit_id: string; render_snippet_id: string; last_modified: Date } | undefined>;
+	createLayer: (kitId: string) => Promise<{ id: string; kit_id: string; last_modified: Date } | undefined>;
 	deleteLayer: (layerId: string) => Promise<void>;
 	addAxisValueToLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	removeAxisValueFromLayer: (layerId: string, axisValueId: string) => Promise<void>;
-	getLayersByKitId: (kitId: string) => SelectQueryBuilder<Schema, 'layers' | 'render_snippets', { layerId: string; snippetId: string; snippetStyle: Record<string, string>; lastModified: Date }>;
+	getLayersByKitId: (kitId: string) => SelectQueryBuilder<Schema, 'layers', { layerId: string; kitId: string; lastModified: Date }>;
+}
+
+export interface QueryRenderSnippet {
+	createRenderSnippet: (layerId: string) => Promise<{ id: string; layer_id: string; last_modified: Date } | undefined>;
+	deleteRenderSnippet: (snippetId: string) => Promise<void>;
+	getRenderSnippetsByLayerId: (layerId: string) => SelectQueryBuilder<Schema, 'render_snippets', { snippetId: string; layerId: string; lastModified: Date }>;
+}
+
+export interface QueryRenderEntry {
+	createRenderEntry: (snippetId: string, property: string, value: string) => Promise<{ id: string; snippet_id: string; property: string; value: string } | undefined>;
+	updateRenderEntry: (entryId: string, property: string, value: string) => Promise<void>;
+	deleteRenderEntry: (entryId: string) => Promise<void>;
+	getRenderEntriesBySnippetId: (snippetId: string) => SelectQueryBuilder<Schema, 'render_entries', { entryId: string; snippetId: string; property: string; value: string }>;
+	getRenderEntriesByLayerId: (layerId: string) => SelectQueryBuilder<Schema, 'render_snippets' | 'render_entries', { entryId: string; snippetId: string; property: string; value: string }>;
 }
 
 export interface QueryAction {
@@ -87,7 +94,7 @@ export interface QueryBuilder {
 	getKitsExceptFromViewId: (viewId: string) => SelectQueryBuilder<Schema, 'kits', { kitId: string; kitName: string }>;
 }
 
-export interface Api extends QueryBuilder, QueryAction, QueryOrdering, QueryToken, QueryKit, QueryView, QueryAxis, QueryAxisValue, QueryAxisConsumed, QueryAxisArgs, QueryRenderSnippet, QueryLayer {}
+export interface Api extends QueryBuilder, QueryAction, QueryOrdering, QueryToken, QueryKit, QueryView, QueryAxis, QueryAxisValue, QueryAxisConsumed, QueryAxisArgs, QueryLayer, QueryRenderSnippet, QueryRenderEntry {}
 
 export const queryBuilder = (db: SchemaDialect): Api => ({
 	createWorkspace: async (name: string) => {
@@ -111,11 +118,17 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			const axisValues = await trx.selectFrom('axis_values').selectAll().where('axis_values.axis_id', 'in', axes.map((a) => a.id)).execute();
 			const axesConsumed = await trx.selectFrom('axes_consumed').selectAll().where('axes_consumed.kit_id', 'in', kitIds).execute();
 			const axisArgs = await trx.selectFrom('axis_args').selectAll().where('axis_args.kit_id', 'in', kitIds).execute();
-			const renderSnippets = await trx.selectFrom('render_snippets').selectAll().where('render_snippets.kit_id', 'in', kitIds).execute();
-			const layers = await trx.selectFrom('layers').selectAll().where('layers.kit_id', 'in', kitIds).execute();
-			const layerAxisValues = await trx.selectFrom('layer_axis_values').selectAll().where('layer_axis_values.layer_id', 'in', layers.map((l) => l.id)).execute();
 
-			return { project, views, kits, compositions, tokens, axes, axisValues, axesConsumed, axisArgs, renderSnippets, layers, layerAxisValues };
+			const layers = await trx.selectFrom('layers').selectAll().where('layers.kit_id', 'in', kitIds).execute();
+			const layerIds = layers.map((l) => l.id);
+
+			const renderSnippets = await trx.selectFrom('render_snippets').selectAll().where('render_snippets.layer_id', 'in', layerIds).execute();
+			const snippetIds = renderSnippets.map((s) => s.id);
+
+			const renderEntries = await trx.selectFrom('render_entries').selectAll().where('render_entries.snippet_id', 'in', snippetIds).execute();
+			const layerAxisValues = await trx.selectFrom('layer_axis_values').selectAll().where('layer_axis_values.layer_id', 'in', layerIds).execute();
+
+			return { project, views, kits, compositions, tokens, axes, axisValues, axesConsumed, axisArgs, layers, renderSnippets, renderEntries, layerAxisValues };
 		});
 	},
 
@@ -203,12 +216,17 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db.deleteFrom('axes').where('axes.id', '=', axisId).execute();
 	},
 
-	createAxisValue: async (axisId: string, value: string) => {
-		return await db.insertInto('axis_values').values({ axis_id: axisId, value }).returningAll().executeTakeFirst();
+	createAxisValue: async (axisId: string, value: any) => {
+		return await db.insertInto('axis_values').values({ axis_id: axisId, value } as any).returningAll().executeTakeFirst();
 	},
 
 	deleteAxisValue: async (axisValueId: string) => {
 		await db.deleteFrom('axis_values').where('axis_values.id', '=', axisValueId).execute();
+	},
+
+	getAxisValuesByAxisId: (axisId: string) => {
+		return db.selectFrom('axis_values').where('axis_values.axis_id', '=', axisId)
+			.select(['axis_values.id as axisValueId', 'axis_values.value']);
 	},
 
 	consumeAxis: async (kitId: string, axisId: string) => {
@@ -231,20 +249,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		return await db.insertInto('axis_args').values({ view_id: viewId, kit_id: kitId, axis_id: axisId, value }).onConflict((oc) => oc.columns(['view_id', 'axis_id', 'kit_id']).doUpdateSet({ value })).returningAll().executeTakeFirst();
 	},
 
-	createRenderSnippet: async (kitId: string, style: Record<string, string>) => {
-		return await db.insertInto('render_snippets').values({ kit_id: kitId, style } as any).returningAll().executeTakeFirst();
-	},
-
-	updateRenderSnippetStyle: async (snippetId: string, style: Record<string, string>) => {
-		await db.updateTable('render_snippets').set({ style } as any).where('render_snippets.id', '=', snippetId).execute();
-	},
-
-	deleteRenderSnippet: async (snippetId: string) => {
-		await db.deleteFrom('render_snippets').where('render_snippets.id', '=', snippetId).execute();
-	},
-
-	createLayer: async (kitId: string, renderSnippetId: string) => {
-		return await db.insertInto('layers').values({ kit_id: kitId, render_snippet_id: renderSnippetId }).returningAll().executeTakeFirst();
+	createLayer: async (kitId: string) => {
+		return await db.insertInto('layers').values({ kit_id: kitId }).returningAll().executeTakeFirst();
 	},
 
 	deleteLayer: async (layerId: string) => {
@@ -257,6 +263,26 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	removeAxisValueFromLayer: async (layerId: string, axisValueId: string) => {
 		await db.deleteFrom('layer_axis_values').where('layer_axis_values.layer_id', '=', layerId).where('layer_axis_values.axis_value_id', '=', axisValueId).execute();
+	},
+
+	createRenderSnippet: async (layerId: string) => {
+		return await db.insertInto('render_snippets').values({ layer_id: layerId }).returningAll().executeTakeFirst();
+	},
+
+	deleteRenderSnippet: async (snippetId: string) => {
+		await db.deleteFrom('render_snippets').where('render_snippets.id', '=', snippetId).execute();
+	},
+
+	createRenderEntry: async (snippetId: string, property: string, value: string) => {
+		return await db.insertInto('render_entries').values({ snippet_id: snippetId, property, value }).returning(['id', 'snippet_id', 'property', 'value']).executeTakeFirst();
+	},
+
+	updateRenderEntry: async (entryId: string, property: string, value: string) => {
+		await db.updateTable('render_entries').set({ property, value }).where('render_entries.id', '=', entryId).execute();
+	},
+
+	deleteRenderEntry: async (entryId: string) => {
+		await db.deleteFrom('render_entries').where('render_entries.id', '=', entryId).execute();
 	},
 
 	getAllWorkspaces: () => {
@@ -312,11 +338,6 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.select(['axes.id as axisId', 'axes.name as axisName', 'axes.description as axisDescription', 'axes.kind as axisKind', 'axes.hint as axisHint', 'axes_consumed.priority_index as priorityIndex']);
 	},
 
-	getAxisValuesByAxisId: (axisId: string) => {
-		return db.selectFrom('axis_values').where('axis_values.axis_id', '=', axisId).orderBy('axis_values.value')
-			.select(['axis_values.id as axisValueId', 'axis_values.value']);
-	},
-
 	getConsumedAxesByKitId: (kitId: string) => {
 		return db.selectFrom('axes_consumed').innerJoin('axes', 'axes.id', 'axes_consumed.axis_id').where('axes_consumed.kit_id', '=', kitId).orderBy('axes_consumed.priority_index', 'desc')
 			.select(['axes.id as axisId', 'axes.name as axisName', 'axes.kind as axisKind', 'axes_consumed.priority_index as priorityIndex']);
@@ -327,13 +348,23 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.select(['axis_args.axis_id as axisId', 'axis_args.kit_id as kitId', 'axis_args.view_id as viewId', 'axis_args.value']);
 	},
 
-	getRenderSnippetsByKitId: (kitId: string) => {
-		return db.selectFrom('render_snippets').where('render_snippets.kit_id', '=', kitId).orderBy('render_snippets.last_modified', 'desc')
-			.select(['render_snippets.id as snippetId', 'render_snippets.style as snippetStyle', 'render_snippets.last_modified as lastModified']);
+	getLayersByKitId: (kitId: string) => {
+		return db.selectFrom('layers').where('layers.kit_id', '=', kitId).orderBy('layers.last_modified', 'desc')
+			.select(['layers.id as layerId', 'layers.kit_id as kitId', 'layers.last_modified as lastModified']);
 	},
 
-	getLayersByKitId: (kitId: string) => {
-		return db.selectFrom('layers').innerJoin('render_snippets', 'render_snippets.id', 'layers.render_snippet_id').where('layers.kit_id', '=', kitId).orderBy('layers.last_modified', 'desc')
-			.select(['layers.id as layerId', 'render_snippets.id as snippetId', 'render_snippets.style as snippetStyle', 'layers.last_modified as lastModified']);
+	getRenderSnippetsByLayerId: (layerId: string) => {
+		return db.selectFrom('render_snippets').where('render_snippets.layer_id', '=', layerId).orderBy('render_snippets.last_modified', 'desc')
+			.select(['render_snippets.id as snippetId', 'render_snippets.layer_id as layerId', 'render_snippets.last_modified as lastModified']);
+	},
+
+	getRenderEntriesBySnippetId: (snippetId: string) => {
+		return db.selectFrom('render_entries').where('render_entries.snippet_id', '=', snippetId)
+			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value']);
+	},
+
+	getRenderEntriesByLayerId: (layerId: string) => {
+		return db.selectFrom('render_entries').innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id').where('render_snippets.layer_id', '=', layerId)
+			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value']);
 	}
 });

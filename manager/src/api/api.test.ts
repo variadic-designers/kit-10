@@ -20,7 +20,7 @@ describe('api', () => {
 		expect(ws!.name).toBe('My Workspace');
 
 		const all = await ctx.api.getAllWorkspaces().execute();
-		expect(all).toHaveLength(2); // Default + new
+		expect(all).toHaveLength(2);
 	});
 
 	// ---- Projects ----
@@ -152,18 +152,30 @@ describe('api', () => {
 
 	// ---- Axis Values ----
 
-	it('creates and queries axis values', async () => {
+	it('creates and queries axis values (literal)', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
 
-		const av1 = (await ctx.api.createAxisValue(axis.id, 'light'))!;
-		const av2 = (await ctx.api.createAxisValue(axis.id, 'dark'))!;
+		const av1 = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
+		const av2 = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+
+		expect(av1.value).toMatchObject({ type: 'literal', value: 'light' });
+		expect(av2.value).toMatchObject({ type: 'literal', value: 'dark' });
 
 		const values = await ctx.api.getAxisValuesByAxisId(axis.id).execute();
 		expect(values).toHaveLength(2);
-		expect(values.map((v) => v.value).sort()).toEqual(['dark', 'light']);
+	});
+
+	it('creates and queries axis values (range boundary)', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'viewport'))!;
+
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'range', operator: '>=', threshold: 1024 }))!;
+		expect(av.value).toMatchObject({ type: 'range', operator: '>=', threshold: 1024 });
 	});
 
 	it('deletes an axis value', async () => {
@@ -171,7 +183,7 @@ describe('api', () => {
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
-		const av = (await ctx.api.createAxisValue(axis.id, 'light'))!;
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
 
 		await ctx.api.deleteAxisValue(av.id);
 		const values = await ctx.api.getAxisValuesByAxisId(axis.id).execute();
@@ -245,41 +257,23 @@ describe('api', () => {
 		expect(args[0]!.value).toMatchObject({ type: 'literal', value: 'dark' });
 	});
 
-	// ---- Render Snippets ----
-
-	it('creates, updates, and deletes render snippets', async () => {
-		const allWs = await ctx.api.getAllWorkspaces().execute();
-		const wsId = allWs[0]!.workspaceId;
-		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
-		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
-
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, { padding: '1rem' }))!;
-		expect(snippet.style).toMatchObject({ padding: '1rem' });
-
-		await ctx.api.updateRenderSnippetStyle(snippet.id, { padding: '2rem' });
-		const list = await ctx.api.getRenderSnippetsByKitId(kit.id).execute();
-		expect(list[0]!.snippetStyle).toMatchObject({ padding: '2rem' });
-
-		await ctx.api.deleteRenderSnippet(snippet.id);
-		const after = await ctx.api.getRenderSnippetsByKitId(kit.id).execute();
-		expect(after).toHaveLength(0);
-	});
-
 	// ---- Layers ----
 
-	it('creates layer linking kit to render snippet', async () => {
+	it('creates and deletes a layer', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, { color: 'red' }))!;
 
-		const layer = (await ctx.api.createLayer(kit.id, snippet.id))!;
-		expect(layer.render_snippet_id).toBe(snippet.id);
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		expect(layer.kit_id).toBe(kit.id);
 
 		const layers = await ctx.api.getLayersByKitId(kit.id).execute();
 		expect(layers).toHaveLength(1);
-		expect(layers[0]!.snippetStyle).toMatchObject({ color: 'red' });
+
+		await ctx.api.deleteLayer(layer.id);
+		const after = await ctx.api.getLayersByKitId(kit.id).execute();
+		expect(after).toHaveLength(0);
 	});
 
 	it('adds and removes axis values from a layer', async () => {
@@ -287,14 +281,12 @@ describe('api', () => {
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
-		const av = (await ctx.api.createAxisValue(axis.id, 'light'))!;
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, { background: '#FFF' }))!;
-		const layer = (await ctx.api.createLayer(kit.id, snippet.id))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
 
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
 
-		// Verify via DB directly
 		const lav = await ctx.db
 			.selectFrom('layer_axis_values')
 			.selectAll()
@@ -312,17 +304,67 @@ describe('api', () => {
 		expect(after).toHaveLength(0);
 	});
 
-	it('deletes a layer', async () => {
+	// ---- Render Snippets (now point to layers) ----
+
+	it('creates and deletes render snippets on a layer', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, {}))!;
-		const layer = (await ctx.api.createLayer(kit.id, snippet.id))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
 
-		await ctx.api.deleteLayer(layer.id);
-		const after = await ctx.api.getLayersByKitId(kit.id).execute();
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+		expect(snippet.layer_id).toBe(layer.id);
+
+		const snippets = await ctx.api.getRenderSnippetsByLayerId(layer.id).execute();
+		expect(snippets).toHaveLength(1);
+
+		await ctx.api.deleteRenderSnippet(snippet.id);
+		const after = await ctx.api.getRenderSnippetsByLayerId(layer.id).execute();
 		expect(after).toHaveLength(0);
+	});
+
+	// ---- Render Entries ----
+
+	it('creates, updates, and deletes render entries', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+
+		const entry = (await ctx.api.createRenderEntry(snippet.id, 'background', '#333'))!;
+		expect(entry.property).toBe('background');
+		expect(entry.value).toBe('#333');
+
+		await ctx.api.updateRenderEntry(entry.id, 'background', '#000');
+		const entries = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
+		expect(entries[0]!.value).toBe('#000');
+
+		const entry2 = (await ctx.api.createRenderEntry(snippet.id, 'color', '#dedede'))!;
+		const allEntries = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
+		expect(allEntries).toHaveLength(2);
+
+		await ctx.api.deleteRenderEntry(entry.id);
+		const after = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
+		expect(after).toHaveLength(1);
+		expect(after[0]!.property).toBe('color');
+	});
+
+	it('queries render entries by layer id', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+
+		await ctx.api.createRenderEntry(snippet.id, 'background', '#333');
+		await ctx.api.createRenderEntry(snippet.id, 'color', '#fff');
+
+		const entries = await ctx.api.getRenderEntriesByLayerId(layer.id).execute();
+		expect(entries).toHaveLength(2);
 	});
 
 	// ---- Tokens ----
@@ -357,9 +399,10 @@ describe('api', () => {
 		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'k'))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
-		const av = (await ctx.api.createAxisValue(axis.id, 'light'))!;
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, { color: 'red' }))!;
-		const layer = (await ctx.api.createLayer(kit.id, snippet.id))!;
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+		await ctx.api.createRenderEntry(snippet.id, 'color', '#333');
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
 		await ctx.api.consumeAxis(kit.id, axis.id);
 		await ctx.api.setAxisArg(view.id, kit.id, axis.id, { type: 'literal', value: 'light' });
@@ -376,8 +419,9 @@ describe('api', () => {
 		expect(exported.axisValues).toHaveLength(1);
 		expect(exported.axesConsumed).toHaveLength(1);
 		expect(exported.axisArgs).toHaveLength(1);
-		expect(exported.renderSnippets).toHaveLength(1);
 		expect(exported.layers).toHaveLength(1);
+		expect(exported.renderSnippets).toHaveLength(1);
+		expect(exported.renderEntries).toHaveLength(1);
 		expect(exported.layerAxisValues).toHaveLength(1);
 	});
 });

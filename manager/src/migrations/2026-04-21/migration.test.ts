@@ -21,11 +21,11 @@ describe('migration 2026-04-21', () => {
 		expect(tableNames).toContain('views');
 		expect(tableNames).toContain('kits');
 		expect(tableNames).toContain('compositions');
-		expect(tableNames).toContain('axes');
 		expect(tableNames).toContain('axis_values');
 		expect(tableNames).toContain('axes_consumed');
 		expect(tableNames).toContain('axis_args');
 		expect(tableNames).toContain('render_snippets');
+		expect(tableNames).toContain('render_entries');
 		expect(tableNames).toContain('layers');
 		expect(tableNames).toContain('layer_axis_values');
 		expect(tableNames).toContain('tokens');
@@ -53,21 +53,35 @@ describe('migration 2026-04-21', () => {
 		].sort());
 	});
 
+	it('render_snippets points to layers, not kits', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const snippets = cols.find((t) => t.name === 'render_snippets');
+		expect(snippets).toBeDefined();
+		const colNames = snippets!.columns.map((c) => c.name).sort();
+		expect(colNames).toContain('layer_id');
+		expect(colNames).not.toContain('kit_id');
+		expect(colNames).not.toContain('style');
+	});
+
+	it('layers does not have render_snippet_id', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const layers = cols.find((t) => t.name === 'layers');
+		expect(layers).toBeDefined();
+		const colNames = layers!.columns.map((c) => c.name).sort();
+		expect(colNames).not.toContain('render_snippet_id');
+	});
+
 	it('layer_axis_values has composite PK on (layer_id, axis_value_id)', async () => {
-		// Verify by trying a duplicate insert
-		// Need seed data first
 		const proj = (await ctx.api.createProjectInWorkspace(
 			(await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId,
 			'test'
 		))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
-		const av = (await ctx.api.createAxisValue(axis.id, 'light'))!;
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
-		const snippet = (await ctx.api.createRenderSnippet(kit.id, { padding: '1rem' }))!;
-		const layer = (await ctx.api.createLayer(kit.id, snippet.id))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
 
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
-		// Second insert should be no-op due to onConflict doNothing
 		await expect(
 			ctx.api.addAxisValueToLayer(layer.id, av.id)
 		).resolves.toBeUndefined();

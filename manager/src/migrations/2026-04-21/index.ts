@@ -4,6 +4,44 @@ import type { Generated, JSONColumnType } from 'kysely';
 export type DAny = Kysely<any>;
 export type D2026_04_21 = Kysely<DB2026_04_21>;
 
+// --- Axis value types (condition side) ---
+
+interface AxisValueLiteral {
+	type: 'literal';
+	value: string;
+}
+
+interface AxisValueBoundary {
+	type: 'range';
+	operator: '>=' | '<=' | '>' | '<' | 'between';
+	threshold: number;
+	threshold_high?: number;
+}
+
+interface AxisValueDiscrete {
+	type: 'discrete';
+	value: string;
+}
+
+type AxisValueType = AxisValueLiteral | AxisValueBoundary | AxisValueDiscrete;
+
+// --- Axis arg types (input side) ---
+
+interface ArgLiteral {
+	type: 'literal';
+	value: string;
+}
+
+interface ArgRange {
+	type: 'range';
+	min: number;
+	max: number;
+}
+
+type ArgValue = ArgLiteral | ArgRange;
+
+// --- Schema ---
+
 export interface DB2026_04_21 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
@@ -20,7 +58,7 @@ export interface DB2026_04_21 {
 	render_snippets: RenderSnippetsTable;
 	layers: LayersTable;
 	layer_axis_values: LayerAxisValuesTable;
-	axis_sets: never;
+	render_entries: RenderEntriesTable;
 
 	tokens: TokensTable;
 }
@@ -75,13 +113,13 @@ export interface AxisTable {
 	description: string | null;
 	kind: string | null;
 	hint: JSONColumnType<string[]> | null;
-	default_value: JSONColumnType<Value> | null;
+	default_value: JSONColumnType<ArgValue> | null;
 }
 
 export interface AxisValuesTable {
 	id: Generated<string>;
 	axis_id: string;
-	value: string;
+	value: JSONColumnType<AxisValueType>;
 }
 
 export interface AxesConsumedTable {
@@ -92,25 +130,8 @@ export interface AxesConsumedTable {
 
 // ------------------------------
 
-interface ValueType {
-	type: 'literal' | 'range';
-}
-
-interface Literal extends ValueType {
-	type: 'literal';
-	value: string;
-}
-
-interface Range extends ValueType {
-	type: 'range';
-	min: number;
-	max: number;
-}
-
-type Value = Literal | Range;
-
 export interface AxisArgsTable {
-	value: JSONColumnType<Value> | null;
+	value: JSONColumnType<ArgValue> | null;
 	axis_id: string;
 	kit_id: string;
 	view_id: string;
@@ -120,21 +141,26 @@ export interface AxisArgsTable {
 
 export interface RenderSnippetsTable {
 	id: Generated<string>;
-	kit_id: string;
-	style: JSONColumnType<Record<string, string>>;
+	layer_id: string;
 	last_modified: Generated<Date>;
 }
 
 export interface LayersTable {
 	id: Generated<string>;
 	kit_id: string;
-	render_snippet_id: string;
 	last_modified: Generated<Date>;
 }
 
 export interface LayerAxisValuesTable {
 	layer_id: string;
 	axis_value_id: string;
+}
+
+export interface RenderEntriesTable {
+	id: Generated<string>;
+	snippet_id: string;
+	property: string;
+	value: string;
 }
 
 // ------------------------------
@@ -194,8 +220,7 @@ export async function up(dialect: DAny) {
 		.addColumn('axis_id', 'uuid', (col) =>
 			col.notNull().references('axes.id').onDelete('cascade')
 		)
-		.addColumn('value', 'text', (col) => col.notNull())
-		.addUniqueConstraint('unique_value_per_axis', ['axis_id', 'value'])
+		.addColumn('value', 'jsonb', (col) => col.notNull())
 		.execute();
 
 	await dialect.schema
@@ -249,31 +274,39 @@ export async function up(dialect: DAny) {
 		.execute();
 
 	await dialect.schema
-		.createTable('render_snippets')
+		.createTable('layers')
 		.ifNotExists()
-		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
 		.addColumn('kit_id', 'uuid', (col) =>
 			col.notNull().references('kits.id').onDelete('cascade')
 		)
-		.addColumn('style', 'jsonb', (col) => col.notNull())
 		.addColumn('last_modified', 'timestamptz', (col) =>
 			col.notNull().defaultTo(sql<Date>`now()`)
 		)
 		.execute();
 
 	await dialect.schema
-		.createTable('layers')
+		.createTable('render_snippets')
 		.ifNotExists()
-		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
-		.addColumn('kit_id', 'uuid', (col) =>
-			col.notNull().references('kits.id').onDelete('cascade')
-		)
-		.addColumn('render_snippet_id', 'uuid', (col) =>
-			col.notNull().references('render_snippets.id').onDelete('cascade')
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('layer_id', 'uuid', (col) =>
+			col.notNull().references('layers.id').onDelete('cascade')
 		)
 		.addColumn('last_modified', 'timestamptz', (col) =>
 			col.notNull().defaultTo(sql<Date>`now()`)
 		)
+		.addUniqueConstraint('one_snippet_per_layer', ['layer_id'])
+		.execute();
+
+	await dialect.schema
+		.createTable('render_entries')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('snippet_id', 'uuid', (col) =>
+			col.notNull().references('render_snippets.id').onDelete('cascade')
+		)
+		.addColumn('property', 'text', (col) => col.notNull())
+		.addColumn('value', 'text', (col) => col.notNull())
 		.execute();
 
 	await dialect.schema
@@ -302,9 +335,10 @@ export async function up(dialect: DAny) {
 }
 
 export async function down(dialect: DAny) {
+	await dialect.schema.dropTable('render_entries').ifExists().execute();
 	await dialect.schema.dropTable('layer_axis_values').ifExists().execute();
-	await dialect.schema.dropTable('layers').ifExists().execute();
 	await dialect.schema.dropTable('render_snippets').ifExists().execute();
+	await dialect.schema.dropTable('layers').ifExists().execute();
 	await dialect.schema.dropTable('axis_args').ifExists().execute();
 	await dialect.schema.dropTable('axes_consumed').ifExists().execute();
 	await dialect.schema.dropTable('axis_values').ifExists().execute();

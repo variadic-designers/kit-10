@@ -50,10 +50,9 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 import { up } from './migrations/2026-04-21/index.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
-	// Enable plugins
 	await sql`CREATE EXTENSION IF NOT EXISTS pg_uuidv7`.execute(dialect);
 
-	await up(dialect);
+	await up(dialect as any);
 
 	const workspaces = await dialect.selectFrom('workspaces').selectAll().executeTakeFirst();
 
