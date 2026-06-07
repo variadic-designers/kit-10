@@ -64,15 +64,18 @@ An Axis by itself should not overlap in meaning with another Axis.
 
 ## Layers
 
-A Layer is a resolution intermediary that sits between Axes and Render output.
+A Layer is a rule: a set of axis conditions, each pairing an axis with a specific value, mapped to a render result.
 
-A Layer maps Axis conditions to rendered results:
+A Layer requires **at least one** axis condition to be valid. There is no upper limit on how many axis conditions a Layer may carry.
 
-- A `one-axis → render` mapping applies broadly.
-- A `two-axis → render` mapping applies with higher specificity.
+```
+Layer: { dark: true }                        → { background: #333; color: #dedede }
+Layer: { dark: true, high_contrast: true }    → { background: #000; color: #FFF }
+```
 
-Layers are not limited to single-axis mappings.  
-Multi-axis mappings override less specific ones when both apply.
+When the current axis state satisfies all conditions of a Layer, that Layer applies. A Layer with more conditions in its set applies with higher specificity — so in the example above, when both `dark` and `high_contrast` are true, the two-condition Layer overrides the one-condition Layer.
+
+Multi-axis mappings always override less specific ones when both apply. This is the axis-count tier of specificity (see Specificity).
 
 ---
 
@@ -82,11 +85,13 @@ Specificity is a three-tier, non-overlapping hierarchy. Higher tiers always win,
 
 | Tier | Basis | Description |
 |------|-------|-------------|
-| 1 (lowest) | **Axis ordering within a Kit** | Within a Kit, Axes are ordered by priority. An Axis at position 2 overrides one at position 1 for conflicting render results. This is the finest unit of specificity. |
-| 2 | **Axis count in the Layer condition** | The number of Axes in a Layer's mapping. A `two-axis → render` Layer always overrides any `one-axis → render` Layer. A `three-axis → render` overrides `two-axis`, and so on. |
+| 1 (lowest) | **Axis ordering within a Kit** | Within a Kit, Axes are ordered by priority. When two Layers have the same axis count and their highest-priority axes differ, the Layer whose axis appears later in the Kit ordering wins. |
+| 2 | **Axis count in the Layer condition** | The number of axis conditions a Layer carries. A two-axis Layer always overrides any one-axis Layer, regardless of which axes are involved or their ordering. Likewise, a three-axis Layer overrides any two-axis Layer, and so on. |
 | 3 (highest) | **Kit precedence** | A View consumes multiple Kits in priority order. When two Kits produce a render result for the same property, the higher-priority Kit wins — regardless of axis count or axis ordering within either Kit. |
 
-These tiers are non-overlapping: no amount of lower-tier specificity can beat a higher tier. The system behaves as a composite value where each tier is its own digit, analogous to `(kit_priority, axis_count, axis_order)`.
+When two Layers have the **same axis count**, their relative specificity is determined by the compounded ordering of their axes within the Kit. The highest-priority axis (latest position in Kit ordering) present in either Layer decides: the Layer whose matching axis appears later wins. The same rule compounds as axis count increases — a three-axis Layer borrows its specificity from the ordering of all three axes, but it already outranks any two-axis or one-axis Layer by tier 2 alone.
+
+These tiers are non-overlapping: no amount of lower-tier specificity can beat a higher tier. The system behaves as a composite value where each tier is its own digit, analogous to `(kit_priority, axis_count, compounded_axis_order)`.
 
 ---
 
