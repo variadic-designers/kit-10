@@ -326,7 +326,7 @@ describe('api', () => {
 
 	// ---- Render Entries ----
 
-	it('creates, updates, and deletes render entries', async () => {
+it('creates, updates, and deletes render entries', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
@@ -337,8 +337,9 @@ describe('api', () => {
 		const entry = (await ctx.api.createRenderEntry(snippet.id, 'background', '#333'))!;
 		expect(entry.property).toBe('background');
 		expect(entry.value).toBe('#333');
+		expect(entry.token_id).toBeNull();
 
-		await ctx.api.updateRenderEntry(entry.id, 'background', '#000');
+		await ctx.api.updateRenderEntryValue(entry.id, 'background', '#000');
 		const entries = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
 		expect(entries[0]!.value).toBe('#000');
 
@@ -350,6 +351,24 @@ describe('api', () => {
 		const after = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
 		expect(after).toHaveLength(1);
 		expect(after[0]!.property).toBe('color');
+	});
+
+	it('creates render entry with token reference', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const token = (await ctx.api.createToken(proj.id, 'colors.primary', '#3b82f6'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+
+		const entry = (await ctx.api.createRenderEntry(snippet.id, 'background', null, token.id))!;
+		expect(entry.property).toBe('background');
+		expect(entry.value).toBeNull();
+		expect(entry.token_id).toBe(token.id);
+
+		const entries = await ctx.api.getRenderEntriesBySnippetId(snippet.id).execute();
+		expect(entries[0]!.tokenId).toBe(token.id);
 	});
 
 	it('queries render entries by layer id', async () => {

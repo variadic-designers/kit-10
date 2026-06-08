@@ -125,7 +125,13 @@ Render Tokens do not require manual adjustment.
 
 Tokens are project-level named values (e.g., `colors.brand: #3b82f6`). They exist outside the cascade — they are not resolved through Layer specificity and are not scoped to Kits or Views.
 
-Tokens serve as a shared value palette within a project. They are not a separate resolution path — they participate in the cascade by being referenced as render result values. A Layer's property declarations may use token aliases in place of literal values.
+Tokens participate in the cascade in two passes:
+
+1. **Pass 1 — Specificity resolution.** Layers are resolved in specificity order. Each property declaration in a Layer's render result wins or loses per the specificity rules. At the end of Pass 1, every property has a winning value, which may be a literal (e.g., `#333`) or a token reference (e.g., `colors.brand`). Tokens are **not** dereferenced during this pass — they compete as opaque references, so a token reference on a higher-specificity Layer beats a literal on a lower one.
+
+2. **Pass 2 — Token substitution.** After the winning per-property values are determined, any token references are replaced with their underlying values. This substitution happens after all specificity is settled, so tokens never affect which Layer wins — they only affect what the final output value is.
+
+A render result entry is always **one of**: a literal value or a token reference. It is never both, and it is never neither. The data model enforces this with a check constraint.
 
 Unbounded tokens (those without axis conditions) naturally reside on the null Layer, where they serve as baseline values that more-specific Layers can override per-property.
 
@@ -148,7 +154,7 @@ This evaluation happens at resolution time, not at storage time.
 
 Intent flows through the system in a defined order:
 
-Views → Kit instances → Axes → Layers (specificity resolution) → Render Tokens
+Views → Kit instances → Axes → Layers (Pass 1: specificity resolution) → Token substitution (Pass 2) → Render Tokens
 
 There are no implicit overrides.  
 Changes must be the result of upstream input changes.

@@ -155,7 +155,8 @@ export interface RenderEntriesTable {
 	id: Generated<string>;
 	snippet_id: string;
 	property: string;
-	value: string;
+	value: string | null;
+	token_id: string | null;
 }
 
 // ------------------------------
@@ -165,7 +166,6 @@ export interface TokensTable {
 	project_id: string;
 	alias: string | null;
 	value: string | null;
-	resolution: string | null;
 }
 
 // Current version of db

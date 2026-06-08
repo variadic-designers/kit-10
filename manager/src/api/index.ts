@@ -7,11 +7,11 @@ export interface QueryOrdering {
 }
 
 export interface QueryToken {
-	createToken: (projectId: string, alias?: string, value?: string) => Promise<{ id: string; project_id: string; alias: string | null; value: string | null; resolution: string | null } | undefined>;
+	createToken: (projectId: string, alias?: string, value?: string) => Promise<{ id: string; project_id: string; alias: string | null; value: string | null } | undefined>;
 	updateTokenValue: (tokenId: string, value: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
-	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenResolution: string | null }>;
+	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null }>;
 }
 
 export interface QueryKit {
@@ -67,11 +67,11 @@ export interface QueryRenderSnippet {
 }
 
 export interface QueryRenderEntry {
-	createRenderEntry: (snippetId: string, property: string, value: string) => Promise<{ id: string; snippet_id: string; property: string; value: string } | undefined>;
-	updateRenderEntry: (entryId: string, property: string, value: string) => Promise<void>;
+	createRenderEntry: (snippetId: string, property: string, value?: string | null, tokenId?: string | null) => Promise<{ id: string; snippet_id: string; property: string; value: string | null; token_id: string | null } | undefined>;
+	updateRenderEntryValue: (entryId: string, property: string, value?: string | null, tokenId?: string | null) => Promise<void>;
 	deleteRenderEntry: (entryId: string) => Promise<void>;
-	getRenderEntriesBySnippetId: (snippetId: string) => SelectQueryBuilder<Schema, 'render_entries', { entryId: string; snippetId: string; property: string; value: string }>;
-	getRenderEntriesByLayerId: (layerId: string) => SelectQueryBuilder<Schema, 'render_snippets' | 'render_entries', { entryId: string; snippetId: string; property: string; value: string }>;
+	getRenderEntriesBySnippetId: (snippetId: string) => SelectQueryBuilder<Schema, 'render_entries', { entryId: string; snippetId: string; property: string; value: string | null; tokenId: string | null }>;
+	getRenderEntriesByLayerId: (layerId: string) => SelectQueryBuilder<Schema, 'render_snippets' | 'render_entries', { entryId: string; snippetId: string; property: string; value: string | null; tokenId: string | null }>;
 }
 
 export interface QueryAction {
@@ -273,12 +273,12 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db.deleteFrom('render_snippets').where('render_snippets.id', '=', snippetId).execute();
 	},
 
-	createRenderEntry: async (snippetId: string, property: string, value: string) => {
-		return await db.insertInto('render_entries').values({ snippet_id: snippetId, property, value }).returning(['id', 'snippet_id', 'property', 'value']).executeTakeFirst();
+	createRenderEntry: async (snippetId: string, property: string, value?: string | null, tokenId?: string | null) => {
+		return await db.insertInto('render_entries').values({ snippet_id: snippetId, property, value: value ?? null, token_id: tokenId ?? null } as any).returning(['id', 'snippet_id', 'property', 'value', 'token_id']).executeTakeFirst();
 	},
 
-	updateRenderEntry: async (entryId: string, property: string, value: string) => {
-		await db.updateTable('render_entries').set({ property, value }).where('render_entries.id', '=', entryId).execute();
+	updateRenderEntryValue: async (entryId: string, property: string, value?: string | null, tokenId?: string | null) => {
+		await db.updateTable('render_entries').set({ property, value: value ?? null, token_id: tokenId ?? null } as any).where('render_entries.id', '=', entryId).execute();
 	},
 
 	deleteRenderEntry: async (entryId: string) => {
@@ -325,7 +325,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	getTokensByProjectId: (projectId: string) => {
 		return db.selectFrom('tokens').where('tokens.project_id', '=', projectId).orderBy('tokens.alias')
-			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.resolution as tokenResolution']);
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue']);
 	},
 
 	getAxesByProjectId: (projectId: string) => {
@@ -360,11 +360,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	getRenderEntriesBySnippetId: (snippetId: string) => {
 		return db.selectFrom('render_entries').where('render_entries.snippet_id', '=', snippetId)
-			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value']);
+			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value', 'render_entries.token_id as tokenId']);
 	},
 
 	getRenderEntriesByLayerId: (layerId: string) => {
 		return db.selectFrom('render_entries').innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id').where('render_snippets.layer_id', '=', layerId)
-			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value']);
+			.select(['render_entries.id as entryId', 'render_entries.snippet_id as snippetId', 'render_entries.property', 'render_entries.value', 'render_entries.token_id as tokenId']);
 	}
 });

@@ -286,6 +286,17 @@ export async function up(dialect: DAny) {
 		.execute();
 
 	await dialect.schema
+		.createTable('tokens')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('project_id', 'uuid', (col) =>
+			col.notNull().references('projects.id').onDelete('restrict')
+		)
+		.addColumn('alias', 'varchar(255)')
+		.addColumn('value', 'text')
+		.execute();
+
+	await dialect.schema
 		.createTable('render_snippets')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
@@ -296,17 +307,6 @@ export async function up(dialect: DAny) {
 			col.notNull().defaultTo(sql<Date>`now()`)
 		)
 		.addUniqueConstraint('one_snippet_per_layer', ['layer_id'])
-		.execute();
-
-	await dialect.schema
-		.createTable('render_entries')
-		.ifNotExists()
-		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
-		.addColumn('snippet_id', 'uuid', (col) =>
-			col.notNull().references('render_snippets.id').onDelete('cascade')
-		)
-		.addColumn('property', 'text', (col) => col.notNull())
-		.addColumn('value', 'text', (col) => col.notNull())
 		.execute();
 
 	await dialect.schema
@@ -322,15 +322,18 @@ export async function up(dialect: DAny) {
 		.execute();
 
 	await dialect.schema
-		.createTable('tokens')
+		.createTable('render_entries')
 		.ifNotExists()
-		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
-		.addColumn('project_id', 'uuid', (col) =>
-			col.notNull().references('projects.id').onDelete('restrict')
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('snippet_id', 'uuid', (col) =>
+			col.notNull().references('render_snippets.id').onDelete('cascade')
 		)
-		.addColumn('alias', 'varchar(255)')
+		.addColumn('property', 'text', (col) => col.notNull())
 		.addColumn('value', 'text')
-		.addColumn('resolution', 'text')
+		.addColumn('token_id', 'uuid', (col) =>
+			col.references('tokens.id').onDelete('set null')
+		)
+		.addCheckConstraint('value_or_token_not_both', sql`(value IS NOT NULL) != (token_id IS NOT NULL)`)
 		.execute();
 }
 
