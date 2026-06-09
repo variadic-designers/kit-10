@@ -1,50 +1,7 @@
 <script lang="ts" module>
-	export type HSV = { h: number; s: number; v: number };
-
-	export const stringSetToHSV = (() => {
-		const cache = new Map<string, HSV>();
-
-		const hash = (str: string): number => {
-			let h = 0;
-			for (let i = 0; i < str.length; i++) {
-				h = (h * 131 + str.charCodeAt(i)) >>> 0;
-			}
-			return h;
-		};
-
-		return function (parts: string[]): HSV {
-			// Normalize + canonicalize
-			const cleaned = Array.from(
-				new Set(parts.map((s) => s.trim()).filter((s) => s.length > 0))
-			).sort();
-
-			const key = cleaned.join(';'); // canonical memo key
-
-			if (cache.has(key)) return cache.get(key)!;
-
-			// Hash whole set for hue
-			const hWhole = hash(key);
-
-			// Hash each element for value variation
-			let elementHashTotal = 0;
-			for (const p of cleaned) elementHashTotal += hash(p);
-
-			const len = cleaned.length;
-
-			// Saturation: specificity-based (smooth 50–100)
-			const s = 50 + Math.tanh(len / 3) * 50;
-
-			// Value: 40–100 based on hashed composition
-			const v = 60 + ((elementHashTotal % 1000) / 1000) * 40;
-
-			// Hue: 0–360
-			const h = hWhole % 360;
-
-			const result = { h, s, v };
-			cache.set(key, result);
-			return result;
-		};
-	})();
+	// Diamond tracker removed — traceability will be handled separately
+	// stringSetToHSV was used to color-code layers by their axis conditions
+	// Re-enable from git history when traceability UI is rebuilt
 </script>
 
 <script lang="ts">
@@ -113,52 +70,7 @@
 	} from '../../cascadeAxesMap.ts';
 	import type { EditorSelection } from '../Editor.svelte';
 
-	/*
-	// Decider for what color to display on the layer indicator
-	const layerColorDecider: (
-		axisVariant: string
-	) => ({ color: string; activated: boolean } | undefined)[] = (axisVariant) => {
-		const layerEntries = layers[axisVariant];
-
-		if (layerEntries) {
-			let layerOrdering = layerWidgets.flat();
-			let layerColours = layerOrdering.map((layerShape, i) => {
-				let found = layerEntries.layers.find((l) => shallowEqual(layerShape, l));
-
-				if (found && selection.selectedViewCascadeResult) {
-					const hsv = stringSetToHSV(found);
-					const color = `hsl(${hsv.h}, ${hsv.s}%, ${hsv.v}%)`;
-
-					const activated = selection.selectedViewCascadeResult.trace.find((t) => {
-						if (Object.keys(t.source).length === 0) {
-							return false;
-						}
-
-						let currents = layerEntries.variants.filter(
-							(v: Partial<{ [axisName: string]: Axis }>) => {
-								return shallowEqual(found, Object.keys(v));
-							}
-						);
-
-						const activation = currents.find((currentVariant) => {
-							return shallowEqual(t.source, currentVariant);
-						});
-
-						return activation;
-					});
-
-					return { color, activated };
-				} else {
-					return undefined;
-				}
-			});
-
-			return layerColours;
-		} else {
-			return layerWidgets.flat().map(() => undefined);
-		}
-	};
-  */
+	// Diamond tracker removed — see git history for layerColorDecider
 
 	const axisContextMenu = [
 		{
@@ -216,29 +128,8 @@
 			/>
 		</label>
 
-		<span class="layers">
-			<!-- Layer of axis variant -->
-			<!-- {#if layered} -->
-			<!-- 	{#each layered as layers, i} -->
-			<!-- 		<div -->
-			<!-- 			class="axis-field-container" -->
-			<!-- 			class:axis-field-container--last={layered.length - 1 === i} -->
-			<!-- 		> -->
-			<!-- 			<button -->
-			<!-- 				class="axis-field__layer" -->
-			<!-- 				class:axis-field__layer--focused={focused} -->
-			<!-- 				class:axis-field__layer--ticked={layers?.activated} -->
-			<!-- 				class:axis-field__layer--undefined={!!!layers} -->
-			<!-- 				style={layers ? '--axis-field__layer-color: ' + layers.color : ''} -->
-			<!-- 				disabled={!focused || !layered} -->
-			<!-- 				aria-label="Add variant to params" -->
-			<!-- 				title={JSON.stringify(layered, null, 2)} -->
-			<!-- 			> -->
-			<!-- 				<i class="fa-solid fa-diamond"></i> -->
-			<!-- 			</button> -->
-			<!-- 		</div> -->
-			<!-- 	{/each} -->
-			<!-- {/if} -->
+<span class="layers">
+			<!-- Diamond tracker removed — see git history for layer indicators -->
 		</span>
 	</div>
 {/snippet}
@@ -407,6 +298,7 @@
 		}
 
 		// Diamond layer tracker
+		/* Diamond tracker removed
 		&__layer {
 			width: $x-space-md;
 			font-size: $x-font-size-md;
@@ -453,5 +345,6 @@
 				}
 			}
 		}
+		*/
 	}
 </style>

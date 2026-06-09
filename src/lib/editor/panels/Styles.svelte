@@ -9,7 +9,6 @@
 		type TraceEntry,
 		type ManagerTraceEntry
 	} from '../../cascadeAxesMap.ts';
-	import { stringSetToHSV } from './Axis.svelte';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { TokenLibrary } from './Variables.svelte';
 
@@ -50,33 +49,33 @@
 		}
 	});
 
-	// backtracks trace to find source layer then transform to color
+// backtracks trace to find source layer — traceability UI removed, placeholder
 	const track = (key: string): { set?: AxesSet; color: string; stack: number } => {
-		// guarantees css key `t` exists somewhere
 		if (finalStyle[key]) {
 			let t: (TraceEntry & ManagerTraceEntry) | undefined;
 
-			// reverse find()
 			for (let i = trace.length - 1; i >= -1; i--) {
 				const entry = trace[i];
 
 				if (Object.keys(entry.applied).includes(key)) {
 					t = { ...entry, managerIndex: i };
 
-					console.log(`Found Source: ${JSON.stringify(t?.source)}`);
-
 					if (t) {
-						const hsv = stringSetToHSV(Object.keys(t.source));
-						console.log(`HSV: ${JSON.stringify(hsv)}`);
 						if (Object.keys(t.source).length === 0) {
-							// tracked on no axes set
 							return { set: {}, color: 'var(--color-diamond-color-tracked--empty)', stack: 0 };
 						}
 						return {
 							set: t.source,
-							color: `hsl(${hsv.h}, ${hsv.s}%, ${hsv.v}%)`,
+							color: 'var(--color-primary)',
 							stack: t.managerIndex
 						};
+					}
+				}
+			}
+		}
+
+		return { color: 'var(--color-bg)', stack: 0 };
+	};
 					}
 
 					// break; // stop at the first match from the end

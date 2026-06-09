@@ -11,7 +11,6 @@
 <script lang="ts">
 	import type { ComponentFlat, ComponentView } from '../Component.svelte';
 	import Panel from '../Panel.svelte';
-	import { stringSetToHSV } from './Axis.svelte';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 
 	type AxesPanel = {
@@ -195,6 +194,8 @@
 		}
 	});
 
+// Diamond tracker removed — see git history for layersCollapsed, layerEditing, layerWidgets
+	/*
 	const layersCollapsed = $derived.by(() => {
 		function extractUniqueLayers(data): string[][] {
 			const seen = new Set<string>();
@@ -310,6 +311,7 @@
 		padding-block: $x-space-xs;
 	}
 
+	/* Diamond tracker removed
 	.layers {
 		display: flex;
 		display: none;
@@ -340,36 +342,35 @@
 				0%,
 				100% {
 					--colour: rgb(220, 150, 150);
-				} /* soft dark red */
+				}
 				10% {
 					--colour: rgb(220, 165, 140);
-				} /* soft dark orange */
+				}
 				20% {
 					--colour: rgb(160, 200, 160);
-				} /* muted darker green */
+				}
 				35% {
 					--colour: rgb(160, 200, 200);
-				} /* muted cyan */
+				}
 				50% {
 					--colour: rgb(160, 175, 210);
-				} /* muted sky */
+				}
 				60% {
 					--colour: rgb(150, 150, 210);
-				} /* muted blue */
+				}
 				75% {
 					--colour: rgb(185, 160, 210);
-				} /* softened violet */
+				}
 				85% {
 					--colour: rgb(220, 160, 220);
-				} /* muted magenta */
+				}
 				95% {
 					--colour: rgb(220, 160, 180);
-				} /* muted rose */
+				}
 			}
 
 			&--valued {
 				border: 2px dashed var(--color-surface-alt);
-				// box-shadow: 0rem 0.3rem var(--color-surface-alt);
 				color: var(--colour);
 				-webkit-text-stroke-color: black;
 
@@ -389,7 +390,6 @@
 				-webkit-text-stroke-width: unset;
 			}
 
-			// hide the radios
 			input[type='radio'] {
 				position: absolute;
 				opacity: 0;
@@ -407,11 +407,11 @@
 			&:has(input[type='radio']:disabled) {
 				border: 2px solid var(--color-bg);
 				background: var(--color-bg);
-				// color: var(--color-surface);
 				-webkit-text-stroke-color: var(--color-text);
 			}
 		}
 	}
+	*/
 
 	.axis {
 		position: relative;

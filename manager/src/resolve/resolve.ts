@@ -47,26 +47,43 @@ function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 		case 'discrete':
 			return arg.type === 'literal' && arg.value === condition.value;
 		case 'range': {
-			const num =
-				arg.type === 'literal'
-					? parseFloat(arg.value)
-					: arg.type === 'range'
-						? arg.min
-						: NaN;
-			if (isNaN(num)) return false;
-			switch (condition.operator) {
-				case '>=':
-					return num >= condition.threshold;
-				case '<=':
-					return num <= condition.threshold;
-				case '>':
-					return num > condition.threshold;
-				case '<':
-					return num < condition.threshold;
-				case 'between':
-					return num >= condition.threshold && num <= (condition.threshold_high ?? condition.threshold);
+			const condLo = condition.operator === '>' ? condition.threshold : condition.threshold;
+			const condHi = condition.operator === 'between'
+				? (condition.threshold_high ?? condition.threshold)
+				: condition.operator === '>=' || condition.operator === '>'
+					? Infinity
+					: condition.threshold;
+			const condOpenLo = condition.operator === '>' || condition.operator === '<';
+			const condOpenHi = condition.operator === '<' || condition.operator === '>';
+
+			let argLo: number;
+			let argHi: number;
+			let argOpenLo = false;
+			let argOpenHi = false;
+
+			if (arg.type === 'literal') {
+				const num = parseFloat(arg.value);
+				if (isNaN(num)) return false;
+				argLo = num;
+				argHi = num;
+			} else {
+				if (arg.min === null && arg.max === null) return true;
+				argLo = arg.min ?? -Infinity;
+				argHi = arg.max ?? Infinity;
+				argOpenLo = arg.min === null;
+				argOpenHi = arg.max === null;
 			}
-			return false;
+
+			const lo = Math.max(argLo, condLo);
+			const hi = Math.min(argHi, condHi);
+
+			if (lo > hi) return false;
+			if (lo === hi) {
+				const loClosed = !argOpenLo && !condOpenLo;
+				const hiClosed = !argOpenHi && !condOpenHi;
+				return loClosed || hiClosed;
+			}
+			return true;
 		}
 	}
 }

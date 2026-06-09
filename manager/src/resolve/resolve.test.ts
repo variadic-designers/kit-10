@@ -358,3 +358,186 @@ describe('resolveMany', () => {
 		expect(flat.get('border-radius')!.value).toBe('8px');
 	});
 });
+
+describe('range overlap matching', () => {
+	let ctx: TestContext;
+
+	beforeEach(async () => {
+		ctx = await createTestDb();
+	});
+
+	afterEach(async () => {
+		await ctx.pg.close();
+	});
+
+	it('ArgRange {min: null, max: null} matches all range conditions', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const wideLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(wideLayer.id, vpGte768.id);
+		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
+		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
+
+		// Unconstrained range — should match >=768
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: null, max: null },
+		});
+		expect(result.get('columns')!.value).toBe('2');
+	});
+
+	it('ArgRange {min: 500, max: null} matches >=768 because [500,∞) overlaps [768,∞)', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const wideLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(wideLayer.id, vpGte768.id);
+		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
+		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
+
+		// [500, ∞) overlaps [768, ∞) → yes
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: 500, max: null },
+		});
+		expect(result.get('columns')!.value).toBe('2');
+	});
+
+	it('ArgRange {min: null, max: 600} does not match >=768 because (-∞,600] does not overlap [768,∞)', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const wideLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(wideLayer.id, vpGte768.id);
+		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
+		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
+
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: null, max: 600 },
+		});
+		expect(result.get('columns')!.value).toBe('1');
+	});
+
+	it('ArgRange {min: 768, max: 900} matches >=768 because [768,900] overlaps [768,∞)', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const wideLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(wideLayer.id, vpGte768.id);
+		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
+		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
+
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: 768, max: 900 },
+		});
+		expect(result.get('columns')!.value).toBe('2');
+	});
+
+	it('ArgRange {min: 500, max: 600} does not match >=768 because [500,600] does not overlap [768,∞)', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const wideLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(wideLayer.id, vpGte768.id);
+		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
+		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
+
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: 500, max: 600 },
+		});
+		expect(result.get('columns')!.value).toBe('1');
+	});
+
+	it('ArgRange overlaps between condition: {min:500, max:900} matches between 480,1024', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: 'between', threshold: 480, threshold_high: 1024 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const betweenLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(betweenLayer.id, vpBetween.id);
+		const betweenSnippet = (await ctx.api.createRenderSnippet(betweenLayer.id))!;
+		await ctx.api.createRenderEntry(betweenSnippet.id, 'columns', '2');
+
+		// [500, 900] overlaps [480, 1024] → yes
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: 500, max: 900 },
+		});
+		expect(result.get('columns')!.value).toBe('2');
+	});
+
+	it('ArgRange {min: 1200, max: null} does not match between 480,1024 because [1200,∞) does not overlap [480,1024]', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
+		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
+		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: 'between', threshold: 480, threshold_high: 1024 }))!;
+
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
+		await ctx.api.consumeAxis(kit.id, vpAxis.id);
+
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'columns', '1');
+
+		const betweenLayer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(betweenLayer.id, vpBetween.id);
+		const betweenSnippet = (await ctx.api.createRenderSnippet(betweenLayer.id))!;
+		await ctx.api.createRenderEntry(betweenSnippet.id, 'columns', '2');
+
+		const result = await resolve(ctx.db, kit.id, {
+			[vpAxis.id]: { type: 'range', min: 1200, max: null },
+		});
+		expect(result.get('columns')!.value).toBe('1');
+	});
+});
