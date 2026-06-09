@@ -76,16 +76,6 @@
 
 		return { color: 'var(--color-bg)', stack: 0 };
 	};
-					}
-
-					// break; // stop at the first match from the end
-				}
-			}
-		}
-
-		// does not have an entry
-		return { color: 'var(--color-bg)', stack: 0 };
-	};
 </script>
 
 <Panel

@@ -1,76 +1,41 @@
 <script lang="ts" module>
-	// Diamond tracker removed — traceability will be handled separately
-	// stringSetToHSV was used to color-code layers by their axis conditions
-	// Re-enable from git history when traceability UI is rebuilt
+	export type AxisMode = 'categorical' | 'range' | 'discrete';
+
+	export type AxisArgValue =
+		| { type: 'literal'; value: string }
+		| { type: 'range'; min: number | null; max: number | null };
+
+	export type AxisValueOption =
+		| { type: 'literal'; value: string }
+		| { type: 'range'; operator: string; threshold: number; threshold_high?: number }
+		| { type: 'discrete'; value: string };
+
+	export type AxisProps = {
+		axisId: string;
+		axisName: string;
+		axisDescription?: string;
+		kind: AxisMode;
+		values: AxisValueOption[];
+		currentArg: AxisArgValue | null;
+		disabled?: boolean;
+		onArgChange: (arg: AxisArgValue | null) => void;
+	};
 </script>
 
 <script lang="ts">
-	import type { AxisDefinition, TrackedVariant } from '../../axesBuiltIn.ts';
-	import type { ComponentView, ComponentFlat } from '../Component.svelte';
+	import RangeSlider from '$lib/components/RangeSlider.svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
 
-	type AxisProps = {
-		axis: AxisDefinition;
-		selection: EditorSelection;
-		/*
-		layers: any;
-		layerWidgets: any;
-    */
-
-		kits: string[];
-		views: string[];
-		viewsPool: Record<string, ComponentView>;
-	};
-
 	let {
-		axis,
-		selection,
-		/*
-		layers,
-		layerWidgets,
-    */
-		kits = $bindable(),
-		views = $bindable(),
-		viewsPool = $bindable()
+		axisId,
+		axisName,
+		axisDescription,
+		kind = 'categorical',
+		values = [],
+		currentArg,
+		disabled = false,
+		onArgChange
 	}: AxisProps = $props();
-
-	export const recalcParams = (axis: string, value: string) => {
-		return () => {
-			if (!selection.selectedViewPrimary || selection.selectedKitIndex === null) {
-				console.warn(`Attempted to recalc ${axis}:${value} `);
-				console.warn(`${!selection.selectedViewPrimary} ${!selection.selectedKitIndex}`);
-				return;
-			}
-
-			const view = viewsPool[selection.selectedViewPrimary];
-
-			const resolution = view.resolve[selection.selectedKitIndex];
-			if (resolution.params[axis] === value) {
-				resolution.params[axis] = undefined;
-			} else {
-				resolution.params[axis] = value;
-			}
-		};
-	};
-
-	function shallowEqual(a: Record<string, any>, b: Record<string, any>): boolean {
-		const aKeys = Object.keys(a);
-		const bKeys = Object.keys(b);
-
-		if (aKeys.length !== bKeys.length) return false;
-
-		return aKeys.every((key) => a[key] === b[key]);
-	}
-
-	import type {
-		Axis,
-		AxisVariantLayerTrace,
-		CascadeResult,
-		MultiCascadeResult
-	} from '../../cascadeAxesMap.ts';
-	import type { EditorSelection } from '../Editor.svelte';
-
-	// Diamond tracker removed — see git history for layerColorDecider
 
 	const axisContextMenu = [
 		{
@@ -81,7 +46,6 @@
 			onClick: () => {}
 		},
 		'hr',
-
 		{
 			name: 'custom axis',
 			description: 'Mark as export',
@@ -91,77 +55,117 @@
 		}
 	];
 
-	const value = $derived(
-		axis.variants.find((v) => {
-			if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
-				return (
-					viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].params[
-						axis.id
-					] === (v.id ?? v.name.toLowerCase().replace(' ', '-'))
-				);
-			}
-			return false;
-		})
+	function selectVariant(variantId: string) {
+		if (disabled) return;
+		if (currentArg?.type === 'literal' && currentArg.value === variantId) {
+			onArgChange(null);
+		} else {
+			onArgChange({ type: 'literal', value: variantId });
+		}
+	}
+
+	function handleRangeChange(min: number | null, max: number | null) {
+		if (disabled) return;
+		onArgChange({ type: 'range', min, max });
+	}
+
+	function handleDiscreteInput(e: Event) {
+		const value = (e.target as HTMLInputElement).value;
+		if (value === '') {
+			onArgChange(null);
+		} else {
+			onArgChange({ type: 'literal', value });
+		}
+	}
+
+	let rangeThresholds = $derived(
+		values
+			.filter((v): v is { type: 'range'; operator: string; threshold: number; threshold_high?: number } => v.type === 'range')
+			.map((v) => ({ value: v.threshold, label: `${v.operator} ${v.threshold}` }))
+	);
+
+	let rangeMin = $derived(
+		currentArg?.type === 'range' ? currentArg.min : null
+	);
+
+	let rangeMax = $derived(
+		currentArg?.type === 'range' ? currentArg.max : null
+	);
+
+	let displayValue = $derived.by(() => {
+		if (!currentArg) return 'Not set';
+		if (currentArg.type === 'literal') return currentArg.value;
+		if (currentArg.type === 'range') {
+			const min = currentArg.min == null ? '-∞' : String(currentArg.min);
+			const max = currentArg.max == null ? '+∞' : String(currentArg.max);
+			return `${min} — ${max}`;
+		}
+		return 'Not set';
+	});
+
+	let isSet = $derived(currentArg !== null);
+
+	let categoricalValues = $derived(
+		values.filter((v): v is { type: 'literal'; value: string } => v.type === 'literal')
 	);
 </script>
 
-<!-- focused?: boolean, -->
-<!-- layered?: ({ color: string; activated: boolean } | undefined)[] -->
-
-<!-- A collapsible widget for axis variant tracking and selection for the axes set parameter -->
-{#snippet axisField(
-	axis: AxisDefinition,
-	id: string,
-	name: string,
-	value: TrackedVariant | undefined
-)}
-	<div class="axis-field">
-		<!-- Activated axis variant -->
-		<label class="axis-field__name" title={axis.description}>
-			<span>{name}</span>
-			<input
-				class="axis-field__radio"
-				type="radio"
-				onclick={recalcParams(axis.id, id)}
-				name="{selection.selectedViewPrimary}-{axis.id?.toLowerCase() ?? axis.name.toLowerCase()}"
-				checked={id === (value?.id ?? value?.name.toLowerCase())}
-			/>
-		</label>
-
-<span class="layers">
-			<!-- Diamond tracker removed — see git history for layer indicators -->
-		</span>
-	</div>
-{/snippet}
-
 <details class="axis">
-	<summary title={axis.description} class="axis__name" use:contextMenu={axisContextMenu}>
-		<h3>
-			{axis.name}
-		</h3>
-
-		<div class="axis__name__value" class:axis__name__value--unset={!!!value}>
-			{value ? value.name : 'Not set'}
+	<summary title={axisDescription} class="axis__name" use:contextMenu={axisContextMenu}>
+		<h3>{axisName}</h3>
+		<div class="axis__name__value" class:axis__name__value--unset={!isSet}>
+			{displayValue}
 		</div>
-
 		<i class="fa-solid fa-angle-down axis__name__collapse-icon"></i>
 	</summary>
 
-	<ul class="axis__variants">
-		{#each axis.variants as variant, i}
-			{@const variantId = variant.id ?? variant.name.toLowerCase().replace(' ', '-')}
-
-			<!-- Get this man a layer finder -->
-			<!-- {@const layered = layerColorDecider(axis.id + ':' + variantId)} -->
-
-			<li>
-				<!-- {JSON.stringify(layered)} -->
-				{#key value}
-					{@render axisField(axis, variantId, variant.name, value)}
-				{/key}
-			</li>
-		{/each}
-	</ul>
+	<div class="axis__content">
+		{#if kind === 'categorical'}
+			<ul class="axis__variants">
+				{#each categoricalValues as variant}
+					{@const variantId = variant.value}
+					<li>
+						<label
+							class="axis-field"
+							class:axis-field--selected={currentArg?.type === 'literal' && currentArg.value === variantId}
+						>
+							<input
+								class="axis-field__radio"
+								type="radio"
+								name="axis-{axisId}"
+								value={variantId}
+								checked={currentArg?.type === 'literal' && currentArg.value === variantId}
+								onchange={() => selectVariant(variantId)}
+								{disabled}
+							/>
+							<span class="axis-field__name">{variant.value}</span>
+						</label>
+					</li>
+				{/each}
+			</ul>
+		{:else if kind === 'range'}
+			<div class="axis__range">
+				<RangeSlider
+					min={rangeMin}
+					max={rangeMax}
+					thresholds={rangeThresholds}
+					{disabled}
+					onChange={handleRangeChange}
+				/>
+			</div>
+		{:else if kind === 'discrete'}
+			<div class="axis__discrete">
+				<input
+					class="axis__discrete-input"
+					type="text"
+					placeholder="Enter value…"
+					value={currentArg?.type === 'literal' ? currentArg.value : ''}
+					oninput={handleDiscreteInput}
+					{disabled}
+				/>
+			</div>
+		{/if}
+	</div>
 </details>
 
 <style lang="scss">
@@ -232,9 +236,37 @@
 			}
 		}
 
+		&__content {
+			padding-inline: $x-space-sm;
+		}
+
 		&__variants {
 			list-style-type: none;
 			@include layout-flex-column();
+		}
+
+		&__range {
+			padding: $x-space-xs 0;
+		}
+
+		&__discrete {
+			padding: $x-space-xs 0;
+
+			&-input {
+				width: 100%;
+				padding: $x-space-xs $x-space-sm;
+				border: 1px solid var(--color-surface-alt);
+				border-radius: calc($x-space-xs / 2);
+				background: var(--color-bg);
+				color: var(--color-text);
+				font-size: $x-font-size-md;
+				@include fonts-stack('Satoshi-Regular', sans);
+
+				&:focus {
+					border-color: var(--color-primary);
+					outline: none;
+				}
+			}
 		}
 	}
 
@@ -245,106 +277,37 @@
 		font-weight: 600;
 		padding-block: calc($x-space-xs / 4);
 		padding-inline: $x-space-md;
+		cursor: pointer;
+		border-radius: calc($x-space-xs / 2);
 
-		&:has(&__name:hover) {
-			.axis-field__name {
-				color: var(--color-primary);
-			}
+		&:hover {
+			background: var(--color-surface-alt);
 		}
 
-		&:has(&__radio:checked) {
+		&--selected {
 			background: var(--color-surface-alt);
 
 			.axis-field__name {
 				color: var(--color-primary);
 			}
+		}
 
-			&:has(input[type='radio']:checked):hover {
-				.axis-field__name {
-					color: var(--color-primary-hover);
-				}
-			}
+		&__radio {
+			opacity: 0;
+			position: absolute;
 		}
 
 		&__name {
 			flex-grow: 1;
-			cursor: pointer;
-
-			input[type='radio'] {
-				opacity: 0;
-			}
-		}
-
-		.layers {
-			display: flex;
-
-			&:not(&:has(.axis-field__layer)) {
-				scale: 0.6 1.2;
-			}
-		}
-
-		&-container {
-			border-right: 2px solid var(--color-panel-header);
-			border-left: 2px solid transparent;
-
-			&--last {
-				border-right-color: var(--color-surface);
-
-				// makes border invisible on selected variant
-				&:has(.axis-field__layer--focused) {
-					border-right-color: var(--color-surface-alt);
-				}
-			}
-		}
-
-		// Diamond layer tracker
-		/* Diamond tracker removed
-		&__layer {
-			width: $x-space-md;
+			padding-inline: $x-space-xs;
+			@include fonts-stack('Satoshi-Regular', sans);
 			font-size: $x-font-size-md;
-			border: unset;
-			background: unset;
+			font-weight: 600;
 			cursor: pointer;
-			position: relative;
-			color: var(--axis-field__layer-color, --color-surface);
-			-webkit-text-stroke-width: 2px;
-			-webkit-text-stroke-color: black;
 
-			&:disabled {
-				cursor: default;
-			}
-
-			rotate: 45deg;
-			opacity: 0.8;
-			filter: saturate(0.9) brightness(0.7);
-			transition: rotate 100ms ease-out;
-			transform-origin: center center;
-
-			&--focused {
-				// rotate: 0deg;
-				filter: initial;
-			}
-
-			&--ticked {
-				rotate: 0deg;
-				translate: 0.45px 0;
-				opacity: 1;
-			}
-
-			&:focus {
-				color: var(--color-text);
-			}
-
-			&--undefined {
-				opacity: 0;
-				color: var(--color-surface-alt);
-				-webkit-text-stroke-color: var(--color-surface-alt);
-
-				&:hover {
-					opacity: 0.5;
-				}
+			&:hover {
+				color: var(--color-primary);
 			}
 		}
-		*/
 	}
 </style>
