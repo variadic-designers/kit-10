@@ -1,27 +1,17 @@
 <script lang="ts">
-	import type { ComponentFlat, ComponentView } from '../Component.svelte';
 	import Panel from '../Panel.svelte';
 	import StyleField from './StyleField.svelte';
-	import {
-		resolve,
-		type CascadeResult,
-		type AxesSet,
-		type TraceEntry,
-		type ManagerTraceEntry
-	} from '../../cascadeAxesMap.ts';
+	import type { ResolvedKit, ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { TokenLibrary } from './Variables.svelte';
 
 	type StylesPanel = {
 		selection: EditorSelection;
-		views: string[];
-		viewsPool: Record<string, ComponentView>;
-		kits: string[];
-		kitsPool: Record<string, ComponentFlat>;
+		resolvedKits: ResolvedKit[] | null;
 		tokens: TokenLibrary;
 	};
 
-	const { selection, views, viewsPool, kitsPool, kits, tokens }: StylesPanel = $props();
+	const { selection, resolvedKits, tokens }: StylesPanel = $props();
 
 	const stylesContextMenu = () => {
 		return [
@@ -34,48 +24,29 @@
 		];
 	};
 
-	const { finalStyle, trace } = $derived.by((): CascadeResult => {
-		if (selection.selectedViewCascadeResult) {
-			return selection.selectedViewCascadeResult;
-		}
-		return { finalStyle: {}, trace: [] };
-	});
-
-	const contentField = $derived.by(() => {
-		if (selection.selectedViewPrimary) {
-			return viewsPool[selection.selectedViewPrimary].primitive.kind === 'text'
-				? { key: 'text', displayText: 'Text' }
-				: { key: 'children', displayText: 'Children' };
-		}
-	});
-
-// backtracks trace to find source layer — traceability UI removed, placeholder
-	const track = (key: string): { set?: AxesSet; color: string; stack: number } => {
-		if (finalStyle[key]) {
-			let t: (TraceEntry & ManagerTraceEntry) | undefined;
-
-			for (let i = trace.length - 1; i >= -1; i--) {
-				const entry = trace[i];
-
-				if (Object.keys(entry.applied).includes(key)) {
-					t = { ...entry, managerIndex: i };
-
-					if (t) {
-						if (Object.keys(t.source).length === 0) {
-							return { set: {}, color: 'var(--color-diamond-color-tracked--empty)', stack: 0 };
-						}
-						return {
-							set: t.source,
-							color: 'var(--color-primary)',
-							stack: t.managerIndex
-						};
-					}
+	const resolvedMap = $derived.by(() => {
+		const map = new Map<string, ResolvedProperty>();
+		if (resolvedKits) {
+			for (const kit of resolvedKits) {
+				for (const [prop, resolved] of kit.properties) {
+					map.set(prop, resolved);
 				}
 			}
 		}
+		return map;
+	});
 
-		return { color: 'var(--color-bg)', stack: 0 };
-	};
+	function track(key: string): { sourceLayerId: string | null; isToken: boolean; tokenAlias: string | null } {
+		const prop = resolvedMap.get(key);
+		if (prop) {
+			return {
+				sourceLayerId: prop.sourceLayerId,
+				isToken: prop.isToken,
+				tokenAlias: prop.tokenAlias
+			};
+		}
+		return { sourceLayerId: null, isToken: false, tokenAlias: null };
+	}
 </script>
 
 <Panel
@@ -84,13 +55,11 @@
 	tooltip="Applied styles on the current Axes set"
 >
 	{#snippet content()}
-		<!-- <pre>{JSON.stringify(trace, null, 2)}</pre> -->
 		{#if selection.selectedViewPrimary}
 			<div style="display:contents">
 				{#snippet styleSection(
 					category: string,
-					fields: { key: string; displayText?: string }[],
-					kitsPool: Record<string, ComponentFlat>
+					fields: { key: string; displayText?: string }[]
 				)}
 					<details class="style-section" open>
 						<summary class="style-section__heading">
@@ -101,13 +70,10 @@
 						<div class="style-section__content">
 							{#each fields as field, i}
 								<StyleField
-									{kitsPool}
-									{viewsPool}
-									{selection}
-									displayText={field.displayText ?? field.key}
 									{...track(field.key)}
+									displayText={field.displayText ?? field.key}
 									key={field.key}
-									value={finalStyle[field.key]}
+									value={resolvedMap.get(field.key)?.value}
 									{tokens}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 								/>
@@ -119,7 +85,6 @@
 				{@render styleSection(
 					'layout',
 					[{ key: 'padding', displayText: 'Padding' }, { key: 'width' }, { key: 'height' }],
-					kitsPool
 				)}
 
 				{@render styleSection(
@@ -130,7 +95,6 @@
 						{ key: 'border-radius', displayText: 'Radius' },
 						{ key: 'outline' }
 					],
-					kitsPool
 				)}
 
 				{@render styleSection(
@@ -142,59 +106,11 @@
 						{ key: 'text-align', displayText: 'Align' },
 						{ key: 'text-decoration', displayText: 'Decor' }
 					],
-					kitsPool
 				)}
-
-				<!-- {@render styleSection( -->
-				<!-- 	'content', -->
-				<!-- 	[ -->
-				<!-- 		kitsPool[viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid].primitive?.kind === 'text' -->
-				<!-- 			? { key: 'text', displayText: 'Text' } -->
-				<!-- 			: { key: 'children', displayText: 'Children' } -->
-				<!-- 	], -->
-				<!-- 	kitsPool -->
-				<!-- )} -->
 			</div>
 		{/if}
 	{/snippet}
 </Panel>
-
-<!-- For style fields that may require 1 | 2 | 4 values -->
-{#snippet option124(
-	name: string,
-	options2?: { scalar1: string; scalar2: string },
-	options4?: { scalar1: string; scalar2: string; scalar3: string; scalar4: string }
-)}
-	<label class="option124">
-		<span class="option124__label">
-			<button
-				class="option124__input--track"
-				aria-label="Adds the style into the axes set"
-				title="Track {name} on Axes set"
-				type="button"
-				onclick={() => {
-					console.log('Tried to add style to set');
-				}}
-			>
-				<i class="fa-solid fa-diamond"></i>
-			</button>
-			{name}</span
-		>
-
-		<span class="option124__input">
-			<input
-				title="Attach Variable"
-				class="option124__input--text"
-				type="button"
-				value="+"
-				onclick={() => {
-					console.log('Tried token to style');
-				}}
-			/>
-			<!-- <input class="option124__input--expand" type="button" value="›" /> -->
-		</span>
-	</label>
-{/snippet}
 
 <style lang="scss">
 	@use '_index' as *;
@@ -244,7 +160,6 @@
 		&__content {
 			@include layout-respond('xl') {
 				padding-bottom: $x-space-xs;
-				// padding-left: $x-space-xs;
 			}
 		}
 	}

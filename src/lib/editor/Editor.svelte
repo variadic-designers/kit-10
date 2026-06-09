@@ -145,20 +145,18 @@
 		selectedViewCascadeResult: null
 	});
 
+	// Cascaded result — resolved from manager DB when view+kit are active
+	let resolvedKits: ResolvedKit[] | null = $state(null);
+
 	$effect(() => {
-		if (
-			selection.selectedViewPrimary &&
-			viewsPool[selection.selectedViewPrimary] &&
-			viewsPool[selection.selectedViewPrimary].resolve.length > 0
-		) {
-			const view = viewsPool[selection.selectedViewPrimary];
-
-			const sets = view.resolve.map((r) => kitsPool[r.source_uuid].sets);
-			const params = view.resolve.map((r) => r.params);
-
-			selection.selectedViewCascadeResult = resolveMany(sets, params);
+		if (selection.selectedViewPrimary && editorReady) {
+			resolveManyManager(editorReady.dialect, selection.selectedViewPrimary).then((kits) => {
+				resolvedKits = kits;
+			}).catch(() => {
+				resolvedKits = null;
+			});
 		} else {
-			selection.selectedViewCascadeResult = null;
+			resolvedKits = null;
 		}
 	});
 
@@ -187,7 +185,8 @@
   import PluginsPanel from './panels/Plugins.svelte';
 
 	import Nav from './Nav.svelte';
-	import { resolveMany, type MultiCascadeResult } from '$lib/cascadeAxesMap.js';
+	import { resolveMany as resolveManyManager, type ResolvedKit } from 'manager';
+	import type { MultiCascadeResult } from '$lib/cascadeAxesMap.js';
 	import { onMount } from 'svelte';
 
 	import type { EditorState, EditorQueryBuilder, EditorCore, Api, EditorDialect } from 'manager';
@@ -261,13 +260,13 @@
 
 		<ComposePanel {api} bind:editorActivity {editorReady} {viewsPool} {kitsPool} bind:selection />
 
-		<AxesPanel {api} {kits} {views} {kitsPool} bind:viewsPool {selection} />
+		<AxesPanel {api} {editorReady} activeKitId={editorActivity.activeKitId} activeViewId={editorActivity.activeViewId} {selection} />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
 
-		<StylesPanel tokens={tokenLibraries} {kits} {kitsPool} {views} {viewsPool} {selection} />
+		<StylesPanel {resolvedKits} {selection} {tokens} />
 
 		<TokensPanel {editorReady} bind:tokens bind:tokenLibraries />
     

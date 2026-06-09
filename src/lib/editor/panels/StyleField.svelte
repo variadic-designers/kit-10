@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { type ComponentView, type ComponentFlat } from '../Component.svelte';
 	import { tick } from 'svelte';
 
 	type StyleFieldValue = string | { resolve: string };
@@ -7,38 +6,28 @@
 	type StyleFieldProps = {
 		key: string;
 		displayText: string;
-		set?: AxesSet;
-		color?: string;
-		stack: number;
+		sourceLayerId?: string | null;
+		isToken?: boolean;
+		tokenAlias?: string | null;
 		tokens: TokenLibrary;
-
-		selection: EditorSelection;
-		kitsPool: Record<string, ComponentFlat>;
-		viewsPool: Record<string, ComponentView>;
 		value?: StyleFieldValue;
 		highlighted?: boolean;
-
-		// Styling
 		position?: 'top' | 'bottom' | 'mid';
 	};
 
 	let {
 		key,
 		displayText,
-		kitsPool = $bindable(),
-		viewsPool,
-		color,
-		set,
-		selection,
+		sourceLayerId,
+		isToken,
+		tokenAlias,
 		value,
-		stack,
 		highlighted = $bindable(false),
 		position = 'mid',
 		tokens
 	}: StyleFieldProps = $props();
 
 	import { contextMenu } from '$lib/components/contextMenu';
-	import type { AxesSet, StyleSource } from '../../cascadeAxesMap.ts';
 	import type { EditorSelection } from '../Editor.svelte';
 
 	const menu = () => {

@@ -17,13 +17,23 @@
 	import type { Api } from 'manager';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import type { EditorSelection } from '../Editor.svelte';
+	import type { EditorState } from 'manager';
 
 	type AxesPanel = {
 		selection: EditorSelection;
 		api: Api;
+		editorReady: EditorState;
+		activeKitId: string | null;
+		activeViewId: string | null;
 	};
 
-	let { selection, api }: AxesPanel = $props();
+	let {
+		selection,
+		api,
+		editorReady,
+		activeKitId,
+		activeViewId
+	}: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
 		return () => {
@@ -43,14 +53,14 @@
 			},
 			'hr',
 			{
-				name: 'custom axis',
+				name: 'collapse',
 				description: 'Collapse all Axes',
 				displayText: 'Collapse',
 				icon: 'fa-solid fa-angles-up',
 				onClick: detailCollapse(true)
 			},
 			{
-				name: 'custom axis',
+				name: 'expand',
 				description: 'Expand all Axes',
 				displayText: 'Expand',
 				icon: 'fa-solid fa-angles-down',
@@ -60,47 +70,114 @@
 		];
 	};
 
-	// TODO: Wire to manager API — getConsumedAxesByKitId, getAxisValuesByAxisId, getAllAxisArgs
-	// For now, no axes are rendered until manager wiring is complete.
-	// The Axis component is ready to receive data from the manager.
+	// Fetch consumed axes for the active kit
+	let consumedAxes = $state<any[]>([]);
+	let axisValues = $state<Record<string, any[]>>({});
+	let axisArgs = $state<Record<string, any>>({});
 
-	// Placeholder: when manager wiring is complete, this will be populated
-	// from liveQuery on axes_consumed + axis_values + axis_args.
-	let axesData: {
-		axisId: string;
-		axisName: string;
-		kind: import('./Axis.svelte').AxisMode;
-		values: import('./Axis.svelte').AxisValueOption[];
-		currentArg: import('./Axis.svelte').AxisArgValue | null;
-	}[] = $state([]);
-
-	function handleArgChange(axisId: string, arg: import('./Axis.svelte').AxisArgValue | null) {
-		// TODO: Wire to api.setAxisArg(viewId, kitId, axisId, arg)
-		const axis = axesData.find((a) => a.axisId === axisId);
-		if (axis) {
-			axis.currentArg = arg;
+	$effect(() => {
+		if (!activeKitId || !editorReady) {
+			consumedAxes = [];
+			axisValues = {};
+			axisArgs = {};
+			return;
 		}
+
+		const dialect = editorReady.dialect;
+		const db = editorReady.core;
+
+		const loadAxes = async () => {
+			const axes = await api.getConsumedAxesByKitId(activeKitId).execute();
+			consumedAxes = axes;
+
+			// Load values for each axis
+			const valuesMap: Record<string, any[]> = {};
+			for (const axis of axes) {
+				valuesMap[axis.axisId] = await api.getAxisValuesByAxisId(axis.axisId).execute();
+			}
+			axisValues = valuesMap;
+
+			// Load current args if we have a view
+			if (activeViewId) {
+				const args = await api.getAllAxisArgs(activeViewId, activeKitId).execute();
+				const argsMap: Record<string, any> = {};
+				for (const arg of args) {
+					argsMap[arg.axisId] = arg.value;
+				}
+				axisArgs = argsMap;
+			} else {
+				axisArgs = {};
+			}
+		};
+
+		loadAxes();
+	});
+
+	// Derive kind from axis values
+	function inferKind(values: any[]): AxisMode {
+		if (values.length === 0) return 'discrete';
+		const first = values[0].value;
+		if (first.type === 'range') return 'range';
+		if (first.type === 'literal') return 'categorical';
+		return 'discrete';
+	}
+
+	// Transform axis_values into AxisValueOption format
+	function toValueOptions(values: any[]): AxisValueOption[] {
+		return values.map((v) => v.value as AxisValueOption);
+	}
+
+	// Transform current arg into AxisArgValue format
+	function getCurrentArg(axisId: string): AxisArgValue | null {
+		const raw = axisArgs[axisId];
+		if (!raw) return null;
+		return raw as AxisArgValue;
+	}
+
+	// Handle arg changes from Axis component
+	async function handleArgChange(axisId: string, arg: AxisArgValue | null) {
+		if (!activeViewId || !activeKitId) return;
+
+		if (arg === null) {
+			// Delete the arg — for now we just set it, API doesn't have delete
+			// TODO: add deleteAxisArg to API
+			return;
+		}
+
+		await api.setAxisArg(activeViewId, activeKitId, axisId, arg);
+
+		// Refresh args
+		const args = await api.getAllAxisArgs(activeViewId, activeKitId).execute();
+		const argsMap: Record<string, any> = {};
+		for (const a of args) {
+			argsMap[a.axisId] = a.value;
+		}
+		axisArgs = argsMap;
 	}
 </script>
 
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
-		{#if !selection.selectedViewPrimary || selection.selectedKitIndex === null}
+		{#if !activeKitId || !activeViewId}
 			<p class="axes-empty">
 				<i class="fa-solid fa-up-long"></i> Select a view and kit to adjust axes
 			</p>
-		{:else if axesData.length === 0}
+		{:else if consumedAxes.length === 0}
 			<p class="axes-empty">
 				<i class="fa-solid fa-up-long"></i> Add axes to the selected kit
 			</p>
 		{:else}
-			{#each axesData as axisData}
+			{#each consumedAxes as axisData}
+				{@const values = axisValues[axisData.axisId] ?? []}
+				{@const kind = inferKind(values)}
+				{@const currentArg = getCurrentArg(axisData.axisId)}
 				<Axis
 					axisId={axisData.axisId}
-					axisName={axisData.axisName}
-					kind={axisData.kind}
-					values={axisData.values}
-					currentArg={axisData.currentArg}
+					axisName={axisData.axisName ?? axisData.axisId}
+					axisDescription={axisData.axisKind ?? undefined}
+					{kind}
+					values={toValueOptions(values)}
+					currentArg={currentArg}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				/>
 			{/each}
