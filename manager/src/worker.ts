@@ -7,13 +7,25 @@ import { live } from '@electric-sql/pglite/live';
 
 worker({
 	async init() {
-		return new PGlite({
-			dataDir: 'kit10-editor',
-			fs: new OpfsAhpFS('kit10-editor', {
+		const dataDir = 'kit10-editor';
+
+		try {
+			const fs = new OpfsAhpFS(dataDir, {
 				initialPoolSize: 50,
 				maintainedPoolSize: 25
-			}),
-			extensions: { pg_uuidv7, live }
-		});
+			});
+
+			return new PGlite({
+				dataDir,
+				fs,
+				extensions: { pg_uuidv7, live }
+			});
+		} catch (e) {
+			console.warn('OPFS-AHP not available, falling back to IndexedDB:', e);
+			return new PGlite({
+				dataDir: `idb://${dataDir}`,
+				extensions: { pg_uuidv7, live }
+			});
+		}
 	}
 });
