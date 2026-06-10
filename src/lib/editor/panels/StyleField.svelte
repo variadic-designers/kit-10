@@ -1,16 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 
-	type StyleFieldValue = string | { resolve: string };
-
 	type StyleFieldProps = {
 		key: string;
 		displayText: string;
 		sourceLayerId?: string | null;
 		isToken?: boolean;
 		tokenAlias?: string | null;
-		tokens: TokenLibrary;
-		value?: StyleFieldValue;
+		value?: string | null;
 		highlighted?: boolean;
 		position?: 'top' | 'bottom' | 'mid';
 	};
@@ -23,66 +20,34 @@
 		tokenAlias,
 		value,
 		highlighted = $bindable(false),
-		position = 'mid',
-		tokens
+		position = 'mid'
 	}: StyleFieldProps = $props();
 
 	import { contextMenu } from '$lib/components/contextMenu';
-	import type { EditorSelection } from '../Editor.svelte';
 
 	const menu = () => {
 		return [
 			{
-				name: 'custom axis',
+				name: 'tokenize',
 				description: 'Save as Token',
 				displayText: 'Tokenize',
-				icon: 'fa-solid fa-square-binary'
+				icon: 'fa-solid fa-square-binary',
+				disabled: !!isToken
 			},
 			{
-				name: 'custom axis',
+				name: 'unwrap',
 				description: '',
 				displayText: 'Unwrap',
 				icon: 'fa-solid fa-box-open',
 				disabled: true
 			},
-
 			'hr',
 			{
-				name: 'custom axis',
-				description: 'Add custom axis',
+				name: 'remove',
+				description: 'Remove entry',
 				displayText: 'Remove',
 				icon: 'fa-solid fa-trash',
 				destructive: true
-			}
-		];
-	};
-
-	const styleOptions = () => {
-		return [
-			{
-				name: 'cut selected styles',
-				description: '',
-				displayText: 'Cut Selected',
-				icon: 'fa-solid fa-scissors'
-			},
-			{
-				name: 'copy selected styles',
-				description: '',
-				displayText: 'Copy Selected',
-				icon: 'fa-solid fa-copy'
-			},
-			'hr',
-			{
-				name: 'remove style tracking',
-				description: '',
-				displayText: 'Remove Track',
-				icon: 'fa-solid fa-delete-left'
-			},
-			{
-				name: 'delete style value',
-				description: '',
-				displayText: 'Delete Value',
-				icon: 'fa-solid fa-trash'
 			}
 		];
 	};
@@ -101,102 +66,20 @@
 		await tick();
 
 		if (inputRef) {
-			// focus the input
 			inputRef.focus();
-
-			// optional: select all text
 			inputRef.select();
 		}
 	}
 
-	function shallowEqual(obj1: Record<string, any>, obj2: Record<string, any>) {
-		const keys1 = Object.keys(obj1);
-		const keys2 = Object.keys(obj2);
-		if (keys1.length !== keys2.length) return false;
-		return keys1.every((key) => obj1[key] === obj2[key]);
+	function cancelEditing() {
+		editValue.now = false;
+		editValue.content = '';
 	}
 
-	// Disgustang
-	const isEmpty = $derived(false);
-
-	const layers = $derived(0);
-
-	import { dropzone } from '../dragDrop.ts';
-	import { tokenIcon, type Token, type TokenLibrary } from './Variables.svelte';
-
-	// Action for receiving Tokens
-	const tokenDrop = dropzone<Token>();
-
-	const softResolve = (path: string, library: TokenLibrary): Token | undefined => {
-		const [head, ...rest] = path.split('/');
-		// console.log(`About to resolve from library ${head}, with the rest ${JSON.stringify(rest,null, 2)}`)
-
-		if (!head) return; // namespace doesn't exist for some reason
-
-		// console.log(library, head, library[head]);
-
-		const node = library[head];
-
-		if (!node) {
-			console.error(`Top Level ${head} missing`);
-			return;
-		}
-
-		// if no more path, we can only check tokens at this level
-		if (rest.length === 0) {
-			return undefined; // nothing left to resolve
-		}
-
-		const nextSegment = rest[0];
-
-		// 1️⃣ Check children recursively
-		if (node.children && node.children[nextSegment]) {
-			return softResolve(rest.join('/'), node.children);
-		}
-
-		// 2️⃣ If this is the last segment, also check tokens
-		if (node.tokens && rest.length === 1) {
-			return node.tokens.find((t) => t.name === nextSegment);
-		}
-
-		return undefined; // not found
-	};
-
-	const confirmUpdateStyle = () => {
+	function confirmUpdateStyle() {
 		editValue.now = false;
-
-		if (selection.selectedViewPrimary && selection.selectedKitIndex !== null) {
-			const layers =
-				kitsPool[
-					viewsPool[selection.selectedViewPrimary].resolve[selection.selectedKitIndex].source_uuid
-				].sets.layers;
-
-			// Normalize: no set specified means {}
-			const targetAxes = set ?? {};
-
-			// Find the layer matching the target axes
-			const layer = layers.find((l) => {
-				console.log(
-					`Comparing layer axes ${JSON.stringify(l.axes)} to target ${JSON.stringify(targetAxes)}`
-				);
-				return shallowEqual(l.axes, targetAxes);
-			});
-
-			console.log(`Tried to edit ${JSON.stringify(layer)}, with ${key}: ${editValue.content}`);
-
-			if (layer) {
-				layer.style[key] = editValue.content;
-			} else {
-				// Optional: if no matching layer exists, you could create it
-				layers.push({
-					axesSignature: '',
-					axes: {},
-					style: { [key]: editValue.content }
-				});
-				console.warn('No layer found for target axes, edit skipped');
-			}
-		}
-	};
+		console.log(`Update ${key}: ${editValue.content} on layer ${sourceLayerId}`);
+	}
 </script>
 
 <div
@@ -205,14 +88,10 @@
 	class:option124--bottom={position === 'bottom'}
 	class:option124--mid={position !== 'top' && position !== 'bottom'}
 >
-	{#if selection.selectedViewPrimary}
-		<!-- {JSON.stringify(kits[selectedKit.source_index].sets.layers.map((s) => { return Object.keys(s.axes) }), null, 2)} -->
-	{/if}
-
 	<button
 		class="option124__style-name"
 		class:option124__style-name--highlighted={highlighted}
-		use:contextMenu={styleOptions}
+		use:contextMenu={menu}
 		onclick={() => {
 			highlighted = !highlighted;
 		}}
@@ -221,27 +100,25 @@
 		{displayText ?? key}
 	</button>
 
-	<button
-		style="--color-tracker: {color}"
-		class="option124__track"
-		class:option124__track--tracked--empty={isEmpty}
-		aria-label="Adds the style into the axes set"
-		title="track '{displayText ?? key}' on Axes set"
-		type="button"
-		onclick={() => {
-			console.log('Tried to add style to set');
-		}}
-	>
-		<i
-			class:fa-diamond={stack <= 1}
-			class:fa-pentagon={stack === 2}
-			class:fa-hexagon={stack === 3}
-			class:fa-heptagon={stack === 4}
-			class:fa-octagon={stack === 5}
-			class="fa-solid"
+	{#if isToken}
+		<button
+			class="option124__track option124__track--token"
+			aria-label="Tokenized property"
+			title="{tokenAlias ?? 'token'}"
+			type="button"
 		>
-		</i>
-	</button>
+			<i class="fa-solid fa-diamond" style="font-size: 0.6em;"></i>
+		</button>
+	{:else}
+		<button
+			class="option124__track"
+			aria-label="Literal property"
+			title="literal"
+			type="button"
+		>
+			<i class="fa-solid fa-minus"></i>
+		</button>
+	{/if}
 
 	{#if editValue.now}
 		<input
@@ -249,67 +126,32 @@
 			title="Edit Value"
 			bind:this={inputRef}
 			bind:value={editValue.content}
-			placeholder={typeof value === 'string' ? value : undefined}
+			placeholder={value ?? ''}
 			class="option124__value option124__value--edit"
-			onclick={() => {
-				console.log('Tried token to style');
-			}}
-			onblur={() => {
-				editValue.now = false;
-				editValue.content = '';
-			}}
-			onkeydown={(e) => {
+			onblur={() => cancelEditing()}
+			onkeydown={(e: KeyboardEvent) => {
 				if (e.key === 'Enter') {
 					confirmUpdateStyle();
+				} else if (e.key === 'Escape') {
+					cancelEditing();
 				}
 			}}
 			use:contextMenu={menu}
 		/>
 	{:else}
 		<button
-			title="Attach Token"
+			title={isToken ? `Token: ${tokenAlias}` : (value ?? 'Add value')}
 			class="option124__value"
 			class:option124__value--new={!value}
-			onclick={() => {
-				console.log('Tryna start editing');
-				startEditing();
-			}}
-			disabled={!!!selection.selectedViewPrimary}
+			class:option124__value--token={isToken}
+			onclick={() => startEditing()}
 			use:contextMenu={menu}
-			use:tokenDrop={{
-				dragOverClassName: 'option124__value--dragged-over',
-				ondrop: (t: Token) => {
-					console.log(JSON.stringify(t, null, 2));
-					const path = `meowzer/${t.name}`;
-				}
-			}}
 		>
-			{#if value}
-				{#if typeof value !== 'string'}
-					{@const resolution = softResolve(value.resolve, tokens)}
-					{#if resolution}
-						<span class="token--found">
-							<i class="fa-solid {tokenIcon(resolution.type)}"></i>
-							{resolution.displayName}
-						</span>
-					{:else}
-						<span class="token--unfound">
-							{value.resolve}
-						</span>
-					{/if}
-				{:else}
-					<span>
-						{value}
-					</span>
-				{/if}
-			{:else if !!!selection.selectedViewPrimary}
-				<em>
-					<i class="fa-solid fa-minus"></i>
-					Select a Kit
-					<i class="fa-solid fa-minus"></i>
-				</em>
+			{#if isToken}
+				<span class="token--found">{tokenAlias ?? 'token'}</span>
+			{:else if value}
+				<span>{value}</span>
 			{:else}
-				<!-- <i class="fa-solid fa-plus"></i> -->
 				+
 			{/if}
 		</button>
@@ -347,14 +189,17 @@
 		&__track {
 			text-align: center;
 			font-size: $x-font-size-md;
-
 			-webkit-text-stroke-width: 2px;
-			color: var(--color-tracker, --color-diamond-color--tracked);
+			color: var(--color-diamond-color--tracked);
 			-webkit-text-stroke-color: var(--color-diamond-border--tracked);
 
 			&:focus {
-				// color: var(--color-text);
 				filter: saturate(1.2);
+			}
+
+			&--token {
+				color: var(--color-primary);
+				-webkit-text-stroke-color: var(--color-primary);
 			}
 
 			&--tracked--empty {
@@ -398,7 +243,7 @@
 			background:
 				radial-gradient(closest-side, var(--color-panel-header-fill) 90%, transparent 100%) 0 0/ 3px
 					3px,
-				var(--color-panel-header-border); /* Base color */
+				var(--color-panel-header-border);
 			background: var(--color-panel-header-fill);
 
 			&:has(span.token--found) {
@@ -409,8 +254,9 @@
 				color: var(--color-primary);
 			}
 
-			span.token--unfound {
-				color: var(--color-danger);
+			&--token {
+				color: var(--color-primary);
+				text-decoration: underline;
 			}
 
 			&--dragged-over {
@@ -442,11 +288,6 @@
 					color: var(--color-primary);
 				}
 			}
-		}
-
-		&.token--found {
-			color: var(--color-primary);
-			text-decoration: underline;
 		}
 
 		$border-rad: calc($x-space-xs / 2);

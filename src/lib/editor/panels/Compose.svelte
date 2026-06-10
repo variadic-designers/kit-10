@@ -121,22 +121,23 @@
 	});
 
 	const kitsUnusedQuery = liveQuery((api, activity) => {
-		// funny way to be reactive ngl
 		kitsQuery.rows;
 		return api.getKitsExceptFromViewId(activity.activeViewId);
 	});
 
-	// Select kit on project switch
 	$effect(() => {
-		if (
-			kitsQuery.rows[0] &&
-			editorActivity.activeViewId &&
-			editorActivity.activeProjectId &&
-			editorActivity.activeWorkspaceId
-		) {
-			editorActivity.activeKitId = kitsQuery.rows[0].kitId;
-		} else {
+		const viewId = editorActivity.activeViewId;
+		const rows = kitsQuery.rows;
+
+		if (!viewId) {
 			editorActivity.activeKitId = null;
+			return;
+		}
+
+		if (kitsQuery.isFetching) return;
+
+		if (!rows.some((k) => k.kitId === editorActivity.activeKitId)) {
+			editorActivity.activeKitId = rows[0]?.kitId ?? null;
 		}
 	});
 </script>

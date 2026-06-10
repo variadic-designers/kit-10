@@ -16,23 +16,21 @@
 	import Axis from './Axis.svelte';
 	import type { Api } from 'manager';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
-	import type { EditorSelection } from '../Editor.svelte';
+	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
 
 	type AxesPanel = {
-		selection: EditorSelection;
 		api: Api;
 		editorReady: EditorState;
-		activeKitId: string | null;
-		activeViewId: string | null;
+		editorActivity: EditorActivity;
+		onArgChange?: () => void;
 	};
 
 	let {
-		selection,
 		api,
 		editorReady,
-		activeKitId,
-		activeViewId
+		editorActivity = $bindable(),
+		onArgChange
 	}: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
@@ -76,30 +74,28 @@
 	let axisArgs = $state<Record<string, any>>({});
 
 	$effect(() => {
-		if (!activeKitId || !editorReady) {
+		const currentKitId = editorActivity.activeKitId;
+		const currentViewId = editorActivity.activeViewId;
+
+		if (!currentKitId || !editorReady) {
 			consumedAxes = [];
 			axisValues = {};
 			axisArgs = {};
 			return;
 		}
 
-		const dialect = editorReady.dialect;
-		const db = editorReady.core;
-
 		const loadAxes = async () => {
-			const axes = await api.getConsumedAxesByKitId(activeKitId).execute();
+			const axes = await api.getConsumedAxesByKitId(currentKitId).execute();
 			consumedAxes = axes;
 
-			// Load values for each axis
 			const valuesMap: Record<string, any[]> = {};
 			for (const axis of axes) {
 				valuesMap[axis.axisId] = await api.getAxisValuesByAxisId(axis.axisId).execute();
 			}
 			axisValues = valuesMap;
 
-			// Load current args if we have a view
-			if (activeViewId) {
-				const args = await api.getAllAxisArgs(activeViewId, activeKitId).execute();
+			if (currentViewId) {
+				const args = await api.getAllAxisArgs(currentViewId, currentKitId).execute();
 				const argsMap: Record<string, any> = {};
 				for (const arg of args) {
 					argsMap[arg.axisId] = arg.value;
@@ -136,29 +132,28 @@
 
 	// Handle arg changes from Axis component
 	async function handleArgChange(axisId: string, arg: AxisArgValue | null) {
-		if (!activeViewId || !activeKitId) return;
+		if (!editorActivity.activeViewId || !editorActivity.activeKitId) return;
 
 		if (arg === null) {
-			// Delete the arg — for now we just set it, API doesn't have delete
-			// TODO: add deleteAxisArg to API
 			return;
 		}
 
-		await api.setAxisArg(activeViewId, activeKitId, axisId, arg);
+		await api.setAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId, arg);
 
-		// Refresh args
-		const args = await api.getAllAxisArgs(activeViewId, activeKitId).execute();
+		const args = await api.getAllAxisArgs(editorActivity.activeViewId, editorActivity.activeKitId).execute();
 		const argsMap: Record<string, any> = {};
 		for (const a of args) {
 			argsMap[a.axisId] = a.value;
 		}
 		axisArgs = argsMap;
+
+		onArgChange?.();
 	}
 </script>
 
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
-		{#if !activeKitId || !activeViewId}
+		{#if !editorActivity.activeKitId || !editorActivity.activeViewId}
 			<p class="axes-empty">
 				<i class="fa-solid fa-up-long"></i> Select a view and kit to adjust axes
 			</p>

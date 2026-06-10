@@ -6,9 +6,11 @@ import { Kysely, sql } from 'kysely';
 // The actual exported member is PgliteDialect
 import { PgliteDialect } from '@soapbox/kysely-pglite';
 
-export type { SelectQueryBuilder } from 'kysely';
-
 import type { SchemaDialect, SchemaTS } from './schema.js';
+import type { SelectQueryBuilder } from 'kysely';
+
+export type EditorDialect = SchemaDialect;
+export type EditorQueryBuilder<O> = SelectQueryBuilder<any, any, O>;
 
 export { queryBuilder } from './api/index.js';
 
@@ -48,6 +50,7 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 };
 
 import { up } from './migrations/2026-04-21/index.js';
+import { seedDemoProject } from './seed.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
 	await sql`CREATE EXTENSION IF NOT EXISTS pg_uuidv7`.execute(dialect);
@@ -58,6 +61,7 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 
 	if (!workspaces) {
 		await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
+		await seedDemoProject(dialect);
 	}
 
 	console.log('-------- Workspaces --------');

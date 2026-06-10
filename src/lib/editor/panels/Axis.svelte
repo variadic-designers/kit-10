@@ -98,7 +98,7 @@
 		if (currentArg.type === 'range') {
 			const min = currentArg.min == null ? '-∞' : String(currentArg.min);
 			const max = currentArg.max == null ? '+∞' : String(currentArg.max);
-			return `${min} — ${max}`;
+			return `${min} ↔ ${max}`;
 		}
 		return 'Not set';
 	});

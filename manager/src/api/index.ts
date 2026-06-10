@@ -76,6 +76,8 @@ export interface QueryRenderEntry {
 
 export interface QueryAction {
 	createWorkspace: (name: string) => Promise<{ id: string; name: string; description: string | null; last_active: Date } | undefined>;
+	renameWorkspace: (workspaceId: string, newName: string) => Promise<void>;
+	deleteWorkspace: (workspaceId: string) => Promise<void>;
 	createProjectInWorkspace: (workspaceId: string, name: string) => Promise<{ id: string; name: string; description: string | null; last_modified: Date; license: string; author: string; workspace_id: string } | undefined>;
 	renameProject: (projectId: string, newName: string) => Promise<void>;
 	deleteProject: (projectId: string) => Promise<any>;
@@ -99,6 +101,14 @@ export interface Api extends QueryBuilder, QueryAction, QueryOrdering, QueryToke
 export const queryBuilder = (db: SchemaDialect): Api => ({
 	createWorkspace: async (name: string) => {
 		return await db.insertInto('workspaces').values([{ name }]).returningAll().executeTakeFirst();
+	},
+
+	renameWorkspace: async (workspaceId: string, newName: string) => {
+		await db.updateTable('workspaces').set({ name: newName }).where('workspaces.id', '=', workspaceId).execute();
+	},
+
+	deleteWorkspace: async (workspaceId: string) => {
+		await db.deleteFrom('workspaces').where('workspaces.id', '=', workspaceId).execute();
 	},
 
 	exportProject: async (projectId: string) => {

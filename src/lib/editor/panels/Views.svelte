@@ -138,17 +138,24 @@
 	import type { Api, EditorState } from 'manager';
 	import { type EditorActivity, liveQuery } from '../Editor.svelte';
 
-	// Select view on project switch
-	$effect(() => {
-		if (viewsQuery.rows[0] && editorActivity.activeProjectId && editorActivity.activeWorkspaceId) {
-			editorActivity.activeViewId = viewsQuery.rows[0].viewId;
-		} else {
-			editorActivity.activeViewId = null;
-		}
-	});
-
 	const viewsQuery = liveQuery((api, activity) => {
 		return api.getViewsByProjectId(activity.activeProjectId);
+	});
+
+	$effect(() => {
+		const proj = editorActivity.activeProjectId;
+		const rows = viewsQuery.rows;
+
+		if (!proj) {
+			editorActivity.activeViewId = null;
+			return;
+		}
+
+		if (viewsQuery.isFetching) return;
+
+		if (!rows.some((v) => v.viewId === editorActivity.activeViewId)) {
+			editorActivity.activeViewId = rows[0]?.viewId ?? null;
+		}
 	});
 </script>
 

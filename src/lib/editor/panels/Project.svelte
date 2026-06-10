@@ -16,25 +16,22 @@
 		return api.getProjectsByWorkspaceId(activity.activeWorkspaceId);
 	});
 
-	// Reset selection
 	$effect(() => {
-		if (
-			projectsQuery.rows[0] &&
-			!editorActivity.activeProjectId &&
-			editorActivity.activeWorkspaceId
-		) {
-			api
-				.getProjectsByWorkspaceId(editorActivity.activeWorkspaceId)
-				.executeTakeFirst()
-				.then((p) => {
-					if (p) {
-						editorActivity.activeProjectId = p.projectId;
-					}
-				});
-		} else if (!editorActivity.activeWorkspaceId) {
+		const ws = editorActivity.activeWorkspaceId;
+		const rows = projectsQuery.rows;
+
+		if (!ws) {
 			editorActivity.activeProjectId = null;
 			editorActivity.activeProjectName = null;
 			return;
+		}
+
+		if (projectsQuery.isFetching) return;
+
+		if (!rows.some((p) => p.projectId === editorActivity.activeProjectId)) {
+			const first = rows[0];
+			editorActivity.activeProjectId = first?.projectId ?? null;
+			editorActivity.activeProjectName = first?.projectName ?? null;
 		}
 	});
 

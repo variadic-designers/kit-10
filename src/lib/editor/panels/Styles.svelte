@@ -3,15 +3,13 @@
 	import StyleField from './StyleField.svelte';
 	import type { ResolvedKit, ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { TokenLibrary } from './Variables.svelte';
 
 	type StylesPanel = {
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
-		tokens: TokenLibrary;
 	};
 
-	const { selection, resolvedKits, tokens }: StylesPanel = $props();
+	const { selection, resolvedKits }: StylesPanel = $props();
 
 	const stylesContextMenu = () => {
 		return [
@@ -55,7 +53,7 @@
 	tooltip="Applied styles on the current Axes set"
 >
 	{#snippet content()}
-		{#if selection.selectedViewPrimary}
+		{#if resolvedKits}
 			<div style="display:contents">
 				{#snippet styleSection(
 					category: string,
@@ -74,7 +72,6 @@
 									displayText={field.displayText ?? field.key}
 									key={field.key}
 									value={resolvedMap.get(field.key)?.value}
-									{tokens}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 								/>
 							{/each}

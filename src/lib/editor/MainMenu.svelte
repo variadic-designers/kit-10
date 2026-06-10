@@ -1,37 +1,20 @@
 <script lang="ts">
 	import { type EditorState, type Api, queryBuilder } from 'manager';
 	import { liveQuery, type EditorActivity } from './Editor.svelte';
+	import Renameable from '$lib/components/Renameable.svelte';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 
 	type MainMenuProps = {
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
+		api: Api;
 	};
 
-	const { editorReady, editorActivity = $bindable() }: MainMenuProps = $props();
+	const { editorReady, editorActivity = $bindable(), api }: MainMenuProps = $props();
 
 	const workspaceQuery = liveQuery((api) => api.getAllWorkspaces());
 
-	import { type Snippet } from 'svelte';
-
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
-	const workspacesMenu: ContextMenuContentGenerator = () => {
-		return [
-			{
-				name: 'new_project',
-				displayText: 'New Project',
-				icon: 'fa-solid fa-diagram-project',
-				onClick: () => {
-					queryBuilder(editorReady.dialect)
-						.createWorkspace('Untitled')
-						.then((w) => {
-							if (w) {
-								selectWorkspace(w.id, w.name);
-							}
-						});
-				}
-			}
-		];
-	};
+	let workspaceEditing: Record<string, boolean> = $state({});
 
 	const selectWorkspace = (id: string, name: string) => {
 		editorActivity.activeWorkspaceId = id;
@@ -41,32 +24,75 @@
 		editorActivity.activeViewId = null;
 		editorActivity.activeKitId = null;
 	};
+
+	const workspaceMenu = (workspaceId: string): ContextMenuContentGenerator => {
+		return () => [
+			{
+				name: 'rename',
+				displayText: 'Rename',
+				icon: 'fa-solid fa-i-cursor',
+				onClick: () => {
+					workspaceEditing[workspaceId] = true;
+				}
+			},
+			'hr',
+			{
+				name: 'delete',
+				displayText: 'Delete',
+				icon: 'fa-solid fa-trash',
+				destructive: true,
+				onClick: () => {
+					api.deleteWorkspace(workspaceId);
+				}
+			}
+		];
+	};
+
+	const workspacesHeaderMenu: ContextMenuContentGenerator = () => {
+		return [
+			{
+				name: 'new_workspace',
+				displayText: 'New Workspace',
+				icon: 'fa-solid fa-folder-plus',
+				onClick: () => {
+					api.createWorkspace('Untitled').then((w) => {
+						if (w) {
+							selectWorkspace(w.id, w.name);
+						}
+					});
+				}
+			}
+		];
+	};
 </script>
 
-{#snippet section(header: Snippet, content: Snippet)}
-	<div class="menu__section">
-		<h2 class="menu__section__header">{@render header()}</h2>
-		<h2 class="menu__section__content">{@render content()}</h2>
-	</div>
-{/snippet}
-
 <div id="profile" popover class="menu">
-	<h2 use:contextMenu={workspacesMenu}>Workspaces</h2>
+	<h2 use:contextMenu={workspacesHeaderMenu}>Workspaces</h2>
 	<ul class="workspaces">
 		{#if workspaceQuery.rows}
-			<!-- <pre>{JSON.stringify(workspaceQuery, null, 2)}</pre> -->
-			{#each workspaceQuery.rows as w}
+			{#each workspaceQuery.rows as w (w.workspaceId)}
 				<li>
 					<button
 						title={w.workspaceId}
 						class:selected={w.workspaceId === editorActivity.activeWorkspaceId}
-						onclick={() => {
-							selectWorkspace(w.workspaceId, w.workspaceName);
-						}}
+						use:contextMenu={workspaceMenu(w.workspaceId)}
+						onclick={() => selectWorkspace(w.workspaceId, w.workspaceName)}
 					>
 						<i class="fa-solid fa-folder"></i>
 						<sup class="count">{w.projectCount}</sup>
-						<span class="workspace-name" id="editable-{w.workspaceId}">{w.workspaceName}</span>
+						<Renameable
+							editing={workspaceEditing[w.workspaceId] === true}
+							value={w.workspaceName}
+							onCommit={(name) => {
+								api.renameWorkspace(w.workspaceId, name);
+								if (w.workspaceId === editorActivity.activeWorkspaceId) {
+									editorActivity.activeWorkspaceName = name;
+								}
+								workspaceEditing[w.workspaceId] = false;
+							}}
+						>
+							{w.workspaceName}
+						</Renameable>
 					</button>
 				</li>
 			{/each}
@@ -84,8 +110,6 @@
 	@use '_index' as *;
 
 	#profile {
-		// not widely supported yet :/
-		// position-area: bottom-right;
 		position: fixed;
 		left: initial;
 		right: $x-space-md;

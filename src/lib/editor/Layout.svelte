@@ -285,7 +285,7 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 		.configurable {
 			@include layout-flex-column();
 			@include layout-respond('lg') {
-				// gap:
+				gap: $x-space-sm;
 			}
 
 			@include layout-respond-max('lg') {

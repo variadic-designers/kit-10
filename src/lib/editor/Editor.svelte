@@ -19,7 +19,7 @@
 
 	export const query = async <O,>(
 		editor: EditorState,
-		qb: EditorQueryBuilder<any, O>,
+		qb: EditorQueryBuilder<O>,
 		set: (rows: O[]) => void
 	) => {
 		const { sql, parameters } = qb.compile();
@@ -148,9 +148,18 @@
 	// Cascaded result — resolved from manager DB when view+kit are active
 	let resolvedKits: ResolvedKit[] | null = $state(null);
 
+	let resolveVersion = $state(0);
+
+	function invalidateResolution() {
+		resolveVersion++;
+	}
+
 	$effect(() => {
-		if (selection.selectedViewPrimary && editorReady) {
-			resolveManyManager(editorReady.dialect, selection.selectedViewPrimary).then((kits) => {
+		const viewId = editorActivity.activeViewId;
+		const version = resolveVersion;
+		const editor = editorLoading;
+		if (viewId && editor) {
+			resolveManyManager(editor.dialect, viewId).then((kits) => {
 				resolvedKits = kits;
 			}).catch(() => {
 				resolvedKits = null;
@@ -260,13 +269,13 @@
 
 		<ComposePanel {api} bind:editorActivity {editorReady} {viewsPool} {kitsPool} bind:selection />
 
-		<AxesPanel {api} {editorReady} activeKitId={editorActivity.activeKitId} activeViewId={editorActivity.activeViewId} {selection} />
+		<AxesPanel {api} {editorReady} bind:editorActivity onArgChange={invalidateResolution} />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
 
-		<StylesPanel {resolvedKits} {selection} {tokens} />
+		<StylesPanel {resolvedKits} {selection} />
 
 		<TokensPanel {editorReady} bind:tokens bind:tokenLibraries />
     

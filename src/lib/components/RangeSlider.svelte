@@ -22,8 +22,10 @@
 	let dragging: 'min' | 'max' | null = $state(null);
 
 	$effect(() => {
-		minVal = min;
-		maxVal = max;
+		if (!dragging) {
+			minVal = min;
+			maxVal = max;
+		}
 	});
 
 	function allThresholds(): number[] {
@@ -63,11 +65,13 @@
 			const newMax = minVal != null ? Math.max(snapped, minVal) : snapped;
 			maxVal = newMax;
 		}
-		onChange?.(minVal, maxVal);
 	}
 
 	function handlePointerUp() {
-		dragging = null;
+		if (dragging) {
+			onChange?.(minVal, maxVal);
+			dragging = null;
+		}
 	}
 
 	function snap(value: number): number {
