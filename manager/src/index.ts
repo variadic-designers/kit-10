@@ -21,8 +21,14 @@ export interface EditorState {
 
 export type EditorCore = PGliteWorker & PGliteInterfaceExtensions<{ live: typeof live }>;
 
+let currentEditorState: EditorState | undefined;
+
 export const initializeEditorState: () => Promise<EditorState | undefined> = async () => {
 	try {
+		if (currentEditorState) {
+			await currentEditorState.core.close();
+		}
+
 		const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
 
 		const options = {
@@ -43,7 +49,8 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 
 		await initEditorDB(dialect);
 
-		return { core: pgWorker, dialect };
+		currentEditorState = { core: pgWorker, dialect };
+		return currentEditorState;
 	} catch (e) {
 		console.error('Handshake failed: ', e);
 	}
