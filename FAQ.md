@@ -1,8 +1,8 @@
-# KIT•10 — FAQ
+# KIT•10 - FAQ
 
 ## What is KIT•10?
 
-KIT•10 (pronounced **"kitten"**) is a design system editor that lets you define how your UI behaves across every state, theme, and viewport — and generates the outputs automatically.
+KIT•10 (pronounced **"kitten"**) is a design system editor that lets you define how your UI behaves across every state, theme, and viewport - and generates the outputs automatically.
 
 Instead of creating a variant for every combination by hand, you define the rules once. The engine works out every combination.
 
@@ -13,9 +13,9 @@ Instead of creating a variant for every combination by hand, you define the rule
 Figma and Framer are great for drawing and prototyping. But when your design system grows, you hit problems they weren't built to solve:
 
 - **Variant explosion.** A button with 3 themes × 3 sizes × 3 states = 27 components. Add one more dimension and you're maintaining 54. In KIT•10, you write 7 rules and the engine generates every combination.
-- **No reuse across projects.** Reskinning a Figma component library means duplicating and editing files. In KIT•10, a Kit is a reusable behavioral bundle — plug it into a different View with different axis values and you get a new skin without redefining anything.
+- **No reuse across projects.** Reskinning a Figma component library means duplicating and editing files. In KIT•10, a Kit is a reusable behavioral bundle - plug it into a different View with different axis values and you get a new skin without redefining anything.
 - **Manual synchronization.** Change a theme token in Figma and you update every affected component by hand. In KIT•10, changing one Layer propagates to every View that uses that Kit.
-- **Dead-end output.** Figma exports flat CSS. Framer ships React components. KIT•10 can export to CSS custom properties, Tailwind, SCSS, Flutter, Style Dictionary JSON, or any format the community builds a backend for — from the same design rules.
+- **Dead-end output.** Figma exports flat CSS. Framer ships React components. KIT•10 can export to CSS custom properties, Tailwind, SCSS, Flutter, Style Dictionary JSON, or any format the community builds a backend for - from the same design rules.
 
 KIT•10 is not a drawing tool. It's a system logic tool. You define the rules; the engine produces render-ready output for any platform.
 
@@ -25,9 +25,9 @@ KIT•10 is not a drawing tool. It's a system logic tool. You define the rules; 
 
 Tokens describe what a value is. KIT•10 describes *why* that value is what it is.
 
-A token system stores `color-primary: #3b82f6` per theme. Want it to change when density changes too? You duplicate the token set or nest modes — and now you're manually tracking combinations.
+A token system stores `color-primary: #3b82f6` per theme. Want it to change when density changes too? You duplicate the token set or nest modes - and now you're manually tracking combinations.
 
-KIT•10 stores intent. You say "when dark mode is on, background is #333." When "dark mode + high contrast" should be #000, you add one more rule. The engine derives every combination. The output format is the same — CSS variables, JSON, whatever your pipeline expects — but you defined the logic, not the flat values.
+KIT•10 stores intent. You say "when dark mode is on, background is #333." When "dark mode + high contrast" should be #000, you add one more rule. The engine derives every combination. The output format is the same - CSS variables, JSON, whatever your pipeline expects - but you defined the logic, not the flat values.
 
 ---
 
@@ -38,7 +38,7 @@ Figma Variables let you define modes (Light / Dark) and switch between them. One
 If you need a button to respond to theme *and* size *and* interaction state, you're stuck:
 
 - You pick one mode per collection. No way to combine them.
-- If two collections both set `color`, whoever is last wins. No structured resolution — just blind override.
+- If two collections both set `color`, whoever is last wins. No structured resolution - just blind override.
 - You can't say "when dark + high contrast, override the dark variant." You'd need a separate mode for every combination.
 
 KIT•10 handles this natively. You define `{dark: true}` and `{dark: true, high_contrast: true}` as separate rules. The latter wins when both conditions are active. No duplication, no intermediate modes.
@@ -47,7 +47,7 @@ KIT•10 handles this natively. You define `{dark: true}` and `{dark: true, high
 
 ## How is this different from a theme switcher?
 
-A theme switcher swaps between two token sets — light.css and dark.css. That's one axis with two values.
+A theme switcher swaps between two token sets - light.css and dark.css. That's one axis with two values.
 
 KIT•10 is multi-axial. Adding a new dimension (density, viewport width, motion preference) doesn't multiply your output files. It adds one axis to the rules. The possible outputs grow combinatorially, but the rules you *write* grow linearly with the conditions you care about.
 
@@ -62,7 +62,7 @@ A rule that says "when these conditions are true, apply these properties."
 {dark: true, high_contrast: true}  → background: #000; color: #FFF
 ```
 
-The second rule has more conditions, so it wins when both apply. Only the properties it declares override the first — everything else carries forward.
+The second rule has more conditions, so it wins when both apply. Only the properties it declares override the first - everything else carries forward.
 
 A Layer with no conditions (null Layer) always applies. It's the lowest-priority fallback. Useful for prototyping defaults before you know which axes matter.
 
@@ -83,13 +83,13 @@ No ambiguity, no guessing. See [CONCEPTS.md](CONCEPTS.md) → Specificity for th
 
 ## Does this replace designers?
 
-No. It replaces repetitive decision-making — but the implications go further than "you write fewer variants."
+No. It replaces repetitive decision-making - but the implications go further than "you write fewer variants."
 
 Because every output is derived from rules, not hand-authored, the entire workflow shifts:
 
 - **Design decisions become traceable.** Every property in the output can be traced back to which rule produced it and which axis values triggered it. No more "why is this button blue?" archeology.
-- **Refactoring becomes safe.** Adding an axis doesn't break existing rules. Moving an axis up or down in a Kit changes priority predictably. Removing a rule only removes what it declared — everything else carries forward.
+- **Refactoring becomes safe.** Adding an axis doesn't break existing rules. Moving an axis up or down in a Kit changes priority predictably. Removing a rule only removes what it declared - everything else carries forward.
 - **Design systems become portable.** A Kit is self-contained. Share it across projects, swap it into a different View, or reskin an entire product by replacing one Kit with another while keeping the same axis structure.
-- **Consistency is structural, not manual.** In a token system, consistency depends on people remembering to use the right token. In KIT•10, consistency is guaranteed by the resolution engine — if `{emphasis: primary}` always maps to the same properties, it will because there's only one rule for it, not thirty hand-maintained tokens.
+- **Consistency is structural, not manual.** In a token system, consistency depends on people remembering to use the right token. In KIT•10, consistency is guaranteed by the resolution engine - if `{emphasis: primary}` always maps to the same properties, it will because there's only one rule for it, not thirty hand-maintained tokens.
 
 Designers still make the decisions. KIT•10 makes those decisions composable, traceable, and scalable without extra effort.

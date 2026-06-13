@@ -4,71 +4,66 @@
 
 # KIT•10
 
-KIT•10 (pronounced **"kitten"**) is a design system generator — not a library of tokens, not a template kit, not a Figma plugin. It's a **meta-editor** where you define how a UI behaves across conditions, and the system produces every outcome exhaustively, deterministically, without you having to build each one by hand.
+Write the rule once. Every variant follows.
+
+KIT•10 (pronounced **"kitten"**) is a design system editor where you define how your UI behaves across themes, sizes, viewports, and states - and the system produces every combination for you.
 
 ---
 
-## The problem KIT•10 solves
+## Why does this exist?
 
-Most design tools model output directly. You craft a button, then a variant, then another variant, then a variable to sync their padding, then an override that breaks the variable chain. At three axes and four values each, you're maintaining 64 component states — and the gap between the editor and usable code grows with every change.
+You've been there: your button needs a light version, a dark version, a compact version, a dark-compact version, a disabled version, a dark-disabled version… and now you're maintaining 27 components for 3 axes.
 
-This is **variant explosion**. It's not a bug. It's what happens when your tool's information architecture is a document tree with abstraction layers bolted on after the fact.
+You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop.
 
----
-
-## How KIT•10 is different
-
-Instead of modeling output, KIT•10 models **design space**.
-
-You define independent dimensions of intent — **Axes** like Density, Emphasis, Contrast, Tone. You define how those axes map to visual results — **Layers** with specificity rules. You compose them into **Kits**, instantiate them in **Views**, and the system resolves everything through a deterministic cascade.
-
-The information architecture is a **relational pipeline**, not a node tree:
+KIT•10 lets you say **when** and **why**:
 
 ```
-Views → Kit instances → Axes → Layers (specificity resolution) → Render Tokens
+No conditions      → background: #fff, color: #333, padding: 16px
+{theme: dark}      → background: #1a1a2e, color: #e0e0e0
+{theme: dark, density: compact} → padding: 8px, font-size: token(colors.primary)
+{viewport ≥ 1024} → width: 320px
 ```
 
-A View consumes multiple Kits. Each Kit holds ordered Axes. Each Layer links axis conditions to render output. Specificity is non-overlapping three-tier — kit priority > axis count > axis order — so adding a new condition never requires restructuring existing rules.
-
-The result: adding a fourth axis doesn't multiply your workload by its values. It adds one row to a table.
+More conditions = higher priority. So `dark + compact` overrides `dark`, which overrides default. Add a fourth axis? One more row. Not twelve more variants.
 
 ---
 
-## What this enables
+## How it works
 
-- **Composable design logic.** Kits, Layers, and Axes are operands with explicit precedence rules. You can reorder Kits in a View, add a 2-axis Layer, or insert a new Axis without touching anything else.
-- **Deterministic output.** Same inputs always produce the same results. Every value is traceable to the axis conditions that produced it. No hidden overrides, no broken variable chains.
-- **Backend-agnostic render.** Output shapes (CSS, Tailwind, JSON tokens) are schema rows — Render Snippets. Switching export formats is data, not a pipeline rewrite.
-- **Extensible by nature.** Adding a new axis kind, a new specificity rule, or a new output target is a schema change. The extension surface IS the data model.
-- **Local-first, offline.** PostgreSQL-in-browser via PGlite. No server, no sync conflicts, no login.
+1. **Axes** - dimensions of intent (Theme: light/dark, Density: compact/comfortable, Viewport: ≥768/≥1024)
+2. **Layers** - rules that say "when these conditions are true, apply these properties"
+3. **Kits** - bundles of axes + layers (Button, Layout, Card…)
+4. **Views** - compositions of kits with axis values set ("Dark Compact", "Light Comfortable")
+5. **Resolution** - the engine picks the most specific matching layer for each property, then substitutes tokens
+
+Every output value is traceable to the rule and conditions that produced it. No surprises.
 
 ---
 
-## A different category
+## What you get
 
-Figma and Framer are **crafting tools** — you build one outcome at a time. KIT•10 is a **generator** — you define behavior across all states and let the system elaborate the rest.
+- **No variant explosion.** Add an axis, not a component tree.
+- **Composable kits.** Swap a Kit into any View with different axis values - instant reskin.
+- **Token substitution.** Reference `colors.primary` in one place, the engine resolves it per-view.
+- **Traceable.** Every rendered property points back to its source layer and axis conditions.
+- **Offline-first.** Runs entirely in-browser via PGlite. No server, no login.
 
-This isn't AI. It's just a better information architecture for the problem. Design intent flows through a defined cascade with explicit precedence, not through a document tree with invisible exception chains.
+---
+
+## What it's not
+
+Not a drawing tool. Not AI. Not a component library. It's a meta-editor - you define the logic, it generates the outcomes.
 
 ---
 
 ## Current state
 
-This project is **actively under development**. The manager schema and API are stable; the frontend is mid-migration from prototype to production. Expect moving parts.
-
-Start with **[CONCEPTS.md](./CONCEPTS.md)** for the architecture and **[FAQ.md](./FAQ.md)** for the philosophy.
+Actively under development. Start with **[CONCEPTS.md](./CONCEPTS.md)** for the technical model and **[FAQ.md](./FAQ.md)** for the design rationale.
 
 ---
 
-## Name
-
-**KIT•10** → _"kitten"_. Yes, that's intentional.
-
----
-
-## Trademarks & assets
-
-The KIT•10 name, logo, and related marks are official project assets. Presence here does not imply permission for external use.
+**KIT•10** → _"kitten"_. Yes, intentionally cute.
 
 ---
 
