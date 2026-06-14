@@ -59,13 +59,7 @@
 		</div>
 		<div class="hero-visual">
 			<div class="hero-glyph" aria-hidden="true">
-				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 622.31 476">
-					<path d="M622.31,238c0,131.44-106.56,238-238,238V444.82C384.31,330.6,476.91,238,591.13,238Z" fill="var(--color-primary)" />
-					<path d="M384.31,444.82V476c-131.44,0-238-106.56-238-238h31.18C291.71,238,384.31,330.6,384.31,444.82Z" fill="var(--color-primary)" />
-					<path d="M384.31,0V31.18C384.31,145.4,291.71,238,177.49,238H146.31C146.31,106.56,252.87,0,384.31,0Z" fill="var(--color-primary-hover)" />
-					<path d="M622.31,238H591.13c-114.22,0-206.82-92.6-206.82-206.82V0C515.75,0,622.31,106.56,622.31,238Z" fill="var(--color-primary)" />
-					<path d="M147.1,0h0a0,0,0,0,1,0,0V328.9A147.1,147.1,0,0,1,0,476H0a0,0,0,0,1,0,0V147.1A147.1,147.1,0,0,1,147.1,0Z" fill="var(--color-primary-hover)" />
-				</svg>
+				<img src="/favicon.svg" alt="" />
 			</div>
 		</div>
 	</section>
@@ -237,7 +231,7 @@
 			justify-content: center;
 			align-items: center;
 
-			svg {
+			img {
 				width: 100%;
 				max-width: 320px;
 				height: auto;
