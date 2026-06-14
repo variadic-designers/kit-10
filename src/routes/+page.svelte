@@ -58,9 +58,7 @@
 			</div>
 		</div>
 		<div class="hero-visual">
-			<div class="hero-glyph" aria-hidden="true">
-				<img src="/favicon.svg" alt="" />
-			</div>
+			<img class="hero-glyph" src="/favicon.svg" alt="" />
 		</div>
 	</section>
 
@@ -230,15 +228,12 @@
 			display: flex;
 			justify-content: center;
 			align-items: center;
-
-			img {
-				width: 100%;
-				max-width: 320px;
-				height: auto;
-			}
 		}
 
-		&-glyph {
+		.hero-glyph {
+			width: 100%;
+			max-width: 20rem;
+			height: auto;
 			animation: glyph-pulse 4s ease-in-out infinite;
 		}
 	}
