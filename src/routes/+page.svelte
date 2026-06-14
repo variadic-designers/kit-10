@@ -1,24 +1,20 @@
 <script lang="ts">
-	import { initializeTheme, getTheme, updateTheme, themeOptions } from '$lib/theming';
-	import { initializeReducedMotion } from '$lib/reduced-motion';
-	import { page } from '$app/state';
+	import { getTheme } from '$lib/theming';
+	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 
 	import '$lib/fonts/Satoshi/Satoshi.css';
 
 	let currentTheme = $state<string>('auto');
+
+	import { initializeTheme } from '$lib/theming';
+	import { initializeReducedMotion } from '$lib/reduced-motion';
+	import { page } from '$app/state';
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
 		initializeReducedMotion(page.data.reducedMotion);
 		currentTheme = getTheme();
 	});
-
-	function cycleTheme() {
-		const idx = themeOptions.indexOf(currentTheme as any);
-		const next = themeOptions[(idx + 1) % themeOptions.length];
-		updateTheme(next);
-		currentTheme = next;
-	}
 </script>
 
 <svelte:head>
@@ -34,9 +30,7 @@
 			
 		</a>
 		<div class="nav-actions">
-			<button class="btn-ghost" onclick={cycleTheme} title="Toggle theme">
-				<i class="fa-solid fa-circle-half-stroke"></i>
-			</button>
+			<DarkModeToggle />
 			<a href="/edit" class="btn-primary">Open Editor</a>
 			<button class="btn-outline">Log in</button>
 		</div>
