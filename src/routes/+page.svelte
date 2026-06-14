@@ -172,6 +172,7 @@
 		min-height: calc(100dvh - 80px);
 		padding: $x-space-12 $x-space-6;
 		gap: $x-space-12;
+		background-color: var(--color-bg);
 
 		@include layout-respond('lg') {
 			grid-template-columns: 1fr 1fr;
