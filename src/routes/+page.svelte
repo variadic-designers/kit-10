@@ -85,6 +85,9 @@
 				Built with care by <a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener">Yor Designs</a>.
 				KIT•10 is early-stage and evolving rapidly.
 			</p>
+			<a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener" class="btn-primary btn-donate">
+				<i class="fa-solid fa-gift"></i> Support KIT•10
+			</a>
 		</div>
 	</section>
 </div>
@@ -297,6 +300,10 @@
 			margin-top: $x-space-12;
 			color: var(--color-text-muted);
 			font-size: $x-font-size-sm;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: $x-space-6;
 
 			a {
 				color: var(--color-primary);
@@ -378,6 +385,27 @@
 
 		&:hover {
 			color: var(--color-primary);
+		}
+	}
+
+	.btn-donate {
+		background-color: var(--color-primary);
+		color: var(--color-pure);
+		text-decoration: none;
+		border-radius: $x-space-3;
+		padding: $x-space-3 $x-space-8;
+		font-size: $x-font-size-md;
+		@include fonts-stack('Satoshi-Medium', sans);
+		transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
+
+		&:hover {
+			background-color: var(--color-primary-hover);
+			box-shadow: $x-bs-sketch-soft;
+			color: var(--color-pure);
+		}
+
+		i {
+			margin-right: $x-space-2;
 		}
 	}
 </style>
