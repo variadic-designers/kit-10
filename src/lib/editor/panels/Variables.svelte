@@ -148,6 +148,16 @@
 		return value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl');
 	}
 
+	function toColorInput(value: string | null | undefined): string {
+		if (!value) return '#000000';
+		const v = value.trim();
+		if (/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+		if (/^#[0-9a-fA-F]{3}$/.test(v)) {
+			return '#' + v[1] + v[1] + v[2] + v[2] + v[3] + v[3];
+		}
+		return '#000000';
+	}
+
 	function tokenContextMenu(tokenId: string): ContextMenuContent {
 		return () => [
 			{
@@ -198,14 +208,27 @@
 						</Renameable>
 					</span>
 					{#if editingValue[token.tokenId] === true}
-						<input
-							class="token__value-input"
-							type="text"
-							value={token.tokenValue ?? ''}
-							onblur={() => { editingValue[token.tokenId] = false; }}
-							onkeydown={(e) => { if (e.key === 'Enter') { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); editingValue[token.tokenId] = false; } }}
-							oninput={(e) => { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); }}
-						/>
+						<div class="token__value-edit">
+							{#if isColorValue(token.tokenValue)}
+								<input
+									class="token__color-picker"
+									type="color"
+									value={toColorInput(token.tokenValue)}
+									oninput={(e) => {
+										const hex = (e.target as HTMLInputElement).value;
+										api.updateTokenValue(token.tokenId, hex);
+									}}
+								/>
+							{/if}
+							<input
+								class="token__value-input"
+								type="text"
+								value={token.tokenValue ?? ''}
+								onblur={() => { editingValue[token.tokenId] = false; }}
+								onkeydown={(e) => { if (e.key === 'Enter') { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); editingValue[token.tokenId] = false; } }}
+								oninput={(e) => { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); }}
+							/>
+						</div>
 					{:else}
 						<span class="token__value" onclick={() => { editingValue[token.tokenId] = true; }}>{token.tokenValue ?? '—'}</span>
 					{/if}
@@ -448,6 +471,37 @@
 
 		&:hover {
 			color: var(--color-primary);
+		}
+	}
+
+	.token__value-edit {
+		display: flex;
+		align-items: center;
+		gap: 2px;
+	}
+
+	.token__color-picker {
+		width: 18px;
+		height: 18px;
+		border: 1px solid var(--color-border);
+		border-radius: 2px;
+		padding: 0;
+		cursor: pointer;
+		background: none;
+		flex-shrink: 0;
+
+		&::-webkit-color-swatch-wrapper {
+			padding: 1px;
+		}
+
+		&::-webkit-color-swatch {
+			border: none;
+			border-radius: 1px;
+		}
+
+		&::-moz-color-swatch {
+			border: none;
+			border-radius: 1px;
 		}
 	}
 
