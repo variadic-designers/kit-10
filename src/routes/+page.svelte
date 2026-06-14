@@ -133,6 +133,10 @@
 			background-color: transparent;
 			font-family: inherit;
 		}
+
+		p, span, li, h2, h3 {
+			@include fonts-stack('Satoshi-Regular', sans);
+		}
 	}
 
 	nav {
