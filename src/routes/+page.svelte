@@ -141,6 +141,10 @@
 		justify-content: space-between;
 		padding: $x-space-3 $x-space-6;
 		border-bottom: 1px solid var(--color-border);
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background-color: var(--color-bg);
 
 		.branding {
 			display: flex;
