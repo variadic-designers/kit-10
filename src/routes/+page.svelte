@@ -98,7 +98,7 @@
 	</section>
 </div>
 
-<style lang="scss">
+<style lang="scss" global>
 	@use '_index' as *;
 
 	$light: (
@@ -159,12 +159,6 @@
 
 			img {
 				height: $x-font-size-2xl;
-			}
-
-			&-text {
-				@include fonts-stack('Satoshi-Bold', sans);
-				font-size: $x-font-size-xl;
-				letter-spacing: 1px;
 			}
 		}
 
