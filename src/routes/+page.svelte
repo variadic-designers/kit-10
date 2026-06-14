@@ -31,7 +31,7 @@
 	<nav>
 		<a href="/" class="branding">
 			<img src="/favicon.svg" alt="KIT•10" />
-			<span class="branding-text">KIT•10</span>
+			
 		</a>
 		<div class="nav-actions">
 			<button class="btn-ghost" onclick={cycleTheme} title="Toggle theme">
