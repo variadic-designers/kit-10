@@ -30,7 +30,7 @@
 <div id="landing" data-prefers-color-scheme>
 	<nav>
 		<a href="/" class="branding">
-			<img src="/logo.svg" alt="KIT•10" />
+			<img src="/favicon.svg" alt="KIT•10" />
 			<span class="branding-text">KIT•10</span>
 		</a>
 		<div class="nav-actions">
@@ -59,12 +59,12 @@
 		</div>
 		<div class="hero-visual">
 			<div class="hero-glyph" aria-hidden="true">
-				<svg viewBox="0 0 622.31 476" fill="none" xmlns="http://www.w3.org/2000/svg">
-					<path d="M622.31,238c0,131.5-106.8,238-238.31,238V420.58c100.9,0,182.89-81.74,182.89-182.58S484.9,55.42,384,55.42C283.11,55.42,201.11,137.16,201.11,238H145.71C145.71,106.5,252.49,0,384,0S622.31,106.5,622.31,238Z" fill="var(--color-primary)" />
-					<path d="M417.14,420.58V476C285.63,476,178.86,369.5,178.86,238h55.4C234.26,338.84,316.25,420.58,417.14,420.58Z" fill="var(--color-primary-hover)" />
-					<path d="M417.14,0V55.42C316.25,55.42,234.26,137.16,201.11,238H145.71C145.71,106.5,252.49,0,417.14,0Z" fill="var(--color-primary)" />
-					<path d="M622.31,238H566.89C566.89,338.84,484.9,420.58,384,420.58V476C515.51,476,622.31,369.5,622.31,238Z" fill="var(--color-primary-hover)" />
-					<path d="M145.71,0V476H0V0Z" fill="var(--color-primary)" />
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 622.31 476">
+					<path d="M622.31,238c0,131.44-106.56,238-238,238V444.82C384.31,330.6,476.91,238,591.13,238Z" fill="var(--color-primary)" />
+					<path d="M384.31,444.82V476c-131.44,0-238-106.56-238-238h31.18C291.71,238,384.31,330.6,384.31,444.82Z" fill="var(--color-primary)" />
+					<path d="M384.31,0V31.18C384.31,145.4,291.71,238,177.49,238H146.31C146.31,106.56,252.87,0,384.31,0Z" fill="var(--color-primary-hover)" />
+					<path d="M622.31,238H591.13c-114.22,0-206.82-92.6-206.82-206.82V0C515.75,0,622.31,106.56,622.31,238Z" fill="var(--color-primary)" />
+					<path d="M147.1,0h0a0,0,0,0,1,0,0V328.9A147.1,147.1,0,0,1,0,476H0a0,0,0,0,1,0,0V147.1A147.1,147.1,0,0,1,147.1,0Z" fill="var(--color-primary-hover)" />
 				</svg>
 			</div>
 		</div>
