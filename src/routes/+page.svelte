@@ -201,6 +201,7 @@
 		}
 
 		&-accent {
+			@include fonts-stack('Satoshi-Light', sans);
 			background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
 			-webkit-background-clip: text;
 			background-clip: text;
