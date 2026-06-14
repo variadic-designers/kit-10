@@ -131,6 +131,7 @@
 		a, button {
 			color: inherit;
 			background-color: transparent;
+			font-family: inherit;
 		}
 	}
 
