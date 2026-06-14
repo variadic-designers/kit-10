@@ -27,7 +27,7 @@
 	<meta name="description" content="Yor Designs Editor Superpowered" />
 </svelte:head>
 
-<div id="landing" data-prefers-color-scheme>
+<div id="landing" data-prefers-color-scheme data-compel-color-scheme={currentTheme}>
 	<nav>
 		<a href="/" class="branding">
 			<img src="/favicon.svg" alt="KIT•10" />
