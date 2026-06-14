@@ -171,6 +171,8 @@ export interface TokensTable {
 	alias: string | null;
 	value: string | null;
 	resolution: string | null;
+	kit_id: string | null;
+	view_id: string | null;
 }
 
 // ------------------------------
@@ -294,6 +296,37 @@ export async function up(dialect: DAny) {
 		)
 		.addColumn('alias', 'varchar(255)')
 		.addColumn('value', 'text')
+		.addColumn('kit_id', 'uuid', (col) =>
+			col.references('kits.id').onDelete('cascade')
+		)
+		.addColumn('view_id', 'uuid', (col) =>
+			col.references('views.id').onDelete('cascade')
+		)
+		.addCheckConstraint('token_scope_check', sql`(kit_id IS NOT NULL AND view_id IS NULL) OR (view_id IS NOT NULL AND kit_id IS NULL) OR (kit_id IS NULL AND view_id IS NULL)`)
+		.execute();
+
+	await dialect.schema
+		.createIndex('tokens_project_alias_unique')
+		.ifNotExists()
+		.on('tokens')
+		.columns(['project_id', 'alias'])
+		.where(sql`kit_id IS NULL AND view_id IS NULL`)
+		.execute();
+
+	await dialect.schema
+		.createIndex('tokens_kit_alias_unique')
+		.ifNotExists()
+		.on('tokens')
+		.columns(['kit_id', 'alias'])
+		.where(sql`kit_id IS NOT NULL`)
+		.execute();
+
+	await dialect.schema
+		.createIndex('tokens_view_alias_unique')
+		.ifNotExists()
+		.on('tokens')
+		.columns(['view_id', 'alias'])
+		.where(sql`view_id IS NOT NULL`)
 		.execute();
 
 	await dialect.schema

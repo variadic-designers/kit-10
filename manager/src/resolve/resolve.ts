@@ -222,7 +222,7 @@ export async function resolveMany(
 		.innerJoin('kits', 'kits.id', 'compositions.kit_id')
 		.where('compositions.view_id', '=', viewId)
 		.orderBy('compositions.priority_index', 'asc')
-		.select(['compositions.kit_id', 'compositions.priority_index', 'kits.name as kit_name'])
+		.select(['compositions.kit_id', 'compositions.priority_index', 'kits.name as kit_name', 'kits.project_id'])
 		.execute();
 
 	const axisArgs = await db
@@ -239,9 +239,15 @@ export async function resolveMany(
 	}
 
 	const results: ResolvedKit[] = [];
+	const allKitIds = compositions.map((c) => c.kit_id);
+	const projectId = compositions[0]?.project_id;
+
+	const tokenMap = await gatherScopedTokens(db, projectId, allKitIds, viewId);
+
 	for (const comp of compositions) {
 		const kitArgs = argsByKit.get(comp.kit_id) ?? {};
 		const properties = await resolve(db, comp.kit_id, kitArgs);
+		substituteTokens(properties, tokenMap);
 		results.push({
 			kitId: comp.kit_id,
 			kitName: comp.kit_name,
@@ -250,6 +256,70 @@ export async function resolveMany(
 	}
 
 	return results;
+}
+
+async function gatherScopedTokens(
+	db: SchemaDialect,
+	projectId: string | undefined,
+	kitIds: string[],
+	viewId: string,
+): Promise<Map<string, string>> {
+	const aliasToValue = new Map<string, string>();
+
+	if (!projectId) return aliasToValue;
+
+	// Project tokens (lowest priority)
+	const projectTokens = await db
+		.selectFrom('tokens')
+		.where('tokens.project_id', '=', projectId)
+		.where('tokens.kit_id', 'is', null)
+		.where('tokens.view_id', 'is', null)
+		.where('tokens.alias', 'is not', null)
+		.select(['tokens.alias', 'tokens.value'])
+		.execute();
+
+	for (const t of projectTokens) {
+		if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+	}
+
+	// Kit tokens (override project)
+	for (const kitId of kitIds) {
+		const kitTokens = await db
+			.selectFrom('tokens')
+			.where('tokens.kit_id', '=', kitId)
+			.where('tokens.alias', 'is not', null)
+			.select(['tokens.alias', 'tokens.value'])
+			.execute();
+
+		for (const t of kitTokens) {
+			if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+		}
+	}
+
+	// View tokens (highest priority)
+	const viewTokens = await db
+		.selectFrom('tokens')
+		.where('tokens.view_id', '=', viewId)
+		.where('tokens.alias', 'is not', null)
+		.select(['tokens.alias', 'tokens.value'])
+		.execute();
+
+	for (const t of viewTokens) {
+		if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+	}
+
+	return aliasToValue;
+}
+
+function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMap: Map<string, string>): void {
+	for (const [prop, resolved] of properties) {
+		if (resolved.isToken && resolved.tokenAlias) {
+			const tokenValue = tokenMap.get(resolved.tokenAlias);
+			if (tokenValue !== undefined) {
+				resolved.value = tokenValue;
+			}
+		}
+	}
 }
 
 export function flattenKitResults(kits: ResolvedKit[]): Map<string, ResolvedProperty> {

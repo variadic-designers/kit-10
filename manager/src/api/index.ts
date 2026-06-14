@@ -7,11 +7,13 @@ export interface QueryOrdering {
 }
 
 export interface QueryToken {
-	createToken: (projectId: string, alias?: string, value?: string) => Promise<{ id: string; project_id: string; alias: string | null; value: string | null } | undefined>;
+	createToken: (projectId: string, alias?: string, value?: string, scope?: { kitId?: string; viewId?: string }) => Promise<{ id: string; project_id: string; alias: string | null; value: string | null; kit_id: string | null; view_id: string | null } | undefined>;
 	updateTokenValue: (tokenId: string, value: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
-	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null }>;
+	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null }>;
+	getTokensByKitId: (kitId: string | null) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null }>;
+	getTokensByViewId: (viewId: string | null) => SelectQueryBuilder<Schema, 'tokens', { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null }>;
 }
 
 export interface QueryKit {
@@ -198,8 +200,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db.deleteFrom('compositions').where('compositions.kit_id', '=', kitId).where('compositions.view_id', '=', viewId).execute();
 	},
 
-	createToken: async (projectId: string, alias?: string, value?: string) => {
-		return await db.insertInto('tokens').values({ project_id: projectId, alias: alias ?? null, value: value ?? null }).returningAll().executeTakeFirst();
+	createToken: async (projectId: string, alias?: string, value?: string, scope?: { kitId?: string; viewId?: string }) => {
+		return await db.insertInto('tokens').values({ project_id: projectId, alias: alias ?? null, value: value ?? null, kit_id: scope?.kitId ?? null, view_id: scope?.viewId ?? null }).returningAll().executeTakeFirst();
 	},
 
 	updateTokenValue: async (tokenId: string, value: string) => {
@@ -334,8 +336,22 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	getTokensByProjectId: (projectId: string) => {
-		return db.selectFrom('tokens').where('tokens.project_id', '=', projectId).orderBy('tokens.alias')
-			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue']);
+		return db.selectFrom('tokens').where('tokens.project_id', '=', projectId).where('tokens.kit_id', 'is', null).where('tokens.view_id', 'is', null).orderBy('tokens.alias')
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.kit_id as tokenKitId', 'tokens.view_id as tokenViewId']);
+	},
+
+	getTokensByKitId: (kitId: string | null) => {
+		if (!kitId) return db.selectFrom('tokens').where('tokens.id', '=', '00000000-0000-0000-0000-000000000000')
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.kit_id as tokenKitId', 'tokens.view_id as tokenViewId']);
+		return db.selectFrom('tokens').where('tokens.kit_id', '=', kitId).orderBy('tokens.alias')
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.kit_id as tokenKitId', 'tokens.view_id as tokenViewId']);
+	},
+
+	getTokensByViewId: (viewId: string | null) => {
+		if (!viewId) return db.selectFrom('tokens').where('tokens.id', '=', '00000000-0000-0000-0000-000000000000')
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.kit_id as tokenKitId', 'tokens.view_id as tokenViewId']);
+		return db.selectFrom('tokens').where('tokens.view_id', '=', viewId).orderBy('tokens.alias')
+			.select(['tokens.id as tokenId', 'tokens.alias as tokenAlias', 'tokens.value as tokenValue', 'tokens.kit_id as tokenKitId', 'tokens.view_id as tokenViewId']);
 	},
 
 	getAxesByProjectId: (projectId: string) => {

@@ -1,67 +1,5 @@
 <script lang="ts" module>
-	import { jsonArrayFrom } from 'manager';
-
-	function buildLibraryTree(flatData: any[]) {
-		const map = new Map();
-		const roots = [];
-
-		// Step 1: Initialize all nodes in the map and inject the childlibraries array
-		for (const item of flatData) {
-			map.set(item.id, { ...item, childlibraries: [] });
-		}
-
-		// Step 2: Link children to their parents
-		for (const item of flatData) {
-			const node = map.get(item.id);
-
-			if (item.parent_library_id === null) {
-				// It's a top-level library
-				roots.push(node);
-			} else {
-				// It's a child, push it into its parent's array
-				const parent = map.get(item.parent_library_id);
-				if (parent) {
-					parent.childlibraries.push(node);
-				}
-			}
-		}
-
-		return roots;
-	}
-
 	export type TokenValueKind = 'string' | 'number' | 'range' | TokenValueKind[];
-
-	export type ResolutionType = 'expression' | 'upstream';
-
-	export type SemVer = {
-		major: number;
-		minor?: number;
-		patch?: number;
-	};
-
-	export type Schema = {
-		meta: {
-			name: string;
-			description: string;
-			version: SemVer;
-		};
-		definitions: {
-			[ident: string]: TokenValueKind;
-		};
-	};
-
-	const axisSchema: Schema = {
-		meta: {
-			name: 'Axis',
-			description: 'The required shape for an Axis',
-			version: { major: 0 }
-		},
-		definitions: {
-			name: 'string',
-			id: 'string',
-			description: 'string'
-		}
-	};
 
 	export type TokenValueBare = {
 		kind: 'raw';
@@ -98,452 +36,294 @@
 
 	export const tokenIcon = (type?: string): string => ICONS[type ?? ''] || 'fa-question';
 
+	export type TokenPanelProps = {
+		tokens: Token[];
+		tokenLibraries: { [namespace: string]: TokenLibraryNode };
+	};
+
 	export type TokenLibraryNode = {
 		displayName?: string;
 		description?: string;
 		name: string;
 		tokens?: Token[];
-		schema?: Schema;
 		children?: { [namespace: string]: TokenLibraryNode };
-	};
-
-	export type TokenLibrary = { [namespace: string]: TokenLibraryNode };
-
-	export type TokenResolutionResult =
-		| {
-				kind: 'success';
-				result: Token;
-		  }
-		| {
-				kind: 'failed';
-		  };
-
-	export type TokenResolution = {
-		evaluation?: string;
-		trace: (Token | 'failed resolution')[];
-	};
-
-	import type { ComponentFlat, ComponentView } from '../Component.svelte';
-
-	export type TokenPanelProps = {
-		tokens: Token[];
-		tokenLibraries: TokenLibrary;
 	};
 </script>
 
 <script lang="ts">
-	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
+	import { type Api, type EditorState } from 'manager';
+	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 
-	function findTokenByPath(library: TokenLibrary, path: string): Token | undefined {
-		const segments = path.split('/');
-		let current: TokenLibraryNode | undefined = library[segments[0]];
+	type TokenRow = { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null };
 
-		if (!current) return undefined;
+	type TokensPanelProps = {
+		api: Api;
+		editorReady: EditorState;
+		editorActivity: EditorActivity;
+	};
 
-		// walk down children except last segment
-		for (let i = 1; i < segments.length - 1; i++) {
-			const seg = segments[i];
-			current = current.children?.[seg];
-			if (!current) return undefined;
-		}
+	let {
+		api,
+		editorReady,
+		editorActivity = $bindable()
+	}: TokensPanelProps = $props();
 
-		// final segment: look inside tokens[]
-		const final = segments[segments.length - 1];
-		const tokens = current.tokens;
-
-		if (!tokens) return undefined;
-
-		return tokens.find((t) => t.name === final);
-	}
-
-	function trace(token: Token, tokenLibraries: TokenLibrary): (Token | 'failed resolution')[] {
-		const chain: (Token | 'failed resolution')[] = [token];
-
-		if (token.value.kind === 'raw') {
-			return chain;
-		} else if (token.value.kind === 'simple') {
-			const ref = token.value.resolve;
-			const next = findTokenByPath(tokenLibraries, ref);
-
-			if (!next) {
-				chain.push('failed resolution');
-				return chain;
-			}
-
-			return [...chain, ...trace(next, tokenLibraries)];
-		}
-
-		return [...chain, 'failed resolution'];
-	}
-
-	function resolveValue(token: Token, tokenLibraries: TokenLibrary): TokenResolution {
-		const tr = trace(token, tokenLibraries);
-		const last = tr[tr.length - 1];
-
-		const evaluation =
-			last === 'failed resolution'
-				? undefined
-				: typeof last.value === 'string'
-					? last.value
-					: undefined; // should not happen if definitions are correct
-
-		let result: TokenResolution = { trace: tr };
-
-		if (last !== 'failed resolution') {
-			if (last.value.kind === 'bare') {
-				result = { ...result, evaluation: last.value.raw };
-			}
-		}
-
-		return result;
-	}
-
-	import { type EditorState } from 'manager';
-	import { query } from '../Editor.svelte';
-
-	let libraries: any = $state();
-	// const libraries_: any = $derived(buildLibraryTree(libraries.rows));
-
-	/*
-	$effect(() => {
-		let unsubscribe: (() => void) | undefined;
-
-		const baseSelect = editorReady.dialect
-			.selectFrom('token_libraries')
-			.innerJoin('projects', 'projects.id', 'token_libraries.project_id')
-			.select(['token_libraries.id', 'token_libraries.name', 'token_libraries.project_id']);
-		// .where('projects.selected', '=', 'primary');
-
-		// 2. The Recursive execution
-		const flatLibraries = editorReady.dialect
-			.withRecursive('library_tree', (db) =>
-				// Inject your variable directly here as the starting point
-				baseSelect.unionAll(
-					db
-						.selectFrom('token_libraries')
-						.innerJoin('library_tree', 'library_tree.id', 'tokens.project_id')
-						.select(['token_libraries.id', 'token_libraries.name', 'token_libraries.project_id'])
-				)
-			)
-			// 3. Grab the flattened tree and bundle the tokens
-			.selectFrom('library_tree')
-			.select((eb) => [
-				'library_tree.id',
-				'library_tree.name',
-				'library_tree.project_id',
-				jsonArrayFrom(
-					eb.selectFrom('tokens').selectAll().whereRef('library_id', '=', 'library_tree.id')
-				).as('tokens')
-			]);
-
-		query(editorReady, baseSelect, (rows) => {
-			// libraries = buildLibraryTree(rows);
-			libraries = rows;
-		}).then((lq) => {
-			unsubscribe = lq.unsubscribe;
-		});
-
-		return () => {
-			unsubscribe?.();
-		};
+	const projectTokensQuery = liveQuery((api, activity) => {
+		return api.getTokensByProjectId(activity.activeProjectId);
 	});
-  */
 
-	const {
-		tokens = $bindable(),
-		tokenLibraries = $bindable(),
-		editorReady
-	}: TokenPanelProps & { editorReady: EditorState } = $props();
+	const kitTokensQuery = liveQuery((api, activity) => {
+		return api.getTokensByKitId(activity.activeKitId);
+	});
 
-	let tokenPanelContextMenu: ContextMenuContent = () => [
+	const viewTokensQuery = liveQuery((api, activity) => {
+		return api.getTokensByViewId(activity.activeViewId);
+	});
+
+	let newTokenAlias = $state('');
+	let newTokenValue = $state('');
+	let addingScope = $state<'project' | 'kit' | 'view' | null>(null);
+	let editingAlias = $state<Record<string, boolean>>({});
+	let editingValue = $state<Record<string, boolean>>({});
+
+	async function addToken(scope: 'project' | 'kit' | 'view') {
+		if (!newTokenAlias || !newTokenValue) return;
+		const projectId = editorActivity.activeProjectId;
+		if (!projectId) return;
+
+		const scopeObj = scope === 'kit' && editorActivity.activeKitId
+			? { kitId: editorActivity.activeKitId }
+			: scope === 'view' && editorActivity.activeViewId
+				? { viewId: editorActivity.activeViewId }
+				: undefined;
+
+		await api.createToken(projectId, newTokenAlias, newTokenValue, scopeObj);
+		newTokenAlias = '';
+		newTokenValue = '';
+		addingScope = null;
+	}
+
+	async function deleteToken(tokenId: string) {
+		await api.deleteToken(tokenId);
+	}
+
+	async function renameToken(tokenId: string, alias: string) {
+		await api.updateTokenAlias(tokenId, alias);
+	}
+
+	const tokenPanelContextMenu: ContextMenuContent = () => [
 		{
 			name: 'add',
-			displayText: 'Import',
-			icon: 'fa-solid fa-download',
-			onClick: () => console.log('Add')
+			displayText: 'Add View Token',
+			icon: 'fa-regular fa-window-maximize',
+			onClick: () => { addingScope = 'view'; }
+		},
+		{
+			name: 'add',
+			displayText: 'Add Kit Token',
+			icon: 'fa-solid fa-puzzle-piece',
+			onClick: () => { addingScope = 'kit'; }
 		},
 		'hr',
 		{
 			name: 'add',
-			displayText: 'Text',
-			icon: 'fa-solid fa-italic',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Number',
-			icon: 'fa-solid fa-list-ol',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Colour',
-			icon: 'fa-solid fa-palette',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'Content Flow',
-			icon: 'fa-solid fa-table-cells-large',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		// Static editor evaluation
-		{
-			name: 'add',
-			displayText: 'Derivation',
-			icon: 'fa-solid fa-calculator',
-			onClick: () => console.log('Add')
-		},
-		// Dynamic evaluation
-		{
-			name: 'add',
-			displayText: 'Library',
-			icon: 'fa-solid fa-book',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Schema',
-			icon: 'fa-solid fa-microchip',
-			onClick: () => console.log('Add')
+			displayText: 'Add Project Token',
+			icon: 'fa-solid fa-diagram-project',
+			onClick: () => { addingScope = 'project'; }
 		}
 	];
 
-	let tokenContextMenu: ContextMenuContent = () => {
-		return [
-			{
-				name: 'add',
-				displayText: 'Rename',
-				icon: 'fa-solid fa-italic',
-				onClick: () => console.log('Add')
-			},
+	function tokenIcon(value: string | null): string {
+		if (!value) return 'fa-question';
+		if (value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl')) return 'fa-square-full';
+		if (/^\d/.test(value) && (value.includes('px') || value.includes('rem') || value.includes('em') || value.includes('%'))) return 'fa-arrows-left-right-to-line';
+		return 'fa-circle';
+	}
 
+	function isColorValue(value: string | null): boolean {
+		if (!value) return false;
+		return value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl');
+	}
+
+	function tokenContextMenu(tokenId: string): ContextMenuContent {
+		return () => [
 			{
-				name: 'add',
-				displayText: 'To New',
-				icon: 'fa-solid fa-arrow-up-right-from-square',
-				onClick: () => console.log('Add')
+				name: 'rename',
+				displayText: 'Rename',
+				icon: 'fa-solid fa-i-cursor',
+				onClick: () => { editingAlias[tokenId] = true; }
 			},
 			{
-				name: 'add',
-				displayText: 'Pin',
-				icon: 'fa-solid fa-thumbtack',
-				onClick: () => console.log('Add')
-			},
-			'hr',
-			{
-				name: 'trash',
-				displayText: 'Copy',
-				icon: 'fa-solid fa-copy',
-				onClick: () => console.log('Remove')
-			},
-			{
-				name: 'trash',
-				displayText: 'Paste',
-				disabled: true,
-				icon: 'fa-solid fa-clipboard',
-				onClick: () => console.log('Remove')
+				name: 'editValue',
+				displayText: 'Edit Value',
+				icon: 'fa-solid fa-pencil',
+				onClick: () => { editingValue[tokenId] = true; }
 			},
 			'hr',
 			{
-				name: 'trash',
+				name: 'delete',
 				displayText: 'Delete',
-				tone: 'destructive',
 				icon: 'fa-solid fa-trash-can',
-				onClick: () => console.log('Remove')
+				tone: 'destructive' as const,
+				onClick: () => deleteToken(tokenId)
 			}
 		];
-	};
-
-	import { drag } from '../dragDrop.ts';
-	const tokenDrag = drag<Token>();
-
-	let new_library = $state('');
-	let new_token_name = $state('');
-	let new_token_value = $state('');
-
-	const newLibrary = (e: SubmitEvent, id: string) => {
-		e.preventDefault();
-
-		/*
-		editorReady.dialect
-			.selectFrom('projects')
-			.select(['id'])
-			// .where('projects.selected', '=', 'primary')
-			.executeTakeFirst()
-			.then((p) => {
-				if (p) {
-					editorReady.dialect
-						.insertInto('token_libraries')
-						.values({
-							project_id: p.id,
-							name: new_library ?? 'Unnamed'
-						})
-						.execute();
-
-					new_library = '';
-				}
-			});
-      */
-	};
-
-	const newToken = (e: SubmitEvent, id: string) => {
-		e.preventDefault();
-
-		editorReady.dialect
-			.insertInto('tokens')
-			.values({
-				library_id: id,
-				name: new_token_name ?? 'Unnamed',
-				value: new_token_value
-			})
-			.execute();
-
-		new_token_name = '';
-		new_token_value = '';
-	};
+	}
 </script>
-
-{#snippet tokenEnumeration(tokens: Token[])}
-	{#each tokens as token}
-		<li class="tokens-used__item">
-			{#each resolveValue(token, tokenLibraries).trace as t, i}
-				<button class:token--top={i === 0} class:token--pathing={i !== 0} class="token">
-					{#if i === 0}
-						<i class="fa-solid fa-arrows-left-right-to-line"></i>
-					{/if}
-
-					<span>
-						{#if t}
-							t.displayName ?? t.name ?? 'Unnamed'
-						{:else}
-							'Not Found'
-						{/if}
-					</span>
-				</button>
-				<i class="fa-solid fa-angle-left"></i>
-			{/each}
-			<button class="token token--resolved"
-				>{resolveValue(token, tokenLibraries).evaluation ?? '??'}</button
-			>
-		</li>
-	{/each}
-{/snippet}
 
 <Panel
 	contextMenuContent={tokenPanelContextMenu}
 	name="Tokens"
-	tooltip="Design tokens in use and Libraries"
+	tooltip="Design tokens: Project, Kit, and View scoped"
 >
 	{#snippet content()}
-		<pre>{JSON.stringify(libraries, null, 2)}</pre>
+		{#snippet tokenRow(token: TokenRow, scopeClass: string)}
+			<li class="token-item">
+				<button
+					class="token {scopeClass}"
+					style="--color-icon: {token.tokenValue ?? 'transparent'}"
+					use:contextMenu={tokenContextMenu(token.tokenId)}
+				>
+					<i class="fa-solid {tokenIcon(token.tokenValue)}" class:token__icon--color={isColorValue(token.tokenValue)}></i>
+					<span class="token__name">
+						<Renameable
+							editing={editingAlias[token.tokenId] === true}
+							value={token.tokenAlias ?? 'Unnamed'}
+							onCommit={(name) => { renameToken(token.tokenId, name); editingAlias[token.tokenId] = false; }}
+						>
+							{token.tokenAlias ?? 'Unnamed'}
+						</Renameable>
+					</span>
+					{#if editingValue[token.tokenId] === true}
+						<input
+							class="token__value-input"
+							type="text"
+							value={token.tokenValue ?? ''}
+							onblur={() => { editingValue[token.tokenId] = false; }}
+							onkeydown={(e) => { if (e.key === 'Enter') { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); editingValue[token.tokenId] = false; } }}
+							oninput={(e) => { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); }}
+						/>
+					{:else}
+						<span class="token__value" onclick={() => { editingValue[token.tokenId] = true; }}>{token.tokenValue ?? '—'}</span>
+					{/if}
+				</button>
+			</li>
+		{/snippet}
 
-		{#if libraries}
-			<form onsubmit={(e) => newLibrary(e, libraries[0].id)}>
-				<label>
-					<input type="text" bind:value={new_library} />
-				</label>
-				<button type="submit" disabled={!new_library}>New Library</button>
-			</form>
+		<!-- View Tokens (only when a view is selected) -->
+		{#if editorActivity.activeViewId}
+			{@const viewRows = viewTokensQuery.rows as TokenRow[]}
 
-			<form onsubmit={(e) => newToken(e, libraries[0].id)}>
-				<label>
-					<input type="text" bind:value={new_token_name} />
-				</label>
-				<label>
-					<input type="text" bind:value={new_token_value} />
-				</label>
-				<button type="submit" disabled={!new_token_value || !new_token_name}>New Token</button>
-			</form>
+			<details class="token-scope" open>
+				<summary class="token-scope__header">
+					<span class="token-scope__label">
+						<i class="fa-regular fa-window-maximize"></i>
+						View
+					</span>
+					<i class="fa-solid fa-angle-down"></i>
+				</summary>
+				<div class="token-scope__tokens">
+					{#if viewRows && viewRows.length > 0}
+						<ul class="tokens-list">
+							{#each viewRows as token (token.tokenId)}
+								{@render tokenRow(token, 'token--view')}
+							{/each}
+						</ul>
+					{:else}
+						<span class="token-scope__empty">No view tokens</span>
+					{/if}
+				</div>
+			</details>
 		{/if}
 
-		<div class="token-section">
-			<ul class="tokens-library">
-				{#snippet renderLibrary(lib: TokenLibrary, level: number)}
-					{#each Object.entries(lib) as [namespace, node]}
-						<details class="token token-namespace" open>
-							<summary
-								class="token-namespace__header"
-								style="--level: {level};"
-								title={node.description}
-								use:contextMenu={tokenContextMenu}
-							>
-								<span>
-									<i class="fa-solid fa-book"></i>
+		<!-- Kit Tokens (only when a kit is selected) -->
+		{#if editorActivity.activeKitId}
+			{@const kitRows = kitTokensQuery.rows as TokenRow[]}
 
-									<span>
-										{node.displayName}
-									</span>
-								</span>
+			<details class="token-scope" open>
+				<summary class="token-scope__header">
+					<span class="token-scope__label">
+						<i class="fa-solid fa-puzzle-piece"></i>
+						Kit
+					</span>
+					<i class="fa-solid fa-angle-down"></i>
+				</summary>
+				<div class="token-scope__tokens">
+					{#if kitRows && kitRows.length > 0}
+						<ul class="tokens-list">
+							{#each kitRows as token (token.tokenId)}
+								{@render tokenRow(token, 'token--kit')}
+							{/each}
+						</ul>
+					{:else}
+						<span class="token-scope__empty">No kit tokens</span>
+					{/if}
+				</div>
+			</details>
+		{/if}
 
-								<i class="fa-solid fa-angle-down"></i>
-							</summary>
+		<!-- Project Tokens -->
+		{@const projectRows = projectTokensQuery.rows as TokenRow[]}
 
-							<div class="token--module">
-								<!-- Render tokens inside this namespace -->
-								{#if node.tokens}
-									{#each node.tokens as t, i}
-										{@const icon = t.type === 'color' ? 'square-full' : 'arrows-left-right-to-line'}
+		<details class="token-scope" open>
+			<summary class="token-scope__header">
+				<span class="token-scope__label">
+					<i class="fa-solid fa-diagram-project"></i>
+					Project
+				</span>
+				<i class="fa-solid fa-angle-down"></i>
+			</summary>
+			<div class="token-scope__tokens">
+				{#if projectRows && projectRows.length > 0}
+					<ul class="tokens-list">
+						{#each projectRows as token (token.tokenId)}
+							{@render tokenRow(token, 'token--project')}
+						{/each}
+					</ul>
+				{:else}
+					<span class="token-scope__empty">No project tokens</span>
+				{/if}
+			</div>
+		</details>
 
-										<button
-											class="token token--resolved token-leaf"
-											style="--level: {level + 1}; --color-icon: {t.value}"
-											title={JSON.stringify(t.value, null, 2)}
-											use:contextMenu={tokenContextMenu}
-											id={`token-{i}`}
-											use:tokenDrag={{ className: 'token--dragged', payload: t }}
-										>
-											<!-- <i class="fa-solid fa-palette"></i> -->
-			<span class="token__name">
-				<i class="fa-solid fa-{icon}"></i>
-				<Renameable
-					value={t.displayName ?? t.name ?? 'Unnamed'}
-					onCommit={(name) => {
-						// TODO M4.3: wire to api.updateTokenAlias(tokenId, name)
-						console.log(`Rename token to: ${name}`);
-					}}
-				>
-					{t.displayName ?? t.name ?? 'Unnamed'}
-				</Renameable>
-			</span>
-										</button>
-									{/each}
-								{/if}
-
-								<!-- Render nested children -->
-								{#if node.children}
-									{@render renderLibrary(node.children, level + 1)}
-								{/if}
-							</div>
-						</details>
-					{/each}
-				{/snippet}
-
-				{@render renderLibrary(tokenLibraries, 0)}
-			</ul>
-		</div>
+		<!-- Add token form -->
+		{#if addingScope}
+			<form class="token-add" onsubmit={(e) => { e.preventDefault(); addToken(addingScope!); }}>
+				<select bind:value={addingScope} class="token-add__scope">
+					{#if editorActivity.activeViewId}
+						<option value="view">View</option>
+					{/if}
+					{#if editorActivity.activeKitId}
+						<option value="kit">Kit</option>
+					{/if}
+					<option value="project">Project</option>
+				</select>
+				<input type="text" bind:value={newTokenAlias} placeholder="alias" class="token-add__input" />
+				<input type="text" bind:value={newTokenValue} placeholder="value" class="token-add__input" />
+				<button type="submit" disabled={!newTokenAlias || !newTokenValue} class="token-add__btn">Add</button>
+				<button type="button" onclick={() => { addingScope = null; newTokenAlias = ''; newTokenValue = ''; }} class="token-add__btn token-add__btn--cancel">✕</button>
+			</form>
+		{/if}
 	{/snippet}
 </Panel>
 
 <style lang="scss" global>
 	@use '_index' as *;
 
-	.token-namespace {
+	.token-scope {
 		@include layout-flex-column();
 
 		summary {
 			all: unset;
 			list-style: none;
 			display: flex;
-
 			padding-block: calc($x-space-xs / 4);
 			padding-inline: $x-space-sm $x-space-sm;
 			align-items: center;
+			cursor: pointer;
 
 			span {
 				flex-grow: 1;
@@ -569,66 +349,159 @@
 		width: 100%;
 	}
 
-	.token--module {
-		@include layout-flex-column();
-		overflow-y: auto;
-		max-height: 16vh;
-		scrollbar-width: thin;
-		padding: $x-space-xs 0 0 $x-space-sm;
-	}
-
-	.tokens-library {
-		@include layout-flex-column();
-		gap: 2px;
-	}
-
-	.token {
-		// all: unset;
-		color: var(--color-text);
-		user-select: none;
-		border: unset;
-
-		&__name {
-			border: 2px solid transparent;
-			padding-inline: $x-space-xs;
-		}
-
-		&:nth-of-type(even) {
-			background: var(--color-pure);
-			background:
-				radial-gradient(closest-side, var(--color-surface) 90%, transparent 100%) 0 0 / 3px 3px,
-				var(--color-surface-alt);
-		}
-
-		&:nth-of-type(odd) {
-			background: var(--color-surface);
-		}
-
-		.token.token--dragged {
-			.token__name {
-				color: var(--color-primary);
-			}
-			max-width: max-content;
-		}
-
-		padding-block: calc($x-space-xs * 0.5);
-		text-align: left;
-
-		@include fonts-stack('Satoshi-Light', sans);
+	.token-scope__header {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;
+		color: var(--color-text);
+	}
+
+	.token-scope__label {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+	}
+
+	.token-scope__tokens {
+		padding-left: $x-space-sm;
+		overflow-y: auto;
+		max-height: 16vh;
+		scrollbar-width: thin;
+	}
+
+	.token-scope__empty {
+		padding-left: $x-space-sm;
+		font-size: $x-font-size-xs;
+		color: var(--color-text-muted);
+		font-style: italic;
+	}
+
+	.tokens-list {
+		@include layout-flex-column();
+		gap: 2px;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.token-item {
+		display: flex;
+	}
+
+	.token {
+		color: var(--color-text);
+		user-select: none;
+		border: unset;
+		background: var(--color-surface);
+		padding-block: calc($x-space-xs * 0.5);
+		padding-inline: $x-space-xs;
+		text-align: left;
+		font-family: 'Satoshi-Light', sans-serif;
+		font-weight: 600;
+		font-size: $x-font-size-sm;
+		letter-spacing: 1px;
+		width: 100%;
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		cursor: pointer;
+
+		&:nth-of-type(even) {
+			background: var(--color-surface-alt);
+		}
 
 		&:hover {
-			// border-left-color: var(--color-primary);
-			// color: var(--color-icon, var(--color-primary));
 			color: var(--color-primary);
 		}
 
-		i.fa-square-full,
-		i.fa-cube {
-			-webkit-text-stroke: 1px black;
-			color: var(--color-icon, var(--color-text));
+		&--project {
+		}
+
+		&--kit {
+		}
+
+		&--view {
+		}
+	}
+
+	.token__icon--color {
+		-webkit-text-stroke: 1px black;
+		color: var(--color-icon, var(--color-text));
+	}
+
+	.token__name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.token__value {
+		font-size: $x-font-size-xs;
+		color: var(--color-text-muted);
+		font-family: monospace;
+		cursor: pointer;
+
+		&:hover {
+			color: var(--color-primary);
+		}
+	}
+
+	.token__value-input {
+		font-size: $x-font-size-xs;
+		font-family: monospace;
+		background: var(--color-surface-alt);
+		color: var(--color-text);
+		border: 1px solid var(--color-primary);
+		border-radius: 2px;
+		padding: 1px 4px;
+		width: 10ch;
+		min-width: 0;
+		outline: none;
+	}
+
+	.token-add {
+		display: flex;
+		gap: calc($x-space-xs / 2);
+		padding: $x-space-xs;
+		align-items: center;
+
+		&__scope {
+			font-size: $x-font-size-xs;
+			padding: 2px 4px;
+		}
+
+		&__input {
+			font-size: $x-font-size-xs;
+			padding: 2px 4px;
+			width: 6ch;
+			min-width: 0;
+
+			&:nth-of-type(2) {
+				width: 10ch;
+			}
+		}
+
+		&__btn {
+			font-size: $x-font-size-xs;
+			padding: 2px 6px;
+			border: 1px solid var(--color-text-muted);
+			background: var(--color-pure);
+			color: var(--color-text);
+			cursor: pointer;
+
+			&:disabled {
+				opacity: 0.4;
+				cursor: not-allowed;
+			}
+
+			&--cancel {
+				border-color: transparent;
+			}
 		}
 	}
 </style>

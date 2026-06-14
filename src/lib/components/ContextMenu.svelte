@@ -8,8 +8,11 @@
 	}
 
 	function handleAction(item: MenuItem) {
-		item.onClick?.($contextMenuState.target);
+		const result = item.onClick?.($contextMenuState.target);
 		closeContextMenu();
+		if (result && typeof result === 'object' && 'link' in result) {
+			window.open(result.link, result.tab ?? '_blank');
+		}
 	}
 
 	function handleMenuKeydown(e: KeyboardEvent) {

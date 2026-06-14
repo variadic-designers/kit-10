@@ -1,7 +1,4 @@
-import type { ComponentFlat, ComponentView } from './editor/Component.svelte';
-import type { Token, TokenLibrary } from './editor/Variables.svelte';
-import { SvelteMap } from 'svelte/reactivity';
-import type { AxesSet } from './cascadeAxesMap.ts';
+type AxesSet = Partial<Record<string, string | string[]>>;
 
 export type Kit10ProjectRuntime = {
 	viewPortFocus?: { x: number; y: number };
@@ -14,24 +11,6 @@ export type Kit10ProjectMeta = {
 	author: string;
 	license: string;
 };
-
-export type Kit10ProjectTokens = {
-	tokens: Token[];
-	tokenLibraries: TokenLibrary;
-};
-
-export type Kit10ProjectCore = {
-	kitsPool: Record<string, ComponentFlat>; // UUID -> component
-	viewsPool: Record<string, ComponentView>; // UUID -> view
-
-	kits: string[];
-	views: string[]; // maintains order of views
-};
-
-export interface Kit10Project extends Kit10ProjectMeta, Kit10ProjectTokens, Kit10ProjectCore {}
-export interface Kit10ProjectEditor extends Kit10Project, Kit10ProjectRuntime {}
-
-export interface Kit10Exporter {}
 
 export type SemVer = string;
 export type ISODateString = string;

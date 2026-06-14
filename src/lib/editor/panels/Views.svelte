@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { ComponentFlat, ComponentView, ComponentViewRoot } from '../Component.svelte';
 	import type { EditorSelection } from '../Editor.svelte';
 	import Panel from '../Panel.svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
@@ -8,8 +7,6 @@
 
 	type ViewsPanel = {
 		selection: EditorSelection;
-		views: string[];
-		viewsPool: Record<string, ComponentView>;
 	} & {
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
@@ -18,8 +15,6 @@
 
 	let {
 		selection = $bindable(),
-		views = $bindable(),
-		viewsPool = $bindable(),
 
 		// new API
 		api,
@@ -180,8 +175,7 @@
 				{@const lockFontAwesomeChar = view['lock'] ? 'lock' : 'lock-open'}
         -->
 
-	{@const viewIcon =
-		v.primitive?.kind === 'text' ? 'fa-solid fa-italic' : 'fa-regular fa-window-maximize'}
+	{@const viewIcon = v.viewLocked ? 'fa-solid fa-lock' : 'fa-regular fa-window-maximize'}
 
 	<li class="view-field">
 		<button
@@ -207,21 +201,6 @@
 			</div>
 		</button>
 	</li>
-
-	{#if v.primitive?.kind === 'container'}
-		{#each v.primitive.children as child}
-			{#if viewsPool[child]}
-				{@render kitter(viewsPool[child], level + 1, child)}
-			{:else}
-				<li class="view-field">
-					<button class="view" title="Unable to resolve #{child}">
-						<i class="view__icon fa-solid fa-question"></i>
-						<div class="view__name" contenteditable="false"></div>
-					</button>
-				</li>
-			{/if}
-		{/each}
-	{/if}
 {/snippet}
 
 <style lang="scss">

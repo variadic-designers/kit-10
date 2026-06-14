@@ -540,4 +540,77 @@ describe('range overlap matching', () => {
 		});
 		expect(result.get('columns')!.value).toBe('1');
 	});
+
+	describe('scoped tokens', () => {
+		it('project token provides value when no kit or view token exists', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Token Scope'))!;
+
+			const tokenAccent = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'color', null, tokenAccent.id);
+
+			const results = await resolveMany(ctx.db, view.id);
+			const flat = flattenKitResults(results);
+			expect(flat.get('color')!.value).toBe('#3b82f6');
+			expect(flat.get('color')!.isToken).toBe(true);
+			expect(flat.get('color')!.tokenAlias).toBe('accent');
+		});
+
+		it('kit token overrides project token with same alias', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Kit Override'))!;
+
+			const projToken = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: undefined }))!;
+
+			// Update: we need to scope it to a specific kit
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			// Delete the wrongly-scoped token and recreate it
+			await ctx.api.deleteToken(kitToken.id);
+			const kitScopedToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: kit.id }))!;
+
+			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'color', null, kitScopedToken.id);
+
+			const results = await resolveMany(ctx.db, view.id);
+			const flat = flattenKitResults(results);
+			// Kit token #ef4444 should override project token #3b82f6
+			expect(flat.get('color')!.value).toBe('#ef4444');
+		});
+
+		it('view token overrides both project and kit tokens with same alias', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'View Override'))!;
+
+			const projToken = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: kit.id }))!;
+
+			const view = (await ctx.api.createViewInProject(proj.id, 'Override View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			const viewToken = (await ctx.api.createToken(proj.id, 'accent', '#10b981', { viewId: view.id }))!;
+
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'color', null, viewToken.id);
+
+			const results = await resolveMany(ctx.db, view.id);
+			const flat = flattenKitResults(results);
+			// View token #10b981 should win over both project #3b82f6 and kit #ef4444
+			expect(flat.get('color')!.value).toBe('#10b981');
+		});
+	});
 });

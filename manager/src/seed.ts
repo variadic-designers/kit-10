@@ -12,7 +12,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const tokenSurface = (await api.createToken(proj.id, 'colors.surface', '#f5f5f5'))!;
 	const tokenText = (await api.createToken(proj.id, 'colors.text', '#1a1a1a'))!;
 
-	// Theme axis (categorical)
+	// Button kit - theme axis (categorical)
 	const themeAxis = (await api.createAxis(proj.id, 'Theme', 'Light or dark mode', 'categorical'))!;
 	const themeLight = (await api.createAxisValue(themeAxis.id, { type: 'literal', value: 'light' }))!;
 	const themeDark = (await api.createAxisValue(themeAxis.id, { type: 'literal', value: 'dark' }))!;
@@ -36,13 +36,16 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.reorderAxesInKit(buttonKit.id, densityAxis.id, 2000);
 	await api.reorderAxesInKit(buttonKit.id, vpAxis.id, 3000);
 
+	// Kit-scoped token for Button
+	const tokenBtnRadius = (await api.createToken(proj.id, 'border-radius', '8px', { kitId: buttonKit.id }))!;
+
 	// Button null layer (baseline)
 	const btnNull = (await api.createLayer(buttonKit.id))!;
 	const btnNullSnip = (await api.createRenderSnippet(btnNull.id))!;
 	await api.createRenderEntry(btnNullSnip.id, 'background', null, tokenBg.id);
 	await api.createRenderEntry(btnNullSnip.id, 'color', null, tokenText.id);
 	await api.createRenderEntry(btnNullSnip.id, 'padding', '16px');
-	await api.createRenderEntry(btnNullSnip.id, 'border-radius', '8px');
+	await api.createRenderEntry(btnNullSnip.id, 'border-radius', null, tokenBtnRadius.id);
 
 	// {theme: dark}
 	const btnDark = (await api.createLayer(buttonKit.id))!;
@@ -99,6 +102,9 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.setAxisArg(darkCompactView.id, buttonKit.id, themeAxis.id, { type: 'literal', value: 'dark' });
 	await api.setAxisArg(darkCompactView.id, buttonKit.id, densityAxis.id, { type: 'literal', value: 'compact' });
 	await api.setAxisArg(darkCompactView.id, layoutKit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+
+	// View-scoped token: Dark Compact overrides colors.primary to indigo
+	await api.createToken(proj.id, 'colors.primary', '#6366f1', { viewId: darkCompactView.id });
 
 	// View: Light Comfortable
 	await api.createViewInProject(proj.id, 'Light Comfortable');

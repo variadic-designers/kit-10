@@ -166,6 +166,8 @@ export interface TokensTable {
 	project_id: string;
 	alias: string | null;
 	value: string | null;
+	kit_id: string | null;
+	view_id: string | null;
 }
 
 // Current version of db

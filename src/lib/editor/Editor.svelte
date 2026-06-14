@@ -4,8 +4,6 @@
 		selectedViewSecondary: string[];
 
 		selectedKitIndex: number | null;
-
-		selectedViewCascadeResult: MultiCascadeResult | null;
 	}
 
 	export interface EditorActivity {
@@ -47,13 +45,11 @@
 	export function liveQuery<T>(
 		query: (api: Api, activity: EditorActivity) => EditorQueryBuilder<T>
 	) {
-		// Internal reactive state
 		let rows = $state<T[]>([]);
 		let isFetching = $state(true);
 		let error = $state<Error | null>(null);
 
 		$effect(() => {
-			// Track the query and params defensively
 			let unsubscribe: (() => Promise<void>) | null = null;
 			const editor = editorLoading;
 			const activity = editorActivity;
@@ -69,7 +65,6 @@
 					const { sql, parameters } = query(queryBuilder(editor.dialect), activity).compile();
 
 					const live = await editor.core.live.query<T>(sql, parameters as unknown[], (res) => {
-						// Update state whenever the DB changes
 						rows = res.rows;
 						isFetching = false;
 					});
@@ -82,7 +77,6 @@
 
 			initLiveQuery();
 
-			// Cleanup function runs when the component unmounts OR when dependencies (sql/params) change
 			return () => {
 				if (unsubscribe) {
 					unsubscribe();
@@ -90,7 +84,6 @@
 			};
 		});
 
-		// Expose as read-only getters so consumers can't accidentally mutate the state
 		return {
 			get rows() {
 				return rows;
@@ -106,46 +99,17 @@
 </script>
 
 <script lang="ts">
-	import { writable } from 'svelte/store';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
-	import type { Kit10ProjectEditor, Kit10Project } from '$lib/types.js';
 
-	const project: Kit10ProjectEditor = $props();
-
-	// svelte-ignore state_referenced_locally
-	let {
-		title,
-		description,
-		kits,
-		kitsPool,
-		views,
-		viewsPool,
-		tokens,
-		tokenLibraries,
-		selectedLayer,
-		viewPortFocus
-	}: Kit10ProjectEditor = $state({ ...project });
-
-	let offsetX = writable(viewPortFocus?.x ?? 0);
-	let offsetY = writable(viewPortFocus?.y ?? 0);
-
-	$effect(() => {
-		const viewport = document.getElementById('canvas');
-
-		if (viewport && !viewPortFocus) {
-			offsetX.set(viewport.clientWidth / 2);
-			offsetY.set(viewport.clientHeight / 2);
-		}
-	});
+	let offsetX = $state(0);
+	let offsetY = $state(0);
 
 	let selection: EditorSelection = $state({
 		selectedViewPrimary: null,
 		selectedViewSecondary: [],
-		selectedKitIndex: null,
-		selectedViewCascadeResult: null
+		selectedKitIndex: null
 	});
 
-	// Cascaded result — resolved from manager DB when view+kit are active
 	let resolvedKits: ResolvedKit[] | null = $state(null);
 
 	let resolveVersion = $state(0);
@@ -169,8 +133,6 @@
 		}
 	});
 
-	import Viewport from './Viewport.svelte';
-
 	const navContextMenu: ContextMenuContentGenerator = () => {
 		return [
 			{
@@ -191,11 +153,10 @@
 	import AxesPanel from './panels/Axes.svelte';
 	import ProjectPanel from './panels/Project.svelte';
 	import ComposePanel from './panels/Compose.svelte';
-  import PluginsPanel from './panels/Plugins.svelte';
+	import PluginsPanel from './panels/Plugins.svelte';
 
 	import Nav from './Nav.svelte';
 	import { resolveMany as resolveManyManager, type ResolvedKit } from 'manager';
-	import type { MultiCascadeResult } from '$lib/cascadeAxesMap.js';
 	import { onMount } from 'svelte';
 
 	import type { EditorState, EditorQueryBuilder, EditorCore, Api, EditorDialect } from 'manager';
@@ -265,9 +226,9 @@
 
 		<ProjectPanel {api} {editorReady} bind:editorActivity />
 
-		<ViewsPanel {api} {editorReady} bind:editorActivity {views} {viewsPool} bind:selection />
+		<ViewsPanel {api} {editorReady} bind:editorActivity bind:selection />
 
-		<ComposePanel {api} bind:editorActivity {editorReady} {viewsPool} {kitsPool} bind:selection />
+		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
 		<AxesPanel {api} {editorReady} bind:editorActivity onArgChange={invalidateResolution} />
 	{/snippet}
@@ -277,9 +238,9 @@
 
 		<StylesPanel {resolvedKits} {selection} />
 
-		<TokensPanel {editorReady} bind:tokens bind:tokenLibraries />
-    
-    <PluginsPanel />
+		<TokensPanel {api} {editorReady} bind:editorActivity />
+
+		<PluginsPanel />
 
 		<pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
 	{/snippet}

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
-	import type { ComponentView, ComponentFlat } from '../Component.svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { liveQuery, type EditorActivity, type EditorSelection } from '../Editor.svelte';
@@ -10,8 +9,6 @@
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
-		viewsPool: Record<string, ComponentView>;
-		kitsPool: Record<string, ComponentFlat>;
 		api: Api;
 	};
 
@@ -19,9 +16,7 @@
 		api,
 		editorReady,
 		editorActivity = $bindable(),
-		viewsPool,
-		selection = $bindable(),
-		kitsPool
+		selection = $bindable()
 	}: ComposePanelProps = $props();
 
 	const composeContextMenuContent: ContextMenuContentGenerator = $derived(() => {
