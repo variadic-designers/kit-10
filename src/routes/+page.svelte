@@ -390,18 +390,18 @@
 
 	.btn-donate {
 		background-color: var(--color-primary);
-		color: var(--color-pure);
+		color: white;
 		text-decoration: none;
 		border-radius: $x-space-3;
 		padding: $x-space-3 $x-space-8;
 		font-size: $x-font-size-md;
-		@include fonts-stack('Satoshi-Medium', sans);
+		font-weight: 500;
 		transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
 
 		&:hover {
 			background-color: var(--color-primary-hover);
 			box-shadow: $x-bs-sketch-soft;
-			color: var(--color-pure);
+			color: white;
 		}
 
 		i {
