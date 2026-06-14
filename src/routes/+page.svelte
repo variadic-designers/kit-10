@@ -43,8 +43,7 @@
 				<span class="hero-accent">resolved.</span>
 			</h1>
 			<p class="hero-sub">
-				KIT•10 is a design system framework where Views, Kits, Axes, Layers, and Tokens
-				flow through a specificity cascade to produce deterministic style outputs.
+				KIT•10 is a design system framework that turns design intent into resolved style outputs — reliably and predictably.
 			</p>
 			<div class="hero-cta">
 				<a href="/edit" class="btn-primary btn-lg">Get Started</a>
