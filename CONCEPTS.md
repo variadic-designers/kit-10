@@ -123,13 +123,21 @@ Render Tokens do not require manual adjustment.
 
 ## Tokens
 
-Tokens are project-level named values (e.g., `colors.brand: #3b82f6`). They exist outside the cascade - they are not resolved through Layer specificity and are not scoped to Kits or Views.
+Tokens are named values that can be referenced from Layer render entries. Instead of hardcoding `#3b82f6` in every layer, you write `token(colors.primary)` and change it in one place.
+
+Unlike typical token systems, tokens in KIT•10 are **scoped**. A token's scope determines who can see it and when it resolves:
+
+- **Project tokens** are visible to every Kit and View in the project. Use them for shared foundations: spacing scales, brand colors, type scales.
+- **Kit tokens** are visible only within the Kit that defines them. Use them for values that only make sense inside that kit's context (e.g., `button.padding` inside the Button kit).
+- **View tokens** are visible only within the View that defines them. Use them when the same token name needs different values depending on which view is consuming it (e.g., `accent` resolving to blue in one view and red in another).
+
+Scoping works like the rest of KIT•10: more specific wins. A View token overrides a Kit token of the same name, and a Kit token overrides a Project token of the same name.
 
 Tokens participate in the cascade in two passes:
 
-1. **Pass 1 - Specificity resolution.** Layers are resolved in specificity order. Each property declaration in a Layer's render result wins or loses per the specificity rules. At the end of Pass 1, every property has a winning value, which may be a literal (e.g., `#333`) or a token reference (e.g., `colors.brand`). Tokens are **not** dereferenced during this pass - they compete as opaque references, so a token reference on a higher-specificity Layer beats a literal on a lower one.
+1. **Pass 1 - Specificity resolution.** Layers are resolved in specificity order. Each property declaration in a Layer's render result wins or loses per the specificity rules. At the end of Pass 1, every property has a winning value, which may be a literal (e.g., `#333`) or a token reference (e.g., `colors.primary`). Tokens are **not** dereferenced during this pass - they compete as opaque references, so a token reference on a higher-specificity Layer beats a literal on a lower one.
 
-2. **Pass 2 - Token substitution.** After the winning per-property values are determined, any token references are replaced with their underlying values. This substitution happens after all specificity is settled, so tokens never affect which Layer wins - they only affect what the final output value is.
+2. **Pass 2 - Token substitution.** After the winning per-property values are determined, any token references are replaced with their underlying values. Substitution considers the token's scope: the engine gathers tokens from the active project, kit, and view, and a more-specific scope overrides a less-specific one for the same name.
 
 A render result entry is always **one of**: a literal value or a token reference. It is never both, and it is never neither. The data model enforces this with a check constraint.
 
@@ -154,7 +162,7 @@ This evaluation happens at resolution time, not at storage time.
 
 Intent flows through the system in a defined order:
 
-Views → Kit instances → Axes → Layers (Pass 1: specificity resolution) → Token substitution (Pass 2) → Render Tokens
+Views → Kit instances → Axes → Layers (Pass 1: specificity resolution) → Token substitution (Pass 2: scoped resolution) → Render Tokens
 
 There are no implicit overrides.  
 Changes must be the result of upstream input changes.

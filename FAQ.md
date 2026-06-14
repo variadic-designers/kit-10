@@ -23,11 +23,13 @@ KIT•10 is not a drawing tool. It's a system logic tool. You define the rules; 
 
 ## How is this different from design tokens?
 
-Tokens describe what a value is. KIT•10 describes *why* that value is what it is.
+Tokens describe what a value is. KIT•10 describes *why* that value is what it is - and *where* it matters.
 
 A token system stores `color-primary: #3b82f6` per theme. Want it to change when density changes too? You duplicate the token set or nest modes - and now you're manually tracking combinations.
 
 KIT•10 stores intent. You say "when dark mode is on, background is #333." When "dark mode + high contrast" should be #000, you add one more rule. The engine derives every combination. The output format is the same - CSS variables, JSON, whatever your pipeline expects - but you defined the logic, not the flat values.
+
+Tokens in KIT•10 are also scoped. A project-level token (`spacing.md`) is available everywhere. A kit-level token (`button.padding`) only exists inside its kit. A view-level token (`accent`) can resolve differently per view. More-specific scopes override less-specific ones - same principle as layers. This means you don't need a global namespace that every kit has to share, and you don't need to duplicate tokens just to change them per context.
 
 ---
 
@@ -76,6 +78,7 @@ It depends on which rule is more specific:
 - **Same number of conditions, but different axes?** The axis listed later in the Kit wins.
 - **Same axis, different values?** They can't both be active at once (dark and light can't be true simultaneously). No conflict.
 - **Different Kits, same property?** The higher-priority Kit wins.
+- **Same token name, different scopes?** View scope beats Kit scope, Kit scope beats Project scope. Same rule as everything else: more specific wins.
 
 No ambiguity, no guessing. See [CONCEPTS.md](CONCEPTS.md) → Specificity for the full technical model.
 

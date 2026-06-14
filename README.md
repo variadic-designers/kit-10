@@ -14,9 +14,9 @@ KIT•10 (pronounced **"kitten"**) is a design system editor where you define ho
 
 You've been there: your button needs a light version, a dark version, a compact version, a dark-compact version, a disabled version, a dark-disabled version… and now you're maintaining 27 components for 3 axes.
 
-You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop.
+You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop. And global tokens can't express that some values only make sense for certain kits or certain views.
 
-KIT•10 lets you say **when** and **why**:
+KIT•10 lets you say **when**, **why**, and **where**:
 
 ```
 No conditions      → background: #fff, color: #333, padding: 16px
@@ -33,9 +33,10 @@ More conditions = higher priority. So `dark + compact` overrides `dark`, which o
 
 1. **Axes** - dimensions of intent (Theme: light/dark, Density: compact/comfortable, Viewport: ≥768/≥1024)
 2. **Layers** - rules that say "when these conditions are true, apply these properties"
-3. **Kits** - bundles of axes + layers (Button, Layout, Card…)
-4. **Views** - compositions of kits with axis values set ("Dark Compact", "Light Comfortable")
-5. **Resolution** - the engine picks the most specific matching layer for each property, then substitutes tokens
+3. **Tokens** - named values that can live at project, kit, or view level
+4. **Kits** - bundles of axes + layers + kit-scoped tokens (Button, Layout, Card…)
+5. **Views** - compositions of kits with axis values set ("Dark Compact", "Light Comfortable")
+6. **Resolution** - the engine picks the most specific matching layer for each property, then substitutes tokens
 
 Every output value is traceable to the rule and conditions that produced it. No surprises.
 
@@ -45,7 +46,7 @@ Every output value is traceable to the rule and conditions that produced it. No 
 
 - **No variant explosion.** Add an axis, not a component tree.
 - **Composable kits.** Swap a Kit into any View with different axis values - instant reskin.
-- **Token substitution.** Reference `colors.primary` in one place, the engine resolves it per-view.
+- **Scoped tokens.** A token can live at project level (shared everywhere), kit level (only inside that kit's layers), or view level (different values per view). The most specific scope wins.
 - **Traceable.** Every rendered property points back to its source layer and axis conditions.
 - **Offline-first.** Runs entirely in-browser via PGlite. No server, no login.
 
