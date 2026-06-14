@@ -323,7 +323,7 @@
 		gap: $x-space-2;
 		padding: $x-space-2 $x-space-5;
 		background-color: var(--color-primary);
-		color: var(--color-pure);
+		color: white;
 		border: none;
 		border-radius: $x-space-1;
 		@include fonts-stack('Satoshi-Medium', sans);
@@ -335,7 +335,7 @@
 		&:hover {
 			background-color: var(--color-primary-hover);
 			box-shadow: $x-bs-sketch-soft;
-			color: var(--color-pure);
+			color: white;
 		}
 
 		&.btn-lg {
