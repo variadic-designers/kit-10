@@ -125,16 +125,13 @@
 		heading: '#f8fafc'
 	);
 
-	@include theming-declare-schemes-basic($light, $dark);
-	@include theming-impose-schemes-basic();
+@include theming-declare-schemes-basic($light, $dark);
 
 	#landing {
-		min-height: 100vh;
-		min-height: 100dvh;
-		background-color: var(--color-bg);
-		color: var(--color-text);
-		@include fonts-stack('Satoshi-Regular', sans);
-		letter-spacing: 0.3px;
+		a, button {
+			color: inherit;
+			background-color: transparent;
+		}
 	}
 
 	nav {
@@ -316,96 +313,98 @@
 		}
 	}
 
-	.btn-primary {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: $x-space-2;
-		padding: $x-space-2 $x-space-5;
-		background-color: var(--color-primary);
-		color: white;
-		border: none;
-		border-radius: $x-space-1;
-		@include fonts-stack('Satoshi-Medium', sans);
-		font-size: $x-font-size-md;
-		text-decoration: none;
-		cursor: pointer;
-		transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
-
-		&:hover {
-			background-color: var(--color-primary-hover);
-			box-shadow: $x-bs-sketch-soft;
+	#landing {
+		.btn-primary {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: $x-space-2;
+			padding: $x-space-2 $x-space-5;
+			background-color: var(--color-primary);
 			color: white;
+			border: none;
+			border-radius: $x-space-1;
+			@include fonts-stack('Satoshi-Medium', sans);
+			font-size: $x-font-size-md;
+			text-decoration: none;
+			cursor: pointer;
+			transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
+
+			&:hover {
+				background-color: var(--color-primary-hover);
+				box-shadow: $x-bs-sketch-soft;
+				color: white;
+			}
+
+			&.btn-lg {
+				padding: $x-space-3 $x-space-6;
+				font-size: $x-font-size-lg;
+			}
 		}
 
-		&.btn-lg {
-			padding: $x-space-3 $x-space-6;
+		.btn-outline {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: $x-space-2;
+			padding: $x-space-2 $x-space-5;
+			background: transparent;
+			color: var(--color-text);
+			border: 1px solid var(--color-border);
+			border-radius: $x-space-1;
+			@include fonts-stack('Satoshi-Medium', sans);
+			font-size: $x-font-size-md;
+			text-decoration: none;
+			cursor: pointer;
+			transition: border-color $x-duration-ui $x-timing-ui, background-color $x-duration-ui $x-timing-ui;
+
+			&:hover {
+				border-color: var(--color-primary);
+				background-color: var(--color-surface-alt);
+			}
+
+			&.btn-lg {
+				padding: $x-space-3 $x-space-6;
+				font-size: $x-font-size-lg;
+			}
+		}
+
+		.btn-ghost {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			padding: $x-space-2;
+			background: transparent;
+			border: none;
+			color: var(--color-text-muted);
+			cursor: pointer;
 			font-size: $x-font-size-lg;
-		}
-	}
+			transition: color $x-duration-ui $x-timing-ui;
 
-	.btn-outline {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		gap: $x-space-2;
-		padding: $x-space-2 $x-space-5;
-		background: transparent;
-		color: var(--color-text);
-		border: 1px solid var(--color-border);
-		border-radius: $x-space-1;
-		@include fonts-stack('Satoshi-Medium', sans);
-		font-size: $x-font-size-md;
-		text-decoration: none;
-		cursor: pointer;
-		transition: border-color $x-duration-ui $x-timing-ui, background-color $x-duration-ui $x-timing-ui;
-
-		&:hover {
-			border-color: var(--color-primary);
-			background-color: var(--color-surface-alt);
+			&:hover {
+				color: var(--color-primary);
+			}
 		}
 
-		&.btn-lg {
-			padding: $x-space-3 $x-space-6;
-			font-size: $x-font-size-lg;
-		}
-	}
-
-	.btn-ghost {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		padding: $x-space-2;
-		background: transparent;
-		border: none;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		font-size: $x-font-size-lg;
-		transition: color $x-duration-ui $x-timing-ui;
-
-		&:hover {
-			color: var(--color-primary);
-		}
-	}
-
-	.btn-donate {
-		background-color: var(--color-primary);
-		color: white;
-		text-decoration: none;
-		border-radius: $x-space-3;
-		padding: $x-space-3 $x-space-8;
-		font-size: $x-font-size-md;
-		font-weight: 500;
-		transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
-
-		&:hover {
-			background-color: var(--color-primary-hover);
-			box-shadow: $x-bs-sketch-soft;
+		.btn-donate {
+			background-color: var(--color-primary);
 			color: white;
-		}
+			text-decoration: none;
+			border-radius: $x-space-3;
+			padding: $x-space-3 $x-space-8;
+			font-size: $x-font-size-md;
+			font-weight: 500;
+			transition: background-color $x-duration-ui $x-timing-ui, box-shadow $x-duration-ui $x-timing-ui;
 
-		i {
-			margin-right: $x-space-2;
+			&:hover {
+				background-color: var(--color-primary-hover);
+				box-shadow: $x-bs-sketch-soft;
+				color: white;
+			}
+
+			i {
+				margin-right: $x-space-2;
+			}
 		}
 	}
 </style>
