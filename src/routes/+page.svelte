@@ -40,7 +40,7 @@
 		<div class="hero-content">
 			<h1>
 				Design intent,<br />
-				<span class="hero-accent">resolved.</span>
+				<span class="hero-accent">resolved</span>
 			</h1>
 			<p class="hero-sub">
 				KIT•10 is a design system framework that turns design intent into resolved style outputs, reliably and predictably.
@@ -134,7 +134,7 @@
 			font-family: inherit;
 		}
 
-		p, span, li, h2, h3 {
+		p, li, h2, h3 {
 			@include fonts-stack('Satoshi-Regular', sans);
 		}
 	}
