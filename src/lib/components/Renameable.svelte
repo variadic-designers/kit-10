@@ -68,6 +68,7 @@
 		}}
 		onclick={(e) => e.stopPropagation()}
 		ondblclick={(e) => e.stopPropagation()}
+		placeholder={value}
 		class="renameable-input {className}"
 	/>
 {:else}
