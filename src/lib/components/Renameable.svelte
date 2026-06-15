@@ -84,5 +84,15 @@
 
 	.renameable-input {
 		min-width: 3ch;
+		font: inherit;
+		letter-spacing: inherit;
+		line-height: inherit;
+		color: inherit;
+		background: transparent;
+		border: none;
+		outline: none;
+		padding: 0;
+		margin: 0;
+		display: inline;
 	}
 </style>
