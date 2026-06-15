@@ -83,11 +83,27 @@
 		return api.getTokensByViewId(activity.activeViewId);
 	});
 
+	const activeViewQuery = liveQuery((api, activity) => {
+		return api.getViewsByProjectId(activity.activeProjectId);
+	});
+
+	const activeKitQuery = liveQuery((api, activity) => {
+		return api.getKitCompositionByViewId(activity.activeViewId);
+	});
+
 	let newTokenAlias = $state('');
 	let newTokenValue = $state('');
 	let addingScope = $state<'project' | 'kit' | 'view' | null>(null);
 	let editingAlias = $state<Record<string, boolean>>({});
 	let editingValue = $state<Record<string, boolean>>({});
+
+	const viewName = $derived(
+		activeViewQuery.rows.find((v) => v.viewId === editorActivity.activeViewId)?.viewName ?? 'View'
+	);
+
+	const kitName = $derived(
+		activeKitQuery.rows.find((k) => k.kitId === editorActivity.activeKitId)?.kitName ?? 'Kit'
+	);
 
 	async function addToken(scope: 'project' | 'kit' | 'view') {
 		if (!newTokenAlias || !newTokenValue) return;
@@ -227,7 +243,7 @@
 				<summary class="token-scope__header">
 					<h3 class="token-scope__label">
 						<i class="fa-regular fa-window-maximize"></i>
-						View
+						{viewName}
 					</h3>
 					<i class="fa-solid fa-angle-down"></i>
 				</summary>
@@ -253,7 +269,7 @@
 				<summary class="token-scope__header">
 					<h3 class="token-scope__label">
 						<i class="fa-solid fa-puzzle-piece"></i>
-						Kit
+						{kitName}
 					</h3>
 					<i class="fa-solid fa-angle-down"></i>
 				</summary>
@@ -278,7 +294,7 @@
 			<summary class="token-scope__header">
 				<h3 class="token-scope__label">
 					<i class="fa-solid fa-diagram-project"></i>
-					Project
+					{editorActivity.activeProjectName ?? 'Project'}
 				</h3>
 				<i class="fa-solid fa-angle-down"></i>
 			</summary>
