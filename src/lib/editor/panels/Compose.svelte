@@ -148,8 +148,8 @@
 
 			{#if kitsQuery.rows}
 				{#each kitsQuery.rows as k, i}
-					<li class="kit-field" title={k.kitId}>
-						<label use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)}>
+					<li class="kit-field" class:selected={editorActivity.activeKitId === k.kitId} title={k.kitId}>
+					<label use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)} onclick={() => { editorActivity.activeKitId = k.kitId; }}>
 							<span class="kit-field__name">
 								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
 								<Renameable
@@ -163,25 +163,11 @@
 									{k.kitName}
 								</Renameable></span
 							>
-							<input
-								class="kit-field__radio"
-								type="radio"
-								value={k.kitName}
-								name="compose"
-								checked={editorActivity.activeKitId === k.kitId}
-								onclick={() => (selection.selectedKitIndex = i)}
-							/>
 							<i
 								class="kit-field__layer-icon fa-solid {icons[
 									icons.length - kitsQuery.rows.length + i
 								]}"
 							></i>
-
-							<!--
-							<button aria-label="Hide/Unhide Kit">
-								<i class="kit-field__icon fa-regular fa-eye"></i>
-							</button>
-              -->
 						</label>
 					</li>
 				{/each}
@@ -271,7 +257,7 @@
 			flex-grow: 1;
 		}
 
-		&:has(input[type='radio']:checked) {
+		&.selected {
 			background: var(--color-surface-alt);
 
 			.kit-field__icon {
@@ -280,6 +266,12 @@
 			.kit-field__name {
 				color: var(--color-primary);
 			}
+
+			&:hover {
+				.kit-field__name {
+					color: var(--color-primary-hover);
+				}
+			}
 		}
 
 		&:hover {
@@ -287,16 +279,11 @@
 				color: var(--color-primary);
 			}
 
-			&:has(input[type='radio']:checked) {
+			&.selected {
 				.kit-field__name {
 					color: var(--color-primary-hover);
 				}
 			}
-		}
-
-		input[type='radio'] {
-			opacity: 0;
-			position: absolute;
 		}
 	}
 </style>

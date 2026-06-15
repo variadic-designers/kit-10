@@ -320,10 +320,11 @@
 			all: unset;
 			list-style: none;
 			display: flex;
-			padding-block: calc($x-space-xs / 4);
-			padding-inline: $x-space-sm $x-space-sm;
+			padding-block: $x-space-xs;
+			padding-inline: $x-space-sm;
 			align-items: center;
 			cursor: pointer;
+			user-select: none;
 
 			span {
 				flex-grow: 1;
@@ -333,13 +334,14 @@
 				transition: rotate 200ms ease-out;
 				font-size: $x-font-size-xs;
 			}
+
+			&:hover {
+				background: var(--color-surface-alt);
+			}
 		}
 
 		&[open] {
 			summary {
-				padding-bottom: calc($x-space-xs / 2);
-				align-items: center;
-
 				i.fa-angle-down {
 					rotate: 180deg;
 				}
@@ -354,8 +356,10 @@
 		align-items: center;
 		gap: $x-space-xs;
 		font-weight: 600;
-		font-size: $x-font-size-sm;
+		font-size: $x-font-size-xs;
 		letter-spacing: 1px;
+		text-transform: uppercase;
+		@include fonts-stack('Satoshi-Bold', sans-serif);
 		color: var(--color-text);
 	}
 
@@ -367,6 +371,7 @@
 
 	.token-scope__tokens {
 		padding-left: $x-space-sm;
+		padding-bottom: $x-space-xs;
 		overflow-y: auto;
 		max-height: 16vh;
 		scrollbar-width: thin;
@@ -374,6 +379,7 @@
 
 	.token-scope__empty {
 		padding-left: $x-space-sm;
+		padding-bottom: $x-space-xs;
 		font-size: $x-font-size-xs;
 		color: var(--color-text-muted);
 		font-style: italic;
@@ -381,7 +387,6 @@
 
 	.tokens-list {
 		@include layout-flex-column();
-		gap: 2px;
 		list-style: none;
 		margin: 0;
 		padding: 0;
@@ -396,10 +401,10 @@
 		user-select: none;
 		border: unset;
 		background: var(--color-surface);
-		padding-block: calc($x-space-xs * 0.5);
-		padding-inline: $x-space-xs;
+		padding-block: $x-space-xs;
+		padding-inline: $x-space-sm;
 		text-align: left;
-		font-family: 'Satoshi-Light', sans-serif;
+		@include fonts-stack('Satoshi-Light', sans-serif);
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;

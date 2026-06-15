@@ -6,254 +6,242 @@ This document tracks the migration from prototype code to a fully manager-integr
 
 ## M1: Schema Expansion
 
-The `DB2026_04_21` schema needs columns and tables to support the full concept model.
+The `DB2026_06_07` schema supports the full concept model via a single V1 migration.
 
 ### [x] M1.1 — Expand `axes` table
 
-Currently `axes` has only `id` + `project_id`. It needs shape:
-
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | `uuid` PK | existing |
-| `project_id` | `uuid` FK → projects.id | existing |
+| `id` | `uuid` PK | |
+| `project_id` | `uuid` FK → projects.id, RESTRICT | |
 | `name` | `text` | e.g. "Dark Mode", "Density" |
 | `description` | `text` | human-readable |
-| `category` | `text` | `'Static'` or `'Dynamic'` |
-| `kind` | `text` | `'categorical'`, `'numeric'`, `'ranged'` |
-| `default_value` | `jsonb` | default axis value |
+| `kind` | `text` | `'categorical'`, `'range'`, `'discrete'` |
+| `hint` | `jsonb` | string array of suggested values |
+| `default_value` | `jsonb` | default axis arg value |
 
-### [x] M1.2 — Create `axis_variants` table
+### [x] M1.2 — Create `axis_values` table
 
-Variant definitions move from hardcoded `axesBuiltIn.ts` into the DB.
+Replaces the planned `axis_variants` table. Values are stored as typed jsonb supporting three shapes: literal, range, discrete.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `uuid` PK | |
 | `axis_id` | `uuid` FK → axes.id, CASCADE | |
-| `name` | `text` | e.g. "Light", "Hover" |
-| `slug` | `text` | machine-friendly key |
-| `tooltip` | `text` | |
-| `priority` | `integer` | ordering within the axis |
+| `value` | `jsonb` | `{ type: 'literal' | 'range' | 'discrete', ... }` |
 
 ### [x] M1.3 — Create `layers` table
-
-Replaces in-memory `StyleSource[]` in `cascadeAxesMap.ts`.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | `uuid` PK | |
 | `kit_id` | `uuid` FK → kits.id, CASCADE | which Kit owns this layer |
-| `style` | `jsonb` | CSS property dict `{ padding: "1rem", ... }` |
 | `last_modified` | `timestamptz` | |
 
-### [x] M1.4 — Create `layer_axes` junction
+No `style` column — properties live in `render_entries` via `render_snippets`.
 
-Defines the AxesSet condition for each layer (the "selector").
+### [x] M1.4 — Create `layer_axis_values` junction
+
+Replaces the planned `layer_axes` junction. Links layers to `axis_values` (not axis_variants).
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `layer_id` | `uuid` FK → layers.id, CASCADE | composite PK |
-| `axis_id` | `uuid` FK → axes.id, RESTRICT | composite PK |
-| `variant_id` | `uuid` FK → axis_variants.id, RESTRICT | the value it matches |
+| `axis_value_id` | `uuid` FK → axis_values.id, RESTRICT | composite PK |
 
-No axis in the condition = wildcard (any variant matches).
+No axis values in the condition = null layer (always matches).
 
-### M1.5 — Design `render_snippets` table
+### [x] M1.5 — `render_snippets` + `render_entries` tables
 
-Currently typed `never`. This is the Render Token output shape — backend-opinionated output structures.
+Render snippets point to layers (1:1 via unique constraint). Entries declare individual properties as either a literal value or a token reference (check constraint enforces mutual exclusivity).
 
-Shape TBD, but must encode at minimum:
-- Which Kit owns it
-- An output name (e.g. `"button--primary"`)
-- A template or shape definition (JSON)
-- A target format/backend identifier
+**render_snippets:**
 
-### M1.6 — Design `axis_sets` table
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `uuid` PK | |
+| `layer_id` | `uuid` FK → layers.id, CASCADE, UNIQUE | one snippet per layer |
+| `last_modified` | `timestamptz` | |
 
-Currently typed `never`. This is for grouping Axes into named sets (reusable axis combinations). TBD whether this is needed for v1 or can stay deferred.
+**render_entries:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | `uuid` PK | |
+| `snippet_id` | `uuid` FK → render_snippets.id, CASCADE | |
+| `property` | `text` | e.g. "background", "padding" |
+| `value` | `text` | literal value (nullable) |
+| `token_id` | `uuid` FK → tokens.id, SET NULL | token reference (nullable) |
+
+Check constraint: `(value IS NOT NULL) != (token_id IS NOT NULL)`
+
+### [-] M1.6 — `axis_sets` table
+
+Deferred. Axis args per view+kit handle per-instance parameterization. Named reusable axis sets are not needed for v1.
 
 ---
 
 ## M2: Manager API — Mutation Layer
 
-The manager `Api` interface needs full CRUD for all tables.
+Full CRUD for all entities plus scoped token queries.
 
 ### [x] M2.1 — Axis CRUD
 
-- `createAxis(projectId, name, description, category, kind, default_value)` → axis
-- `renameAxis(axisId, newName)`
-- `deleteAxis(axisId)`
-- `createVariant(axisId, name, slug, tooltip, priority)` → variant
-- `deleteVariant(variantId)`
-- `getAxesByProjectId(projectId)` → query builder (axis + variants)
-- `getAxesByKitId(kitId)` → query builder (via axes_consumed join)
+- `createAxis`, `renameAxis`, `deleteAxis`
+- `createAxisValue`, `deleteAxisValue`
+- `getAxesByProjectId`, `getAxesByKitId`
 
 ### [x] M2.2 — Axes Consumed CRUD
 
-- `consumeAxis(kitId, axisId)` → insert into `axes_consumed` with auto-priority
-- `unconsumeAxis(kitId, axisId)` → delete from `axes_consumed`
-- `reorderAxesInKit(kitId, axisId, newPriority)` → update priority_index
-- `getConsumedAxesByKitId(kitId)` → query builder (join axes + variants)
+- `consumeAxis`, `unconsumeAxis`, `reorderAxesInKit`
+- `getConsumedAxesByKitId`
 
 ### [x] M2.3 — Axis Args CRUD
 
-- `setAxisArg(viewId, kitId, axisId, value)` → upsert into `axis_args`
-- `getAxisArg(viewId, kitId, axisId)` → query builder
-- `getAllAxisArgs(viewId, kitId)` → query builder
+- `setAxisArg` (upsert), `getAllAxisArgs`
 
 ### [x] M2.4 — Layer CRUD
 
-- `createLayer(kitId, style)` → layer
-- `updateLayerStyle(layerId, style)`
-- `deleteLayer(layerId)`
-- `addAxisToLayer(layerId, axisId, variantId)` → insert into `layer_axes`
-- `removeAxisFromLayer(layerId, axisId)` → delete from `layer_axes`
-- `getLayersByKitId(kitId)` → query builder (layers + layer_axes + axis_variants)
+- `createLayer`, `deleteLayer`
+- `addAxisValueToLayer`, `removeAxisValueFromLayer`
+- `getLayersByKitId`
 
-### [x] M2.5 — Token CRUD (formalize)
+### [x] M2.5 — Render Snippet + Entry CRUD
 
-Currently `Variables.svelte` writes directly via `dialect.insertInto('tokens')`. Formalize:
+- `createRenderSnippet`, `deleteRenderSnippet`
+- `createRenderEntry`, `updateRenderEntryValue`, `deleteRenderEntry`
+- `getRenderSnippetsByLayerId`, `getRenderEntriesBySnippetId`, `getRenderEntriesByLayerId`
 
-- `createToken(projectId, alias?, value?)` → token
-- `updateTokenValue(tokenId, value)`
-- `updateTokenAlias(tokenId, alias)`
-- `deleteToken(tokenId)`
-- `getTokensByProjectId(projectId)` → query builder
+### [x] M2.6 — Token CRUD (scoped)
 
-### [x] M2.6 — Kit management (formalize)
+- `createToken(projectId, alias?, value?, scope?)` — scope is `{ kitId }` or `{ viewId }` or project-level
+- `updateTokenValue`, `updateTokenAlias`, `deleteToken`
+- `getTokensByProjectId` (project-scoped only)
+- `getTokensByKitId(kitId | null)` — null returns empty set via impossible UUID
+- `getTokensByViewId(viewId | null)` — null returns empty set via impossible UUID
 
-- `renameKit(kitId, newName)`
-- `deleteKit(kitId)` — must check: no compositions reference it, or CASCADE compositions
-- `getKitsByProjectId(projectId)` → query builder
+### [x] M2.7 — Kit management
 
-### [x] M2.7 — View management (formalize)
+- `renameKit`, `deleteKit`, `getKitsByProjectId`
 
-- `renameView(viewId, newName)`
-- `toggleViewLock(viewId, locked)`
-- `toggleViewHide(viewId, hidden)`
+### [x] M2.8 — View management
+
+- `renameView`, `toggleViewLock`, `toggleViewHide`
+- `createViewInProject`, `deleteView`
+- `getViewsByProjectId`
+
+### [x] M2.9 — Composition management
+
+- `attachKitToComposition`, `detachKitFromComposition`
+- `getKitCompositionByViewId`, `getKitsExceptFromViewId`
+
+### [x] M2.10 — Workspace & Project management
+
+- `createWorkspace`, `renameWorkspace`, `deleteWorkspace`
+- `createProjectInWorkspace`, `renameProject`, `deleteProject`
+- `exportProject`
 
 ---
 
 ## M3: Cascade Engine Rewrite
 
-Replace `cascadeAxesMap.ts` with a manager-backed engine implementing the three-tier specificity model.
+Replaced `cascadeAxesMap.ts` with a manager-backed engine implementing the three-tier specificity model.
 
-### M3.1 — Replace `calculateSpecificity`
+### [x] M3.1 — Specificity model
 
-Current: `axisCount * 100 + axisRankSum` (tiers overlap).
+Three-tier, non-overlapping: `(kit_priority, axis_count, compounded_axis_order)`.
+Implemented as lexicographic comparison of `[count, ...priorityIndex]` arrays.
+Higher tiers always win regardless of lower-tier values.
 
-New: three non-overlapping tiers as defined in CONCEPTS.md:
+### [x] M3.2 — `resolve()`
 
-```
-specificity = (kit_priority × 10000) + (axis_count_in_layer × 100) + (max_axis_order_position)
-```
+Pure function of DB state. Queries layers + conditions + entries, calculates specificity per layer, filters by axis arg matching, sorts by specificity, merges per-property overrides.
 
-- `kit_priority` from `compositions.priority_index`
-- `axis_count_in_layer` = number of rows in `layer_axes` for that layer
-- `max_axis_order_position` = highest `axes_consumed.priority_index` among axes in the layer condition
+- Input: `db, kitId, axisArgs`
+- Output: `Map<string, ResolvedProperty>` with `value`, `sourceLayerId`, `isToken`, `tokenAlias`
 
-### M3.2 — Move `resolve()` to manager
+### [x] M3.3 — `resolveMany()`
 
-The resolution function should query layers + layer_axes, calculate specificity per layer, sort, and merge styles. It must be a pure function of DB state.
+Multi-kit resolution with kit precedence. Gathers axis args per kit, resolves each, then runs token substitution (Pass 2).
 
-- Input: `kitId`, `axisArgs: { axisId → variantId }`
-- Output: `{ finalStyle, trace[] }` (same shape as current `CascadeResult`)
+- Input: `db, viewId`
+- Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties`
 
-### M3.3 — Move `resolveMany()` to manager
+Supporting functions: `gatherScopedTokens()` (project > kit > view precedence), `substituteTokens()`, `flattenKitResults()`, `matchesArg()` (interval overlap semantics for ranges).
 
-Multi-kit resolution with kit precedence:
+### [x] M3.4 — Remove `cascadeAxesMap.ts`
 
-- Input: `viewId`
-- Output: `{ finalStyle, trace[], crossOverrides[] }`
-
-Algorithm:
-1. Fetch kit composition for view (ordered by `priority_index` DESC)
-2. For each kit, fetch consumed axes and axis args for this view
-3. Resolve each kit via `resolve()` (M3.2)
-4. Merge results: higher kit priority wins for conflicting properties
-
-### M3.4 — Remove `cascadeAxesMap.ts`
-
-After M3.2 and M3.3 are proven working, delete `src/lib/cascadeAxesMap.ts` and all its imports.
+Deleted. No imports remain.
 
 ---
 
 ## M4: Frontend Migration
 
-Wire the Svelte UI to manager queries and mutations.
+All panels wired to manager via `liveQuery`. No legacy prop drilling.
 
-### M4.1 — Axes panel (`panels/Axes.svelte` + `panels/Axis.svelte`)
+### [x] M4.1 — Axes panel
 
-- Replace `kitsPool[...].sets.axisRank` reads with `liveQuery(getConsumedAxesByKitId)`
-- Replace `viewsPool[...].resolve[...].params` reads/writes with `getAllAxisArgs` / `setAxisArg`
-- Render axis definitions from DB (name, description, variants) instead of `builtinAxes`
-- Add axis creation/deletion UI (add axis to project, consume axis into kit)
+`Axes.svelte` + `Axis.svelte` use `liveQuery(getConsumedAxesByKitId)` and `getAllAxisArgs` / `setAxisArg`. Axis definitions rendered from DB. Axis creation/deletion/attach UI present.
 
-### M4.2 — Styles panel (`panels/Styles.svelte` + `panels/StyleField.svelte`)
+### [x] M4.2 — Styles (Render) panel
 
-- Replace `cascadeAxesMap.resolve()` / `.trace()` calls with manager-backed resolution
-- Replace in-memory style mutations (`layer.style[key] = ...`) with `updateLayerStyle()`
-- Display trace data from manager resolution result
+`Styles.svelte` + `StyleField.svelte` display resolved properties from `resolveMany()`. Per-property trace data shown. No in-memory style mutations.
 
-### M4.3 — Variables panel (`panels/Variables.svelte`)
+### [x] M4.3 — Variables (Tokens) panel
 
-- Replace `tokenLibraries` prop with `liveQuery(getTokensByProjectId)`
-- Use formalized token CRUD from M2.5
-- Remove legacy `colours.ts` / `colours.json` dependency
+`Variables.svelte` uses `liveQuery(getTokensByProjectId/getTokensByKitId/getTokensByViewId)` with three scope sections. Token CRUD via formalized API. Inline rename, context menu, scoped color icons.
 
-### M4.4 — Viewport rendering (`Component.svelte` + `Viewport.svelte`)
+### [x] M4.4 — Editor resolution pipeline
 
-- Replace `kitsPool` / `viewsPool` prop drilling with `liveQuery` calls to manager
-- `Component.svelte`: resolve styles via manager's `resolveMany()` per view
-- Remove dependency on `Kit10ProjectEditor` legacy type
+`Editor.svelte` calls `resolveMany()` reactively. No `kitsPool`/`viewsPool`/`ComponentFlat`/`ComponentView` prop drilling. No `Component.svelte` or `Viewport.svelte`.
 
 ### [x] M4.5 — Delete legacy panel stubs
 
-- Remove `panels/tokens.ts` (stale context menu defs)
-- Remove `panels/views.ts` (stale helper functions)
-- Remove `panels/axes.ts` (empty stub)
-- Remove empty shell files: `Styles.svelte`, `Axes.svelte`, `Tools.svelte` in `editor/`
+Removed: `tokens.ts`, `views.ts`, `axes.ts` stubs, old `Axes.svelte`, `Component.svelte`, `Viewport.svelte`, `[title]` route, `libraries/colours.ts` + `colours.json`.
+
+### [x] M4.6 — Selection standardization
+
+All panels use `class:selected={condition}` on list items. No hidden `<input type="radio">` or `:has()` CSS selectors. Consistent pattern: `.selected { background: var(--color-surface-alt); color: var(--color-primary); &:hover color: var(--color-primary-hover); }`
 
 ---
 
 ## M5: Editor Route Overhaul
 
-### M5.1 — Replace mock data route
+### [x] M5.1 — Route restructuring
 
-`src/routes/edit/[title]/+page.ts` currently has 615 lines of hardcoded `Kit10Project[]` objects.
+- `/` = landing page (was `/landing`)
+- `/edit` = editor (was `/edit/[title]`)
+- Deleted `/landing` route and `+page.server.ts` redirect
 
-Replace with a proper load function that queries the manager for the project by slug/ID, or redirects to workspace/project selection.
+### [x] M5.2 — Landing page
 
-### M5.2 — Add `/edit` route functionality
+Hero with Satoshi fonts, theme toggle (DarkModeToggle), favicon SVG glyph, about section with 3 feature cards, donate CTA, sticky nav. Theming via `theming-declare-schemes-basic()` with `<style global>` and `data-compel-color-scheme`.
 
-Currently `edit/+page.svelte` and `edit/+page.ts` are empty. Implement a project picker or redirect to most recent project.
+### [x] M5.3 — Editor initialization
 
-### M5.3 — Update Editor.svelte initialization
+`Editor.svelte` self-bootstraps from manager state via `editorActivity`. No `Kit10ProjectEditor` prop dependency. `selectWorkspace` early-returns if workspace already selected.
 
-Remove dependency on `Kit10ProjectEditor` prop type. Editor should self-bootstrap from manager state using `editorActivity` (workspaceId, projectId, viewId, kitId) from reactive context.
+### [x] M5.4 — Delete `src/lib/types.ts`
 
-### M5.4 — Delete `src/lib/types.ts`
-
-After all consumers are migrated, remove the legacy `Kit10Project*` type definitions.
+Legacy `ComponentFlat`, `ComponentView`, `Token`, `TokenLibrary`, `Kit10ProjectTokens`, `Kit10ProjectCore`, `Kit10Project`, `Kit10ProjectEditor` types removed.
 
 ---
 
 ## M6: Render Token Output
 
-### M6.1 — Define render snippet schema
+### M6.1 — Expand render snippet schema
 
-Design the `render_snippets` table (see M1.5) to encode target-specific output shapes.
+Current `render_snippets` is a 1:1 mapping to layers with no output metadata. Needs:
 
-A render snippet should at minimum declare:
-- Which CSS properties / tokens it emits
-- What structure/component it maps to (e.g., a CSS class, a Svelte component, a JSON token blob)
-- Target format hint (CSS, Tailwind, CSS-in-JS, Style Dictionary, etc.)
+- `name` column — output name (e.g. `"button--primary"`)
+- `target_format` column — format identifier (e.g. `"css"`, `"tailwind"`)
+- Relax `one_snippet_per_layer` unique constraint to `one_snippet_per_layer_format` on `(layer_id, target_format)` so a layer can produce output in multiple formats
 
-### M6.2 — Implement render snippet resolver
+### M6.2 — Render snippet resolver
 
-Given a resolved kit/view style, produce render snippets matching the selected backend.
+Given resolved properties from `resolveMany()`, produce structured output matching a target format.
 
-### M6.3 — Add export formats
+### M6.3 — Export formats
 
 - CSS custom properties export
 - Style Dictionary JSON export
@@ -265,23 +253,23 @@ Given a resolved kit/view style, produce render snippets matching the selected b
 
 ### [x] M7.1 — Delete `src/lib/core/`
 
-The entire directory is a stale, unused duplicate of `manager/`. Remove it.
+Removed entirely.
 
-### M7.2 — Remove `axesBuiltIn.ts`
+### [x] M7.2 — Remove `axesBuiltIn.ts`
 
-After M4.1, axis definitions come from the DB. Remove `src/lib/axesBuiltIn.ts`.
+Deleted. Axis definitions come from DB.
 
-### M7.3 — Remove legacy cascade files
+### [x] M7.3 — Remove legacy cascade files
 
-After M3.4, remove `src/lib/cascadeAxesMap.ts`.
+`cascadeAxesMap.ts` deleted.
 
-### M7.4 — Remove legacy token files
+### [x] M7.4 — Remove legacy token files
 
-After M4.3, remove `src/lib/libraries/colours.ts` and `src/lib/libraries/colours.json`.
+`colours.ts` and `colours.json` deleted.
 
-### M7.5 — Remove `src/routes/edit/[title]/+page.ts`
+### [x] M7.5 — Remove `src/routes/edit/[title]/+page.ts`
 
-After M5.1, the hardcoded mock data file is dead.
+Deleted. Route restructured to `/edit`.
 
 ---
 
@@ -291,7 +279,7 @@ After M5.1, the hardcoded mock data file is dead.
 M1 (schema) ──► M2 (API) ──► M3 (cascade) ──► M4 (frontend) ──► M5 (routes) ──► M6 (render) ──► M7 (cleanup)
                                         │
                                         └── M4.1, M4.2 depend on M3
-                                        └── M4.3 depends on M2.5
+                                        └── M4.3 depends on M2.6
                                         └── M4.4 depends on M3
                                         └── M5 depends on M4
 ```

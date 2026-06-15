@@ -177,11 +177,10 @@
 
 	{@const viewIcon = v.viewLocked ? 'fa-solid fa-lock' : 'fa-regular fa-window-maximize'}
 
-	<li class="view-field">
+	<li class="view-field" class:selected={editorActivity.activeViewId === v.viewId}>
 		<button
 			style="--level: {level}"
 			class="view"
-			class:view--selected={editorActivity.activeViewId === v.viewId}
 			use:contextMenu={menu(v.viewId)}
 			aria-label={v.viewName}
 			onclick={() => selectView(v.viewId, v.viewName)}
@@ -216,8 +215,20 @@
 		display: flex;
 		padding-left: $x-space-sm;
 
-		&:has(.view--selected) {
+		&.selected {
 			background-color: var(--color-surface-alt);
+
+			.view__icon,
+			.view__name {
+				color: var(--color-primary);
+			}
+
+			&:hover {
+				.view__icon,
+				.view__name {
+					color: var(--color-primary-hover);
+				}
+			}
 		}
 	}
 
@@ -270,25 +281,6 @@
 			.view__name {
 				color: var(--color-primary);
 			}
-		}
-
-		&--selected {
-			> * {
-				color: var(--color-primary);
-			}
-
-			&:hover {
-				border-color: var(--color-primary-hover);
-
-				.view__icon,
-				.view__name {
-					color: var(--color-primary-hover);
-				}
-			}
-		}
-
-		&:hover {
-			color: var(--color-primary);
 		}
 	}
 </style>
