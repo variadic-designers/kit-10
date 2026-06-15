@@ -219,10 +219,10 @@
 
 			<details class="token-scope" open>
 				<summary class="token-scope__header">
-					<span class="token-scope__label">
+					<h3 class="token-scope__label">
 						<i class="fa-regular fa-window-maximize"></i>
 						View
-					</span>
+					</h3>
 					<i class="fa-solid fa-angle-down"></i>
 				</summary>
 				<div class="token-scope__tokens">
@@ -245,10 +245,10 @@
 
 			<details class="token-scope" open>
 				<summary class="token-scope__header">
-					<span class="token-scope__label">
+					<h3 class="token-scope__label">
 						<i class="fa-solid fa-puzzle-piece"></i>
 						Kit
-					</span>
+					</h3>
 					<i class="fa-solid fa-angle-down"></i>
 				</summary>
 				<div class="token-scope__tokens">
@@ -270,10 +270,10 @@
 
 		<details class="token-scope" open>
 			<summary class="token-scope__header">
-				<span class="token-scope__label">
+				<h3 class="token-scope__label">
 					<i class="fa-solid fa-diagram-project"></i>
 					Project
-				</span>
+				</h3>
 				<i class="fa-solid fa-angle-down"></i>
 			</summary>
 			<div class="token-scope__tokens">
@@ -313,30 +313,31 @@
 <style lang="scss" global>
 	@use '_index' as *;
 
-	.token-scope {
+.token-scope {
 		@include layout-flex-column();
 
 		summary {
-			all: unset;
 			list-style: none;
 			display: flex;
 			padding-block: $x-space-xs;
 			padding-inline: $x-space-sm;
 			align-items: center;
+			justify-content: space-between;
 			cursor: pointer;
 			user-select: none;
-
-			span {
-				flex-grow: 1;
-			}
-
-			i.fa-angle-down {
-				transition: rotate 200ms ease-out;
-				font-size: $x-font-size-xs;
-			}
+			font-size: $x-font-size-xs;
+			text-transform: uppercase;
+			@include fonts-stack('Satoshi-Bold', sans-serif);
+			color: var(--color-text);
 
 			&:hover {
 				background: var(--color-surface-alt);
+			}
+
+			i.fa-angle-down {
+				position: relative;
+				right: $x-space-sm;
+				transition: rotate 200ms ease-out;
 			}
 		}
 
@@ -354,19 +355,16 @@
 	.token-scope__header {
 		display: flex;
 		align-items: center;
-		gap: $x-space-xs;
-		font-weight: 600;
-		font-size: $x-font-size-xs;
-		letter-spacing: 1px;
-		text-transform: uppercase;
-		@include fonts-stack('Satoshi-Bold', sans-serif);
-		color: var(--color-text);
+		justify-content: space-between;
+		width: 100%;
 	}
 
 	.token-scope__label {
 		display: flex;
 		align-items: center;
 		gap: $x-space-xs;
+		margin: 0;
+		color: var(--color-text);
 	}
 
 	.token-scope__tokens {
