@@ -441,9 +441,8 @@
 	}
 
 	.token__value {
-		font-size: $x-font-size-xs;
+		font-size: $x-font-size-sm;
 		color: var(--color-text-muted);
-		font-family: monospace;
 		cursor: pointer;
 
 		&:hover {
@@ -452,8 +451,7 @@
 	}
 
 	.token__value-input {
-		font-size: $x-font-size-xs;
-		font-family: monospace;
+		font-size: $x-font-size-sm;
 		background: var(--color-surface-alt);
 		color: var(--color-text);
 		border: 1px solid var(--color-primary);
