@@ -450,7 +450,6 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		text-transform: capitalize;
 		padding-inline: calc($x-space-xs / 2);
 	}
 
