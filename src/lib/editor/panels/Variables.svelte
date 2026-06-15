@@ -187,7 +187,7 @@
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
-					<i class="fa-solid {tokenIcon(token.tokenValue)}" class:token__icon--color={isColorValue(token.tokenValue)}></i>
+					<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
 					<span class="token__name">
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
@@ -207,7 +207,13 @@
 							oninput={(e) => { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); }}
 						/>
 					{:else}
-						<span class="token__value" onclick={() => { editingValue[token.tokenId] = true; }}>{token.tokenValue ?? '—'}</span>
+						<button
+							class="token__value"
+							class:token__value--new={!token.tokenValue}
+							onclick={() => { editingValue[token.tokenId] = true; }}
+						>
+							{token.tokenValue ?? '+'}
+						</button>
 					{/if}
 				</button>
 			</li>
@@ -399,7 +405,6 @@
 		user-select: none;
 		border: unset;
 		background: var(--color-surface);
-		padding-block: $x-space-xs;
 		padding-inline: $x-space-sm;
 		text-align: left;
 		@include fonts-stack('Satoshi-Light', sans-serif);
@@ -409,7 +414,6 @@
 		width: 100%;
 		display: flex;
 		align-items: center;
-		gap: $x-space-xs;
 		cursor: pointer;
 
 		&:nth-of-type(even) {
@@ -430,6 +434,11 @@
 		}
 	}
 
+	.token__icon {
+		font-size: $x-font-size-md;
+		padding-right: calc($x-space-xs / 2);
+	}
+
 	.token__icon--color {
 		-webkit-text-stroke: 1px black;
 		color: var(--color-icon, var(--color-text));
@@ -441,27 +450,43 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+		text-transform: capitalize;
+		padding-inline: calc($x-space-xs / 2);
 	}
 
 	.token__value {
-		font-size: $x-font-size-sm;
-		color: var(--color-text-muted);
+		all: unset;
+		flex-basis: 60%;
+		flex-shrink: 1;
+		text-align: center;
+		padding: calc($x-space-xs / 2);
 		cursor: pointer;
+		color: var(--color-add-var-text);
+		font-size: $x-font-size-sm;
+		background: var(--color-panel-header-fill);
+		border-radius: 1px;
 
 		&:hover {
-			color: var(--color-primary);
+			background: var(--color-surface-alt);
+			color: var(--color-text);
+		}
+
+		&--new {
+			cursor: pointer;
 		}
 	}
 
 	.token__value-input {
+		all: unset;
 		font-size: $x-font-size-sm;
-		background: var(--color-surface-alt);
+		flex-basis: 60%;
+		flex-shrink: 1;
+		text-align: center;
+		padding: calc($x-space-xs / 2);
+		background: var(--color-pure);
 		color: var(--color-text);
 		border: 1px solid var(--color-primary);
-		border-radius: 2px;
-		padding: 1px 4px;
-		width: 10ch;
-		min-width: 0;
+		border-radius: 1px;
 		outline: none;
 	}
 
