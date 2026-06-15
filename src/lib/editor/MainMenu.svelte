@@ -17,6 +17,8 @@
 	let workspaceEditing: Record<string, boolean> = $state({});
 
 	const selectWorkspace = (id: string, name: string) => {
+		if (editorActivity.activeWorkspaceId === id) return;
+
 		editorActivity.activeWorkspaceId = id;
 		editorActivity.activeWorkspaceName = name;
 		editorActivity.activeProjectId = null;
