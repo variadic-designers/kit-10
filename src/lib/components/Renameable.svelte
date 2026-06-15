@@ -66,13 +66,13 @@
 			if (e.key === 'Enter') submit();
 			if (e.key === 'Escape') cancel();
 		}}
-		onclick|stopPropagation
-		ondblclick|stopPropagation
+		onclick={(e) => e.stopPropagation()}
+		ondblclick={(e) => e.stopPropagation()}
 		class="renameable-input {className}"
 	/>
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<span ondblclick|stopPropagation={startEdit} class="renameable {className}">
+	<span ondblclick={(e) => { e.stopPropagation(); startEdit(); }} class="renameable {className}">
 		{@render children()}
 	</span>
 {/if}
