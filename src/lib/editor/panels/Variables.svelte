@@ -213,7 +213,7 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<i class="fa-solid fa-diamond token__track" title="Token"></i>
+					<i class="fa-solid fa-circle-dot token__track" class:token__track--color={isColorValue(token.tokenValue)} style="--color-icon: {token.tokenValue ?? 'transparent'}" title="Token"></i>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
