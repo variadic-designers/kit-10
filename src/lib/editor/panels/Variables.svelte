@@ -485,6 +485,7 @@
 	}
 
 	.token__icon--color {
+		-webkit-text-stroke: 1px black;
 		color: var(--color-icon, var(--color-text));
 	}
 
