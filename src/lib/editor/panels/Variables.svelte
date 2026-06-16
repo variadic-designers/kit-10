@@ -213,7 +213,9 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<i class="fa-solid fa-circle-dot token__track" title="Token"></i>
+					<button class="token__track" title="Token" type="button">
+						<i class="fa-solid fa-circle-dot"></i>
+					</button>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
