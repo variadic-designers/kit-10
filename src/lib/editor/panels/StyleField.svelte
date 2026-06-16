@@ -25,6 +25,18 @@
 
 	import { contextMenu } from '$lib/components/contextMenu';
 
+	function tokenIcon(v: string | null | undefined): string {
+		if (!v) return 'fa-question';
+		if (v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl')) return 'fa-square-full';
+		if (/^\d/.test(v) && (v.includes('px') || v.includes('rem') || v.includes('em') || v.includes('%'))) return 'fa-arrows-left-right-to-line';
+		return 'fa-circle';
+	}
+
+	function isColorValue(v: string | null | undefined): boolean {
+		if (!v) return false;
+		return v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl');
+	}
+
 	const menu = () => {
 		return [
 			{
@@ -148,7 +160,10 @@
 			use:contextMenu={menu}
 		>
 			{#if isToken}
-				<span class="token--found">{tokenAlias ?? 'token'}</span>
+				<span class="token-pill" style="--color-icon: {value ?? 'transparent'}">
+					<i class="fa-solid {tokenIcon(value)} token-pill__icon" class:token-pill__icon--color={isColorValue(value)}></i>
+					{tokenAlias ?? 'token'}
+				</span>
 			{:else if value}
 				<span>{value}</span>
 			{:else}
@@ -246,23 +261,34 @@
 				var(--color-panel-header-border);
 			background: var(--color-panel-header-fill);
 
-			&:has(span.token--found) {
+			&:has(span.token-pill) {
 				background: var(--color-surface-alt);
 			}
 
-			span.token--found {
+			span.token-pill {
 				color: var(--color-primary);
+				display: inline-flex;
+				align-items: center;
+				gap: $x-space-xs;
+			}
+
+			.token-pill__icon {
+				font-size: $x-font-size-sm;
+			}
+
+			.token-pill__icon--color {
+				-webkit-text-stroke: 1px black;
+				color: var(--color-icon, var(--color-text));
 			}
 
 			&--token {
 				color: var(--color-primary);
-				text-decoration: underline;
 			}
 
 			&--dragged-over {
 				background: var(--color-surface-alt);
 
-				&:has(span.token--found) {
+				&:has(span.token-pill) {
 					background: var(--color-pure);
 				}
 			}
