@@ -203,10 +203,8 @@
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
-					<button class="token__track" title="Token" type="button">
-						<i class="fa-solid fa-circle-dot"></i>
-					</button>
 					<span class="token__name">
+						<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
 							value={token.tokenAlias ?? 'Unnamed'}
@@ -215,6 +213,9 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
+					<button class="token__track" title="Token" type="button">
+						<i class="fa-solid fa-circle-dot"></i>
+					</button>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
