@@ -464,6 +464,12 @@
 		font-size: $x-font-size-sm;
 		color: var(--color-primary);
 		padding-inline: calc($x-space-xs / 2);
+
+		&--color {
+			-webkit-text-stroke: 1px black;
+			-webkit-text-stroke-color: var(--color-icon, var(--color-primary));
+			color: var(--color-icon, var(--color-primary));
+		}
 	}
 
 	.token__name {
