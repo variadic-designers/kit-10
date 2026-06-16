@@ -204,7 +204,7 @@
 
 		&__track {
 			text-align: center;
-			font-size: $x-font-size-md;
+			font-size: $x-font-size-sm;
 			color: var(--color-text);
 
 			&:focus {
