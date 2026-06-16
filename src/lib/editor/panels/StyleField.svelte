@@ -119,7 +119,7 @@
 			title="{tokenAlias ?? 'token'}"
 			type="button"
 		>
-			<i class="fa-solid {tokenIcon(value)}" class:token-pill__icon--color={isColorValue(value)}></i>
+			<i class="fa-solid fa-diamond"></i>
 		</button>
 	{:else}
 		<button
