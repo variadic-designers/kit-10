@@ -203,6 +203,7 @@
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
+					<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
 					<span class="token__name">
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
@@ -212,7 +213,7 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<i class="fa-solid fa-diamond token__track" class:token__track--color={isColorValue(token.tokenValue)} title="Token"></i>
+					<i class="fa-solid fa-diamond token__track" title="Token"></i>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
@@ -450,15 +451,19 @@
 		}
 	}
 
+	.token__icon {
+		font-size: $x-font-size-md;
+		padding-right: calc($x-space-xs / 2);
+	}
+
+	.token__icon--color {
+		color: var(--color-icon, var(--color-text));
+	}
+
 	.token__track {
 		font-size: $x-font-size-sm;
 		color: var(--color-primary);
 		padding-inline: calc($x-space-xs / 2);
-
-		&--color {
-			-webkit-text-stroke: 1px black;
-			color: var(--color-icon, var(--color-text));
-		}
 	}
 
 	.token__name {
