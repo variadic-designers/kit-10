@@ -196,8 +196,8 @@
 	tooltip="Design tokens: Project, Kit, and View scoped"
 >
 	{#snippet content()}
-		{#snippet tokenRow(token: TokenRow, scopeClass: string, showTrack: boolean)}
-			<li class="token-item">
+		{#snippet tokenRow(token: TokenRow, scopeClass: string, showTrack: boolean, position: 'top' | 'mid' | 'bottom')}
+			<li class="token-item" class:token-item--top={position === 'top'} class:token-item--bottom={position === 'bottom'} class:token-item--mid={position === 'mid'}>
 				<div
 					class="token {scopeClass}"
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
@@ -255,8 +255,9 @@
 				<div class="token-scope__tokens">
 					{#if viewRows && viewRows.length > 0}
 						<ul class="tokens-list">
-							{#each viewRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--view', false)}
+							{#each viewRows as token, i (token.tokenId)}
+								{@const pos = i === 0 && i === viewRows.length - 1 ? 'top' : i === 0 ? 'top' : i === viewRows.length - 1 ? 'bottom' : 'mid'}
+								{@render tokenRow(token, 'token--view', false, pos)}
 							{/each}
 						</ul>
 					{:else}
@@ -281,8 +282,9 @@
 				<div class="token-scope__tokens">
 					{#if kitRows && kitRows.length > 0}
 						<ul class="tokens-list">
-							{#each kitRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--kit', true)}
+							{#each kitRows as token, i (token.tokenId)}
+								{@const pos = kitRows.length === 1 ? 'top' : i === 0 ? 'top' : i === kitRows.length - 1 ? 'bottom' : 'mid'}
+								{@render tokenRow(token, 'token--kit', true, pos)}
 							{/each}
 						</ul>
 					{:else}
@@ -306,8 +308,9 @@
 			<div class="token-scope__tokens">
 				{#if projectRows && projectRows.length > 0}
 					<ul class="tokens-list">
-						{#each projectRows as token (token.tokenId)}
-							{@render tokenRow(token, 'token--project', false)}
+						{#each projectRows as token, i (token.tokenId)}
+							{@const pos = projectRows.length === 1 ? 'top' : i === 0 ? 'top' : i === projectRows.length - 1 ? 'bottom' : 'mid'}
+							{@render tokenRow(token, 'token--project', false, pos)}
 						{/each}
 					</ul>
 				{:else}
@@ -419,6 +422,23 @@
 
 	.token-item {
 		display: flex;
+
+		$border-rad: calc($x-space-xs / 2);
+
+		&--top > .token > .token__value,
+		&--top > .token > .token__value-input {
+			border-radius: $border-rad $border-rad 0 0;
+		}
+
+		&--bottom > .token > .token__value,
+		&--bottom > .token > .token__value-input {
+			border-radius: 0 0 $border-rad $border-rad;
+		}
+
+		&--mid > .token > .token__value,
+		&--mid > .token > .token__value-input {
+			border-radius: 0;
+		}
 	}
 
 	.token {
