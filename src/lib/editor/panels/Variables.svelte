@@ -213,7 +213,7 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<i class="fa-solid fa-circle-dot token__track" class:token__track--color={isColorValue(token.tokenValue)} style="--color-icon: {token.tokenValue ?? 'transparent'}" title="Token"></i>
+					<i class="fa-solid fa-circle-dot token__track" title="Token"></i>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
@@ -462,14 +462,8 @@
 
 	.token__track {
 		font-size: $x-font-size-sm;
-		color: var(--color-primary);
+		color: var(--color-text);
 		padding-inline: calc($x-space-xs / 2);
-
-		&--color {
-			-webkit-text-stroke: 1px black;
-			-webkit-text-stroke-color: var(--color-icon, var(--color-primary));
-			color: var(--color-icon, var(--color-primary));
-		}
 	}
 
 	.token__name {
