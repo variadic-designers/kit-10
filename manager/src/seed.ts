@@ -107,7 +107,12 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.createToken(proj.id, 'colors.primary', '#6366f1', { viewId: darkCompactView.id });
 
 	// View: Light Comfortable
-	await api.createViewInProject(proj.id, 'Light Comfortable');
+	const lightComfortableView = (await api.createViewInProject(proj.id, 'Light Comfortable'))!;
+	await api.attachKitToComposition(layoutKit.id, lightComfortableView.id);
+	await api.attachKitToComposition(buttonKit.id, lightComfortableView.id);
+	await api.setAxisArg(lightComfortableView.id, buttonKit.id, themeAxis.id, { type: 'literal', value: 'light' });
+	await api.setAxisArg(lightComfortableView.id, buttonKit.id, densityAxis.id, { type: 'literal', value: 'comfortable' });
+	await api.setAxisArg(lightComfortableView.id, layoutKit.id, themeAxis.id, { type: 'literal', value: 'light' });
 
 	console.log('Demo project seeded: KIT\u202210 Demo');
 }
