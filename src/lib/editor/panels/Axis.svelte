@@ -303,6 +303,7 @@
 			@include fonts-stack('Satoshi-Regular', sans);
 			font-size: $x-font-size-md;
 			font-weight: 600;
+			text-transform: capitalize;
 			cursor: pointer;
 
 			&:hover {
