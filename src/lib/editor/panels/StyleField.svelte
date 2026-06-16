@@ -273,7 +273,7 @@
 			}
 
 			.token-pill__icon {
-				font-size: $x-font-size-sm;
+				font-size: 1rem;
 			}
 
 			.token-pill__icon--color {
