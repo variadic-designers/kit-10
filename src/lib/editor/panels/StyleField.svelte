@@ -124,11 +124,12 @@
 	{:else}
 		<button
 			class="option124__track"
+			class:option124__track--empty={!value}
 			aria-label="Literal property"
 			title="literal"
 			type="button"
 		>
-			<i class="fa-solid fa-minus"></i>
+			<i class="fa-solid fa-circle-dot"></i>
 		</button>
 	{/if}
 
@@ -203,10 +204,8 @@
 
 		&__track {
 			text-align: center;
-			font-size: $x-font-size-md;
-			-webkit-text-stroke-width: 2px;
-			color: var(--color-diamond-color--tracked);
-			-webkit-text-stroke-color: var(--color-diamond-border--tracked);
+			font-size: $x-font-size-sm;
+			color: var(--color-text);
 
 			&:focus {
 				filter: saturate(1.2);
@@ -214,11 +213,10 @@
 
 			&--token {
 				color: var(--color-primary);
-				-webkit-text-stroke-color: var(--color-primary);
 			}
 
-			&--tracked--empty {
-				rotate: 45deg;
+			&--empty {
+				color: var(--color-surface-alt);
 			}
 
 			@include layout-respond-max('lg') {
