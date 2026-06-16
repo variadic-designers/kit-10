@@ -203,11 +203,7 @@
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
-					{#if token.tokenValue}
-						<i class="fa-solid fa-diamond token__track" class:token__track--color={isColorValue(token.tokenValue)} style="--color-icon: {token.tokenValue}" title="Token"></i>
-					{:else}
-						<i class="fa-solid fa-circle-dot token__track token__track--empty" title="Empty token"></i>
-					{/if}
+					<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
 					<span class="token__name">
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
@@ -217,6 +213,7 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
+					<i class="fa-solid fa-diamond token__track" title="Token"></i>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
@@ -454,19 +451,19 @@
 		}
 	}
 
+	.token__icon {
+		font-size: $x-font-size-md;
+		padding-right: calc($x-space-xs / 2);
+	}
+
+	.token__icon--color {
+		color: var(--color-icon, var(--color-text));
+	}
+
 	.token__track {
 		font-size: $x-font-size-sm;
 		color: var(--color-primary);
-		padding-right: calc($x-space-xs / 2);
-
-		&--color {
-			-webkit-text-stroke: 1px black;
-			-webkit-text-stroke-color: var(--color-icon, var(--color-primary));
-		}
-
-		&--empty {
-			color: var(--color-surface-alt);
-		}
+		padding-inline: calc($x-space-xs / 2);
 	}
 
 	.token__name {
