@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-KIT•10 is a design system framework where design intent flows through Views → Kits → Axes → Layers → Tokens, resolved by a three-tier specificity engine with scoped tokens.
+KIT•10 is a design system framework where design intent flows through Views ← Layers [Kits ← Axes] ← Tokens, resolved by a three-tier specificity engine with scoped tokens.
 
 ## Key Constraints
 
