@@ -256,7 +256,7 @@
 					{#if viewRows && viewRows.length > 0}
 						<ul class="tokens-list">
 							{#each viewRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--view', true)}
+								{@render tokenRow(token, 'token--view', false)}
 							{/each}
 						</ul>
 					{:else}
@@ -282,7 +282,7 @@
 					{#if kitRows && kitRows.length > 0}
 						<ul class="tokens-list">
 							{#each kitRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--kit', false)}
+								{@render tokenRow(token, 'token--kit', true)}
 							{/each}
 						</ul>
 					{:else}
@@ -307,7 +307,7 @@
 				{#if projectRows && projectRows.length > 0}
 					<ul class="tokens-list">
 						{#each projectRows as token (token.tokenId)}
-							{@render tokenRow(token, 'token--project', true)}
+							{@render tokenRow(token, 'token--project', false)}
 						{/each}
 					</ul>
 				{:else}
