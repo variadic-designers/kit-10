@@ -196,7 +196,7 @@
 	tooltip="Design tokens: Project, Kit, and View scoped"
 >
 	{#snippet content()}
-		{#snippet tokenRow(token: TokenRow, scopeClass: string)}
+		{#snippet tokenRow(token: TokenRow, scopeClass: string, showTrack: boolean)}
 			<li class="token-item">
 				<div
 					class="token {scopeClass}"
@@ -213,9 +213,11 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<button class="token__track" title="Token" type="button">
-						<i class="fa-solid fa-circle-dot"></i>
-					</button>
+					{#if showTrack}
+						<button class="token__track" title="Token" type="button">
+							<i class="fa-solid fa-circle-dot"></i>
+						</button>
+					{/if}
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
@@ -254,7 +256,7 @@
 					{#if viewRows && viewRows.length > 0}
 						<ul class="tokens-list">
 							{#each viewRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--view')}
+								{@render tokenRow(token, 'token--view', true)}
 							{/each}
 						</ul>
 					{:else}
@@ -280,7 +282,7 @@
 					{#if kitRows && kitRows.length > 0}
 						<ul class="tokens-list">
 							{#each kitRows as token (token.tokenId)}
-								{@render tokenRow(token, 'token--kit')}
+								{@render tokenRow(token, 'token--kit', false)}
 							{/each}
 						</ul>
 					{:else}
@@ -305,7 +307,7 @@
 				{#if projectRows && projectRows.length > 0}
 					<ul class="tokens-list">
 						{#each projectRows as token (token.tokenId)}
-							{@render tokenRow(token, 'token--project')}
+							{@render tokenRow(token, 'token--project', true)}
 						{/each}
 					</ul>
 				{:else}
