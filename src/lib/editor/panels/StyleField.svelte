@@ -119,7 +119,7 @@
 			title="{tokenAlias ?? 'token'}"
 			type="button"
 		>
-			<i class="fa-solid fa-diamond" style="font-size: 0.6em;"></i>
+			<i class="fa-solid fa-diamond"></i>
 		</button>
 	{:else}
 		<button
@@ -204,7 +204,7 @@
 
 		&__track {
 			text-align: center;
-			font-size: $x-font-size-sm;
+			font-size: 0.7em;
 			color: var(--color-text);
 
 			&:focus {
