@@ -198,12 +198,14 @@
 	{#snippet content()}
 		{#snippet tokenRow(token: TokenRow, scopeClass: string)}
 			<li class="token-item">
-				<button
+				<div
 					class="token {scopeClass}"
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
-					<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
+					<button class="token__track" title="Token" type="button">
+						<i class="fa-solid fa-circle-dot"></i>
+					</button>
 					<span class="token__name">
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
@@ -213,9 +215,6 @@
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
 					</span>
-					<button class="token__track" title="Token" type="button">
-						<i class="fa-solid fa-circle-dot"></i>
-					</button>
 					{#if editingValue[token.tokenId] === true}
 						<input
 							class="token__value-input"
@@ -234,7 +233,7 @@
 							{token.tokenValue ?? '+'}
 						</button>
 					{/if}
-				</button>
+				</div>
 			</li>
 		{/snippet}
 
@@ -422,7 +421,6 @@
 	.token {
 		color: var(--color-text);
 		user-select: none;
-		border: unset;
 		background: var(--color-surface);
 		padding-inline: $x-space-sm;
 		text-align: left;
@@ -463,9 +461,11 @@
 	}
 
 	.token__track {
+		all: unset;
 		font-size: $x-font-size-sm;
 		color: var(--color-text);
 		padding-inline: calc($x-space-xs / 2);
+		cursor: pointer;
 	}
 
 	.token__name {
