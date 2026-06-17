@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { contextMenu } from '$lib/components/contextMenu';
+	import { tokenIcon, isColorValue } from './token-utils.ts';
 
 	type StyleFieldProps = {
 		key: string;
@@ -22,20 +24,6 @@
 		highlighted = $bindable(false),
 		position = 'mid'
 	}: StyleFieldProps = $props();
-
-	import { contextMenu } from '$lib/components/contextMenu';
-
-	function tokenIcon(v: string | null | undefined): string {
-		if (!v) return 'fa-question';
-		if (v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl')) return 'fa-square-full';
-		if (/^\d/.test(v) && (v.includes('px') || v.includes('rem') || v.includes('em') || v.includes('%'))) return 'fa-arrows-left-right-to-line';
-		return 'fa-circle';
-	}
-
-	function isColorValue(v: string | null | undefined): boolean {
-		if (!v) return false;
-		return v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl');
-	}
 
 	const menu = () => {
 		return [
@@ -224,10 +212,13 @@
 			}
 		}
 
-		&__style-name {
-			flex-grow: 1;
+&__style-name {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 			padding-inline: calc($x-space-xs / 2);
-			text-align: justify;
 			text-transform: capitalize;
 
 			@include layout-respond('lg') {
@@ -245,9 +236,9 @@
 
 		&__value {
 			all: unset;
-			padding: calc($x-space-xs / 2);
-			text-align: center;
-			flex-basis: 60%;
+			padding: calc($x-space-xs / 2) $x-space-sm;
+			text-align: left;
+			flex-basis: 40%;
 			flex-shrink: 1;
 			position: relative;
 			border-radius: 1px;
@@ -297,6 +288,7 @@
 
 			&--new {
 				cursor: pointer;
+				text-align: center;
 			}
 
 			&:hover {

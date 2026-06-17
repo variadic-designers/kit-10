@@ -94,7 +94,7 @@
 			text: '#3f3a3a',
 			text-muted: '#606a78',
 			surface: '#f1f1f1',
-			surface-alt: '#dedede',
+			surface-alt: '#e8f2fb',
 
 			add-var-bg: '#f1f1f1',
 			add-var-border: 1px solid #dedede,

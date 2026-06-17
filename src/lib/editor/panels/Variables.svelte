@@ -29,13 +29,6 @@
 		type?: string;
 	}
 
-	const ICONS: Record<string, string> = {
-		color: 'fa-square-full',
-		spacing: 'fa-arrows-left-right-to-line'
-	};
-
-	export const tokenIcon = (type?: string): string => ICONS[type ?? ''] || 'fa-question';
-
 	export type TokenPanelProps = {
 		tokens: Token[];
 		tokenLibraries: { [namespace: string]: TokenLibraryNode };
@@ -56,6 +49,7 @@
 	import Panel from '../Panel.svelte';
 	import { type Api, type EditorState } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
+	import { tokenIcon, isColorValue } from './token-utils.ts';
 
 	type TokenRow = { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null };
 
@@ -151,18 +145,6 @@
 			onClick: () => { addingScope = 'project'; }
 		}
 	];
-
-	function tokenIcon(value: string | null): string {
-		if (!value) return 'fa-question';
-		if (value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl')) return 'fa-square-full';
-		if (/^\d/.test(value) && (value.includes('px') || value.includes('rem') || value.includes('em') || value.includes('%'))) return 'fa-arrows-left-right-to-line';
-		return 'fa-circle';
-	}
-
-	function isColorValue(value: string | null): boolean {
-		if (!value) return false;
-		return value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl');
-	}
 
 	function tokenContextMenu(tokenId: string): ContextMenuContent {
 		return () => [
@@ -452,7 +434,7 @@
 		background: var(--color-surface);
 		padding-inline: $x-space-sm;
 		text-align: left;
-		@include fonts-stack('Satoshi-Light', sans-serif);
+		@include fonts-stack('Satoshi-Regular', sans-serif);
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;
@@ -508,10 +490,10 @@
 
 	.token__value {
 		all: unset;
-		flex-basis: 60%;
+		flex-basis: 40%;
 		flex-shrink: 1;
-		text-align: center;
-		padding: calc($x-space-xs / 2);
+		text-align: left;
+		padding: calc($x-space-xs / 2) $x-space-sm;
 		cursor: pointer;
 		color: var(--color-add-var-text);
 		font-size: $x-font-size-sm;
@@ -525,13 +507,14 @@
 
 		&--new {
 			cursor: pointer;
+			text-align: center;
 		}
 	}
 
 	.token__value-input {
 		all: unset;
 		font-size: $x-font-size-sm;
-		flex-basis: 60%;
+		flex-basis: 40%;
 		flex-shrink: 1;
 		text-align: center;
 		padding: calc($x-space-xs / 2);

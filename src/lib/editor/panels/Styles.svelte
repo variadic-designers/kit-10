@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
 	import StyleField from './StyleField.svelte';
-	import type { ResolvedKit, ResolvedProperty } from 'manager';
+	import { flattenKitResults, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 
 	type StylesPanel = {
@@ -22,17 +22,9 @@
 		];
 	};
 
-	const resolvedMap = $derived.by(() => {
-		const map = new Map<string, ResolvedProperty>();
-		if (resolvedKits) {
-			for (const kit of resolvedKits) {
-				for (const [prop, resolved] of kit.properties) {
-					map.set(prop, resolved);
-				}
-			}
-		}
-		return map;
-	});
+	const resolvedMap = $derived(
+		resolvedKits ? flattenKitResults(resolvedKits) : new Map<string, ResolvedProperty>()
+	);
 
 	function track(key: string): { sourceLayerId: string | null; isToken: boolean; tokenAlias: string | null } {
 		const prop = resolvedMap.get(key);

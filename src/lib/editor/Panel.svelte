@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Action } from '@sveltejs/kit';
 	import type { Snippet } from 'svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import { collapse } from './panelStore.ts';

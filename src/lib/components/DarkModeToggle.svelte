@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { type Theme, theme, updateTheme } from '../theming.ts';
-	import type { AriaChecked, AriaCheckedHandlers } from '../types/aria.ts';
+	import type { AriaChecked } from '../types/aria.ts';
 
 	import { page } from '$app/state';
 

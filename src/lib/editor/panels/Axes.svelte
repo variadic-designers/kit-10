@@ -1,14 +1,7 @@
 <script lang="ts" module>
-	export type AxisMode = 'categorical' | 'range' | 'discrete';
+	import type { AxisMode, AxisArgValue, AxisValueOption } from './Axis.svelte';
 
-	export type AxisArgValue =
-		| { type: 'literal'; value: string }
-		| { type: 'range'; min: number | null; max: number | null };
-
-	export type AxisValueOption =
-		| { type: 'literal'; value: string }
-		| { type: 'range'; operator: string; threshold: number; threshold_high?: number }
-		| { type: 'discrete'; value: string };
+	export type { AxisMode, AxisArgValue, AxisValueOption };
 </script>
 
 <script lang="ts">

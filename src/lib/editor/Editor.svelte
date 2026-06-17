@@ -99,8 +99,6 @@
 </script>
 
 <script lang="ts">
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
-
 	let offsetX = $state(0);
 	let offsetY = $state(0);
 
@@ -133,20 +131,6 @@
 		}
 	});
 
-	const navContextMenu: ContextMenuContentGenerator = () => {
-		return [
-			{
-				name: 'donation',
-				displayText: 'Donate',
-				icon: 'fa-solid fa-gift',
-				onClick: () => ({
-					link: 'https://ko-fi.com/yorqat',
-					tab: '_blank'
-				})
-			}
-		];
-	};
-
 	import ViewsPanel from './panels/Views.svelte';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
@@ -159,7 +143,7 @@
 	import { resolveMany as resolveManyManager, type ResolvedKit } from 'manager';
 	import { onMount } from 'svelte';
 
-	import type { EditorState, EditorQueryBuilder, EditorCore, Api, EditorDialect } from 'manager';
+	import type { EditorState, EditorQueryBuilder, Api } from 'manager';
 	import { initializeEditorState } from 'manager';
 
 	onMount(async () => {
