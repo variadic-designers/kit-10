@@ -93,22 +93,22 @@
 			bg: '#ddd',
 			text: '#3f3a3a',
 			text-muted: '#606a78',
-			surface: '#f1f1f1',
+			surface: '#FFF',
 			surface-alt: '#e8f2fb',
 
-			add-var-bg: '#f1f1f1',
+			add-var-bg: '#f5f5f5',
 			add-var-border: 1px solid #dedede,
 			add-var-text: '#3f3a3a',
 
 			diamond-border--tracked: '#3f3a3a',
 			diamond-border--tracked--empty: '#3f3a3a',
-			diamond-color--tracked--empty: '#f1f1f1',
+			diamond-color--tracked--empty: '#f5f5f5',
 
 			diamond-border--untracked: '#3f3a3a',
 			diamond-color--untracked: '#dedede',
 
 			panel-header-border: '#E5E5E5',
-			panel-header-fill: '#FAFAFA'
+			panel-header-fill: '#f5f5f5'
 		);
 
 		$dark: (

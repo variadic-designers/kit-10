@@ -431,7 +431,6 @@
 	.token {
 		color: var(--color-text);
 		user-select: none;
-		background: var(--color-surface);
 		padding-inline: $x-space-sm;
 		text-align: left;
 		@include fonts-stack('Satoshi-Regular', sans-serif);
