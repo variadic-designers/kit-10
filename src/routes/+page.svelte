@@ -36,60 +36,62 @@
 		</div>
 	</nav>
 
-	<section class="hero">
-		<div class="hero-content">
-			<h1>
-				Design intent,<br />
-				<span class="hero-accent">resolved</span>
-			</h1>
-			<p class="hero-sub">
-				KIT•10 is a design system framework that turns design intent into resolved style outputs, reliably and predictably.
-			</p>
-			<div class="hero-cta">
-				<a href="/edit" class="btn-primary btn-lg">Get Started</a>
-				<a href="#about" class="btn-outline btn-lg">Learn More</a>
+	<main>
+		<section class="hero">
+			<div class="hero-content">
+				<h1>
+					Design intent,<br />
+					<span class="hero-accent">resolved</span>
+				</h1>
+				<p class="hero-sub">
+					KIT•10 is a design system framework that turns design intent into resolved style outputs, reliably and predictably.
+				</p>
+				<div class="hero-cta">
+					<a href="/edit" class="btn-primary btn-lg">Get Started</a>
+					<a href="#about" class="btn-outline btn-lg">Learn More</a>
+				</div>
 			</div>
-		</div>
-		<div class="hero-visual">
-			<svg class="hero-glyph" viewBox="0 0 622.31 476" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-				<path d="M622.31,238c0,131.44-106.56,238-238,238V444.82C384.31,330.6,476.91,238,591.13,238Z" fill="#93c5fd" />
-				<path d="M384.31,444.82V476c-131.44,0-238-106.56-238-238h31.18C291.71,238,384.31,330.6,384.31,444.82Z" fill="#3b82f6" />
-				<path d="M384.31,0V31.18C384.31,145.4,291.71,238,177.49,238H146.31C146.31,106.56,252.87,0,384.31,0Z" fill="#3b82f6" />
-				<path d="M622.31,238H591.13c-114.22,0-206.82-92.6-206.82-206.82V0C515.75,0,622.31,106.56,622.31,238Z" fill="#93c5fd" />
-				<path d="M147.1,0h0a0,0,0,0,1,0,0V328.9A147.1,147.1,0,0,1,0,476H0a0,0,0,0,1,0,0V147.1A147.1,147.1,0,0,1,147.1,0Z" fill="#3b82f6" />
-			</svg>
-		</div>
-	</section>
+			<div class="hero-visual">
+				<svg class="hero-glyph" viewBox="0 0 622.31 476" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+					<path d="M622.31,238c0,131.44-106.56,238-238,238V444.82C384.31,330.6,476.91,238,591.13,238Z" fill="#93c5fd" />
+					<path d="M384.31,444.82V476c-131.44,0-238-106.56-238-238h31.18C291.71,238,384.31,330.6,384.31,444.82Z" fill="#3b82f6" />
+					<path d="M384.31,0V31.18C384.31,145.4,291.71,238,177.49,238H146.31C146.31,106.56,252.87,0,384.31,0Z" fill="#3b82f6" />
+					<path d="M622.31,238H591.13c-114.22,0-206.82-92.6-206.82-206.82V0C515.75,0,622.31,106.56,622.31,238Z" fill="#93c5fd" />
+					<path d="M147.1,0h0a0,0,0,0,1,0,0V328.9A147.1,147.1,0,0,1,0,476H0a0,0,0,0,1,0,0V147.1A147.1,147.1,0,0,1,147.1,0Z" fill="#3b82f6" />
+				</svg>
+			</div>
+		</section>
 
-	<section id="about" class="about">
-		<h2>About</h2>
-		<div class="about-grid">
-			<div class="about-card">
-				<i class="fa-solid fa-layer-group"></i>
-				<h3>Specificity Cascade</h3>
-				<p>Three-tier resolution: axis count, compounded order, and kit priority. Deterministic, every time.</p>
+		<section id="about" class="about">
+			<h2>About</h2>
+			<div class="about-grid">
+				<div class="about-card">
+					<i class="fa-solid fa-layer-group"></i>
+					<h3>Specificity Cascade</h3>
+					<p>Three-tier resolution: axis count, compounded order, and kit priority. Deterministic, every time.</p>
+				</div>
+				<div class="about-card">
+					<i class="fa-solid fa-diagram-project"></i>
+					<h3>Scoped Tokens</h3>
+					<p>Tokens live at project, kit, or view scope. Higher scopes override lower ones for the same alias.</p>
+				</div>
+				<div class="about-card">
+					<i class="fa-solid fa-puzzle-piece"></i>
+					<h3>Composable Kits</h3>
+					<p>Independent style kits resolve against shared view conditions. Stack them, reorder them, override them.</p>
+				</div>
 			</div>
-			<div class="about-card">
-				<i class="fa-solid fa-diagram-project"></i>
-				<h3>Scoped Tokens</h3>
-				<p>Tokens live at project, kit, or view scope. Higher scopes override lower ones for the same alias.</p>
+			<div class="about-footer">
+				<p>
+					Built with care by <a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener">Yor Designs</a>.
+					KIT•10 is early-stage and evolving rapidly.
+				</p>
+				<a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener" class="btn-primary btn-donate">
+					<i class="fa-solid fa-gift"></i> Support KIT•10
+				</a>
 			</div>
-			<div class="about-card">
-				<i class="fa-solid fa-puzzle-piece"></i>
-				<h3>Composable Kits</h3>
-				<p>Independent style kits resolve against shared view conditions. Stack them, reorder them, override them.</p>
-			</div>
-		</div>
-		<div class="about-footer">
-			<p>
-				Built with care by <a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener">Yor Designs</a>.
-				KIT•10 is early-stage and evolving rapidly.
-			</p>
-			<a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener" class="btn-primary btn-donate">
-				<i class="fa-solid fa-gift"></i> Support KIT•10
-			</a>
-		</div>
-	</section>
+		</section>
+	</main>
 </div>
 
 <style lang="scss" global>
@@ -244,6 +246,7 @@
 			width: 100%;
 			max-width: 20rem;
 			height: auto;
+			view-transition-name: kit10-logo;
 		}
 	}
 

@@ -245,6 +245,7 @@
 			height: calc($x-font-size-2xl * 8);
 			aspect-ratio: 622.31 / 476;
 			fill: white;
+			view-transition-name: kit10-logo;
 			background: radial-gradient(
 				circle,
 				#93c5fd 30%,
