@@ -16,8 +16,10 @@ export interface ResolvedProperty {
 	property: string;
 	value: string;
 	sourceLayerId: string;
+	kitId: string;
 	isToken: boolean;
 	tokenAlias: string | null;
+	conditionCount: number;
 }
 
 interface LayerCondition {
@@ -40,7 +42,7 @@ interface LayerData {
 	entries: LayerEntry[];
 }
 
-function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
+export function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 	switch (condition.type) {
 		case 'literal':
 			return arg.type === 'literal' && arg.value === condition.value;
@@ -204,8 +206,10 @@ export async function resolve(
 				property: entry.property,
 				value: resolvedValue,
 				sourceLayerId: data.id,
+				kitId,
 				isToken: !!entry.tokenId,
 				tokenAlias: entry.tokenAlias,
+				conditionCount: data.conditions.length,
 			});
 		}
 	}

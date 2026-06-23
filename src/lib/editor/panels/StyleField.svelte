@@ -7,6 +7,9 @@
 		key: string;
 		displayText: string;
 		sourceLayerId?: string | null;
+		kitId?: string | null;
+		kitIcon?: string;
+		conditionCount?: number;
 		isToken?: boolean;
 		tokenAlias?: string | null;
 		value?: string | null;
@@ -18,6 +21,9 @@
 		key,
 		displayText,
 		sourceLayerId,
+		kitId,
+		kitIcon = 'fa-circle',
+		conditionCount = 0,
 		isToken,
 		tokenAlias,
 		value,
@@ -51,6 +57,16 @@
 			}
 		];
 	};
+
+	function conditionColor(count: number): string {
+		if (count === 0) return 'var(--color-text-muted)';
+		const max = 5;
+		const t = Math.min(count / max, 1);
+		const L = 0.65;
+		const C = 0.13;
+		const hue = 250 - 250 * t;
+		return `oklch(${L} ${C} ${hue})`;
+	}
 
 	const editValue = $state({
 		now: false,
@@ -102,22 +118,24 @@
 
 	{#if isToken}
 		<button
-			class="option124__track option124__track--token"
+			class="option124__track"
+			style="--track-color: {conditionColor(conditionCount)}"
 			aria-label="Tokenized property"
-			title="{tokenAlias ?? 'token'}"
+			title={tokenAlias ?? 'token'}
 			type="button"
 		>
-			<i class="fa-solid fa-diamond"></i>
+			<i class="fa-solid {kitIcon}"></i>
 		</button>
 	{:else}
 		<button
 			class="option124__track"
+			style="--track-color: {conditionColor(conditionCount)}"
 			class:option124__track--empty={!value}
 			aria-label="Literal property"
 			title="literal"
 			type="button"
 		>
-			<i class="fa-solid fa-circle-dot"></i>
+			<i class="fa-solid {kitIcon}"></i>
 		</button>
 	{/if}
 
@@ -150,7 +168,10 @@
 		>
 			{#if isToken}
 				<span class="token-pill" style="--color-icon: {value ?? 'transparent'}">
-					<i class="fa-solid {tokenIcon(value)} token-pill__icon" class:token-pill__icon--color={isColorValue(value)}></i>
+					<i
+						class="fa-solid {tokenIcon(value)} token-pill__icon"
+						class:token-pill__icon--color={isColorValue(value)}
+					></i>
 					{tokenAlias ?? 'token'}
 				</span>
 			{:else if value}
@@ -193,14 +214,10 @@
 		&__track {
 			text-align: center;
 			font-size: $x-font-size-sm;
-			color: var(--color-text);
+			color: var(--track-color, var(--color-text));
 
 			&:focus {
 				filter: saturate(1.2);
-			}
-
-			&--token {
-				color: var(--color-primary);
 			}
 
 			&--empty {
@@ -212,7 +229,7 @@
 			}
 		}
 
-&__style-name {
+		&__style-name {
 			flex: 1;
 			min-width: 0;
 			overflow: hidden;
@@ -262,7 +279,6 @@
 			}
 
 			.token-pill__icon {
-				font-size: 1rem;
 			}
 
 			.token-pill__icon--color {

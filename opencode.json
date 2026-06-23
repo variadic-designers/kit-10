@@ -1,0 +1,13 @@
+{
+	"$schema": "https://opencode.ai/config.json",
+	"model": "deepseek/deepseek-chat",
+	"small_model": "deepseek/deepseek-chat",
+	"formatter": true,
+	"lsp": true,
+	"instructions": ["AGENTS.md"],
+	"compaction": {
+		"auto": true,
+		"prune": false,
+		"reserved": 10000
+	}
+}

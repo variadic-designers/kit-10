@@ -17,6 +17,10 @@
 		kind: AxisMode;
 		values: AxisValueOption[];
 		currentArg: AxisArgValue | null;
+		kitShape?: string;
+		axisCount?: number;
+		axisValueIds?: Record<string, string>;
+		valueLayerCells?: Record<string, { hasShape: boolean; active: boolean; conditionCount: number }[]>;
 		disabled?: boolean;
 		onArgChange: (arg: AxisArgValue | null) => void;
 	};
@@ -33,9 +37,23 @@
 		kind = 'categorical',
 		values = [],
 		currentArg,
+		kitShape = 'fa-circle',
+		axisCount = 0,
+		axisValueIds = {},
+		valueLayerCells = {},
 		disabled = false,
 		onArgChange
 	}: AxisProps = $props();
+
+	function conditionColor(count: number): string {
+		if (count === 0) return 'var(--color-text-muted)';
+		const max = 5;
+		const t = Math.min(count / max, 1);
+		const L = 0.65;
+		const C = 0.13;
+		const hue = 250 - 250 * t;
+		return `oklch(${L} ${C} ${hue})`;
+	}
 
 	const axisContextMenu = [
 		{

@@ -26,16 +26,30 @@
 		resolvedKits ? flattenKitResults(resolvedKits) : new Map<string, ResolvedProperty>()
 	);
 
-	function track(key: string): { sourceLayerId: string | null; isToken: boolean; tokenAlias: string | null } {
+	const COMPOSE_ICONS = ['fa-circle', 'fa-square', 'fa-diamond', 'fa-star', 'fa-heart', 'fa-bolt', 'fa-gem', 'fa-crown'];
+
+	const kitIconMap = $derived.by(() => {
+		const map = new Map<string, string>();
+		if (!resolvedKits) return map;
+		for (let i = 0; i < resolvedKits.length; i++) {
+			map.set(resolvedKits[i]!.kitId, i >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[i] ?? 'fa-circle'));
+		}
+		return map;
+	});
+
+	function track(key: string): { sourceLayerId: string | null; kitId: string | null; kitIcon: string; conditionCount: number; isToken: boolean; tokenAlias: string | null } {
 		const prop = resolvedMap.get(key);
 		if (prop) {
 			return {
 				sourceLayerId: prop.sourceLayerId,
+				kitId: prop.kitId,
+				kitIcon: prop.conditionCount === 0 ? 'fa-circle-dot' : (kitIconMap.get(prop.kitId) ?? 'fa-circle'),
+				conditionCount: prop.conditionCount,
 				isToken: prop.isToken,
 				tokenAlias: prop.tokenAlias
 			};
 		}
-		return { sourceLayerId: null, isToken: false, tokenAlias: null };
+		return { sourceLayerId: null, kitId: null, kitIcon: 'fa-circle', conditionCount: 0, isToken: false, tokenAlias: null };
 	}
 </script>
 

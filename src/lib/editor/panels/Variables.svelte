@@ -51,7 +51,13 @@
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { tokenIcon, isColorValue } from './token-utils.ts';
 
-	type TokenRow = { tokenId: string; tokenAlias: string | null; tokenValue: string | null; tokenKitId: string | null; tokenViewId: string | null };
+	type TokenRow = {
+		tokenId: string;
+		tokenAlias: string | null;
+		tokenValue: string | null;
+		tokenKitId: string | null;
+		tokenViewId: string | null;
+	};
 
 	type TokensPanelProps = {
 		api: Api;
@@ -59,11 +65,7 @@
 		editorActivity: EditorActivity;
 	};
 
-	let {
-		api,
-		editorReady,
-		editorActivity = $bindable()
-	}: TokensPanelProps = $props();
+	let { api, editorReady, editorActivity = $bindable() }: TokensPanelProps = $props();
 
 	const projectTokensQuery = liveQuery((api, activity) => {
 		return api.getTokensByProjectId(activity.activeProjectId);
@@ -104,11 +106,12 @@
 		const projectId = editorActivity.activeProjectId;
 		if (!projectId) return;
 
-		const scopeObj = scope === 'kit' && editorActivity.activeKitId
-			? { kitId: editorActivity.activeKitId }
-			: scope === 'view' && editorActivity.activeViewId
-				? { viewId: editorActivity.activeViewId }
-				: undefined;
+		const scopeObj =
+			scope === 'kit' && editorActivity.activeKitId
+				? { kitId: editorActivity.activeKitId }
+				: scope === 'view' && editorActivity.activeViewId
+					? { viewId: editorActivity.activeViewId }
+					: undefined;
 
 		await api.createToken(projectId, newTokenAlias, newTokenValue, scopeObj);
 		newTokenAlias = '';
@@ -129,20 +132,26 @@
 			name: 'add',
 			displayText: 'Add View Token',
 			icon: 'fa-regular fa-window-maximize',
-			onClick: () => { addingScope = 'view'; }
+			onClick: () => {
+				addingScope = 'view';
+			}
 		},
 		{
 			name: 'add',
 			displayText: 'Add Kit Token',
 			icon: 'fa-solid fa-puzzle-piece',
-			onClick: () => { addingScope = 'kit'; }
+			onClick: () => {
+				addingScope = 'kit';
+			}
 		},
 		'hr',
 		{
 			name: 'add',
 			displayText: 'Add Project Token',
 			icon: 'fa-solid fa-diagram-project',
-			onClick: () => { addingScope = 'project'; }
+			onClick: () => {
+				addingScope = 'project';
+			}
 		}
 	];
 
@@ -152,13 +161,17 @@
 				name: 'rename',
 				displayText: 'Rename',
 				icon: 'fa-solid fa-i-cursor',
-				onClick: () => { editingAlias[tokenId] = true; }
+				onClick: () => {
+					editingAlias[tokenId] = true;
+				}
 			},
 			{
 				name: 'editValue',
 				displayText: 'Edit Value',
 				icon: 'fa-solid fa-pencil',
-				onClick: () => { editingValue[tokenId] = true; }
+				onClick: () => {
+					editingValue[tokenId] = true;
+				}
 			},
 			'hr',
 			{
@@ -178,19 +191,36 @@
 	tooltip="Design tokens: Project, Kit, and View scoped"
 >
 	{#snippet content()}
-		{#snippet tokenRow(token: TokenRow, scopeClass: string, showTrack: boolean, position: 'top' | 'mid' | 'bottom' | 'solo')}
-			<li class="token-item" class:token-item--top={position === 'top'} class:token-item--bottom={position === 'bottom'} class:token-item--mid={position === 'mid'} class:token-item--solo={position === 'solo'}>
+		{#snippet tokenRow(
+			token: TokenRow,
+			scopeClass: string,
+			showTrack: boolean,
+			position: 'top' | 'mid' | 'bottom' | 'solo'
+		)}
+			<li
+				class="token-item"
+				class:token-item--top={position === 'top'}
+				class:token-item--bottom={position === 'bottom'}
+				class:token-item--mid={position === 'mid'}
+				class:token-item--solo={position === 'solo'}
+			>
 				<div
 					class="token {scopeClass}"
 					style="--color-icon: {token.tokenValue ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
 					<span class="token__name">
-						<i class="fa-solid {tokenIcon(token.tokenValue)} token__icon" class:token__icon--color={isColorValue(token.tokenValue)}></i>
+						<i
+							class="fa-solid {tokenIcon(token.tokenValue)} token__icon"
+							class:token__icon--color={isColorValue(token.tokenValue)}
+						></i>
 						<Renameable
 							editing={editingAlias[token.tokenId] === true}
 							value={token.tokenAlias ?? 'Unnamed'}
-							onCommit={(name) => { renameToken(token.tokenId, name); editingAlias[token.tokenId] = false; }}
+							onCommit={(name) => {
+								renameToken(token.tokenId, name);
+								editingAlias[token.tokenId] = false;
+							}}
 						>
 							{token.tokenAlias ?? 'Unnamed'}
 						</Renameable>
@@ -205,15 +235,26 @@
 							class="token__value-input"
 							type="text"
 							value={token.tokenValue ?? ''}
-							onblur={() => { editingValue[token.tokenId] = false; }}
-							onkeydown={(e) => { if (e.key === 'Enter') { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); editingValue[token.tokenId] = false; } }}
-							oninput={(e) => { api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value); }}
+							onblur={() => {
+								editingValue[token.tokenId] = false;
+							}}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value);
+									editingValue[token.tokenId] = false;
+								}
+							}}
+							oninput={(e) => {
+								api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value);
+							}}
 						/>
 					{:else}
 						<button
 							class="token__value"
 							class:token__value--new={!token.tokenValue}
-							onclick={() => { editingValue[token.tokenId] = true; }}
+							onclick={() => {
+								editingValue[token.tokenId] = true;
+							}}
 						>
 							{token.tokenValue ?? '+'}
 						</button>
@@ -238,7 +279,14 @@
 					{#if viewRows && viewRows.length > 0}
 						<ul class="tokens-list">
 							{#each viewRows as token, i (token.tokenId)}
-								{@const pos = viewRows.length === 1 ? 'solo' : i === 0 ? 'top' : i === viewRows.length - 1 ? 'bottom' : 'mid'}
+								{@const pos =
+									viewRows.length === 1
+										? 'solo'
+										: i === 0
+											? 'top'
+											: i === viewRows.length - 1
+												? 'bottom'
+												: 'mid'}
 								{@render tokenRow(token, 'token--view', false, pos)}
 							{/each}
 						</ul>
@@ -265,7 +313,14 @@
 					{#if kitRows && kitRows.length > 0}
 						<ul class="tokens-list">
 							{#each kitRows as token, i (token.tokenId)}
-								{@const pos = kitRows.length === 1 ? 'solo' : i === 0 ? 'top' : i === kitRows.length - 1 ? 'bottom' : 'mid'}
+								{@const pos =
+									kitRows.length === 1
+										? 'solo'
+										: i === 0
+											? 'top'
+											: i === kitRows.length - 1
+												? 'bottom'
+												: 'mid'}
 								{@render tokenRow(token, 'token--kit', true, pos)}
 							{/each}
 						</ul>
@@ -291,7 +346,14 @@
 				{#if projectRows && projectRows.length > 0}
 					<ul class="tokens-list">
 						{#each projectRows as token, i (token.tokenId)}
-							{@const pos = projectRows.length === 1 ? 'solo' : i === 0 ? 'top' : i === projectRows.length - 1 ? 'bottom' : 'mid'}
+							{@const pos =
+								projectRows.length === 1
+									? 'solo'
+									: i === 0
+										? 'top'
+										: i === projectRows.length - 1
+											? 'bottom'
+											: 'mid'}
 							{@render tokenRow(token, 'token--project', false, pos)}
 						{/each}
 					</ul>
@@ -303,7 +365,13 @@
 
 		<!-- Add token form -->
 		{#if addingScope}
-			<form class="token-add" onsubmit={(e) => { e.preventDefault(); addToken(addingScope!); }}>
+			<form
+				class="token-add"
+				onsubmit={(e) => {
+					e.preventDefault();
+					addToken(addingScope!);
+				}}
+			>
 				<select bind:value={addingScope} class="token-add__scope">
 					{#if editorActivity.activeViewId}
 						<option value="view">View</option>
@@ -313,10 +381,30 @@
 					{/if}
 					<option value="project">Project</option>
 				</select>
-				<input type="text" bind:value={newTokenAlias} placeholder="alias" class="token-add__input" />
-				<input type="text" bind:value={newTokenValue} placeholder="value" class="token-add__input" />
-				<button type="submit" disabled={!newTokenAlias || !newTokenValue} class="token-add__btn">Add</button>
-				<button type="button" onclick={() => { addingScope = null; newTokenAlias = ''; newTokenValue = ''; }} class="token-add__btn token-add__btn--cancel">✕</button>
+				<input
+					type="text"
+					bind:value={newTokenAlias}
+					placeholder="alias"
+					class="token-add__input"
+				/>
+				<input
+					type="text"
+					bind:value={newTokenValue}
+					placeholder="value"
+					class="token-add__input"
+				/>
+				<button type="submit" disabled={!newTokenAlias || !newTokenValue} class="token-add__btn"
+					>Add</button
+				>
+				<button
+					type="button"
+					onclick={() => {
+						addingScope = null;
+						newTokenAlias = '';
+						newTokenValue = '';
+					}}
+					class="token-add__btn token-add__btn--cancel">✕</button
+				>
 			</form>
 		{/if}
 	{/snippet}
@@ -325,7 +413,7 @@
 <style lang="scss" global>
 	@use '_index' as *;
 
-.token-scope {
+	.token-scope {
 		@include layout-flex-column();
 
 		summary {
@@ -461,7 +549,6 @@
 	}
 
 	.token__icon {
-		font-size: $x-font-size-md;
 		padding-right: calc($x-space-xs / 2);
 	}
 

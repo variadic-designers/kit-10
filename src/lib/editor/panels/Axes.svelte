@@ -8,6 +8,7 @@
 	import Panel from '../Panel.svelte';
 	import Axis from './Axis.svelte';
 	import type { Api } from 'manager';
+	import { matchesArg } from 'manager';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
@@ -19,12 +20,7 @@
 		onArgChange?: () => void;
 	};
 
-	let {
-		api,
-		editorReady,
-		editorActivity = $bindable(),
-		onArgChange
-	}: AxesPanel = $props();
+	let { api, editorReady, editorActivity = $bindable(), onArgChange }: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
 		return () => {
@@ -65,6 +61,21 @@
 	let consumedAxes = $state<any[]>([]);
 	let axisValues = $state<Record<string, any[]>>({});
 	let axisArgs = $state<Record<string, any>>({});
+	let valueLayerCells = $state<
+		Record<string, { hasShape: boolean; active: boolean; conditionCount: number }[]>
+	>({});
+	let activeKitShape = $state('fa-circle');
+
+	const COMPOSE_ICONS = [
+		'fa-circle',
+		'fa-square',
+		'fa-diamond',
+		'fa-star',
+		'fa-heart',
+		'fa-bolt',
+		'fa-gem',
+		'fa-crown'
+	];
 
 	$effect(() => {
 		const currentKitId = editorActivity.activeKitId;
@@ -74,6 +85,7 @@
 			consumedAxes = [];
 			axisValues = {};
 			axisArgs = {};
+			valueLayerCells = {};
 			return;
 		}
 
@@ -87,16 +99,103 @@
 			}
 			axisValues = valuesMap;
 
+			let argsMap: Record<string, any> = {};
 			if (currentViewId) {
 				const args = await api.getAllAxisArgs(currentViewId, currentKitId).execute();
-				const argsMap: Record<string, any> = {};
 				for (const arg of args) {
 					argsMap[arg.axisId] = arg.value;
 				}
-				axisArgs = argsMap;
-			} else {
-				axisArgs = {};
 			}
+			axisArgs = argsMap;
+
+			const layers = await editorReady.dialect
+				.selectFrom('layers')
+				.where('kit_id', '=', currentKitId)
+				.select(['id'])
+				.execute();
+
+			const layerIds = layers.map((l) => l.id);
+
+			if (layerIds.length === 0) {
+				valueLayerCells = {};
+				return;
+			}
+
+			const conditions = await editorReady.dialect
+				.selectFrom('layer_axis_values')
+				.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+				.where('layer_axis_values.layer_id', 'in', layerIds)
+				.select([
+					'layer_axis_values.layer_id',
+					'layer_axis_values.axis_value_id',
+					'axis_values.axis_id',
+					'axis_values.value'
+				])
+				.execute();
+
+			const layerConditionsMap = new Map<
+				string,
+				{ axisId: string; axisValueId: string; value: any }[]
+			>();
+			for (const c of conditions) {
+				if (!layerConditionsMap.has(c.layer_id)) layerConditionsMap.set(c.layer_id, []);
+				layerConditionsMap
+					.get(c.layer_id)!
+					.push({ axisId: c.axis_id, axisValueId: c.axis_value_id, value: c.value });
+			}
+
+			const cellsMap: Record<
+				string,
+				{ hasShape: boolean; active: boolean; conditionCount: number }[]
+			> = {};
+
+			for (const layerId of layerIds) {
+				const conds = layerConditionsMap.get(layerId) ?? [];
+				const isActive =
+					conds.length === 0 ||
+					conds.every((c) => {
+						const arg = argsMap[c.axisId];
+						if (!arg) return false;
+						return matchesArg(c.value as any, arg as any);
+					});
+
+				for (const c of conds) {
+					if (!cellsMap[c.axisValueId]) {
+						cellsMap[c.axisValueId] = axes.map(() => ({
+							hasShape: false,
+							active: false,
+							conditionCount: 0
+						}));
+					}
+					for (let i = 0; i < axes.length; i++) {
+						const axisHasCond = conds.some((cc) => cc.axisId === axes[i].axisId);
+						if (axisHasCond) {
+							const existing = cellsMap[c.axisValueId][i];
+							if (!existing.hasShape || (isActive && conds.length > existing.conditionCount)) {
+								cellsMap[c.axisValueId][i] = {
+									hasShape: true,
+									active: isActive,
+									conditionCount: conds.length
+								};
+							}
+						}
+					}
+				}
+			}
+
+			valueLayerCells = cellsMap;
+
+			let kitShape = 'fa-circle';
+			if (currentViewId) {
+				const composition = await api.getKitCompositionByViewId(currentViewId).execute();
+				const kitIndex = composition.findIndex((k) => k.kitId === currentKitId);
+				if (kitIndex >= 0) {
+					const iconIdx = composition.length - 1 - kitIndex;
+					kitShape =
+						iconIdx >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[iconIdx] ?? 'fa-circle');
+				}
+			}
+			activeKitShape = kitShape;
 		};
 
 		loadAxes();
@@ -133,7 +232,9 @@
 
 		await api.setAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId, arg);
 
-		const args = await api.getAllAxisArgs(editorActivity.activeViewId, editorActivity.activeKitId).execute();
+		const args = await api
+			.getAllAxisArgs(editorActivity.activeViewId, editorActivity.activeKitId)
+			.execute();
 		const argsMap: Record<string, any> = {};
 		for (const a of args) {
 			argsMap[a.axisId] = a.value;
@@ -165,7 +266,17 @@
 					axisDescription={axisData.axisKind ?? undefined}
 					{kind}
 					values={toValueOptions(values)}
-					currentArg={currentArg}
+					{currentArg}
+					kitShape={activeKitShape}
+					axisCount={consumedAxes.length}
+					axisValueIds={values.reduce(
+						(acc, v) => {
+							acc[v.value.value ?? v.value.type] = v.axisValueId;
+							return acc;
+						},
+						{} as Record<string, string>
+					)}
+					{valueLayerCells}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				/>
 			{/each}

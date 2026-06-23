@@ -140,7 +140,7 @@
 <Panel name="Compose" contextMenuContent={composeContextMenuContent} tooltip="Compose Current View">
 	{#snippet content()}
 		<!-- {@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']} -->
-		{@const icons = ['fa-octagon', 'fa-septagon', 'fa-hexagon', 'fa-pentagon', 'fa-diamond']}
+	{@const icons = ['fa-circle', 'fa-square', 'fa-diamond', 'fa-star', 'fa-heart', 'fa-bolt', 'fa-gem', 'fa-crown']}
 		<ol class="kits">
 			<!--
 			<pre>{JSON.stringify(kitsQuery, null, 2)}</pre>
@@ -164,9 +164,10 @@
 								</Renameable></span
 							>
 							<i
-								class="kit-field__layer-icon fa-solid {icons[
-									icons.length - kitsQuery.rows.length + i
-								]}"
+								class="kit-field__layer-icon fa-solid {(() => {
+									const idx = kitsQuery.rows.length - 1 - i;
+									return idx >= icons.length ? 'fa-crown' : (icons[idx] ?? 'fa-circle');
+								})()}"
 							></i>
 						</label>
 					</li>
@@ -239,13 +240,12 @@
 		}
 
 		&__layer-icon {
-			padding-inline: $x-space-xs;
-			min-width: max-content;
+			flex-shrink: 0;
+			margin-right: $x-space-sm;
+			width: $x-font-size-lg;
+			text-align: center;
 			font-size: $x-font-size-sm;
 			color: var(--color-text-muted);
-			color: transparent;
-			-webkit-text-stroke-width: 2px;
-			-webkit-text-stroke-color: var(--color-text);
 		}
 
 		&__name {
@@ -260,9 +260,6 @@
 		&.selected {
 			background: var(--color-surface-alt);
 
-			.kit-field__icon {
-				-webkit-text-stroke-color: var(--color-primary);
-			}
 			.kit-field__name {
 				color: var(--color-primary);
 			}

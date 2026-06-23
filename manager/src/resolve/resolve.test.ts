@@ -80,22 +80,28 @@ describe('resolve', () => {
 			property: 'background',
 			value: '#ffffff',
 			sourceLayerId: s.nullLayer.id,
+			kitId: s.kit.id,
 			isToken: true,
 			tokenAlias: 'colors.bg',
+			conditionCount: 0,
 		});
 		expect(result.get('color')).toEqual({
 			property: 'color',
 			value: '#333333',
 			sourceLayerId: s.nullLayer.id,
+			kitId: s.kit.id,
 			isToken: false,
 			tokenAlias: null,
+			conditionCount: 0,
 		});
 		expect(result.get('padding')).toEqual({
 			property: 'padding',
 			value: '16px',
 			sourceLayerId: s.nullLayer.id,
+			kitId: s.kit.id,
 			isToken: false,
 			tokenAlias: null,
+			conditionCount: 0,
 		});
 	});
 
