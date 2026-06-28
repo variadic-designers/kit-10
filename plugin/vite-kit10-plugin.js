@@ -5,6 +5,7 @@ const OUT = '.kit10';
 const LIVE = `${OUT}/live`;
 const BUILD = `${OUT}/build`;
 
+/** @param {string} year @param {string} author */
 function mit(year, author) {
 	return `
 MIT License
@@ -30,11 +31,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.`;
 }
 
-function heading(author, startingYear) {
-	const now = Date.now();
-	const year = new Date(now).getFullYear();
-
-	// © ${author} ${year}
+function heading() {
 	return `/*${mit('2025', 'Qatto')}
 */
 
@@ -46,7 +43,7 @@ Curious? Try the editor at https://kit10.app/
 }
 
 function zero() {
-	return `${heading('Qatto')}
+	return `${heading()}
 * {
 	box-sizing: border-box;
 
@@ -57,7 +54,7 @@ function zero() {
 }
 
 function style() {
-	return `${heading('Qatto')}
+	return `${heading()}
   
 .meow {
   background: black;
@@ -68,6 +65,7 @@ function style() {
 }`;
 }
 
+/** @param {string} dir @param {string} filename */
 function deleteArtifact(dir, filename) {
 	const path = dir + '/' + filename;
 
@@ -80,12 +78,14 @@ function deleteArtifact(dir, filename) {
 	}
 }
 
+/** @param {string} dir @param {string} filename @param {string} style */
 function artifact(dir, filename, style) {
 	fs.mkdirSync(dir, { recursive: true });
 
 	fs.writeFileSync(dir + '/' + filename, style);
 }
 
+/** @type {Record<string, string>} */
 const modules = {};
 
 export default function kit10() {
@@ -97,6 +97,7 @@ export default function kit10() {
 			artifact(BUILD, 'style.scss', style());
 		},
 
+		/** @param {import('vite').ViteDevServer} server */
 		configureServer(server) {
 			artifact(LIVE, 'zero.scss', zero());
 			artifact(LIVE, 'style.scss', style());
@@ -128,8 +129,9 @@ export default function kit10() {
 			});
 		},
 
+		/** @param {string} id */
 		resolveId(id) {},
-
+		/** @param {string} id */
 		load(id) {}
 	};
 }

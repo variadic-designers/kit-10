@@ -9,16 +9,10 @@
 		children: import('svelte').Snippet;
 	};
 
-	let {
-		value,
-		onCommit,
-		editing = false,
-		class: className = '',
-		children
-	}: Props = $props();
+	let { value, onCommit, editing = false, class: className = '', children }: Props = $props();
 
-	let isEditing = $state(editing);
-	let draft = $state(value);
+	let isEditing = $state(false);
+	let draft = $state('');
 	let inputRef: HTMLInputElement | undefined = $state();
 
 	$effect(() => {
@@ -73,7 +67,13 @@
 	/>
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<span ondblclick={(e) => { e.stopPropagation(); startEdit(); }} class="renameable {className}">
+	<span
+		ondblclick={(e) => {
+			e.stopPropagation();
+			startEdit();
+		}}
+		class="renameable {className}"
+	>
 		{@render children()}
 	</span>
 {/if}

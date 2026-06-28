@@ -75,15 +75,14 @@
 		];
 	};
 
-	const pluginListingContextMenu: ContextMenuContentGenerator = () =>
-		[
-			{
-				name: 'rename_project',
-				displayText: 'Rename',
-				icon: 'fa-solid fa-i-cursor',
-				onClick: () => {}
-			}
-		];
+	const pluginListingContextMenu: ContextMenuContentGenerator = () => [
+		{
+			name: 'rename_project',
+			displayText: 'Rename',
+			icon: 'fa-solid fa-i-cursor',
+			onClick: () => {}
+		}
+	];
 
 	import { onMount } from 'svelte';
 
@@ -118,62 +117,10 @@
 
 <Panel name="Plugins" tooltip="Plugins" contextMenuContent={pluginPanelContextMenu}>
 	{#snippet content()}
-    Plugins
+		Plugins
 	{/snippet}
 </Panel>
 
 <style lang="scss">
 	@use '_index' as *;
-
-	.plugin-listing {
-		&__name {
-			@include fonts-stack('Satoshi-Regular', sans);
-
-			i {
-				color: currentColor;
-				font-size: $x-font-size-md;
-			}
-		}
-
-		&__description {
-			color: var(--color-text-muted);
-			@include fonts-stack('Satoshi-Light', sans);
-		}
-	}
-
-	button {
-		width: 100%;
-		height: 100%;
-		padding-left: $x-space-sm;
-		letter-spacing: 1px;
-
-		text-align: left;
-		background: var(--color-surface);
-		color: var(--color-pure-alt);
-		border: unset;
-		padding-block: calc($x-space-xs / 4);
-
-		&:hover {
-			color: var(--color-primary);
-		}
-
-		&.selected {
-			background: var(--color-surface-alt);
-
-			.project-listing__name {
-				color: var(--color-primary);
-			}
-
-			&:hover .project-listing__name {
-				color: var(--color-primary-hover);
-			}
-		}
-
-		font-size: $x-font-size-md;
-	}
-
-	i {
-		color: var(--color-warning);
-		font-size: $x-font-size-lg;
-	}
 </style>

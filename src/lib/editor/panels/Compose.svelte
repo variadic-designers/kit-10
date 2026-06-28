@@ -29,8 +29,8 @@
 					if (editorActivity.activeViewId && editorActivity.activeProjectId) {
 						console.log('About to create kit');
 						api.createKitInProject(editorActivity.activeProjectId, 'Cool Kit').then((k) => {
-							console.log(`About to attach kit ${k.id}`);
 							if (k && editorActivity.activeViewId) {
+								console.log(`About to attach kit ${k.id}`);
 								api.attachKitToComposition(k.id, editorActivity.activeViewId).then((kc) => {
 									if (kc) {
 										console.log(
@@ -59,10 +59,10 @@
 							api.attachKitToComposition(k.kitId, editorActivity.activeViewId).then((kc) => {
 								if (kc) {
 									console.log(
-										`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`
+										`Succeeded. Attached kit#${k.kitId} to view#${editorActivity.activeViewId}`
 									);
 								} else {
-									console.error(`Failed to attach kit ${k.id}`);
+									console.error(`Failed to attach kit ${k.kitId}`);
 								}
 							});
 						}
@@ -140,7 +140,16 @@
 <Panel name="Compose" contextMenuContent={composeContextMenuContent} tooltip="Compose Current View">
 	{#snippet content()}
 		<!-- {@const icons = ['fa-diamond', 'fa-pentagon', 'fa-hexagon', 'fa-septagon', 'fa-octagon']} -->
-	{@const icons = ['fa-circle', 'fa-square', 'fa-diamond', 'fa-star', 'fa-heart', 'fa-bolt', 'fa-gem', 'fa-crown']}
+		{@const icons = [
+			'fa-circle',
+			'fa-square',
+			'fa-diamond',
+			'fa-star',
+			'fa-heart',
+			'fa-bolt',
+			'fa-gem',
+			'fa-crown'
+		]}
 		<ol class="kits">
 			<!--
 			<pre>{JSON.stringify(kitsQuery, null, 2)}</pre>
@@ -148,8 +157,18 @@
 
 			{#if kitsQuery.rows}
 				{#each kitsQuery.rows as k, i}
-					<li class="kit-field" class:selected={editorActivity.activeKitId === k.kitId} title={k.kitId}>
-					<label use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)} onclick={() => { editorActivity.activeKitId = k.kitId; }}>
+					<li
+						class="kit-field"
+						class:selected={editorActivity.activeKitId === k.kitId}
+						title={k.kitId}
+					>
+						<button
+							type="button"
+							use:contextMenu={kitcontextMenuContent(k.kitId, k.kitView)}
+							onclick={() => {
+								editorActivity.activeKitId = k.kitId;
+							}}
+						>
 							<span class="kit-field__name">
 								<i class="kit-field__icon fa-solid fa-puzzle-piece"></i>
 								<Renameable
@@ -169,7 +188,7 @@
 									return idx >= icons.length ? 'fa-crown' : (icons[idx] ?? 'fa-circle');
 								})()}"
 							></i>
-						</label>
+						</button>
 					</li>
 				{/each}
 			{:else}
@@ -227,10 +246,12 @@
 		@include layout-flex-column();
 		user-select: none;
 
-		label {
+		button {
+			all: unset;
 			flex-grow: 1;
 			display: flex;
 			align-items: center;
+			cursor: pointer;
 		}
 
 		padding-block: calc($x-space-xs / 4);

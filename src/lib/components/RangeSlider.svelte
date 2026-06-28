@@ -17,8 +17,8 @@
 
 	let trackEl: HTMLElement | undefined = $state();
 
-	let minVal = $state(min);
-	let maxVal = $state(max);
+	let minVal = $state(null as number | null);
+	let maxVal = $state(null as number | null);
 	let dragging: 'min' | 'max' | null = $state(null);
 
 	$effect(() => {
@@ -163,10 +163,10 @@
 	</div>
 
 	<div class="range-slider__controls">
-		<button class="range-slider__reset" onclick={resetMin} disabled={disabled} title="Reset min to -∞">
+		<button class="range-slider__reset" onclick={resetMin} {disabled} title="Reset min to -∞">
 			Min: {formatVal(minVal)}
 		</button>
-		<button class="range-slider__reset" onclick={resetMax} disabled={disabled} title="Reset max to +∞">
+		<button class="range-slider__reset" onclick={resetMax} {disabled} title="Reset max to +∞">
 			Max: {formatVal(maxVal)}
 		</button>
 	</div>

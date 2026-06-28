@@ -17,10 +17,9 @@
 		api: Api;
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
-		onArgChange?: () => void;
 	};
 
-	let { api, editorReady, editorActivity = $bindable(), onArgChange }: AxesPanel = $props();
+	let { api, editorReady, editorActivity = $bindable() }: AxesPanel = $props();
 
 	const detailCollapse = (collapse: boolean) => {
 		return () => {
@@ -240,8 +239,6 @@
 			argsMap[a.axisId] = a.value;
 		}
 		axisArgs = argsMap;
-
-		onArgChange?.();
 	}
 </script>
 
@@ -296,20 +293,5 @@
 		i {
 			margin-right: $x-space-xs;
 		}
-
-		strong {
-			color: var(--color-primary);
-		}
-	}
-
-	input[type='text'] {
-		border-radius: $x-space-lg;
-		text-align: center;
-	}
-
-	.layer__specificity {
-		@include layout-flex-column();
-		gap: $x-space-xs;
-		padding-block: $x-space-xs;
 	}
 </style>

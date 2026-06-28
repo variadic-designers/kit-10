@@ -35,7 +35,7 @@ interface ArgRange {
 	max: number | null;
 }
 
-type ArgValue = ArgLiteral | ArgRange;
+export type ArgValue = ArgLiteral | ArgRange;
 
 // --- Schema tables ---
 

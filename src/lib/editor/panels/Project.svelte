@@ -112,21 +112,21 @@
 					use:contextMenu={projectListingContextMenu(p.projectId)}
 					title={`by ${p.author} - ${p.license}`}
 				>
-				<span class="project-listing__name"
-					><i class="fa-solid fa-diagram-project"></i>
-					<Renameable
-						editing={projectEditing[p.projectId] === true}
-						value={p.projectName}
-						onCommit={(name) => {
-							api.renameProject(p.projectId, name);
-							editorActivity.activeProjectName = name;
-							projectEditing[p.projectId] = false;
-						}}
+					<span class="project-listing__name"
+						><i class="fa-solid fa-diagram-project"></i>
+						<Renameable
+							editing={projectEditing[p.projectId] === true}
+							value={p.projectName}
+							onCommit={(name) => {
+								api.renameProject(p.projectId, name);
+								editorActivity.activeProjectName = name;
+								projectEditing[p.projectId] = false;
+							}}
+						>
+							{p.projectName}
+						</Renameable></span
 					>
-						{p.projectName}
-					</Renameable></span
-				>
-					<span class="project-listing__description"> - {p.description}</span>
+					<span class="project-listing__description"> - {p.projectDescription}</span>
 				</button>
 			</li>
 		{/each}

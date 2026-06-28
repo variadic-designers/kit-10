@@ -427,7 +427,7 @@
 			user-select: none;
 			font-size: $x-font-size-xs;
 			text-transform: uppercase;
-			@include fonts-stack('Satoshi-Bold', sans-serif);
+			@include fonts-stack('Satoshi-Bold', sans);
 			color: var(--color-text);
 
 			&:hover {
@@ -521,7 +521,7 @@
 		user-select: none;
 		padding-inline: $x-space-sm;
 		text-align: left;
-		@include fonts-stack('Satoshi-Regular', sans-serif);
+		@include fonts-stack('Satoshi-Regular', sans);
 		font-weight: 600;
 		font-size: $x-font-size-sm;
 		letter-spacing: 1px;
@@ -536,15 +536,6 @@
 
 		&:hover {
 			color: var(--color-primary);
-		}
-
-		&--project {
-		}
-
-		&--kit {
-		}
-
-		&--view {
 		}
 	}
 
@@ -578,6 +569,10 @@
 		all: unset;
 		flex-basis: 40%;
 		flex-shrink: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 		text-align: left;
 		padding: calc($x-space-xs / 2) $x-space-sm;
 		cursor: pointer;

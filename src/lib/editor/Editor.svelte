@@ -110,25 +110,46 @@
 
 	let resolvedKits: ResolvedKit[] | null = $state(null);
 
-	let resolveVersion = $state(0);
-
-	function invalidateResolution() {
-		resolveVersion++;
-	}
-
 	$effect(() => {
 		const viewId = editorActivity.activeViewId;
-		const version = resolveVersion;
 		const editor = editorLoading;
-		if (viewId && editor) {
-			resolveManyManager(editor.dialect, viewId).then((kits) => {
-				resolvedKits = kits;
-			}).catch(() => {
-				resolvedKits = null;
-			});
-		} else {
+		if (!viewId || !editor) {
 			resolvedKits = null;
+			return;
 		}
+
+		let unsubscribes: (() => Promise<void>)[] = [];
+
+		const init = async () => {
+			const reResolve = async () => {
+				resolvedKits = await resolveManyManager(editor.dialect, viewId);
+			};
+
+			const watchTables = [
+				'compositions',
+				'axis_args',
+				'layers',
+				'layer_axis_values',
+				'axis_values',
+				'axes_consumed',
+				'render_entries',
+				'render_snippets',
+				'tokens'
+			];
+
+			for (const table of watchTables) {
+				const live = await editor.core.live.query(`SELECT 1 FROM ${table} LIMIT 0`, [], reResolve);
+				unsubscribes.push(live.unsubscribe);
+			}
+
+			await reResolve();
+		};
+
+		init();
+
+		return () => {
+			for (const u of unsubscribes) u();
+		};
 	});
 
 	import ViewsPanel from './panels/Views.svelte';
@@ -214,7 +235,7 @@
 
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
-		<AxesPanel {api} {editorReady} bind:editorActivity onArgChange={invalidateResolution} />
+		<AxesPanel {api} {editorReady} bind:editorActivity />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}

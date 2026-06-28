@@ -26,30 +26,57 @@
 		resolvedKits ? flattenKitResults(resolvedKits) : new Map<string, ResolvedProperty>()
 	);
 
-	const COMPOSE_ICONS = ['fa-circle', 'fa-square', 'fa-diamond', 'fa-star', 'fa-heart', 'fa-bolt', 'fa-gem', 'fa-crown'];
+	const COMPOSE_ICONS = [
+		'fa-circle',
+		'fa-square',
+		'fa-diamond',
+		'fa-star',
+		'fa-heart',
+		'fa-bolt',
+		'fa-gem',
+		'fa-crown'
+	];
 
 	const kitIconMap = $derived.by(() => {
 		const map = new Map<string, string>();
 		if (!resolvedKits) return map;
 		for (let i = 0; i < resolvedKits.length; i++) {
-			map.set(resolvedKits[i]!.kitId, i >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[i] ?? 'fa-circle'));
+			map.set(
+				resolvedKits[i]!.kitId,
+				i >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[i] ?? 'fa-circle')
+			);
 		}
 		return map;
 	});
 
-	function track(key: string): { sourceLayerId: string | null; kitId: string | null; kitIcon: string; conditionCount: number; isToken: boolean; tokenAlias: string | null } {
+	function track(key: string): {
+		sourceLayerId: string | null;
+		kitId: string | null;
+		kitIcon: string;
+		conditionCount: number;
+		isToken: boolean;
+		tokenAlias: string | null;
+	} {
 		const prop = resolvedMap.get(key);
 		if (prop) {
 			return {
 				sourceLayerId: prop.sourceLayerId,
 				kitId: prop.kitId,
-				kitIcon: prop.conditionCount === 0 ? 'fa-circle-dot' : (kitIconMap.get(prop.kitId) ?? 'fa-circle'),
+				kitIcon:
+					prop.conditionCount === 0 ? 'fa-circle-dot' : (kitIconMap.get(prop.kitId) ?? 'fa-circle'),
 				conditionCount: prop.conditionCount,
 				isToken: prop.isToken,
 				tokenAlias: prop.tokenAlias
 			};
 		}
-		return { sourceLayerId: null, kitId: null, kitIcon: 'fa-circle', conditionCount: 0, isToken: false, tokenAlias: null };
+		return {
+			sourceLayerId: null,
+			kitId: null,
+			kitIcon: 'fa-circle',
+			conditionCount: 0,
+			isToken: false,
+			tokenAlias: null
+		};
 	}
 </script>
 
@@ -61,10 +88,7 @@
 	{#snippet content()}
 		{#if resolvedKits}
 			<div style="display:contents">
-				{#snippet styleSection(
-					category: string,
-					fields: { key: string; displayText?: string }[]
-				)}
+				{#snippet styleSection(category: string, fields: { key: string; displayText?: string }[])}
 					<details class="style-section" open>
 						<summary class="style-section__heading">
 							<h3>{category}</h3>
@@ -85,31 +109,26 @@
 					</details>
 				{/snippet}
 
-				{@render styleSection(
-					'layout',
-					[{ key: 'padding', displayText: 'Padding' }, { key: 'width' }, { key: 'height' }],
-				)}
+				{@render styleSection('layout', [
+					{ key: 'padding', displayText: 'Padding' },
+					{ key: 'width' },
+					{ key: 'height' }
+				])}
 
-				{@render styleSection(
-					'box',
-					[
-						{ key: 'background', displayText: 'Fill' },
-						{ key: 'border' },
-						{ key: 'border-radius', displayText: 'Radius' },
-						{ key: 'outline' }
-					],
-				)}
+				{@render styleSection('box', [
+					{ key: 'background', displayText: 'Fill' },
+					{ key: 'border' },
+					{ key: 'border-radius', displayText: 'Radius' },
+					{ key: 'outline' }
+				])}
 
-				{@render styleSection(
-					'text',
-					[
-						{ key: 'color', displayText: 'Fill' },
-						{ key: 'font-size', displayText: 'Size' },
-						{ key: 'font-weight', displayText: 'Weight' },
-						{ key: 'text-align', displayText: 'Align' },
-						{ key: 'text-decoration', displayText: 'Decor' }
-					],
-				)}
+				{@render styleSection('text', [
+					{ key: 'color', displayText: 'Fill' },
+					{ key: 'font-size', displayText: 'Size' },
+					{ key: 'font-weight', displayText: 'Weight' },
+					{ key: 'text-align', displayText: 'Align' },
+					{ key: 'text-decoration', displayText: 'Decor' }
+				])}
 			</div>
 		{/if}
 	{/snippet}
@@ -117,11 +136,6 @@
 
 <style lang="scss">
 	@use '_index' as *;
-
-	input[type='text'] {
-		border-radius: $x-space-lg;
-		text-align: center;
-	}
 
 	.style-section {
 		user-select: none;
@@ -156,7 +170,7 @@
 
 			font-size: $x-font-size-xs;
 			text-transform: uppercase;
-			@include fonts-stack('Satoshi-Bold', sans-serif);
+			@include fonts-stack('Satoshi-Bold', sans);
 			color: var(--color-text);
 		}
 

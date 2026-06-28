@@ -1,3 +1,4 @@
+import type { SqlBool } from 'kysely';
 import { Kysely, sql } from 'kysely';
 import type { Generated, JSONColumnType } from 'kysely';
 
@@ -219,9 +220,7 @@ export async function up(dialect: DAny) {
 		.createTable('axis_values')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
-		.addColumn('axis_id', 'uuid', (col) =>
-			col.notNull().references('axes.id').onDelete('cascade')
-		)
+		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('cascade'))
 		.addColumn('value', 'jsonb', (col) => col.notNull())
 		.execute();
 
@@ -279,12 +278,8 @@ export async function up(dialect: DAny) {
 		.createTable('layers')
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
-		.addColumn('kit_id', 'uuid', (col) =>
-			col.notNull().references('kits.id').onDelete('cascade')
-		)
-		.addColumn('last_modified', 'timestamptz', (col) =>
-			col.notNull().defaultTo(sql<Date>`now()`)
-		)
+		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('cascade'))
+		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.execute();
 
 	await dialect.schema
@@ -296,13 +291,12 @@ export async function up(dialect: DAny) {
 		)
 		.addColumn('alias', 'varchar(255)')
 		.addColumn('value', 'text')
-		.addColumn('kit_id', 'uuid', (col) =>
-			col.references('kits.id').onDelete('cascade')
+		.addColumn('kit_id', 'uuid', (col) => col.references('kits.id').onDelete('cascade'))
+		.addColumn('view_id', 'uuid', (col) => col.references('views.id').onDelete('cascade'))
+		.addCheckConstraint(
+			'token_scope_check',
+			sql`(kit_id IS NOT NULL AND view_id IS NULL) OR (view_id IS NOT NULL AND kit_id IS NULL) OR (kit_id IS NULL AND view_id IS NULL)`
 		)
-		.addColumn('view_id', 'uuid', (col) =>
-			col.references('views.id').onDelete('cascade')
-		)
-		.addCheckConstraint('token_scope_check', sql`(kit_id IS NOT NULL AND view_id IS NULL) OR (view_id IS NOT NULL AND kit_id IS NULL) OR (kit_id IS NULL AND view_id IS NULL)`)
 		.execute();
 
 	await dialect.schema
@@ -310,7 +304,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.on('tokens')
 		.columns(['project_id', 'alias'])
-		.where(sql`kit_id IS NULL AND view_id IS NULL`)
+		.where(sql<SqlBool>`kit_id IS NULL AND view_id IS NULL`)
 		.execute();
 
 	await dialect.schema
@@ -318,7 +312,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.on('tokens')
 		.columns(['kit_id', 'alias'])
-		.where(sql`kit_id IS NOT NULL`)
+		.where(sql<SqlBool>`kit_id IS NOT NULL`)
 		.execute();
 
 	await dialect.schema
@@ -326,7 +320,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.on('tokens')
 		.columns(['view_id', 'alias'])
-		.where(sql`view_id IS NOT NULL`)
+		.where(sql<SqlBool>`view_id IS NOT NULL`)
 		.execute();
 
 	await dialect.schema
@@ -336,9 +330,7 @@ export async function up(dialect: DAny) {
 		.addColumn('layer_id', 'uuid', (col) =>
 			col.notNull().references('layers.id').onDelete('cascade')
 		)
-		.addColumn('last_modified', 'timestamptz', (col) =>
-			col.notNull().defaultTo(sql<Date>`now()`)
-		)
+		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addUniqueConstraint('one_snippet_per_layer', ['layer_id'])
 		.execute();
 
@@ -363,10 +355,11 @@ export async function up(dialect: DAny) {
 		)
 		.addColumn('property', 'text', (col) => col.notNull())
 		.addColumn('value', 'text')
-		.addColumn('token_id', 'uuid', (col) =>
-			col.references('tokens.id').onDelete('set null')
+		.addColumn('token_id', 'uuid', (col) => col.references('tokens.id').onDelete('set null'))
+		.addCheckConstraint(
+			'value_or_token_not_both',
+			sql`(value IS NOT NULL) != (token_id IS NOT NULL)`
 		)
-		.addCheckConstraint('value_or_token_not_both', sql`(value IS NOT NULL) != (token_id IS NOT NULL)`)
 		.execute();
 }
 

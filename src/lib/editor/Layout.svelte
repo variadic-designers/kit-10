@@ -207,7 +207,7 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 
 			@include layout-respond('lg') {
 				display: grid;
-				grid-template-columns: 1fr 3fr 1fr;
+				grid-template-columns: 1fr 4fr 1fr;
 				grid-template-rows: 1fr 16fr $x-space-md;
 				grid-column-gap: 0px;
 				grid-row-gap: 0px;
@@ -215,7 +215,7 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 			}
 
 			@include layout-respond('xl') {
-				grid-template-columns: 1.2fr 3fr 1.2fr;
+				grid-template-columns: 1fr 4fr 1fr;
 			}
 		}
 

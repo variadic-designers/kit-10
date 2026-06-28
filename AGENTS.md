@@ -15,6 +15,7 @@ Views ← Layers [Kits ← Axes] ← Tokens
 ## Key Constraints
 
 ### Style
+
 - No em dashes (—) in UI copy or markdown files. Use hyphens or reword.
 - No serif fonts in UI. Always use `@use '_index' as *;` and `@include fonts-stack('Satoshi-Light'|'Satoshi-Regular'|'Satoshi-Bold', sans)`. Satoshi font family: Regular, Medium, Bold, Light variants. No Satoshi Mono exists.
 - Button text: `color: white` (not `var(--color-pure)`) on primary buttons to beat `impose-interactive` link color override.
@@ -22,18 +23,21 @@ Views ← Layers [Kits ← Axes] ← Tokens
 - Panel selection: use `class:selected={condition}` on list elements. No hidden `<input type="radio">` or `:has()` CSS selectors.
 
 ### Svelte 5
+
 - `$effect` only tracks reactive reads on `$state`/`$derived`/`$bindable`. Destructured props are local copies and NOT tracked.
 - No `|modifier` event syntax. Use `(e) => e.stopPropagation()` instead.
 - `class directive` uses `class:name={expr}` syntax, not string concatenation.
+- **No manual reactivity.** Don't use callback props or version counters to trigger re-computation. Use PGlite `live.query()` to subscribe to DB changes and react automatically — the same `liveQuery()` pattern used for panel data. For async operations like resolution that read multiple tables, watch a UNION ALL canary query covering all dependency tables so re-computation fires on any relevant mutation.
 
 ### Data Layer
+
 - PGlite with OPFS-AHP. `PGliteWorker.close()` must be called before creating a new instance.
 - OPFS unavailable in Firefox incognito — fallback to `memory://`.
-- `idb://` storage is prohibitively slow — never use it for PGlite.
 - Manager API uses Kysely query builders. All panel data comes via `liveQuery()` from `Editor.svelte`.
 - `getTokensByKitId(null)` / `getTokensByViewId(null)` return empty sets via impossible UUID (`00000000-...`).
 
 ### Resolution Engine
+
 - Two-pass: Pass 1 resolves Layer specificity (tokens compete as opaque references), Pass 2 substitutes token values with scoped precedence (view > kit > project).
 - Render entries: `value` XOR `token_id` — enforced by DB check constraint. Never both, never neither.
 - Null Layers (zero axis conditions) always match — baseline defaults.
@@ -42,10 +46,12 @@ Views ← Layers [Kits ← Axes] ← Tokens
 - Range matching: ArgRange `min: null` = -∞, `max: null` = +∞. Overlap semantics, not equality.
 
 ### Testing
+
 - Run `npx vitest run` from `manager/` to run all manager tests.
 - Test DB uses PGlite in-memory via `createTestDb()`.
 
 ### Schema
+
 - Single V1 migration at `manager/src/migrations/2026-04-21/index.ts`. No production migration files during iteration — fold changes into V1.
 - `render_snippets` has `layer_id` unique constraint (one snippet per layer, currently).
 - `tokens` have check constraint: exactly one of (kit_id, view_id) is non-null, or both null (project scope).

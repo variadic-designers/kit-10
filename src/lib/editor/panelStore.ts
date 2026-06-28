@@ -5,7 +5,7 @@ export type Panel = {
 	collapse: boolean;
 };
 
-export let panelState: Panel = {
+export let panelState: { collapse: Writable<boolean> } = {
 	collapse: writable(true)
 };
 

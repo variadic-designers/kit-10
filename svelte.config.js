@@ -22,7 +22,7 @@ const config = {
 			$utils: './src/utils',
 			$fonts: './src/lib/fonts',
 			$static: './static',
-			$lib: './src/'
+			$lib: './src/lib'
 			// $styles: './src/styles',
 		}
 	}

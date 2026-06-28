@@ -257,6 +257,10 @@
 			text-align: left;
 			flex-basis: 40%;
 			flex-shrink: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
 			position: relative;
 			border-radius: 1px;
 			color: var(--color-add-var-text);
@@ -278,9 +282,6 @@
 				gap: $x-space-xs;
 			}
 
-			.token-pill__icon {
-			}
-
 			.token-pill__icon--color {
 				-webkit-text-stroke: 1px black;
 				color: var(--color-icon, var(--color-text));
@@ -292,10 +293,6 @@
 
 			&--dragged-over {
 				background: var(--color-surface-alt);
-
-				&:has(span.token-pill) {
-					background: var(--color-pure);
-				}
 			}
 
 			&::placeholder {

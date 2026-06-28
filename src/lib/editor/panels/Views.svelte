@@ -3,7 +3,6 @@
 	import Panel from '../Panel.svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
-	import type { Api } from 'manager';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -167,7 +166,7 @@
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v, level: number)}
+{#snippet kitter(v: any, level: number)}
 	<!--
 				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
 				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}
@@ -238,14 +237,6 @@
 		border: unset;
 		// border-right: 1px solid var(--color-text-muted);
 		padding-right: calc($x-space-xs / 1);
-
-		&--lock:has(.fa-lock) {
-			color: var(--color-text);
-		}
-
-		&--hide:has(.fa-eye-slash) {
-			color: var(--color-text);
-		}
 	}
 
 	.view {

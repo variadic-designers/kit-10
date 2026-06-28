@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { contextMenuState, closeContextMenu, type MenuItem } from './contextMenuStore';
+	import { contextMenuState, closeContextMenu, type MenuItem } from './contextMenuStore.js';
 
 	let menuRef: HTMLElement | undefined = $state();
 
@@ -31,6 +31,7 @@
 		bind:this={menuRef}
 		style="top: {$contextMenuState.pos.y}px; left: {$contextMenuState.pos.x}px"
 		role="menu"
+		tabindex="-1"
 		onkeydown={handleMenuKeydown}
 	>
 		<ul>
@@ -94,7 +95,7 @@
 		cursor: pointer;
 		font-size: $x-font-size-sm;
 		font-weight: 600;
-		@include fonts-stack('Satoshi-Regular', sans-serif);
+		@include fonts-stack('Satoshi-Regular', sans);
 		letter-spacing: 1px;
 		border-inline: 2px solid var(--color-pure);
 

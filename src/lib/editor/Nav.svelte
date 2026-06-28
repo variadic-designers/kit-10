@@ -38,7 +38,7 @@
 </script>
 
 <heading>
-	<a class="branding" href="#s">
+	<a class="branding" href="/">
 		<img src="/favicon.svg" alt="kit10 logo" />
 	</a>
 </heading>
