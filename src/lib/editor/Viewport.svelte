@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { theme, getTheme, type Theme } from '$lib/theming.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -12,11 +13,29 @@
 	let lastX = 0;
 	let lastY = 0;
 
+	function resolveEffective(t: Theme): 'light' | 'dark' {
+		if (t === 'auto') {
+			return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+		}
+		return t;
+	}
+
+	function applyColors(t: Theme) {
+		if (!vellum) return;
+		const effective = resolveEffective(t);
+		if (effective === 'dark') {
+			vellum.set_colors(0.12, 0.12, 0.12, 1.0, 0.005, 0.005, 0.005, 1.0);
+		} else {
+			vellum.set_colors(0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0);
+		}
+	}
+
 	onMount(async () => {
 		vellum = await import('../vellum/vellum_renderer.js');
 		await vellum.default();
 		await vellum.initialize('vellum-canvas', canvas.clientWidth, canvas.clientHeight);
 		initialized = true;
+		applyColors(getTheme());
 
 		resizeObserver = new ResizeObserver(() => {
 			if (!initialized || !canvas || !vellum) return;
@@ -29,6 +48,11 @@
 			rafId = requestAnimationFrame(draw);
 		};
 		rafId = requestAnimationFrame(draw);
+	});
+
+	$effect(() => {
+		const t = $theme;
+		if (initialized && vellum) applyColors(t ?? 'auto');
 	});
 
 	onDestroy(() => {
