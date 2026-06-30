@@ -161,6 +161,7 @@
 	import PluginsPanel from './panels/Plugins.svelte';
 
 	import Nav from './Nav.svelte';
+	import Viewport from './Viewport.svelte';
 	import { resolveMany as resolveManyManager, type ResolvedKit } from 'manager';
 	import { onMount } from 'svelte';
 
@@ -236,6 +237,10 @@
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
 		<AxesPanel {api} {editorReady} bind:editorActivity />
+	{/snippet}
+
+	{#snippet dash(editorReady)}
+		<Viewport />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}
