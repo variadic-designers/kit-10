@@ -64,6 +64,7 @@ export interface WorkspacesTable {
 	id: Generated<string>;
 	name: string;
 	description: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_active: Generated<Date>;
 }
 
@@ -71,6 +72,7 @@ export interface ProjectsTable {
 	id: Generated<string>;
 	name: string;
 	description: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 	license: Generated<string>;
 	author: string;
@@ -80,6 +82,7 @@ export interface ProjectsTable {
 export interface ViewsTable {
 	id: Generated<string>;
 	name: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 	project_id: string;
 	lock: boolean;
@@ -95,8 +98,9 @@ export interface CompositionsTable {
 export interface KitsTable {
 	id: Generated<string>;
 	name: string;
-	project_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
+	project_id: string;
 }
 
 // ------------------------------
@@ -108,12 +112,14 @@ export interface AxisTable {
 	description: string | null;
 	kind: string | null;
 	hint: JSONColumnType<string[]> | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	default_value: JSONColumnType<ArgValue> | null;
 }
 
 export interface AxisValuesTable {
 	id: Generated<string>;
 	axis_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	value: JSONColumnType<AxisValueType>;
 }
 
@@ -137,12 +143,14 @@ export interface AxisArgsTable {
 export interface RenderSnippetsTable {
 	id: Generated<string>;
 	layer_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 }
 
 export interface LayersTable {
 	id: Generated<string>;
 	kit_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 }
 
@@ -156,6 +164,7 @@ export interface RenderEntriesTable {
 	snippet_id: string;
 	property: string;
 	value: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	token_id: string | null;
 }
 
@@ -166,6 +175,7 @@ export interface TokensTable {
 	project_id: string;
 	alias: string | null;
 	value: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	kit_id: string | null;
 	view_id: string | null;
 }

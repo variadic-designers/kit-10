@@ -29,3 +29,6 @@ project.inlang/cache/
 
 # Kit 10
 /.kit10/
+
+# Rust build artifacts
+plugins/**/target/

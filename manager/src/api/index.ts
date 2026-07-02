@@ -270,7 +270,8 @@ export interface QueryAction {
 	deleteProject: (projectId: string) => Promise<any>;
 	createViewInProject: (
 		projectId: string,
-		name: string
+		name: string,
+		hints?: Record<string, unknown>
 	) => Promise<
 		| {
 				id: string;
@@ -502,10 +503,12 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db.deleteFrom('projects').where('projects.id', '=', projectId).execute();
 	},
 
-	createViewInProject: async (projectId: string, name: string) => {
+	createViewInProject: async (projectId: string, name: string, hints?: Record<string, unknown>) => {
 		return await db
 			.insertInto('views')
-			.values([{ name, project_id: projectId, lock: false, hide: false }])
+			.values([
+				{ name, project_id: projectId, lock: false, hide: false, hints: hints ?? {} } as any
+			])
 			.returningAll()
 			.executeTakeFirst();
 	},

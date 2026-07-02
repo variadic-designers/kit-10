@@ -3,13 +3,15 @@
 	import StyleField from './StyleField.svelte';
 	import { flattenKitResults, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
+	import type { FieldCategory } from '$lib/plugins/types.js';
 
 	type StylesPanel = {
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
+		fieldCategories?: FieldCategory[];
 	};
 
-	const { selection, resolvedKits }: StylesPanel = $props();
+	const { selection, resolvedKits, fieldCategories }: StylesPanel = $props();
 
 	const stylesContextMenu = () => {
 		return [
@@ -109,26 +111,32 @@
 					</details>
 				{/snippet}
 
-				{@render styleSection('layout', [
-					{ key: 'padding', displayText: 'Padding' },
-					{ key: 'width' },
-					{ key: 'height' }
-				])}
+				{#if fieldCategories && fieldCategories.length > 0}
+					{#each fieldCategories as cat}
+						{@render styleSection(cat.name, cat.fields)}
+					{/each}
+				{:else}
+					{@render styleSection('layout', [
+						{ key: 'padding', displayText: 'Padding' },
+						{ key: 'width' },
+						{ key: 'height' }
+					])}
 
-				{@render styleSection('box', [
-					{ key: 'background', displayText: 'Fill' },
-					{ key: 'border' },
-					{ key: 'border-radius', displayText: 'Radius' },
-					{ key: 'outline' }
-				])}
+					{@render styleSection('box', [
+						{ key: 'background', displayText: 'Fill' },
+						{ key: 'border' },
+						{ key: 'border-radius', displayText: 'Radius' },
+						{ key: 'outline' }
+					])}
 
-				{@render styleSection('text', [
-					{ key: 'color', displayText: 'Fill' },
-					{ key: 'font-size', displayText: 'Size' },
-					{ key: 'font-weight', displayText: 'Weight' },
-					{ key: 'text-align', displayText: 'Align' },
-					{ key: 'text-decoration', displayText: 'Decor' }
-				])}
+					{@render styleSection('text', [
+						{ key: 'color', displayText: 'Fill' },
+						{ key: 'font-size', displayText: 'Size' },
+						{ key: 'font-weight', displayText: 'Weight' },
+						{ key: 'text-align', displayText: 'Align' },
+						{ key: 'text-decoration', displayText: 'Decor' }
+					])}
+				{/if}
 			</div>
 		{/if}
 	{/snippet}

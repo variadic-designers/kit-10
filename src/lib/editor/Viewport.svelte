@@ -4,9 +4,12 @@
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
+	let { data = '[]' }: { data?: string } = $props();
+
 	let canvas: HTMLCanvasElement;
 	let rafId: number;
 	let initialized = false;
+	let hasData = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
 
 	let panning = false;
@@ -33,26 +36,51 @@
 	onMount(async () => {
 		vellum = await import('../vellum/vellum_renderer.js');
 		await vellum.default();
-		await vellum.initialize('vellum-canvas', canvas.clientWidth, canvas.clientHeight);
+		const initCanvas = () =>
+			new Promise<void>((resolve) => {
+				const tryInit = () => {
+					const w = canvas.clientWidth;
+					const h = canvas.clientHeight;
+					if (w > 0 && h > 0) {
+						vellum.initialize('vellum-canvas', w, h).then(resolve);
+					} else {
+						requestAnimationFrame(tryInit);
+					}
+				};
+				tryInit();
+			});
+		await initCanvas();
 		initialized = true;
 		applyColors(getTheme());
 
 		resizeObserver = new ResizeObserver(() => {
 			if (!initialized || !canvas || !vellum) return;
-			vellum.resize(canvas.clientWidth, canvas.clientHeight);
+			const w = canvas.clientWidth;
+			const h = canvas.clientHeight;
+			if (w === 0 || h === 0) return;
+			vellum.resize(w, h);
 		});
 		resizeObserver.observe(canvas);
-
-		const draw = () => {
-			if (vellum) vellum.render();
-			rafId = requestAnimationFrame(draw);
-		};
-		rafId = requestAnimationFrame(draw);
 	});
 
 	$effect(() => {
 		const t = $theme;
 		if (initialized && vellum) applyColors(t ?? 'auto');
+	});
+
+	$effect(() => {
+		const d = data;
+		if (initialized && vellum && d) {
+			vellum.set_data(d);
+			if (!hasData) {
+				hasData = true;
+				const draw = () => {
+					if (vellum) vellum.render();
+					rafId = requestAnimationFrame(draw);
+				};
+				rafId = requestAnimationFrame(draw);
+			}
+		}
 	});
 
 	onDestroy(() => {
@@ -92,16 +120,89 @@
 	}
 </script>
 
-<canvas
-	id="vellum-canvas"
-	bind:this={canvas}
-	style="width:100%;height:100%;display:block;touch-action:none;"
-	onpointerdown={onPointerDown}
-	onpointermove={onPointerMove}
-	onpointerup={onPointerUp}
-	onwheel={onWheel}
-></canvas>
+<div class="viewport-wrap">
+	<canvas
+		id="vellum-canvas"
+		bind:this={canvas}
+		style="width:100%;height:100%;display:block;touch-action:none;"
+		onpointerdown={onPointerDown}
+		onpointermove={onPointerMove}
+		onpointerup={onPointerUp}
+		onwheel={onWheel}
+	></canvas>
+
+	<div class="logo-overlay" class:ready={hasData}>
+		<svg width="0" height="0" style="position:absolute">
+			<defs>
+				<clipPath id="logoClip" clipPathUnits="objectBoundingBox">
+					<path d="M1,0.5c0,0.276-0.171,0.5-0.382,0.5V0.934C0.618,0.694,0.766,0.5,0.95,0.5Z" />
+					<path
+						d="M0.618,0.934V1c-0.211,0-0.382-0.224-0.382-0.5h0.05C0.469,0.5,0.618,0.694,0.618,0.934Z"
+					/>
+					<path
+						d="M0.618,0V0.065C0.618,0.305,0.469,0.5,0.285,0.5H0.235C0.235,0.224,0.406,0,0.618,0Z"
+					/>
+					<path d="M1,0.5H0.95C0.766,0.5,0.618,0.305,0.618,0.065V0C0.829,0,1,0.224,1,0.5Z" />
+					<path d="M0.236,0V0.691A0.236,0.309,0,0,1,0,1V0.309A0.236,0.309,0,0,1,0.236,0Z" />
+				</clipPath>
+			</defs>
+		</svg>
+	</div>
+</div>
 
 <style lang="scss">
 	@use '_index' as *;
+
+	.viewport-wrap {
+		position: relative;
+		width: 100%;
+		height: 100%;
+	}
+
+	.logo-overlay {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		pointer-events: none;
+		view-transition-name: kit10-logo;
+		opacity: 1;
+		transition: opacity 0.4s ease;
+
+		&::after {
+			content: '';
+			display: block;
+			clip-path: url(#logoClip);
+			width: min(50%, 12rem);
+			aspect-ratio: 622.31 / 476;
+			background: radial-gradient(circle, #93c5fd 30%, #3b82f6 65%, var(--color-bg) 10%);
+			background-size: 200% 200%;
+			animation: walk-background 5s ease-in-out infinite;
+		}
+
+		&.ready {
+			opacity: 0;
+		}
+	}
+
+	@keyframes walk-background {
+		0% {
+			background-position: -140% 0%;
+		}
+		25% {
+			background-position: -150% 60%;
+		}
+		50% {
+			background-position: 80% 150%;
+		}
+		75% {
+			background-position: -80% 150%;
+		}
+		88% {
+			background-position: -100% -100%;
+		}
+		100% {
+			background-position: -140% 0%;
+		}
+	}
 </style>

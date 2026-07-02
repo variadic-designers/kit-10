@@ -70,6 +70,7 @@ export interface WorkspacesTable {
 	id: Generated<string>;
 	name: string;
 	description: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_active: Generated<Date>;
 }
 
@@ -77,6 +78,7 @@ export interface ProjectsTable {
 	id: Generated<string>;
 	name: string;
 	description: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 	license: Generated<string>;
 	author: string;
@@ -86,6 +88,7 @@ export interface ProjectsTable {
 export interface ViewsTable {
 	id: Generated<string>;
 	name: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 	project_id: string;
 	lock: boolean;
@@ -101,6 +104,7 @@ export interface CompositionsTable {
 export interface KitsTable {
 	id: Generated<string>;
 	name: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	project_id: string;
 	last_modified: Generated<Date>;
 }
@@ -114,12 +118,14 @@ export interface AxisTable {
 	description: string | null;
 	kind: string | null;
 	hint: JSONColumnType<string[]> | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	default_value: JSONColumnType<ArgValue> | null;
 }
 
 export interface AxisValuesTable {
 	id: Generated<string>;
 	axis_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	value: JSONColumnType<AxisValueType>;
 }
 
@@ -143,12 +149,14 @@ export interface AxisArgsTable {
 export interface RenderSnippetsTable {
 	id: Generated<string>;
 	layer_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 }
 
 export interface LayersTable {
 	id: Generated<string>;
 	kit_id: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	last_modified: Generated<Date>;
 }
 
@@ -162,6 +170,7 @@ export interface RenderEntriesTable {
 	snippet_id: string;
 	property: string;
 	value: string;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 }
 
 // ------------------------------
@@ -171,6 +180,7 @@ export interface TokensTable {
 	project_id: string;
 	alias: string | null;
 	value: string | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 	resolution: string | null;
 	kit_id: string | null;
 	view_id: string | null;
@@ -185,6 +195,7 @@ export async function up(dialect: DAny) {
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
 		.addColumn('name', 'text', (col) => col.notNull())
 		.addColumn('description', 'text', (col) => col.defaultTo(null))
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_active', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.execute();
 
@@ -194,6 +205,7 @@ export async function up(dialect: DAny) {
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('name', 'text', (col) => col.notNull())
 		.addColumn('description', 'text')
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addColumn('license', 'text', (col) => col.notNull().defaultTo(`mplv2`))
 		.addColumn('author', 'text', (col) => col.notNull())
@@ -213,6 +225,7 @@ export async function up(dialect: DAny) {
 		.addColumn('description', 'text')
 		.addColumn('kind', 'text')
 		.addColumn('hint', 'jsonb')
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('default_value', 'jsonb')
 		.execute();
 
@@ -221,6 +234,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('cascade'))
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('value', 'jsonb', (col) => col.notNull())
 		.execute();
 
@@ -229,6 +243,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('name', 'varchar(255)', (col) => col.notNull())
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('cascade'))
 		.addColumn('lock', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
@@ -240,6 +255,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql`uuid_generate_v7()`))
 		.addColumn('name', 'varchar(255)', (col) => col.notNull())
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('restrict'))
 		.execute();
@@ -279,6 +295,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
 		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('cascade'))
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.execute();
 
@@ -291,6 +308,7 @@ export async function up(dialect: DAny) {
 		)
 		.addColumn('alias', 'varchar(255)')
 		.addColumn('value', 'text')
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('kit_id', 'uuid', (col) => col.references('kits.id').onDelete('cascade'))
 		.addColumn('view_id', 'uuid', (col) => col.references('views.id').onDelete('cascade'))
 		.addCheckConstraint(
@@ -330,6 +348,7 @@ export async function up(dialect: DAny) {
 		.addColumn('layer_id', 'uuid', (col) =>
 			col.notNull().references('layers.id').onDelete('cascade')
 		)
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('last_modified', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
 		.addUniqueConstraint('one_snippet_per_layer', ['layer_id'])
 		.execute();
@@ -355,6 +374,7 @@ export async function up(dialect: DAny) {
 		)
 		.addColumn('property', 'text', (col) => col.notNull())
 		.addColumn('value', 'text')
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('token_id', 'uuid', (col) => col.references('tokens.id').onDelete('set null'))
 		.addCheckConstraint(
 			'value_or_token_not_both',
@@ -364,18 +384,18 @@ export async function up(dialect: DAny) {
 }
 
 export async function down(dialect: DAny) {
-	await dialect.schema.dropTable('render_entries').ifExists().execute();
-	await dialect.schema.dropTable('layer_axis_values').ifExists().execute();
-	await dialect.schema.dropTable('render_snippets').ifExists().execute();
-	await dialect.schema.dropTable('layers').ifExists().execute();
-	await dialect.schema.dropTable('axis_args').ifExists().execute();
-	await dialect.schema.dropTable('axes_consumed').ifExists().execute();
-	await dialect.schema.dropTable('axis_values').ifExists().execute();
-	await dialect.schema.dropTable('compositions').ifExists().execute();
-	await dialect.schema.dropTable('kits').ifExists().execute();
-	await dialect.schema.dropTable('views').ifExists().execute();
-	await dialect.schema.dropTable('tokens').ifExists().execute();
-	await dialect.schema.dropTable('axes').ifExists().execute();
-	await dialect.schema.dropTable('projects').ifExists().execute();
-	await dialect.schema.dropTable('workspaces').ifExists().execute();
+	await dialect.schema.dropTable('render_entries').ifExists().cascade().execute();
+	await dialect.schema.dropTable('layer_axis_values').ifExists().cascade().execute();
+	await dialect.schema.dropTable('render_snippets').ifExists().cascade().execute();
+	await dialect.schema.dropTable('layers').ifExists().cascade().execute();
+	await dialect.schema.dropTable('axis_args').ifExists().cascade().execute();
+	await dialect.schema.dropTable('axes_consumed').ifExists().cascade().execute();
+	await dialect.schema.dropTable('axis_values').ifExists().cascade().execute();
+	await dialect.schema.dropTable('compositions').ifExists().cascade().execute();
+	await dialect.schema.dropTable('tokens').ifExists().cascade().execute();
+	await dialect.schema.dropTable('kits').ifExists().cascade().execute();
+	await dialect.schema.dropTable('views').ifExists().cascade().execute();
+	await dialect.schema.dropTable('axes').ifExists().cascade().execute();
+	await dialect.schema.dropTable('projects').ifExists().cascade().execute();
+	await dialect.schema.dropTable('workspaces').ifExists().cascade().execute();
 }

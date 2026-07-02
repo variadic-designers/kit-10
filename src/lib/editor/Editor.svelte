@@ -109,12 +109,24 @@
 	});
 
 	let resolvedKits: ResolvedKit[] | null = $state(null);
+	let viewHints = $state<Record<string, unknown> | null>(null);
+	let allResolvedViews = $state<
+		{
+			viewId: string;
+			viewName: string;
+			hints: Record<string, unknown> | null;
+			resolvedKits: ResolvedKit[];
+		}[]
+	>([]);
 
 	$effect(() => {
-		const viewId = editorActivity.activeViewId;
+		const projectId = editorActivity.activeProjectId;
+		const activeViewId = editorActivity.activeViewId;
 		const editor = editorLoading;
-		if (!viewId || !editor) {
+		if (!projectId || !editor) {
 			resolvedKits = null;
+			viewHints = null;
+			allResolvedViews = [];
 			return;
 		}
 
@@ -122,7 +134,29 @@
 
 		const init = async () => {
 			const reResolve = async () => {
-				resolvedKits = await resolveManyManager(editor.dialect, viewId);
+				const views = await editor.dialect
+					.selectFrom('views')
+					.selectAll()
+					.where('project_id', '=', projectId)
+					.execute();
+
+				const allViews: typeof allResolvedViews = [];
+				for (const view of views) {
+					const kits = await resolveManyManager(editor.dialect, view.id);
+					allViews.push({
+						viewId: view.id,
+						viewName: view.name,
+						hints: (view as any).hints ?? null,
+						resolvedKits: kits
+					});
+				}
+				allResolvedViews = allViews;
+
+				const active = allViews.find((v) => v.viewId === activeViewId);
+				if (active) {
+					resolvedKits = active.resolvedKits;
+					viewHints = active.hints;
+				}
 			};
 
 			const watchTables = [
@@ -134,7 +168,8 @@
 				'axes_consumed',
 				'render_entries',
 				'render_snippets',
-				'tokens'
+				'tokens',
+				'views'
 			];
 
 			for (const table of watchTables) {
@@ -167,11 +202,16 @@
 
 	import type { EditorState, EditorQueryBuilder, Api } from 'manager';
 	import { initializeEditorState } from 'manager';
+	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
+
+	let pluginManager = $state<PluginManager | null>(null);
 
 	onMount(async () => {
-		await initializeEditorState().then((e) => {
+		await initializeEditorState().then(async (e) => {
 			if (e) {
 				editorLoading = e;
+				pluginManager = createPluginManager(e, queryBuilder(e.dialect));
+				await pluginManager.loadPlugin({ wasm: [{ url: '/charter.wasm' }] }, 'charter');
 			}
 		});
 	});
@@ -187,6 +227,12 @@
 		};
 
 		console.table(activity);
+	});
+
+	$effect(() => {
+		if (pluginManager) {
+			pluginManager.resolve(resolvedKits, viewHints, allResolvedViews, editorActivity.activeViewId);
+		}
 	});
 </script>
 
@@ -205,27 +251,7 @@
 		<Nav {editorLoading} bind:editorActivity />
 	{/snippet}
 
-	{#snippet unloadedDash()}
-		<div class="loading">
-			<div class="logo">
-				<svg width="0" height="0" style="position:absolute">
-					<defs>
-						<clipPath id="myClip" clipPathUnits="objectBoundingBox">
-							<path d="M1,0.5c0,0.276-0.171,0.5-0.382,0.5V0.934C0.618,0.694,0.766,0.5,0.95,0.5Z" />
-							<path
-								d="M0.618,0.934V1c-0.211,0-0.382-0.224-0.382-0.5h0.05C0.469,0.5,0.618,0.694,0.618,0.934Z"
-							/>
-							<path
-								d="M0.618,0V0.065C0.618,0.305,0.469,0.5,0.285,0.5H0.235C0.235,0.224,0.406,0,0.618,0Z"
-							/>
-							<path d="M1,0.5H0.95C0.766,0.5,0.618,0.305,0.618,0.065V0C0.829,0,1,0.224,1,0.5Z" />
-							<path d="M0.236,0V0.691A0.236,0.309,0,0,1,0,1V0.309A0.236,0.309,0,0,1,0.236,0Z" />
-						</clipPath>
-					</defs>
-				</svg>
-			</div>
-		</div>
-	{/snippet}
+	{#snippet unloadedDash()}{/snippet}
 
 	{#snippet management(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
@@ -240,17 +266,17 @@
 	{/snippet}
 
 	{#snippet dash(editorReady)}
-		<Viewport />
+		<Viewport data={pluginManager?.viewportData ?? '[]'} />
 	{/snippet}
 
 	{#snippet configurable(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
 
-		<StylesPanel {resolvedKits} {selection} />
+		<StylesPanel {resolvedKits} {selection} fieldCategories={pluginManager?.fieldCategories} />
 
 		<TokensPanel {api} {editorReady} bind:editorActivity />
 
-		<PluginsPanel />
+		<PluginsPanel manager={pluginManager} />
 
 		<pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
 	{/snippet}
@@ -258,62 +284,4 @@
 
 <style lang="scss">
 	@use '_index' as *;
-
-	.loading {
-		position: relative;
-		height: 100%;
-
-		display: grid;
-		place-items: center;
-
-		.logo {
-			clip-path: url(#myClip);
-			height: calc($x-font-size-2xl * 8);
-			aspect-ratio: 622.31 / 476;
-			fill: white;
-			view-transition-name: kit10-logo;
-			background: radial-gradient(
-				circle,
-				#93c5fd 30%,
-				#3b82f6 65%,
-				var(--color-bg) 10% // rgba(240, 225, 83, 1) 65%,
-			);
-			/*
-			background: radial-gradient(
-				circle,
-				var(--color-success) 30%,
-				var(--color-primary-hover) 65%,
-				var(--color-primary) 25%,
-			);
-      */
-
-			background-size: 200% 200%; /* important */
-			animation: walk-background 5s ease-in-out infinite;
-		}
-	}
-
-	@keyframes walk-background {
-		0% {
-			background-position: -140% 0%;
-		} /* top-right */
-
-		25% {
-			background-position: -150% 60%;
-		} /* drifting down right */
-		50% {
-			background-position: 80% 150%;
-		} /* bottom-right (overshoot) */
-
-		75% {
-			background-position: -80% 150%;
-		} /* bottom-left */
-
-		88% {
-			background-position: -100% -100%;
-		} /* back up to top-left-ish */
-
-		100% {
-			background-position: -140% 0%;
-		} /* top-right */
-	}
 </style>

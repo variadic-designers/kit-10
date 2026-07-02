@@ -56,9 +56,8 @@
 	</div>
 
 	<main class="dash">
-		{#if state}
-			{@render dash?.(state)}
-		{:else}
+		{@render dash?.(state as T)}
+		{#if !state}
 			{@render unloadedDash?.()}
 		{/if}
 	</main>
@@ -295,6 +294,7 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 
 		.management,
 		.configurable {
+			isolation: isolate;
 			@include layout-flex-column();
 			@include layout-respond('lg') {
 				gap: $x-space-sm;

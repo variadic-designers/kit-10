@@ -42,15 +42,9 @@ describe('migration 2026-04-21', () => {
 		const axes = cols.find((t) => t.name === 'axes');
 		expect(axes).toBeDefined();
 		const colNames = axes!.columns.map((c) => c.name).sort();
-		expect(colNames).toEqual([
-			'default_value',
-			'description',
-			'hint',
-			'id',
-			'kind',
-			'name',
-			'project_id'
-		].sort());
+		expect(colNames).toEqual(
+			['default_value', 'description', 'hint', 'hints', 'id', 'kind', 'name', 'project_id'].sort()
+		);
 	});
 
 	it('render_snippets points to layers, not kits', async () => {
@@ -82,8 +76,6 @@ describe('migration 2026-04-21', () => {
 		const layer = (await ctx.api.createLayer(kit.id))!;
 
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
-		await expect(
-			ctx.api.addAxisValueToLayer(layer.id, av.id)
-		).resolves.toBeUndefined();
+		await expect(ctx.api.addAxisValueToLayer(layer.id, av.id)).resolves.toBeUndefined();
 	});
 });

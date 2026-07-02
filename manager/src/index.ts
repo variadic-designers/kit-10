@@ -56,23 +56,17 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 	}
 };
 
-import { up } from './migrations/2026-04-21/index.js';
+import { up, down } from './migrations/2026-04-21/index.js';
 import { seedDemoProject } from './seed.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
 	await sql`CREATE EXTENSION IF NOT EXISTS pg_uuidv7`.execute(dialect);
 
+	await down(dialect as any);
 	await up(dialect as any);
 
-	const workspaces = await dialect.selectFrom('workspaces').selectAll().executeTakeFirst();
-
-	if (!workspaces) {
-		await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
-		await seedDemoProject(dialect);
-	}
-
-	console.log('-------- Workspaces --------');
-	console.table(workspaces);
+	await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
+	await seedDemoProject(dialect);
 
 	console.log('-------- Projects --------');
 	const projects = await dialect.selectFrom('projects').selectAll().execute();
@@ -81,4 +75,11 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 
 export { jsonArrayFrom } from 'kysely/helpers/postgres';
 export { type Api } from './api/index.js';
-export { resolve, resolveMany, flattenKitResults, matchesArg, type ResolvedProperty, type ResolvedKit } from './resolve/resolve.js';
+export {
+	resolve,
+	resolveMany,
+	flattenKitResults,
+	matchesArg,
+	type ResolvedProperty,
+	type ResolvedKit
+} from './resolve/resolve.js';
