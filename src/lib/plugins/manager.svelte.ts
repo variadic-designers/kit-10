@@ -1,5 +1,6 @@
 import createPlugin, { type ManifestLike, type Plugin } from '@extism/extism';
 import type { Api, EditorState, ResolvedKit } from 'manager';
+import { resolveMany } from 'manager';
 import type {
 	FieldCategory,
 	FieldUpdate,
@@ -40,6 +41,7 @@ export function createPluginManager(editor: EditorState, api: Api) {
 
 	let activePlugin: Plugin | null = null;
 	const kvStores = new Map<string, Map<string, string>>();
+	const resolveCache = new Map<string, ResolvedKit[]>();
 
 	function makeHostFunctions(pluginName: string) {
 		const localKV = new Map<string, string>();
@@ -85,6 +87,24 @@ export function createPluginManager(editor: EditorState, api: Api) {
 				kit10_get_resolution(cp: any, _inputOffs: bigint) {
 					const data = serializeResolvedKits(context.resolvedKits);
 					return cp.store(JSON.stringify(data));
+				},
+
+				async kit10_resolve_view(cp: any, inputOffs: bigint) {
+					const viewId = cp.read(inputOffs).text().trim();
+
+					const cached = resolveCache.get(viewId);
+					if (cached) {
+						return cp.store(JSON.stringify(serializeResolvedKits(cached)));
+					}
+
+					try {
+						const kits = await resolveMany(editor.dialect, viewId);
+						resolveCache.set(viewId, kits);
+						return cp.store(JSON.stringify(serializeResolvedKits(kits)));
+					} catch (err) {
+						console.error(`[plugin] kit10_resolve_view failed for ${viewId}:`, err);
+						return cp.store(JSON.stringify(null));
+					}
 				},
 
 				async kit10_write_render_entry_to_layer(cp: any, inputOffs: bigint) {
@@ -180,10 +200,20 @@ export function createPluginManager(editor: EditorState, api: Api) {
 	async function resolve(
 		resolvedKits: ResolvedKit[] | null,
 		viewHints?: Record<string, unknown> | null,
-		allViews?: ResolvedView[] | null,
 		activeViewId?: string | null
 	) {
 		context = { resolvedKits };
+
+		// Keep active view in cache, evict everything else — any data change
+		// that triggered a re-resolve may have affected child view resolutions.
+		if (activeViewId && resolvedKits) {
+			for (const vid of resolveCache.keys()) {
+				if (vid !== activeViewId) resolveCache.delete(vid);
+			}
+			resolveCache.set(activeViewId, resolvedKits);
+		} else {
+			resolveCache.clear();
+		}
 
 		if (!activePlugin) {
 			fieldCategories = [];
@@ -196,7 +226,6 @@ export function createPluginManager(editor: EditorState, api: Api) {
 				activeViewId: activeViewId ?? null,
 				resolvedKits: serializeResolvedKits(resolvedKits),
 				viewHints: viewHints ?? {},
-				allViews: serializeResolvedViews(allViews ?? null)
 			});
 			const result = await activePlugin.call('on_resolve', payload);
 			if (result) {
