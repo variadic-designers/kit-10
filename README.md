@@ -6,68 +6,47 @@
 
 Write the rule once. Every variant follows.
 
-KIT•10 (pronounced **"kitten"**) is a design system editor where you define how your UI behaves across themes, sizes, viewports, and states - and the system produces every combination for you.
+KIT•10 (pronounced **"kitten"**) is a design system editor built around one idea: instead of drawing every variant by hand, you describe your intention once and let the system derive the rest.
+
+---
+
+## Start by drawing
+
+Open the editor. Draw your button. Style it however you want - that's your default, and it already exists with no setup required.
+
+When you need a secondary variant, you don't duplicate anything. You drag that background color to an axis - **Emphasis → primary** - then add a second entry for **Emphasis → secondary**. The system now understands that background changes with emphasis, and it produces every combination automatically.
+
+Add an axis for viewport width and every rule you've written now applies across every breakpoint. You wrote a handful of rules. The system handles everything they imply.
 
 ---
 
 ## Why does this exist?
 
-You've been there: your button needs a light version, a dark version, a compact version, a dark-compact version, a disabled version, a dark-disabled version… and now you're maintaining 27 components for 3 axes.
+You've been there: your button needs a light version, a dark version, a compact version, a dark-compact version, a disabled version, a dark-disabled version - and now you're maintaining 27 components for 3 axes.
 
-You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop. And global tokens can't express that some values only make sense for certain kits or certain views.
+You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop. And global tokens can't express that some values only make sense in certain contexts.
 
-KIT•10 lets you say **when**, **why**, and **where**:
-
-```
-No conditions      → background: #fff, color: #333, padding: 16px
-{theme: dark}      → background: #1a1a2e, color: #e0e0e0
-{theme: dark, density: compact} → padding: 8px, font-size: token(colors.primary)
-{viewport ≥ 1024} → width: 320px
-```
-
-More conditions = higher priority. So `dark + compact` overrides `dark`, which overrides default. Add a fourth axis? One more row. Not twelve more variants.
+KIT•10 lets you say **when**, **why**, and **where**. More conditions means higher priority. `dark + compact` overrides `dark`, which overrides the default. Add a fourth axis? One more rule. Not twelve more variants.
 
 ---
 
-## How it works
+## It goes anywhere
 
-1. **Axes** - dimensions of intent (Theme: light/dark, Density: compact/comfortable, Viewport: ≥768/≥1024)
-2. **Layers** - rules that say "when these conditions are true, apply these properties"
-3. **Tokens** - named values that can live at project, kit, or view level
-4. **Kits** - bundles of axes + layers + kit-scoped tokens (Button, Layout, Card…)
-5. **Views** - compositions of kits with axis values set ("Dark Compact", "Light Comfortable")
-6. **Resolution** - the engine picks the most specific matching layer for each property, then substitutes tokens
-
-Every output value is traceable to the rule and conditions that produced it. No surprises.
+The system resolves your rules to properties. What those properties mean - CSS variables, SCSS, 3D material settings, a sitemap structure - is up to a render plugin. The engine has no opinion about the output format. The community builds the interpreters.
 
 ---
 
-## What you get
+## Where to start
 
-- **No variant explosion.** Add an axis, not a component tree.
-- **Composable kits.** Swap a Kit into any View with different axis values - instant reskin.
-- **Scoped tokens.** A token can live at project level (shared everywhere), kit level (only inside that kit's layers), or view level (different values per view). The most specific scope wins.
-- **Traceable.** Every rendered property points back to its source layer and axis conditions.
-- **Offline-first.** Runs entirely in-browser via PGlite. No server, no login.
+- **[CONCEPTS.md](./CONCEPTS.md)** - the mental model: Views, Kits, Axes, Layers, Tokens
+- **[FAQ.md](./FAQ.md)** - common questions about working with the editor
 
 ---
 
-## What it's not
-
-Not a drawing tool. Not AI. Not a component library. It's a meta-editor - you define the logic, it generates the outcomes.
-
----
-
-## Current state
-
-Actively under development. Start with **[CONCEPTS.md](./CONCEPTS.md)** for the technical model and **[FAQ.md](./FAQ.md)** for the design rationale.
-
----
-
-**KIT•10** → _"kitten"_. Yes, intentionally cute.
+**KIT•10** → *"kitten"*. Yes, intentionally cute.
 
 ---
 
 ## License
 
-_TBD_. Rights reserved until chosen.
+*TBD*. Rights reserved until chosen.

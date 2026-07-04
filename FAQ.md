@@ -1,98 +1,81 @@
 # KIT•10 - FAQ
 
-## What is KIT•10?
+## Do I need to plan my axes before I can start drawing?
 
-KIT•10 (pronounced **"kitten"**) is a design system editor that lets you define how your UI behaves across every state, theme, and viewport - and generates the outputs automatically.
+No. Draw first. All properties start on the null layer - a rule with no conditions that always applies. No axes, no setup required.
 
-Instead of creating a variant for every combination by hand, you define the rules once. The engine works out every combination.
-
----
-
-## Why would I use this instead of Figma or Framer?
-
-Figma and Framer are great for drawing and prototyping. But when your design system grows, you hit problems they weren't built to solve:
-
-- **Variant explosion.** A button with 3 themes × 3 sizes × 3 states = 27 components. Add one more dimension and you're maintaining 54. In KIT•10, you write 7 rules and the engine generates every combination.
-- **No reuse across projects.** Reskinning a Figma component library means duplicating and editing files. In KIT•10, a Kit is a reusable behavioral bundle - plug it into a different View with different axis values and you get a new skin without redefining anything.
-- **Manual synchronization.** Change a theme token in Figma and you update every affected component by hand. In KIT•10, changing one Layer propagates to every View that uses that Kit.
-- **Dead-end output.** Figma exports flat CSS. Framer ships React components. KIT•10 can export to CSS custom properties, Tailwind, SCSS, Flutter, Style Dictionary JSON, or any format the community builds a backend for - from the same design rules.
-
-KIT•10 is not a drawing tool. It's a system logic tool. You define the rules; the engine produces render-ready output for any platform.
+Add axes when you discover you need variation. Drag existing properties to their conditions as your design grows. The system captures your reasoning as you go, not before you start.
 
 ---
 
-## How is this different from design tokens?
+## What's the null layer?
 
-Tokens describe what a value is. KIT•10 describes *why* that value is what it is - and *where* it matters.
+A rule with no axis conditions. Because it has no conditions to fail, it always matches - making it the lowest-priority fallback.
 
-A token system stores `color-primary: #3b82f6` per theme. Want it to change when density changes too? You duplicate the token set or nest modes - and now you're manually tracking combinations.
-
-KIT•10 stores intent. You say "when dark mode is on, background is #333." When "dark mode + high contrast" should be #000, you add one more rule. The engine derives every combination. The output format is the same - CSS variables, JSON, whatever your pipeline expects - but you defined the logic, not the flat values.
-
-Tokens in KIT•10 are also scoped. A project-level token (`spacing.md`) is available everywhere. A kit-level token (`button.padding`) only exists inside its kit. A view-level token (`accent`) can resolve differently per view. More-specific scopes override less-specific ones - same principle as layers. This means you don't need a global namespace that every kit has to share, and you don't need to duplicate tokens just to change them per context.
+It's where every design begins. Properties you haven't assigned to any condition yet live here. Once you assign a property to a conditioned rule, that rule takes over for any axis state it matches.
 
 ---
 
-## How is this different from Figma Variables?
+## What's the difference between a Kit and a View?
 
-Figma Variables let you define modes (Light / Dark) and switch between them. One axis, one value at a time.
+A **Kit** is a reusable behavioral specification for one design concern. It defines axes and the rules that respond to them.
 
-If you need a button to respond to theme *and* size *and* interaction state, you're stuck:
-
-- You pick one mode per collection. No way to combine them.
-- If two collections both set `color`, whoever is last wins. No structured resolution - just blind override.
-- You can't say "when dark + high contrast, override the dark variant." You'd need a separate mode for every combination.
-
-KIT•10 handles this natively. You define `{dark: true}` and `{dark: true, high_contrast: true}` as separate rules. The latter wins when both conditions are active. No duplication, no intermediate modes.
+A **View** is a composition. It assembles one or more Kits and sets the axis values for each. The same Kit in two different Views can produce completely different output if the axis args differ.
 
 ---
 
-## How is this different from a theme switcher?
+## What happens when two rules contest the same property?
 
-A theme switcher swaps between two token sets - light.css and dark.css. That's one axis with two values.
+The more specific rule wins. Specificity has three tiers, from highest to lowest:
 
-KIT•10 is multi-axial. Adding a new dimension (density, viewport width, motion preference) doesn't multiply your output files. It adds one axis to the rules. The possible outputs grow combinatorially, but the rules you *write* grow linearly with the conditions you care about.
+1. Which Kit it belongs to (higher-priority Kit wins)
+2. How many conditions it has (more conditions win)
+3. Which axes are involved (axes later in the Kit's ordering win)
 
----
+If two rules can never both be active at once - e.g. `{theme: dark}` and `{theme: light}` - they're mutually exclusive and there's no contest.
 
-## What's a Layer?
-
-A rule that says "when these conditions are true, apply these properties."
-
-```
-{dark: true}                      → background: #333; color: #dedede
-{dark: true, high_contrast: true}  → background: #000; color: #FFF
-```
-
-The second rule has more conditions, so it wins when both apply. Only the properties it declares override the first - everything else carries forward.
-
-A Layer with no conditions (null Layer) always applies. It's the lowest-priority fallback. Useful for prototyping defaults before you know which axes matter.
+See [CONCEPTS.md → Specificity](./CONCEPTS.md) for the full model.
 
 ---
 
-## What happens when two rules conflict?
+## What's the difference between a token and just writing the value directly in a rule?
 
-It depends on which rule is more specific:
+Nothing changes in how the rule behaves. The difference is maintainability.
 
-- **More conditions win.** A rule with two conditions (dark + compact) beats one condition (dark).
-- **Same number of conditions, but different axes?** The axis listed later in the Kit wins.
-- **Same axis, different values?** They can't both be active at once (dark and light can't be true simultaneously). No conflict.
-- **Different Kits, same property?** The higher-priority Kit wins.
-- **Same token name, different scopes?** View scope beats Kit scope, Kit scope beats Project scope. Same rule as everything else: more specific wins.
+If `#3b82f6` appears in twenty rules and you change your brand color, you update twenty places. With a token named `colors.primary`, you update one.
 
-No ambiguity, no guessing. See [CONCEPTS.md](CONCEPTS.md) → Specificity for the full technical model.
+Tokens are also scoped. A View token overrides a Kit token of the same name, which overrides a Project token. This lets the same name resolve to a different value per context without duplicating any rules.
 
 ---
 
-## Does this replace designers?
+## What's a render plugin?
 
-No. It replaces repetitive decision-making - but the implications go further than "you write fewer variants."
+The engine resolves your rules to a set of properties - `background: skyblue`, `padding: 8px`, etc. It doesn't know what those properties mean for a given output target. A render plugin takes that resolved output and interprets it.
 
-Because every output is derived from rules, not hand-authored, the entire workflow shifts:
+A CSS plugin emits custom properties. An SCSS plugin emits variables and mixins. A 3D plugin sets material uniforms. The same rules produce different output depending on the plugin. The viewport in the editor is itself a plugin.
 
-- **Design decisions become traceable.** Every property in the output can be traced back to which rule produced it and which axis values triggered it. No more "why is this button blue?" archeology.
-- **Refactoring becomes safe.** Adding an axis doesn't break existing rules. Moving an axis up or down in a Kit changes priority predictably. Removing a rule only removes what it declared - everything else carries forward.
-- **Design systems become portable.** A Kit is self-contained. Share it across projects, swap it into a different View, or reskin an entire product by replacing one Kit with another while keeping the same axis structure.
-- **Consistency is structural, not manual.** In a token system, consistency depends on people remembering to use the right token. In KIT•10, consistency is guaranteed by the resolution engine - if `{emphasis: primary}` always maps to the same properties, it will because there's only one rule for it, not thirty hand-maintained tokens.
+---
 
-Designers still make the decisions. KIT•10 makes those decisions composable, traceable, and scalable without extra effort.
+## Can I use the same Kit in multiple Views?
+
+Yes. Attach the same Kit to two Views with different axis args and you get two different resolved outputs from the same rules. Change a rule in the Kit and it propagates to every View that uses it automatically.
+
+---
+
+## What happens if I delete an axis that layers already reference?
+
+Any conditions on that axis are removed from the affected layers. The layers themselves remain, now with fewer conditions. If all conditions are removed from a layer, it becomes a null layer.
+
+---
+
+## Where does my data live?
+
+In your browser, in a local database. Nothing leaves your machine unless you export it. No account required.
+
+In Firefox private mode, local storage is unavailable. The editor falls back to in-memory storage for that session - everything works, but data is not persisted after the tab closes.
+
+---
+
+## How do I export my work?
+
+Export depends on which render plugins are installed. A plugin declares what it can produce - CSS, SCSS, Style Dictionary JSON, or anything else the community has built. The core engine can also export the full project as JSON for backup or transfer between browsers.

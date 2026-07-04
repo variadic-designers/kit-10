@@ -1,160 +1,103 @@
 # KIT•10 - Concepts
 
-This document defines the core concepts used by KIT•10.
-
-It exists to keep terminology consistent and to constrain implementation decisions.
+This document defines the core concepts used by KIT•10. It exists to keep terminology consistent and to constrain how the system is understood and discussed.
 
 ---
 
 ## Design space
 
-KIT•10 models design as a space defined by multiple independent dimensions.
+KIT•10 models design as a space defined by independent dimensions.
 
-A design outcome is the result of evaluating a position within that space.
-
-Changing input values moves the position and produces a different result.
+A design outcome is the result of evaluating a position within that space. Changing the inputs moves the position and produces a different result.
 
 ---
 
 ## Views
 
-A View represents a UI's form at a given set of conditions.
+A View represents a UI at a given set of conditions.
 
-A View can consume multiple Kits at once, instantiating each Kit with independent Axis values.
-
-Views are the top-level compositional unit. They define *what* is rendered by assembling and parameterizing Kits.
+A View assembles multiple Kits and sets the axis values for each. Views are the top-level compositional unit - they define what is on screen by parameterizing the Kits they contain.
 
 ---
 
 ## Kits
 
-A Kit is an ordered bundle of Axes representing a cohesive design concern.
+A Kit is a reusable bundle of axes and rules for a single design concern - a button, a layout, a color system.
 
-A Kit is not a component - it is a parameterized behavioral unit that a View instantiates.
-
-Each Kit instance within a View carries its own independent Axis state.
+A Kit is not a component. It is a behavioral specification. A View can use the same Kit with different axis values and get different results from the same rules.
 
 ---
 
 ## Axes
 
-An axis represents a single dimension of design intent within a Kit.
+An axis is a single dimension of design intent within a Kit.
 
-Examples:
+Examples: Emphasis, Density, Theme, Motion, Viewport Width.
 
-- Density
-- Emphasis
-- Contrast
-- Motion
-- Tone
-- Formality
+Axes can take three forms:
 
-Axes are arbitrary - the system imposes no semantic constraints on what an axis represents. Any design dimension expressible in one of the following shapes is valid:
+- **Categorical** - a named set of values with no implied ordering (e.g. `tone: neutral / destructive / confirmative`)
+- **Range** - a numeric spectrum where conditions are evaluated as comparisons (e.g. `viewport_width ≥ 1024`)
+- **Discrete** - a freeform value with no predefined set
 
-- **Categorical** - a discrete set of named values (e.g., tone: neutral / destructive / confirmative); no ordering is implied between values
-- **Numeric / Ranged** - a continuous or bounded numeric spectrum (e.g., viewport width: 0–∞, animation budget: 0–1); ranges may overlap or nest
-- **Discrete** - an unconstrained value with no predefined set
-
-The only constraint on axes is representational, not semantic: they must be expressible in one of the shapes above.
-
-Each axis should represent exactly one idea.  
-An Axis by itself should not overlap in meaning with another Axis.
+Each axis should represent exactly one idea and should not overlap in meaning with any other axis in the same Kit.
 
 ---
 
 ## Layers
 
-A Layer is a rule: a set of axis conditions, each pairing an axis with a specific value, mapped to a render result.
-
-A Layer may carry zero or more axis conditions. There is no upper limit.
-
-The **null Layer** - one with no axis conditions - always applies, since it has no conditions to satisfy. Its specificity is zero at every tier. This makes it the lowest-priority fallback: its properties are only used when no other Layer provides them.
-
-The null Layer is not recommended for production use, but they serve a practical purpose during prototyping: they let users define rough default outcomes before discovering which axes matter, then refactor intent into proper axis-conditioned Layers.
+A Layer is a rule: a set of axis conditions mapped to a set of property declarations.
 
 ```
-Layer: { dark: true }                        → { background: #333; color: #dedede }
-Layer: { dark: true, high_contrast: true }    → { background: #000; color: #FFF }
+{ emphasis: primary }                    → background: skyblue; color: white
+{ emphasis: primary, density: compact }  → background: skyblue; padding: 8px
 ```
 
-When the current axis state satisfies all conditions of a Layer, that Layer applies. A Layer with more conditions in its set applies with higher specificity - so in the example above, when both `dark` and `high_contrast` are true, the two-condition Layer overrides the one-condition Layer.
+A Layer with no conditions - the **null layer** - always applies. It has no conditions to fail, so it matches every axis state. It is the lowest-priority fallback and the natural starting point for any design: properties live here until you give them conditions.
 
-Override is per-property, not per-Layer. A more-specific Layer only replaces the properties it declares; properties from less-specific Layers that are not contested remain in effect. Nothing is deleted - only contested properties are replaced.
-
-A Layer has exactly one render result. The render result is a set of individual property declarations (e.g., `background: #333` and `color: #dedede` are separate entries), not a monolithic blob. This per-property granularity is what makes per-property override possible.
-
-Multi-axis mappings always override less specific ones when both apply. This is the axis-count tier of specificity (see Specificity).
+Layers override per-property, not wholesale. A more specific Layer only replaces the properties it declares. Everything else from less specific Layers carries forward.
 
 ---
 
 ## Specificity
 
-Specificity is a three-tier, non-overlapping hierarchy. Higher tiers always win, regardless of values in lower tiers.
+When multiple Layers match and contest the same property, the more specific one wins.
 
-| Tier | Basis | Description |
-|------|-------|-------------|
-| 1 (lowest) | **Axis ordering within a Kit** | Within a Kit, Axes are ordered by priority. When two Layers have the same axis count and their highest-priority axes differ, the Layer whose axis appears later in the Kit ordering wins. |
-| 2 | **Axis count in the Layer condition** | The number of axis conditions a Layer carries. A two-axis Layer always overrides any one-axis Layer, regardless of which axes are involved or their ordering. Likewise, a three-axis Layer overrides any two-axis Layer, and so on. |
-| 3 (highest) | **Kit precedence** | A View consumes multiple Kits in priority order. When two Kits produce a render result for the same property, the higher-priority Kit wins - regardless of axis count or axis ordering within either Kit. |
+Specificity is determined by three tiers, from highest to lowest:
 
-When two Layers have the **same axis count**, their relative specificity is determined by the compounded ordering of their axes within the Kit. The highest-priority axis (latest position in Kit ordering) present in either Layer decides: the Layer whose matching axis appears later wins. The same rule compounds as axis count increases - a three-axis Layer borrows its specificity from the ordering of all three axes, but it already outranks any two-axis or one-axis Layer by tier 2 alone.
+1. **Kit priority** - when two Kits in a View declare the same property, the higher-priority Kit wins
+2. **Axis count** - a Layer with two conditions always beats one with one condition, regardless of which axes are involved
+3. **Axis ordering within the Kit** - when two Layers have the same number of conditions, the one whose axes appear later in the Kit's ordering wins
 
-These tiers are non-overlapping: no amount of lower-tier specificity can beat a higher tier. The system behaves as a composite value where each tier is its own digit, analogous to `(kit_priority, axis_count, compounded_axis_order)`.
+These tiers are non-overlapping. No amount of lower-tier specificity can beat a higher tier. Given any two Layers and any axis state, there is always exactly one winner per property.
 
-When two Layers share the same specificity, they are either **mutually exclusive** or **orthogonal**:
-
-- **Mutually exclusive** - both Layers condition on the same axis but different values (e.g., `{theme: dark}` vs `{theme: light}`). Only one can match the current axis state at a time, so they never contest the same property in a single resolution.
-- **Orthogonal** - the Layers condition on different axes (e.g., `{theme: dark}` vs `{density: compact}`). Both can match simultaneously. If they declare different properties, they merge cleanly. If they contest the same property, tier 1 (axis ordering) resolves it.
-
-Identical specificity never produces ambiguity.
-
----
-
-## Render Tokens
-
-A Render Token is the final output artifact - a backend-opinionated shape produced by resolving Layers.
-
-Render Tokens encode the structure that a specific rendering target expects (framework, platform, or output format).
-
-They are derived artifacts and are not authoritative.  
-Render Tokens do not require manual adjustment.
+When two Layers can never both be active at the same time - e.g. `{theme: dark}` and `{theme: light}` - they are mutually exclusive and never contest each other.
 
 ---
 
 ## Tokens
 
-Tokens are named values that can be referenced from Layer render entries. Instead of hardcoding `#3b82f6` in every layer, you write `token(colors.primary)` and change it in one place.
+Tokens are named values that Layers can reference instead of hardcoding a literal.
 
-Unlike typical token systems, tokens in KIT•10 are **scoped**. A token's scope determines who can see it and when it resolves:
+Rather than writing `#3b82f6` in every Layer, you write `token(colors.primary)` and define the value once. Change the token, and every Layer that references it updates.
 
-- **Project tokens** are visible to every Kit and View in the project. Use them for shared foundations: spacing scales, brand colors, type scales.
-- **Kit tokens** are visible only within the Kit that defines them. Use them for values that only make sense inside that kit's context (e.g., `button.padding` inside the Button kit).
-- **View tokens** are visible only within the View that defines them. Use them when the same token name needs different values depending on which view is consuming it (e.g., `accent` resolving to blue in one view and red in another).
+Tokens are **scoped**:
 
-Scoping works like the rest of KIT•10: more specific wins. A View token overrides a Kit token of the same name, and a Kit token overrides a Project token of the same name.
+- **Project tokens** are available to every Kit and View in the project. Use them for shared foundations: brand colors, spacing scales, type scales.
+- **Kit tokens** are visible only within the Kit that defines them. Use them for values that only make sense inside that Kit's context.
+- **View tokens** are visible only within the View that defines them. Use them when the same token name needs a different value depending on which View is consuming it.
 
-Tokens participate in the cascade in two passes:
+More specific scope wins: a View token overrides a Kit token of the same name, which overrides a Project token.
 
-1. **Pass 1 - Specificity resolution.** Layers are resolved in specificity order. Each property declaration in a Layer's render result wins or loses per the specificity rules. At the end of Pass 1, every property has a winning value, which may be a literal (e.g., `#333`) or a token reference (e.g., `colors.primary`). Tokens are **not** dereferenced during this pass - they compete as opaque references, so a token reference on a higher-specificity Layer beats a literal on a lower one.
-
-2. **Pass 2 - Token substitution.** After the winning per-property values are determined, any token references are replaced with their underlying values. Substitution considers the token's scope: the engine gathers tokens from the active project, kit, and view, and a more-specific scope overrides a less-specific one for the same name.
-
-A render result entry is always **one of**: a literal value or a token reference. It is never both, and it is never neither. The data model enforces this with a check constraint.
-
-Unbounded tokens (those without axis conditions) naturally reside on the null Layer, where they serve as baseline values that more-specific Layers can override per-property.
+Token references compete on specificity like any other value - a token reference on a higher-specificity Layer beats a literal on a lower one. After the winning value per property is determined, token references are substituted with their underlying values using the scoping rules above.
 
 ---
 
 ## Range conditions
 
-A Layer condition on a ranged axis does not match by equality - it matches by evaluation. For example, a condition `{viewport_width: ≥1024}` is satisfied when the current axis arg for viewport width is any value ≥ 1024, not just exactly 1024.
+A Layer condition on a range axis does not match by equality. It matches by evaluation.
 
-The resolution engine evaluates each Layer condition against the current axis args:
-- **Categorical conditions** match by value identity.
-- **Range conditions** match by evaluating the operator against the axis arg's current value.
-- **Discrete conditions** match by value identity with no predefined set.
-
-This evaluation happens at resolution time, not at storage time.
+A condition `{ viewport_width: ≥ 1024 }` is satisfied by any arg value that is ≥ 1024, not just exactly 1024. Two range conditions on the same axis can overlap - specificity determines which wins when both match.
 
 ---
 
@@ -162,57 +105,6 @@ This evaluation happens at resolution time, not at storage time.
 
 Intent flows through the system in a defined order:
 
-Views → Kit instances → Axes → Layers (Pass 1: specificity resolution) → Token substitution (Pass 2: scoped resolution) → Render Tokens
+Views → Kit instances → Axes → Layers → Token substitution → Render output
 
-There are no implicit overrides.  
-Changes must be the result of upstream input changes.
-
----
-
-## Determinism
-
-Axis evaluation is deterministic.
-
-Given the same inputs, the system must always produce the same outputs.
-
-This applies across:
-
-- Value derivation
-- Layer resolution
-- Render exports
-
----
-
-## Traceability
-
-Every derived value and Render Token should be traceable to the Axis inputs and Layer mappings that produced it.
-
----
-
-## Variadic structure
-
-The system does not assume:
-
-- A fixed number of Views
-- A fixed number of Kits per View
-- A fixed number of Axes per Kit
-- A fixed schema
-- A fixed output structure
-
-Views, Kits, and Axes may be added or removed without restructuring the framework.
-
----
-
-## Intent encoding
-
-Inputs describe intent, not necessarily appearance.
-
-Visual characteristics are derived from Axis evaluation and Layer resolution rather than specified directly.
-
----
-
-## Scope
-
-This document describes conceptual constraints.
-
-Implementation details belong in code and editor documentation.
+There are no implicit overrides. Every output is traceable to a specific Layer, the axis conditions that activated it, and the token scope that resolved its values.
