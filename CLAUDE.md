@@ -1,0 +1,291 @@
+# KIT•10 — Architecture & Component Boundaries
+
+## Overview
+
+KIT•10 is a design-system editor that models components as **kits** (style systems), **axes** (dimensions like theme/density/state), and **views** (specific axis configurations). The editor stores everything in an in-browser PostgreSQL database (PGlite), resolves kit properties at runtime, and renders previews via a GPU renderer. A sandboxed WASM plugin (Charter) translates resolved data into a flat render tree.
+
+---
+
+## Stack
+
+```
+┌─────────────────────────────────────────┐
+│  Svelte 5 UI  (src/lib/editor/)         │  Editor shell, panels, reactivity
+├─────────────────────────────────────────┤
+│  Manager  (manager/src/)                │  TypeScript library: DB, resolve, API
+├─────────────────────────────────────────┤
+│  PGlite  (Web Worker + OPFS)            │  In-browser PostgreSQL, live queries
+├─────────────────────────────────────────┤
+│  Charter  (plugins/charter/src/)        │  Extism/WASM plugin: resolve → UiNode[]
+├─────────────────────────────────────────┤
+│  Vellum  (src/lib/vellum/)             │  Rust/WASM GPU renderer: UiNode[] → pixels
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Component Boundaries
+
+### 1. PGlite (Database Layer)
+
+**Owns:** All persistent state — workspaces, projects, views, kits, axes, axis values, axis args, compositions, layers, layer_axis_values, render snippets, render entries, tokens.
+
+**Must NOT:** do any resolution logic, hold derived/computed state, or be accessed directly from Charter or Vellum.
+
+**Key contracts:**
+- `render_entries.value` is a plain `text` column — JSON strings (e.g. for `children`) are stored as text and must be parsed by the caller.
+- `tokens.value` is `jsonb` with type `TokenValue = { type: 'scalar', value: string } | { type: 'view', view_id: string }`.
+- `axis_values.value` and `axis_args.value` are `jsonb` with types `AxisValueType` and `ArgValue` respectively.
+- Live queries (`editor.core.live.query`) track table access from the query plan — include all resolution-relevant tables in the live query JOIN so writes to any of them fire the callback.
+
+---
+
+### 2. Manager (`manager/src/`)
+
+**Owns:** Database access (Kysely + PgliteDialect), kit resolution logic, API surface, DB migrations and seed.
+
+**Must NOT:** know about Svelte reactivity, the Charter plugin, or Vellum rendering format.
+
+**Key exports:**
+- `resolveMany(db, viewId)` — resolve all kits for one view (~8 round-trips). Used for single-view use cases.
+- `resolveManyViews(db, projectId)` — resolve ALL project views in 4 round-trips total. This is the hot path used by the editor's live-query loop.
+- `flattenKitResults(kits)` — merge all kit properties into a single Map, later-kit properties winning.
+- `matchesArg(condition, arg)` — pure matching function, re-exported for the Axes panel UI.
+- `queryBuilder(dialect)` — typed Kysely instance (the `Api` type), used throughout the UI.
+
+**Resolution algorithm (`resolve.ts`):**
+1. Fetch all layers for the kit.
+2. For each layer, fetch its conditions (axis values it matches) and entries (property values it sets).
+3. Match layers against the current axis args using specificity (condition count + axis priority indices).
+4. Sort matched layers by specificity ascending — later entries overwrite earlier ones.
+5. Substitute token aliases with their resolved scalar values.
+
+**Specificity:** `[conditionCount, priority1, priority2, ...]` sorted descending. Higher specificity always wins.
+
+**`resolveManyViews` round-trips:**
+- RT1: all views for the project
+- RT2 (parallel): compositions + axis_args + project tokens + view tokens
+- RT3 (parallel): kit tokens + all layers
+- RT4 (parallel): layer conditions + layer entries
+
+---
+
+### 3. Editor UI (`src/lib/editor/`)
+
+**Owns:** Svelte 5 reactivity, panel layout, user interaction, live-query subscriptions, orchestrating Manager calls.
+
+**Must NOT:** contain resolution logic (use Manager), render geometry (use Vellum via viewportData), or know Charter's internal data format.
+
+**Key reactive state in `Editor.svelte`:**
+
+```
+editorLoading: EditorState          — set once on mount
+editorActivity: EditorActivity      — active workspace/project/view/kit IDs
+selection: EditorSelection          — selected view IDs (primary + secondary)
+resolvedViews: ResolvedView[]       — all project views with resolved kits, updated by live query
+resolvedKits: derived               — resolvedViews entry for activeViewId
+pluginManager: PluginManager        — Charter plugin wrapper
+```
+
+**Live-query loop (`$effect` in Editor.svelte):**
+- A single 10-table JOIN query watches all resolution-relevant tables.
+- On any write, `scheduleReResolve` debounces and calls `resolveManyViewsManager`.
+- Fingerprint comparison (`kitFingerprint`) skips Svelte re-renders when resolved data didn't actually change.
+- A `cancelled` flag + `reResolveVersion` counter ensures stale async results from a previous project are discarded.
+
+**Two separate plugin effects:**
+```ts
+$effect(() => pluginManager.setData(resolvedKits, viewHints, activeViewId, resolvedViews));
+$effect(() => pluginManager.setSelection(selectedViewPrimary, selectedViewSecondary));
+```
+Keeping these separate lets selection changes use the fast `on_selection_change` path instead of a full `on_resolve`.
+
+---
+
+### 4. Plugin Manager (`src/lib/plugins/manager.svelte.ts`)
+
+**Owns:** Charter plugin lifecycle, call serialization, text measurement, host functions.
+
+**Must NOT:** do resolution (use Manager), write DB state directly (only via `kit10_write_render_entry_to_layer`), or expose Svelte reactivity to Charter.
+
+**Serial queue:** all plugin calls (`on_resolve`, `on_selection_change`, `on_field_update`) are chained on `pluginQueue` so they never run concurrently. The Extism worker is not re-entrant.
+
+**Debounce + generation guard:**
+- `setData` increments `selectionGen`, cancels any pending selection timer, and debounces `runResolve`.
+- `setSelection` captures `selectionGen` at enqueue time; if `setData` fires before execution, the captured generation won't match and `runSelectionChange` is skipped.
+- This prevents stale `on_selection_change` results from overwriting a concurrent `on_resolve`.
+
+**Text measurement:** Charter emits `Text{width:0, height:0}` — unmeasured. The host patches all text nodes with `measureAndPatchText` (OffscreenCanvas singleton) before writing to `viewportData`. Vellum receives fully-measured text.
+
+**`width: 0.0` semantics (important):**
+- `Box{width:0}` → Vellum auto-sizes this box to its children + padding.
+- `Text{width:0}` → host must patch before Vellum sees it (Charter's responsibility to emit 0, host's responsibility to patch).
+
+**Host functions (Charter → Host calls):**
+| Function | Description |
+|---|---|
+| `kit10_log` | Structured log forwarded to browser console with level/color |
+| `kit10_kv_get` / `kit10_kv_set` | Per-plugin key-value store (in-memory) |
+| `kit10_get_resolution` | Returns current `resolvedKits` JSON to Charter |
+| `kit10_write_render_entry_to_layer` | Writes a field value back to DB via Manager API |
+| `kit10_set_viewport_data` | Direct viewport update bypass (legacy, avoid) |
+
+---
+
+### 5. Charter Plugin (`plugins/charter/src/lib.rs`)
+
+**Owns:** Translating resolved kit data into a flat `UiNode[]` render tree. Layout grid logic. Selection highlighting. Field category definitions.
+
+**Must NOT:** query the DB directly, hold cross-call mutable state beyond Extism `var` storage, or do text measurement (emit `width:0, height:0` for Text nodes, host patches them).
+
+**Entry points:**
+
+| Function | Trigger | Input | Output |
+|---|---|---|---|
+| `on_init` | Plugin load | `{name}` | `"ok"` |
+| `on_resolve` | Data change | `OnResolveInput` | `OnResolveResult` (viewport + categories) |
+| `on_selection_change` | Selection change only | `{primary, secondary, activeViewId}` | `{viewport_data}` |
+| `on_field_update` | User edits a field | `FieldUpdate` | `WriteRenderEntryResult` |
+
+**`on_resolve` stores its full input payload** in Extism `var` storage as `last_resolve_input`. `on_selection_change` reads this, patches the three selection fields (`selected_view_primary`, `selected_view_secondary`, `active_view_id`), and re-runs `build_viewport`. This avoids a full re-resolve round-trip for selection-only changes.
+
+**`build_viewport` layout:**
+```
+Root Column (padding: 40px all sides)
+  Row (padding-bottom: 32px gap)
+    Cell Column (padding-right: 32px gap)  ← one per view, max 4 per row
+      View Box (width:0 auto, bg, border, radius, padding)
+        [child views rendered recursively, or nothing if no content]
+```
+
+**Primitive detection (`detect_primitive`):**
+- If props have only text properties (`color`, `font-size`, etc.) → `"text"` → emit `Text` node directly.
+- Otherwise → `"box"` → emit `Box` node, recurse into `child_view_ids`.
+
+**Fallback text in box primitive:** only fires when `child_ids` is empty AND the kit has an explicit `content` property. **Never fires on `color` alone** — boxes always have `color` (their text color) but only emit inline text when they own the actual string content.
+
+**Selection highlighting:** when `sel == 2` (active or primary), the box border is overridden to blue (`[0, 0.48, 1, 1]`, 2px). When `sel == 1` (secondary), gray 1px border.
+
+**`CharterHints` (from view `hints.charter` JSON):**
+- `primitive: "box" | "text"` — override auto-detection
+- `child_only: bool` — exclude from top-level grid, only render as a child of another view
+- `position: [f32; 2]` — vestigial from old absolute-positioning architecture, now ignored
+
+---
+
+### 6. Vellum (`src/lib/vellum/`)
+
+**Owns:** GPU rendering, camera (pan/zoom), layout engine (flex-direction, auto-sizing).
+
+**Must NOT:** be called with unmeasured text nodes (`Text{width:0}` must be patched first).
+
+**`UiNode[]` contract:**
+- Nodes are a flat array. Parent-child relationships use `parent_id: number | null` (index into the array).
+- `Box{width:0, height:0}` → auto-size to children + padding. Vellum's layout engine handles this.
+- `Text{width:N, height:M}` → explicit dimensions from host measurement. Vellum does NOT re-measure text.
+- `max_width: 0` and `max_height: 0` → no constraint (not "max is 0px").
+- `flex_direction` on Box controls child stacking: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`.
+
+**API surface used:**
+```ts
+vellum.initialize(canvasId, w, h)  // once on mount
+vellum.set_data(json)              // update UiNode[] — call after measureAndPatchText
+vellum.render()                    // draw one frame (called from rAF loop)
+vellum.resize(w, h)                // on canvas resize
+vellum.set_pan(dx, dy)             // pan delta
+vellum.zoom_in_at(cx, cy)          // zoom toward point
+vellum.zoom_out_at(cx, cy)         // zoom away from point
+vellum.set_colors(...)             // grid + background colors (for light/dark theme)
+```
+
+---
+
+## Data Flow
+
+### Resolve flow (axis change or view selection)
+
+```
+DB write (axis_args or render_entries)
+  → PGlite live query fires
+  → scheduleReResolve (debounce 0ms)
+  → resolveManyViewsManager(db, projectId)   [4 round-trips]
+  → resolvedViews updated (fingerprint check)
+  → $effect: setData(resolvedKits, hints, viewId, resolvedViews)
+  → debounce 0ms → enqueue(runResolve)
+  → plugin.call('on_resolve', payload)        [Charter WASM, worker thread]
+  → on_resolve stores last_resolve_input
+  → returns OnResolveResult
+  → measureAndPatchText(viewport_data)        [OffscreenCanvas, main thread]
+  → viewportData = JSON                       [Svelte reactive state]
+  → Viewport.$effect: vellum.set_data(d)     [next tick]
+  → vellum.render()                          [rAF]
+```
+
+### Selection-only fast path
+
+```
+User clicks view in Views panel
+  → setData(...) + setSelection(id, [])
+  → setData cancels selection timer, increments selectionGen
+  → only runResolve fires (setSelection sees dataTimer !== null)
+
+User changes secondary selection only (no activeViewId change)
+  → setSelection(primary, secondary)
+  → selectionGen captured
+  → enqueue(makeSelectionChangeRunner(gen))
+  → gen check passes → plugin.call('on_selection_change', payload)
+  → on_selection_change patches last_resolve_input selection fields
+  → re-runs build_viewport → returns viewport_data
+  → measureAndPatchText → viewportData updated
+```
+
+### Field update flow (Styles panel → DB)
+
+```
+User edits a field value in StyleField
+  → confirmUpdateStyle() [STUB — not yet wired to pluginManager.fieldUpdate]
+
+Future: pluginManager.fieldUpdate({layerId, property, value})
+  → enqueue(on_field_update)
+  → on_field_update calls kit10_write_render_entry_to_layer
+  → host writes render_entry to DB via Manager API
+  → DB write triggers resolve flow above
+```
+
+**Note:** `StyleField.confirmUpdateStyle` is currently a console.log stub. Field editing is read-only; values can only change through axes or token edits.
+
+---
+
+## Key Invariants
+
+1. **All plugin calls are serialized.** Never call `plugin.call(...)` concurrently. The serial queue (`pluginQueue`) enforces this.
+
+2. **`on_selection_change` only fires when selection changes without a data change.** If data changed (new kits, new active view), `setData` increments `selectionGen` and any queued `runSelectionChange` aborts. Only `runResolve` runs in that case.
+
+3. **Measure before rendering.** `vellum.set_data` must only receive text nodes with non-zero dimensions. Always run `measureAndPatchText` on Charter's output before updating `viewportData`.
+
+4. **`resolveManyViews` is the only resolve call from the editor.** Do not call `resolveMany` per-view in the live-query loop — this was the pre-optimization path (O(views) round-trips). `resolveManyViews` does it in O(1) round-trips.
+
+5. **Fingerprint before re-rendering.** `kitFingerprint(kits)` prevents `resolvedViews` from being reassigned (and downstream effects from firing) when the DB change didn't affect resolved property values.
+
+6. **Cancelled + version on async resolve.** The resolution `$effect` sets `cancelled = true` on cleanup and checks `version === reResolveVersion` before writing `resolvedViews`. Fast project switching cannot cause stale data to overwrite fresh data.
+
+7. **Charter is stateless except `last_resolve_input`.** The only cross-call state in Charter is the Extism var `last_resolve_input`. Everything else is rebuilt each call from the payload. KV store (`kit10_kv_get/set`) provides plugin-scoped persistence for Charter's own use.
+
+---
+
+## Common Pitfalls
+
+- **`parse_px` only handles pixel values.** CSS values like `auto`, `%`, `em` silently return `0.0` in Charter. Store only plain numbers or `NNpx` strings in render entries for box sizing properties.
+
+- **`transparent` color is not handled by `parse_color`.** Only hex (`#rrggbb`, `#rrggbbaa`) and `rgb(r,g,b)` are supported. Named CSS colors become black. Store hex values.
+
+- **`position` hint in CharterHints is vestigial.** It was used by the old absolute-positioning architecture. The current grid layout ignores it.
+
+- **Do not add views to `project_views` without a `hints` object.** Charter assumes `hints` is a JSON object; missing hints default to an empty map, which is fine, but `child_only` will default to false and the view will appear in the top-level grid.
+
+- **Child-only views must have `charter.childOnly: true` in their hints.** Otherwise they appear as standalone frames in the viewport grid AND as children of their parent view (double rendering).
+
+- **The `render_entries` constraint** (`value` or `token_id`, exactly one) means you cannot have a render entry with both a literal value and a token. The `children` property always uses a literal value (JSON array string).
+
+- **PGlite is single-threaded.** `Promise.all` for multiple queries does not parallelize them — they queue behind each other. The parallelism in `resolveManyViews` is logical (code clarity) but executes sequentially inside PGlite's worker.
