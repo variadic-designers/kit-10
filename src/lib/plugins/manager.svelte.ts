@@ -200,7 +200,8 @@ export function createPluginManager(editor: EditorState, api: Api) {
 	async function resolve(
 		resolvedKits: ResolvedKit[] | null,
 		viewHints?: Record<string, unknown> | null,
-		activeViewId?: string | null
+		activeViewId?: string | null,
+		projectViews?: { viewId: string; viewName: string; hints: Record<string, unknown> }[] | null
 	) {
 		context = { resolvedKits };
 
@@ -226,6 +227,7 @@ export function createPluginManager(editor: EditorState, api: Api) {
 				activeViewId: activeViewId ?? null,
 				resolvedKits: serializeResolvedKits(resolvedKits),
 				viewHints: viewHints ?? {},
+				projectViews: projectViews ?? [],
 			});
 			const result = await activePlugin.call('on_resolve', payload);
 			if (result) {

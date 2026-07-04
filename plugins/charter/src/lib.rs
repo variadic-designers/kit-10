@@ -11,6 +11,8 @@ struct ResolvedProperty {
     is_token: bool,
     token_alias: Option<String>,
     condition_count: u32,
+    #[serde(default)]
+    child_view_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,6 +21,8 @@ struct ResolvedKit {
     kit_id: String,
     kit_name: String,
     properties: std::collections::HashMap<String, ResolvedProperty>,
+    #[serde(default)]
+    child_view_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,13 +118,14 @@ struct CharterHints {
     position: Option<[f32; 2]>,
 }
 
+// Metadata-only view descriptor — kits are fetched on demand via kit10_resolve_view
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct ResolvedView {
+struct ViewMeta {
     view_id: String,
     view_name: String,
+    #[serde(default)]
     hints: std::collections::HashMap<String, serde_json::Value>,
-    resolved_kits: Vec<ResolvedKit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -129,7 +134,9 @@ struct OnResolveInput {
     active_view_id: Option<String>,
     resolved_kits: Vec<ResolvedKit>,
     view_hints: std::collections::HashMap<String, serde_json::Value>,
-    all_views: Vec<ResolvedView>,
+    // All views in the project — metadata only, no resolved kits
+    #[serde(default)]
+    project_views: Vec<ViewMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -164,6 +171,43 @@ struct FieldUpdate {
 #[host_fn]
 extern "ExtismHost" {
     pub fn kit10_write_render_entry_to_layer(input: u64) -> u64;
+    pub fn kit10_resolve_view(input: u64) -> u64;
+}
+
+// Fetch resolved kits for a view via the host cache.
+// Returns None if the view isn't cached and couldn't be resolved.
+fn resolve_view_kits(view_id: &str) -> Option<Vec<ResolvedKit>> {
+    let mem = Memory::from_bytes(view_id).ok()?;
+    let result_offs = unsafe { kit10_resolve_view(mem.offset()) }.ok()?;
+    let result_mem = Memory::find(result_offs)?;
+    let bytes = result_mem.to_vec();
+    if bytes == b"null" {
+        return None;
+    }
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, ResolvedProperty> {
+    let mut merged = std::collections::HashMap::new();
+    for kit in kits {
+        for (k, v) in &kit.properties {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    merged
+}
+
+fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut ids = Vec::new();
+    for kit in kits {
+        for id in &kit.child_view_ids {
+            if seen.insert(id.clone()) {
+                ids.push(id.clone());
+            }
+        }
+    }
+    ids
 }
 
 fn parse_color(s: &str) -> [f32; 4] {
@@ -224,7 +268,10 @@ fn get_prop(
     props.get(key).map(|p| p.value.clone())
 }
 
-fn build_box_node(props: &std::collections::HashMap<String, ResolvedProperty>) -> UiNode {
+fn build_box_node(
+    props: &std::collections::HashMap<String, ResolvedProperty>,
+    parent_id: Option<usize>,
+) -> UiNode {
     let bg = get_prop(props, "background").unwrap_or_default();
     let border = get_prop(props, "border").unwrap_or_default();
     let border_width = parse_px(get_prop(props, "border-width").as_deref());
@@ -237,7 +284,7 @@ fn build_box_node(props: &std::collections::HashMap<String, ResolvedProperty>) -
 
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
-            parent_id: None,
+            parent_id,
             width: if width > 0.0 { width } else { 200.0 },
             height: if height > 0.0 { height } else { 100.0 },
             max_width: 0.0,
@@ -271,7 +318,7 @@ fn build_box_node(props: &std::collections::HashMap<String, ResolvedProperty>) -
 
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
-    parent: usize,
+    parent_id: usize,
 ) -> UiNode {
     let color = get_prop(props, "color").unwrap_or_default();
     let font_size = parse_px(get_prop(props, "font-size").as_deref());
@@ -279,7 +326,7 @@ fn build_text_node(
 
     UiNode::Text(UiTextNode {
         text_data: TextData {
-            parent_id: Some(parent),
+            parent_id: Some(parent_id),
             width: 0.0,
             height: 0.0,
             padding: [0.0; 4],
@@ -301,6 +348,27 @@ fn build_text_node(
             },
         },
     })
+}
+
+fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>) -> &'static str {
+    let has_text_props = props.contains_key("font-size")
+        || props.contains_key("font-weight")
+        || props.contains_key("text-align")
+        || props.contains_key("text-decoration")
+        || props.contains_key("color");
+
+    let has_box_props = props.contains_key("background")
+        || props.contains_key("border")
+        || props.contains_key("border-radius")
+        || props.contains_key("padding")
+        || props.contains_key("width")
+        || props.contains_key("height");
+
+    if has_text_props && !has_box_props {
+        "text"
+    } else {
+        "box"
+    }
 }
 
 fn box_categories() -> Vec<FieldCategory> {
@@ -374,24 +442,102 @@ fn text_categories() -> Vec<FieldCategory> {
     }]
 }
 
-fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>) -> &'static str {
-    let has_text_props = props.contains_key("font-size")
-        || props.contains_key("font-weight")
-        || props.contains_key("text-align")
-        || props.contains_key("text-decoration")
-        || props.contains_key("color");
+// Render a view's nodes into the flat viewport buffer.
+// canvas_pos: Some([x,y]) for top-level canvas views, None for embedded children.
+// parent_id: the parent box index when rendering as a child.
+// depth guard prevents runaway recursion from circular view references.
+fn render_view_nodes(
+    kits: &[ResolvedKit],
+    hints: &std::collections::HashMap<String, serde_json::Value>,
+    is_active: bool,
+    canvas_pos: Option<[f32; 2]>,
+    parent_id: Option<usize>,
+    viewport: &mut Vec<UiNode>,
+    depth: u8,
+) {
+    if depth > 4 {
+        return;
+    }
 
-    let has_box_props = props.contains_key("background")
-        || props.contains_key("border")
-        || props.contains_key("border-radius")
-        || props.contains_key("padding")
-        || props.contains_key("width")
-        || props.contains_key("height");
+    let merged = merge_kits(kits);
+    if merged.is_empty() {
+        return;
+    }
 
-    if has_text_props && !has_box_props {
-        "text"
+    let charter_hints: CharterHints = hints
+        .get("charter")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+
+    let primitive = charter_hints
+        .primitive
+        .as_deref()
+        .unwrap_or_else(|| detect_primitive(&merged));
+
+    // Top-level views get a transparent position wrapper; children attach directly to parent.
+    let content_parent = if let Some(pos) = canvas_pos {
+        let wrapper_idx = viewport.len();
+        viewport.push(UiNode::Box(UiBoxNode {
+            box_data: BoxData {
+                parent_id: None,
+                width: 0.0,
+                height: 0.0,
+                max_width: 0.0,
+                max_height: 0.0,
+                padding: [pos[1], pos[0], pos[1], pos[0]],
+                bg_color: [0.0; 4],
+                flex_direction: "Column".to_string(),
+                show_border: false,
+                border_color: [0.0; 4],
+                border_width: 0.0,
+                corner_radius: 0.0,
+                opacity: 1.0,
+                shadow: None,
+            },
+        }));
+        Some(wrapper_idx)
     } else {
-        "box"
+        parent_id
+    };
+
+    if primitive == "text" {
+        viewport.push(build_text_node(&merged, content_parent.unwrap_or(0)));
+    } else {
+        let box_idx = viewport.len();
+        let mut node = build_box_node(&merged, content_parent);
+
+        if is_active {
+            if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
+                box_data.border_color = [0.0, 0.48, 1.0, 1.0];
+                box_data.show_border = true;
+                box_data.border_width = 2.0;
+            }
+        }
+
+        viewport.push(node);
+
+        let child_ids = collect_child_view_ids(kits);
+
+        if child_ids.is_empty() {
+            // No declared children: fall back to inline text for color/content props.
+            if merged.contains_key("color") || merged.contains_key("content") {
+                viewport.push(build_text_node(&merged, box_idx));
+            }
+        } else {
+            for child_view_id in &child_ids {
+                if let Some(child_kits) = resolve_view_kits(child_view_id) {
+                    render_view_nodes(
+                        &child_kits,
+                        &std::collections::HashMap::new(),
+                        false,
+                        None,
+                        Some(box_idx),
+                        viewport,
+                        depth + 1,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -412,17 +558,19 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let mut viewport_data: Vec<UiNode> = Vec::new();
 
-    for view in &parsed.all_views {
-        let merged: std::collections::HashMap<String, ResolvedProperty> = view
-            .resolved_kits
-            .iter()
-            .flat_map(|k| k.properties.iter())
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
+    for view in &parsed.project_views {
+        let is_active = parsed.active_view_id.as_deref() == Some(view.view_id.as_str());
 
-        if merged.is_empty() {
-            continue;
-        }
+        // Active view kits come from the payload directly (already resolved by host).
+        // All other views are fetched on demand from the host resolution cache.
+        let kits: Vec<ResolvedKit> = if is_active {
+            parsed.resolved_kits.clone()
+        } else {
+            match resolve_view_kits(&view.view_id) {
+                Some(k) => k,
+                None => continue,
+            }
+        };
 
         let charter_hints: CharterHints = view
             .hints
@@ -430,72 +578,24 @@ pub fn on_resolve(input: String) -> FnResult<String> {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();
 
-        let primitive = charter_hints
-            .primitive
-            .as_deref()
-            .unwrap_or_else(|| detect_primitive(&merged));
-
-        let is_active = parsed.active_view_id.as_deref() == Some(view.view_id.as_str());
-
         let pos = charter_hints.position.unwrap_or([0.0, 0.0]);
 
-        let wrapper_idx = viewport_data.len();
-        viewport_data.push(UiNode::Box(UiBoxNode {
-            box_data: BoxData {
-                parent_id: None,
-                width: 240.0,
-                height: 80.0,
-                max_width: 0.0,
-                max_height: 0.0,
-                padding: [pos[1], pos[0], pos[1], pos[0]],
-                bg_color: [0.0; 4],
-                flex_direction: "Column".to_string(),
-                show_border: false,
-                border_color: [0.0; 4],
-                border_width: 0.0,
-                corner_radius: 0.0,
-                opacity: 1.0,
-                shadow: None,
-            },
-        }));
-
-        if primitive == "text" {
-            viewport_data.push(build_text_node(&merged, wrapper_idx));
-        } else {
-            let box_idx = viewport_data.len();
-            let mut node = build_box_node(&merged);
-
-            if is_active {
-                if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
-                    box_data.border_color = [0.0, 0.48, 1.0, 1.0];
-                    box_data.show_border = true;
-                    box_data.border_width = 2.0;
-                }
-            }
-
-            viewport_data.push(node);
-
-            if merged.contains_key("color") || merged.contains_key("content") {
-                viewport_data.push(build_text_node(&merged, box_idx));
-            }
-        }
+        render_view_nodes(
+            &kits,
+            &view.hints,
+            is_active,
+            Some(pos),
+            None,
+            &mut viewport_data,
+            0,
+        );
     }
 
-    let active_view = parsed
-        .all_views
-        .iter()
-        .find(|v| parsed.active_view_id.as_deref() == Some(v.view_id.as_str()));
-
-    let categories: Vec<FieldCategory> = if let Some(active) = active_view {
-        let merged: std::collections::HashMap<String, ResolvedProperty> = active
-            .resolved_kits
-            .iter()
-            .flat_map(|k| k.properties.iter())
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        let charter_hints: CharterHints = active
-            .hints
+    // Field categories are derived from the active view's kits (already in payload).
+    let categories: Vec<FieldCategory> = if !parsed.resolved_kits.is_empty() {
+        let merged = merge_kits(&parsed.resolved_kits);
+        let charter_hints: CharterHints = parsed
+            .view_hints
             .get("charter")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default();

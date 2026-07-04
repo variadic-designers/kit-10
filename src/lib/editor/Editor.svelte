@@ -110,6 +110,7 @@
 
 	let resolvedKits: ResolvedKit[] | null = $state(null);
 	let viewHints = $state<Record<string, unknown> | null>(null);
+	let projectViews = $state<{ viewId: string; viewName: string; hints: Record<string, unknown> }[]>([]);
 
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
@@ -118,6 +119,7 @@
 		if (!projectId || !editor) {
 			resolvedKits = null;
 			viewHints = null;
+			projectViews = [];
 			return;
 		}
 
@@ -125,26 +127,34 @@
 
 		const init = async () => {
 			const reResolve = async () => {
+				// Fetch all view metadata in one cheap query — no resolution yet.
+				const allViewMeta = await editor.dialect
+					.selectFrom('views')
+					.selectAll()
+					.where('views.project_id', '=', projectId)
+					.execute();
+
+				projectViews = allViewMeta.map((v) => ({
+					viewId: v.id,
+					viewName: v.name,
+					hints: ((v as any).hints ?? {}) as Record<string, unknown>,
+				}));
+
 				if (!activeViewId) {
 					resolvedKits = null;
 					viewHints = null;
 					return;
 				}
 
-				const view = await editor.dialect
-					.selectFrom('views')
-					.selectAll()
-					.where('views.id', '=', activeViewId)
-					.executeTakeFirst();
-
-				if (!view) {
+				const activeView = allViewMeta.find((v) => v.id === activeViewId);
+				if (!activeView) {
 					resolvedKits = null;
 					viewHints = null;
 					return;
 				}
 
 				resolvedKits = await resolveManyManager(editor.dialect, activeViewId);
-				viewHints = (view as any).hints ?? null;
+				viewHints = (activeView as any).hints ?? null;
 			};
 
 			const watchTables = [
@@ -219,7 +229,7 @@
 
 	$effect(() => {
 		if (pluginManager) {
-			pluginManager.resolve(resolvedKits, viewHints, editorActivity.activeViewId);
+			pluginManager.resolve(resolvedKits, viewHints, editorActivity.activeViewId, projectViews);
 		}
 	});
 </script>
