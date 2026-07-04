@@ -1,5 +1,8 @@
 import type { SchemaDialect } from './schema.js';
 import { queryBuilder, type Api } from './api/index.js';
+import type { TokenValue } from './schema.js';
+
+const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
 export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const api: Api = queryBuilder(dialect);
@@ -8,13 +11,13 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'KIT\u202210 Demo'))!;
 
 	// Project-scoped tokens
-	const tokenBg = (await api.createToken(proj.id, 'colors.bg', '#ffffff'))!;
-	const tokenText = (await api.createToken(proj.id, 'colors.text', '#1a1a1a'))!;
-	const tokenPrimary = (await api.createToken(proj.id, 'colors.primary', '#3b82f6'))!;
-	const tokenSecondary = (await api.createToken(proj.id, 'colors.secondary', '#64748b'))!;
-	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', '#e2e8f0'))!;
-	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', '#22c55e'))!;
-	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', '#ef4444'))!;
+	const tokenBg = (await api.createToken(proj.id, 'colors.bg', s('#ffffff')))!;
+	const tokenText = (await api.createToken(proj.id, 'colors.text', s('#1a1a1a')))!;
+	const tokenPrimary = (await api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
+	const tokenSecondary = (await api.createToken(proj.id, 'colors.secondary', s('#64748b')))!;
+	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', s('#e2e8f0')))!;
+	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', s('#22c55e')))!;
+	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', s('#ef4444')))!;
 
 	// Axes
 	const themeAxis = (await api.createAxis(proj.id, 'Theme', 'Light or dark mode', 'categorical'))!;
@@ -99,7 +102,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.reorderAxesInKit(buttonKit.id, stateAxis.id, 5000);
 
 	// Kit-scoped token
-	const tokenBtnRadius = (await api.createToken(proj.id, 'radius.button', '8px', {
+	const tokenBtnRadius = (await api.createToken(proj.id, 'radius.button', s('8px'), {
 		kitId: buttonKit.id
 	}))!;
 

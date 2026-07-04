@@ -5,6 +5,21 @@ import type { Generated, JSONColumnType } from 'kysely';
 export type DAny = Kysely<any>;
 export type D2026_04_21 = Kysely<DB2026_04_21>;
 
+// --- Token value types ---
+
+interface TokenValueScalar {
+	type: 'scalar';
+	value: string;
+	format?: 'color' | 'size' | 'font-size' | 'font-weight' | 'text' | 'number';
+}
+
+interface TokenValueView {
+	type: 'view';
+	view_id: string;
+}
+
+type TokenValue = TokenValueScalar | TokenValueView;
+
 // --- Axis value types (condition side) ---
 
 interface AxisValueLiteral {
@@ -93,6 +108,7 @@ export interface ViewsTable {
 	project_id: string;
 	lock: boolean;
 	hide: boolean;
+	is_template: Generated<boolean>;
 }
 
 export interface CompositionsTable {
@@ -169,8 +185,9 @@ export interface RenderEntriesTable {
 	id: Generated<string>;
 	snippet_id: string;
 	property: string;
-	value: string;
+	value: string | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
+	token_id: string | null;
 }
 
 // ------------------------------
@@ -179,9 +196,8 @@ export interface TokensTable {
 	id: Generated<string>;
 	project_id: string;
 	alias: string | null;
-	value: string | null;
+	value: JSONColumnType<TokenValue> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
-	resolution: string | null;
 	kit_id: string | null;
 	view_id: string | null;
 }
@@ -248,6 +264,7 @@ export async function up(dialect: DAny) {
 		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('cascade'))
 		.addColumn('lock', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
 		.addColumn('hide', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
+		.addColumn('is_template', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
 		.execute();
 
 	await dialect.schema
@@ -307,7 +324,7 @@ export async function up(dialect: DAny) {
 			col.notNull().references('projects.id').onDelete('restrict')
 		)
 		.addColumn('alias', 'varchar(255)')
-		.addColumn('value', 'text')
+		.addColumn('value', 'jsonb')
 		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('kit_id', 'uuid', (col) => col.references('kits.id').onDelete('cascade'))
 		.addColumn('view_id', 'uuid', (col) => col.references('views.id').onDelete('cascade'))

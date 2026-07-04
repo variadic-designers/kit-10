@@ -1,6 +1,21 @@
 import { Kysely, type SelectQueryBuilder, type Transaction } from 'kysely';
 import type { JSONColumnType, Generated } from 'kysely';
 
+// --- Token value types ---
+
+export interface TokenValueScalar {
+	type: 'scalar';
+	value: string;
+	format?: 'color' | 'size' | 'font-size' | 'font-weight' | 'text' | 'number';
+}
+
+export interface TokenValueView {
+	type: 'view';
+	view_id: string;
+}
+
+export type TokenValue = TokenValueScalar | TokenValueView;
+
 // --- Axis value types ---
 
 interface AxisValueLiteral {
@@ -87,6 +102,7 @@ export interface ViewsTable {
 	project_id: string;
 	lock: boolean;
 	hide: boolean;
+	is_template: Generated<boolean>;
 }
 
 export interface CompositionsTable {
@@ -174,7 +190,7 @@ export interface TokensTable {
 	id: Generated<string>;
 	project_id: string;
 	alias: string | null;
-	value: string | null;
+	value: JSONColumnType<TokenValue> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	kit_id: string | null;
 	view_id: string | null;

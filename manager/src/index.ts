@@ -75,6 +75,7 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 
 export { jsonArrayFrom } from 'kysely/helpers/postgres';
 export { type Api } from './api/index.js';
+export { type TokenValue, type TokenValueScalar, type TokenValueView } from './schema.js';
 export {
 	resolve,
 	resolveMany,

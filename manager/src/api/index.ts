@@ -1,4 +1,4 @@
-import type { Schema, SchemaDialect } from '../schema.js';
+import type { Schema, SchemaDialect, TokenValue } from '../schema.js';
 import type { SelectQueryBuilder } from 'kysely';
 
 export interface QueryOrdering {
@@ -13,20 +13,20 @@ export interface QueryToken {
 	createToken: (
 		projectId: string,
 		alias?: string,
-		value?: string,
+		value?: TokenValue,
 		scope?: { kitId?: string; viewId?: string }
 	) => Promise<
 		| {
 				id: string;
 				project_id: string;
 				alias: string | null;
-				value: string | null;
+				value: TokenValue | null;
 				kit_id: string | null;
 				view_id: string | null;
 		  }
 		| undefined
 	>;
-	updateTokenValue: (tokenId: string, value: string) => Promise<void>;
+	updateTokenValue: (tokenId: string, value: TokenValue) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
 	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<
@@ -35,7 +35,7 @@ export interface QueryToken {
 		{
 			tokenId: string;
 			tokenAlias: string | null;
-			tokenValue: string | null;
+			tokenValue: TokenValue | null;
 			tokenKitId: string | null;
 			tokenViewId: string | null;
 		}
@@ -46,7 +46,7 @@ export interface QueryToken {
 		{
 			tokenId: string;
 			tokenAlias: string | null;
-			tokenValue: string | null;
+			tokenValue: TokenValue | null;
 			tokenKitId: string | null;
 			tokenViewId: string | null;
 		}
@@ -57,7 +57,7 @@ export interface QueryToken {
 		{
 			tokenId: string;
 			tokenAlias: string | null;
-			tokenValue: string | null;
+			tokenValue: TokenValue | null;
 			tokenKitId: string | null;
 			tokenViewId: string | null;
 		}
@@ -574,7 +574,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	createToken: async (
 		projectId: string,
 		alias?: string,
-		value?: string,
+		value?: TokenValue,
 		scope?: { kitId?: string; viewId?: string }
 	) => {
 		return await db
@@ -590,8 +590,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.executeTakeFirst();
 	},
 
-	updateTokenValue: async (tokenId: string, value: string) => {
-		await db.updateTable('tokens').set({ value }).where('tokens.id', '=', tokenId).execute();
+	updateTokenValue: async (tokenId: string, value: TokenValue) => {
+		await db.updateTable('tokens').set({ value } as any).where('tokens.id', '=', tokenId).execute();
 	},
 
 	updateTokenAlias: async (tokenId: string, alias: string) => {

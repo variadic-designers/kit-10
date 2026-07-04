@@ -1,4 +1,4 @@
-import type { SchemaDialect } from '../schema.js';
+import type { SchemaDialect, TokenValue } from '../schema.js';
 import type { ArgValue } from '../schema.js';
 
 export interface ResolvedKit {
@@ -33,7 +33,7 @@ interface LayerEntry {
 	literalValue: string | null;
 	tokenId: string | null;
 	tokenAlias: string | null;
-	tokenValue: string | null;
+	tokenValue: TokenValue | null;
 }
 
 interface LayerData {
@@ -201,7 +201,9 @@ export async function resolve(
 	const result = new Map<string, ResolvedProperty>();
 	for (const { data } of matchingLayers) {
 		for (const entry of data.entries) {
-			const resolvedValue = entry.tokenId ? (entry.tokenValue ?? '') : (entry.literalValue ?? '');
+			const resolvedValue = entry.tokenId
+				? (entry.tokenValue?.type === 'scalar' ? entry.tokenValue.value : '')
+				: (entry.literalValue ?? '');
 			result.set(entry.property, {
 				property: entry.property,
 				value: resolvedValue,
@@ -283,7 +285,7 @@ async function gatherScopedTokens(
 		.execute();
 
 	for (const t of projectTokens) {
-		if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+		if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
 	}
 
 	// Kit tokens (override project)
@@ -296,7 +298,7 @@ async function gatherScopedTokens(
 			.execute();
 
 		for (const t of kitTokens) {
-			if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+			if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
 		}
 	}
 
@@ -309,7 +311,7 @@ async function gatherScopedTokens(
 		.execute();
 
 	for (const t of viewTokens) {
-		if (t.alias && t.value !== null) aliasToValue.set(t.alias, t.value);
+		if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
 	}
 
 	return aliasToValue;

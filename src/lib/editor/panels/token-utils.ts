@@ -1,11 +1,20 @@
-export function tokenIcon(v: string | null | undefined): string {
-	if (!v) return 'fa-question';
-	if (v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl')) return 'fa-square-full';
-	if (/^\d/.test(v) && (v.includes('px') || v.includes('rem') || v.includes('em') || v.includes('%'))) return 'fa-arrows-left-right-to-line';
+import type { TokenValue } from 'manager';
+
+export function tokenStr(v: TokenValue | null | undefined): string | null {
+	if (!v) return null;
+	return v.type === 'scalar' ? v.value : null;
+}
+
+export function tokenIcon(v: TokenValue | null | undefined): string {
+	const str = tokenStr(v);
+	if (!str) return 'fa-question';
+	if (str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl')) return 'fa-square-full';
+	if (/^\d/.test(str) && (str.includes('px') || str.includes('rem') || str.includes('em') || str.includes('%'))) return 'fa-arrows-left-right-to-line';
 	return 'fa-circle';
 }
 
-export function isColorValue(v: string | null | undefined): boolean {
-	if (!v) return false;
-	return v.startsWith('#') || v.startsWith('rgb') || v.startsWith('hsl');
+export function isColorValue(v: TokenValue | null | undefined): boolean {
+	const str = tokenStr(v);
+	if (!str) return false;
+	return str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl');
 }

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
 import { resolve, resolveMany, flattenKitResults } from './resolve.js';
+import type { TokenValue } from '../schema.js';
+
+const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
 describe('resolve', () => {
 	let ctx: TestContext;
@@ -25,8 +28,8 @@ describe('resolve', () => {
 		const densityCompact = (await ctx.api.createAxisValue(densityAxis.id, { type: 'literal', value: 'compact' }))!;
 		const densityComfortable = (await ctx.api.createAxisValue(densityAxis.id, { type: 'literal', value: 'comfortable' }))!;
 
-		const tokenBg = (await ctx.api.createToken(proj.id, 'colors.bg', '#ffffff'))!;
-		const tokenPrimary = (await ctx.api.createToken(proj.id, 'colors.primary', '#3b82f6'))!;
+		const tokenBg = (await ctx.api.createToken(proj.id, 'colors.bg', s('#ffffff')))!;
+		const tokenPrimary = (await ctx.api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
 		await ctx.api.consumeAxis(kit.id, themeAxis.id);
@@ -552,7 +555,7 @@ describe('range overlap matching', () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Token Scope'))!;
 
-			const tokenAccent = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
+			const tokenAccent = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6')))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
 			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
@@ -573,14 +576,11 @@ describe('range overlap matching', () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Kit Override'))!;
 
-			const projToken = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
-			const kitToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: undefined }))!;
+			const projToken = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6')))!;
 
 			// Update: we need to scope it to a specific kit
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
-			// Delete the wrongly-scoped token and recreate it
-			await ctx.api.deleteToken(kitToken.id);
-			const kitScopedToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: kit.id }))!;
+			const kitScopedToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), { kitId: kit.id }))!;
 
 			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
 			await ctx.api.attachKitToComposition(kit.id, view.id);
@@ -599,15 +599,15 @@ describe('range overlap matching', () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'View Override'))!;
 
-			const projToken = (await ctx.api.createToken(proj.id, 'accent', '#3b82f6'))!;
+			const projToken = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6')))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
-			const kitToken = (await ctx.api.createToken(proj.id, 'accent', '#ef4444', { kitId: kit.id }))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), { kitId: kit.id }))!;
 
 			const view = (await ctx.api.createViewInProject(proj.id, 'Override View'))!;
 			await ctx.api.attachKitToComposition(kit.id, view.id);
 
-			const viewToken = (await ctx.api.createToken(proj.id, 'accent', '#10b981', { viewId: view.id }))!;
+			const viewToken = (await ctx.api.createToken(proj.id, 'accent', s('#10b981'), { viewId: view.id }))!;
 
 			const layer = (await ctx.api.createLayer(kit.id))!;
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;

@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
+import type { TokenValue } from '../schema.js';
+
+const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
 describe('api', () => {
 	let ctx: TestContext;
@@ -357,7 +360,7 @@ it('creates, updates, and deletes render entries', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
-		const token = (await ctx.api.createToken(proj.id, 'colors.primary', '#3b82f6'))!;
+		const token = (await ctx.api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
 		const layer = (await ctx.api.createLayer(kit.id))!;
 		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
@@ -393,16 +396,16 @@ it('creates, updates, and deletes render entries', async () => {
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 
-		const token = (await ctx.api.createToken(proj.id, 'colors.primary', '#3b82f6'))!;
+		const token = (await ctx.api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
 		expect(token.alias).toBe('colors.primary');
-		expect(token.value).toBe('#3b82f6');
+		expect(token.value).toEqual(s('#3b82f6'));
 
-		await ctx.api.updateTokenValue(token.id, '#2563eb');
+		await ctx.api.updateTokenValue(token.id, s('#2563eb'));
 		await ctx.api.updateTokenAlias(token.id, 'colors.brand');
 
 		const tokens = await ctx.api.getTokensByProjectId(proj.id).execute();
 		expect(tokens[0]!.tokenAlias).toBe('colors.brand');
-		expect(tokens[0]!.tokenValue).toBe('#2563eb');
+		expect(tokens[0]!.tokenValue).toEqual(s('#2563eb'));
 
 		await ctx.api.deleteToken(token.id);
 		const after = await ctx.api.getTokensByProjectId(proj.id).execute();
@@ -425,7 +428,7 @@ it('creates, updates, and deletes render entries', async () => {
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
 		await ctx.api.consumeAxis(kit.id, axis.id);
 		await ctx.api.setAxisArg(view.id, kit.id, axis.id, { type: 'literal', value: 'light' });
-		await ctx.api.createToken(proj.id, 'primary', '#FFFFFF');
+		await ctx.api.createToken(proj.id, 'primary', s('#FFFFFF'));
 		await ctx.api.attachKitToComposition(kit.id, view.id);
 
 		const exported = await ctx.api.exportProject(proj.id);

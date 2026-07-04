@@ -47,14 +47,14 @@
 	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
-	import { type Api, type EditorState } from 'manager';
+	import { type Api, type EditorState, type TokenValue } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
-	import { tokenIcon, isColorValue } from './token-utils.ts';
+	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
 
 	type TokenRow = {
 		tokenId: string;
 		tokenAlias: string | null;
-		tokenValue: string | null;
+		tokenValue: TokenValue | null;
 		tokenKitId: string | null;
 		tokenViewId: string | null;
 	};
@@ -113,7 +113,7 @@
 					? { viewId: editorActivity.activeViewId }
 					: undefined;
 
-		await api.createToken(projectId, newTokenAlias, newTokenValue, scopeObj);
+		await api.createToken(projectId, newTokenAlias, { type: 'scalar', value: newTokenValue }, scopeObj);
 		newTokenAlias = '';
 		newTokenValue = '';
 		addingScope = null;
@@ -206,7 +206,7 @@
 			>
 				<div
 					class="token {scopeClass}"
-					style="--color-icon: {token.tokenValue ?? 'transparent'}"
+					style="--color-icon: {tokenStr(token.tokenValue) ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
 					<span class="token__name">
@@ -234,18 +234,18 @@
 						<input
 							class="token__value-input"
 							type="text"
-							value={token.tokenValue ?? ''}
+							value={tokenStr(token.tokenValue) ?? ''}
 							onblur={() => {
 								editingValue[token.tokenId] = false;
 							}}
 							onkeydown={(e) => {
 								if (e.key === 'Enter') {
-									api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value);
+									api.updateTokenValue(token.tokenId, { type: 'scalar', value: (e.target as HTMLInputElement).value });
 									editingValue[token.tokenId] = false;
 								}
 							}}
 							oninput={(e) => {
-								api.updateTokenValue(token.tokenId, (e.target as HTMLInputElement).value);
+								api.updateTokenValue(token.tokenId, { type: 'scalar', value: (e.target as HTMLInputElement).value });
 							}}
 						/>
 					{:else}
@@ -256,7 +256,7 @@
 								editingValue[token.tokenId] = true;
 							}}
 						>
-							{token.tokenValue ?? '+'}
+							{tokenStr(token.tokenValue) ?? '+'}
 						</button>
 					{/if}
 				</div>
