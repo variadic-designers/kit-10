@@ -25,6 +25,8 @@
 		if (editorActivity.activeViewId !== id) {
 			editorActivity.activeViewId = id;
 		}
+		selection.selectedViewPrimary = id;
+		selection.selectedViewSecondary = [];
 	};
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [

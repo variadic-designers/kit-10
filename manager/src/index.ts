@@ -79,8 +79,10 @@ export { type TokenValue, type TokenValueScalar, type TokenValueView } from './s
 export {
 	resolve,
 	resolveMany,
+	resolveManyViews,
 	flattenKitResults,
 	matchesArg,
 	type ResolvedProperty,
-	type ResolvedKit
+	type ResolvedKit,
+	type ResolvedViewData
 } from './resolve/resolve.js';

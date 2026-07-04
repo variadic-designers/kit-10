@@ -108,80 +108,84 @@
 		selectedKitIndex: null
 	});
 
-	let resolvedKits: ResolvedKit[] | null = $state(null);
-	let viewHints = $state<Record<string, unknown> | null>(null);
-	let projectViews = $state<{ viewId: string; viewName: string; hints: Record<string, unknown> }[]>([]);
+	let resolvedViews = $state<ResolvedView[]>([]);
+	const resolvedKits = $derived(
+		resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.resolvedKits ?? null
+	);
+	const viewHints = $derived(
+		(resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.hints ?? null) as Record<string, unknown> | null
+	);
 
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
-		const activeViewId = editorActivity.activeViewId;
 		const editor = editorLoading;
 		if (!projectId || !editor) {
-			resolvedKits = null;
-			viewHints = null;
-			projectViews = [];
+			resolvedViews = [];
 			return;
 		}
 
-		let unsubscribes: (() => Promise<void>)[] = [];
+		let cancelled = false;
+		let reResolveVersion = 0;
+		let reResolveTimer: ReturnType<typeof setTimeout> | null = null;
+		let liveUnsubscribe: (() => Promise<void>) | null = null;
+
+		const reResolve = async () => {
+			const version = ++reResolveVersion;
+			const allResolved = await resolveManyViewsManager(editor.dialect, projectId);
+			if (cancelled || version !== reResolveVersion) return;
+
+			const prevMap = new Map(resolvedViews.map((v) => [v.viewId, v]));
+			let changed = allResolved.length !== resolvedViews.length;
+			const merged = allResolved.map((v) => {
+				const old = prevMap.get(v.viewId);
+				if (!old || kitFingerprint(v.resolvedKits) !== kitFingerprint(old.resolvedKits)) {
+					changed = true;
+					return v;
+				}
+				return old;
+			});
+			if (changed) resolvedViews = merged as ResolvedView[];
+		};
+
+		const scheduleReResolve = () => {
+			if (reResolveTimer !== null) clearTimeout(reResolveTimer);
+			reResolveTimer = setTimeout(() => {
+				reResolveTimer = null;
+				reResolve();
+			}, 0);
+		};
 
 		const init = async () => {
-			const reResolve = async () => {
-				// Fetch all view metadata in one cheap query — no resolution yet.
-				const allViewMeta = await editor.dialect
-					.selectFrom('views')
-					.selectAll()
-					.where('views.project_id', '=', projectId)
-					.execute();
-
-				projectViews = allViewMeta.map((v) => ({
-					viewId: v.id,
-					viewName: v.name,
-					hints: ((v as any).hints ?? {}) as Record<string, unknown>,
-				}));
-
-				if (!activeViewId) {
-					resolvedKits = null;
-					viewHints = null;
-					return;
-				}
-
-				const activeView = allViewMeta.find((v) => v.id === activeViewId);
-				if (!activeView) {
-					resolvedKits = null;
-					viewHints = null;
-					return;
-				}
-
-				resolvedKits = await resolveManyManager(editor.dialect, activeViewId);
-				viewHints = (activeView as any).hints ?? null;
-			};
-
-			const watchTables = [
-				'compositions',
-				'axis_args',
-				'layers',
-				'layer_axis_values',
-				'axis_values',
-				'axes_consumed',
-				'render_entries',
-				'render_snippets',
-				'tokens',
-				'views'
-			];
-
-			for (const table of watchTables) {
-				const live = await editor.core.live.query(`SELECT 1 FROM ${table} LIMIT 0`, [], reResolve);
-				unsubscribes.push(live.unsubscribe);
-			}
-
+			// Single live query touching all resolution-relevant tables.
+			// PGlite tracks table access from the query plan — this reliably fires
+			// on any write to views, compositions, layers, axis_args, render_entries, or tokens.
+			const live = await editor.core.live.query(
+				`SELECT v.id AS view_id
+				 FROM views v
+				 LEFT JOIN compositions c ON c.view_id = v.id
+				 LEFT JOIN layers l ON l.kit_id = c.kit_id
+				 LEFT JOIN layer_axis_values lav ON lav.layer_id = l.id
+				 LEFT JOIN axis_values axv ON axv.id = lav.axis_value_id
+				 LEFT JOIN axes_consumed ac ON ac.kit_id = c.kit_id
+				 LEFT JOIN axis_args aa ON aa.view_id = v.id
+				 LEFT JOIN render_snippets rs ON rs.layer_id = l.id
+				 LEFT JOIN render_entries re ON re.snippet_id = rs.id
+				 LEFT JOIN tokens t ON t.project_id = v.project_id
+				 WHERE v.project_id = $1
+				 GROUP BY v.id`,
+				[projectId],
+				scheduleReResolve
+			);
+			liveUnsubscribe = live.unsubscribe;
 			await reResolve();
 		};
 
 		init();
 
 		return () => {
-			for (const u of unsubscribes) u();
+			cancelled = true;
+			if (reResolveTimer !== null) clearTimeout(reResolveTimer);
+			if (liveUnsubscribe) liveUnsubscribe();
 		};
 	});
 
@@ -195,7 +199,22 @@
 
 	import Nav from './Nav.svelte';
 	import Viewport from './Viewport.svelte';
-	import { resolveMany as resolveManyManager, type ResolvedKit } from 'manager';
+	import { resolveManyViews as resolveManyViewsManager, type ResolvedKit } from 'manager';
+
+	function kitFingerprint(kits: ResolvedKit[]): string {
+		return kits
+			.map(
+				(k) =>
+					k.kitId +
+					':' +
+					[...k.properties.entries()]
+						.sort(([a], [b]) => a.localeCompare(b))
+						.map(([p, r]) => `${p}=${r.value}`)
+						.join(',')
+			)
+			.join('|');
+	}
+	import type { ResolvedView } from '$lib/plugins/types.js';
 	import { onMount } from 'svelte';
 
 	import type { EditorState, EditorQueryBuilder, Api } from 'manager';
@@ -208,7 +227,7 @@
 		await initializeEditorState().then(async (e) => {
 			if (e) {
 				editorLoading = e;
-				pluginManager = createPluginManager(e, queryBuilder(e.dialect));
+				pluginManager = createPluginManager(queryBuilder(e.dialect));
 				await pluginManager.loadPlugin({ wasm: [{ url: '/charter.wasm' }] }, 'charter');
 			}
 		});
@@ -228,9 +247,21 @@
 	});
 
 	$effect(() => {
-		if (pluginManager) {
-			pluginManager.resolve(resolvedKits, viewHints, editorActivity.activeViewId, projectViews);
-		}
+		if (!pluginManager) return;
+		pluginManager.setData(
+			resolvedKits,
+			viewHints,
+			editorActivity.activeViewId,
+			resolvedViews
+		);
+	});
+
+	$effect(() => {
+		if (!pluginManager) return;
+		pluginManager.setSelection(
+			selection.selectedViewPrimary,
+			selection.selectedViewSecondary
+		);
 	});
 </script>
 

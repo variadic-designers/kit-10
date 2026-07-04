@@ -283,6 +283,106 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const btnDarkDangerHoverSnip = (await api.createRenderSnippet(btnDarkDangerHover.id))!;
 	await api.createRenderEntry(btnDarkDangerHoverSnip.id, 'background', '#b91c1c');
 
+	// Button label kit — text child rendered inside each button box
+	const labelKit = (await api.createKitInProject(proj.id, 'ButtonLabel'))!;
+	await api.consumeAxis(labelKit.id, themeAxis.id);
+	await api.consumeAxis(labelKit.id, emphasisAxis.id);
+	await api.consumeAxis(labelKit.id, sentimentAxis.id);
+	await api.consumeAxis(labelKit.id, stateAxis.id);
+	// auto-assigned priorities (1000/2000/3000/4000) already give the right relative order
+
+	// Null layer — baseline label
+	const lblNull = (await api.createLayer(labelKit.id))!;
+	const lblNullSnip = (await api.createRenderSnippet(lblNull.id))!;
+	await api.createRenderEntry(lblNullSnip.id, 'content', 'Button');
+	await api.createRenderEntry(lblNullSnip.id, 'color', null, tokenText.id);
+	await api.createRenderEntry(lblNullSnip.id, 'font-size', '14px');
+	await api.createRenderEntry(lblNullSnip.id, 'font-weight', '400');
+
+	// Per-emphasis content
+	const lblPrimary = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblPrimary.id, emphasisPrimary.id);
+	const lblPrimarySnip = (await api.createRenderSnippet(lblPrimary.id))!;
+	await api.createRenderEntry(lblPrimarySnip.id, 'content', 'Submit');
+	await api.createRenderEntry(lblPrimarySnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(lblPrimarySnip.id, 'font-weight', '600');
+
+	const lblSecondary = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblSecondary.id, emphasisSecondary.id);
+	const lblSecondarySnip = (await api.createRenderSnippet(lblSecondary.id))!;
+	await api.createRenderEntry(lblSecondarySnip.id, 'content', 'Cancel');
+	await api.createRenderEntry(lblSecondarySnip.id, 'color', '#ffffff');
+
+	const lblTertiary = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblTertiary.id, emphasisTertiary.id);
+	const lblTertiarySnip = (await api.createRenderSnippet(lblTertiary.id))!;
+	await api.createRenderEntry(lblTertiarySnip.id, 'content', 'Learn More');
+	await api.createRenderEntry(lblTertiarySnip.id, 'color', '#1a1a1a');
+
+	const lblGhost = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblGhost.id, emphasisGhost.id);
+	const lblGhostSnip = (await api.createRenderSnippet(lblGhost.id))!;
+	await api.createRenderEntry(lblGhostSnip.id, 'content', 'Dismiss');
+
+	// Per-sentiment content (higher priority than emphasis)
+	const lblPositive = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblPositive.id, sentimentPositive.id);
+	const lblPositiveSnip = (await api.createRenderSnippet(lblPositive.id))!;
+	await api.createRenderEntry(lblPositiveSnip.id, 'content', 'Confirm');
+	await api.createRenderEntry(lblPositiveSnip.id, 'color', '#ffffff');
+
+	const lblDanger = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblDanger.id, sentimentDanger.id);
+	const lblDangerSnip = (await api.createRenderSnippet(lblDanger.id))!;
+	await api.createRenderEntry(lblDangerSnip.id, 'content', 'Delete');
+	await api.createRenderEntry(lblDangerSnip.id, 'color', '#ffffff');
+
+	// Disabled state label
+	const lblDisabled = (await api.createLayer(labelKit.id))!;
+	await api.addAxisValueToLayer(lblDisabled.id, stateDisabled.id);
+	const lblDisabledSnip = (await api.createRenderSnippet(lblDisabled.id))!;
+	await api.createRenderEntry(lblDisabledSnip.id, 'content', 'Unavailable');
+
+	// Label views — child_only so charter skips them as top-level frames
+	const childOnlyHint = { charter: { primitive: 'text', childOnly: true } };
+
+	const labelDefaultView = (await api.createViewInProject(proj.id, 'Label: Default', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelDefaultView.id);
+
+	const labelPrimaryView = (await api.createViewInProject(proj.id, 'Label: Primary', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelPrimaryView.id);
+	await api.setAxisArg(labelPrimaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+
+	const labelSecondaryView = (await api.createViewInProject(proj.id, 'Label: Secondary', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelSecondaryView.id);
+	await api.setAxisArg(labelSecondaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'secondary' });
+
+	const labelTertiaryView = (await api.createViewInProject(proj.id, 'Label: Tertiary', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelTertiaryView.id);
+	await api.setAxisArg(labelTertiaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'tertiary' });
+
+	const labelGhostView = (await api.createViewInProject(proj.id, 'Label: Ghost', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelGhostView.id);
+	await api.setAxisArg(labelGhostView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'ghost' });
+
+	const labelPositiveView = (await api.createViewInProject(proj.id, 'Label: Positive', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelPositiveView.id);
+	await api.setAxisArg(labelPositiveView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'positive' });
+
+	const labelDangerView = (await api.createViewInProject(proj.id, 'Label: Danger', childOnlyHint))!;
+	await api.attachKitToComposition(labelKit.id, labelDangerView.id);
+	await api.setAxisArg(labelDangerView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'danger' });
+
+	// Wire children onto button layers — specificity handles which label wins per view:
+	// sentiment (priority 4000) beats emphasis (3000) beats null layer
+	await api.setLayerChildren(btnNull.id, [labelDefaultView.id]);
+	await api.setLayerChildren(btnPrimary.id, [labelPrimaryView.id]);
+	await api.setLayerChildren(btnSecondary.id, [labelSecondaryView.id]);
+	await api.setLayerChildren(btnTertiary.id, [labelTertiaryView.id]);
+	await api.setLayerChildren(btnGhost.id, [labelGhostView.id]);
+	await api.setLayerChildren(btnPositive.id, [labelPositiveView.id]);
+	await api.setLayerChildren(btnDanger.id, [labelDangerView.id]);
+
 	// --- Views ---
 
 	// View: Light Default

@@ -1,6 +1,5 @@
 import createPlugin, { type ManifestLike, type Plugin } from '@extism/extism';
-import type { Api, EditorState, ResolvedKit } from 'manager';
-import { resolveMany } from 'manager';
+import type { Api, ResolvedKit } from 'manager';
 import type {
 	FieldCategory,
 	FieldUpdate,
@@ -9,9 +8,32 @@ import type {
 	PluginContext,
 	ResolvedView,
 	UiNode,
+	UiTextNode,
 	WriteRenderEntryInput,
 	WriteRenderEntryResult
 } from './types.js';
+
+let _measureCanvas: OffscreenCanvasRenderingContext2D | null = null;
+function getMeasureCtx(): OffscreenCanvasRenderingContext2D {
+	if (!_measureCanvas) {
+		_measureCanvas = new OffscreenCanvas(1, 1).getContext('2d') as OffscreenCanvasRenderingContext2D;
+	}
+	return _measureCanvas;
+}
+
+function measureAndPatchText(nodes: UiNode[]): UiNode[] {
+	const ctx = getMeasureCtx();
+	return nodes.map((node) => {
+		if (!('Text' in node)) return node;
+		const t = (node as UiTextNode).Text;
+		ctx.font = `${t.font_weight} ${t.font_size}px ${t.font_family}`;
+		const m = ctx.measureText(t.content);
+		const height =
+			(m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent) +
+			(m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent);
+		return { Text: { ...t, width: m.width, height: height > 0 ? height : t.font_size } } as UiTextNode;
+	});
+}
 
 function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	if (!kits) return null;
@@ -19,7 +41,7 @@ function serializeResolvedKits(kits: ResolvedKit[] | null) {
 		kitId: k.kitId,
 		kitName: k.kitName,
 		properties: Object.fromEntries(k.properties),
-		childViewIds: k.childViewIds,
+		childViewIds: k.childViewIds
 	}));
 }
 
@@ -29,23 +51,47 @@ function serializeResolvedViews(views: ResolvedView[] | null) {
 		viewId: v.viewId,
 		viewName: v.viewName,
 		hints: v.hints ?? {},
-		resolvedKits: serializeResolvedKits(v.resolvedKits)
+		resolvedKits: serializeResolvedKits(v.resolvedKits) ?? []
 	}));
 }
 
-export function createPluginManager(editor: EditorState, api: Api) {
+export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
 	let viewportData = $state<string>('[]');
-	let context = $state<PluginContext>({ resolvedKits: null });
+	let context: PluginContext = { resolvedKits: null };
 
 	let activePlugin: Plugin | null = null;
-	const kvStores = new Map<string, Map<string, string>>();
-	const resolveCache = new Map<string, ResolvedKit[]>();
+
+	// Latest state — always reflects the most recent setter call
+	let _kits: ResolvedKit[] | null = null;
+	let _hints: Record<string, unknown> | null = null;
+	let _viewId: string | null = null;
+	let _projectViews: ResolvedView[] = [];
+	let _selPrimary: string | null = null;
+	let _selSecondary: string[] = [];
+
+	// Debounce timers
+	let dataTimer: ReturnType<typeof setTimeout> | null = null;
+	let selectionTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Incremented on every setData call. Any runSelectionChange captured before
+	// the increment was enqueued while data was stale — skip it.
+	let selectionGen = 0;
+
+	// Serial queue — all plugin calls are chained so they never run concurrently
+	let pluginQueue: Promise<void> = Promise.resolve();
+
+	function enqueue(fn: () => Promise<void>): void {
+		pluginQueue = pluginQueue.then(() =>
+			fn().catch((err) => {
+				console.error('[plugin] call failed:', err);
+			})
+		);
+	}
 
 	function makeHostFunctions(pluginName: string) {
 		const localKV = new Map<string, string>();
-		kvStores.set(pluginName, localKV);
 
 		return {
 			'extism:host/user': {
@@ -89,24 +135,6 @@ export function createPluginManager(editor: EditorState, api: Api) {
 					return cp.store(JSON.stringify(data));
 				},
 
-				async kit10_resolve_view(cp: any, inputOffs: bigint) {
-					const viewId = cp.read(inputOffs).text().trim();
-
-					const cached = resolveCache.get(viewId);
-					if (cached) {
-						return cp.store(JSON.stringify(serializeResolvedKits(cached)));
-					}
-
-					try {
-						const kits = await resolveMany(editor.dialect, viewId);
-						resolveCache.set(viewId, kits);
-						return cp.store(JSON.stringify(serializeResolvedKits(kits)));
-					} catch (err) {
-						console.error(`[plugin] kit10_resolve_view failed for ${viewId}:`, err);
-						return cp.store(JSON.stringify(null));
-					}
-				},
-
 				async kit10_write_render_entry_to_layer(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const input: WriteRenderEntryInput = JSON.parse(rawJson);
@@ -123,9 +151,7 @@ export function createPluginManager(editor: EditorState, api: Api) {
 						}
 
 						const snippetId = snippets[0]!.snippetId;
-
 						const existing = await api.getRenderEntriesBySnippetId(snippetId).execute();
-
 						const match = existing.find((e: any) => e.property === input.property);
 
 						if (match) {
@@ -171,6 +197,49 @@ export function createPluginManager(editor: EditorState, api: Api) {
 		};
 	}
 
+	async function runResolve(): Promise<void> {
+		if (!activePlugin) return;
+		const payload = JSON.stringify({
+			activeViewId: _viewId,
+			resolvedKits: serializeResolvedKits(_kits),
+			viewHints: _hints ?? {},
+			projectViews: serializeResolvedViews(_projectViews) ?? [],
+			selectedViewPrimary: _selPrimary,
+			selectedViewSecondary: _selSecondary
+		});
+
+		const result = await activePlugin.call('on_resolve', payload);
+		if (result) {
+			const parsed: OnResolveResult = JSON.parse(result.text());
+			fieldCategories = parsed.categories ?? [];
+			if (parsed.viewport_data) {
+				viewportData = JSON.stringify(measureAndPatchText(parsed.viewport_data));
+			}
+		}
+	}
+
+	function makeSelectionChangeRunner(capturedGen: number): () => Promise<void> {
+		return async () => {
+			// If setData fired between enqueue and execution, our project_views
+			// are stale — runResolve will produce a correct viewport instead.
+			if (capturedGen !== selectionGen || !activePlugin) return;
+
+			const payload = JSON.stringify({
+				primary: _selPrimary,
+				secondary: _selSecondary,
+				activeViewId: _viewId
+			});
+
+			const result = await activePlugin.call('on_selection_change', payload);
+			if (result) {
+				const parsed = JSON.parse(result.text()) as { viewport_data?: UiNode[] };
+				if (parsed.viewport_data?.length) {
+					viewportData = JSON.stringify(measureAndPatchText(parsed.viewport_data));
+				}
+			}
+		};
+	}
+
 	async function loadPlugin(manifest: ManifestLike | PromiseLike<ManifestLike>, name: string) {
 		plugins = [...plugins, { name, status: 'loading' }];
 
@@ -182,13 +251,11 @@ export function createPluginManager(editor: EditorState, api: Api) {
 			});
 
 			activePlugin = plugin;
-
 			await plugin.call('on_init', JSON.stringify({ name }));
-
 			plugins = plugins.map((p) => (p.name === name ? { name, status: 'ready' } : p));
 
-			if (context.resolvedKits) {
-				await resolve(context.resolvedKits);
+			if (_kits !== null) {
+				enqueue(runResolve);
 			}
 		} catch (err) {
 			plugins = plugins.map((p) =>
@@ -197,58 +264,55 @@ export function createPluginManager(editor: EditorState, api: Api) {
 		}
 	}
 
-	async function resolve(
-		resolvedKits: ResolvedKit[] | null,
-		viewHints?: Record<string, unknown> | null,
-		activeViewId?: string | null,
-		projectViews?: { viewId: string; viewName: string; hints: Record<string, unknown> }[] | null
+	function setData(
+		kits: ResolvedKit[] | null,
+		hints: Record<string, unknown> | null,
+		viewId: string | null,
+		projectViews: ResolvedView[]
 	) {
-		context = { resolvedKits };
+		_kits = kits;
+		_hints = hints;
+		_viewId = viewId;
+		_projectViews = projectViews;
+		context = { resolvedKits: kits };
 
-		// Keep active view in cache, evict everything else — any data change
-		// that triggered a re-resolve may have affected child view resolutions.
-		if (activeViewId && resolvedKits) {
-			for (const vid of resolveCache.keys()) {
-				if (vid !== activeViewId) resolveCache.delete(vid);
-			}
-			resolveCache.set(activeViewId, resolvedKits);
-		} else {
-			resolveCache.clear();
+		// Invalidate any already-queued runSelectionChange — its last_resolve_input is stale.
+		// Even if selectionTimer already fired (null) the generation mismatch will skip it.
+		selectionGen++;
+
+		if (selectionTimer !== null) {
+			clearTimeout(selectionTimer);
+			selectionTimer = null;
 		}
 
-		if (!activePlugin) {
-			fieldCategories = [];
-			viewportData = '[]';
-			return;
-		}
+		if (dataTimer !== null) clearTimeout(dataTimer);
+		dataTimer = setTimeout(() => {
+			dataTimer = null;
+			enqueue(runResolve);
+		}, 0);
+	}
 
-		try {
-			const payload = JSON.stringify({
-				activeViewId: activeViewId ?? null,
-				resolvedKits: serializeResolvedKits(resolvedKits),
-				viewHints: viewHints ?? {},
-				projectViews: projectViews ?? [],
-			});
-			const result = await activePlugin.call('on_resolve', payload);
-			if (result) {
-				const parsed: OnResolveResult = JSON.parse(result.text());
-				fieldCategories = parsed.categories ?? [];
-				if (parsed.viewport_data) {
-					viewportData = JSON.stringify(parsed.viewport_data);
-				}
-			}
-		} catch (err) {
-			console.error(`[plugin] on_resolve failed:`, err);
-		}
+	function setSelection(primary: string | null, secondary: string[]) {
+		_selPrimary = primary;
+		_selSecondary = secondary;
+
+		// Data resolve already pending — it will send the updated selection, skip separate update
+		if (dataTimer !== null) return;
+
+		const gen = selectionGen;
+		if (selectionTimer !== null) clearTimeout(selectionTimer);
+		selectionTimer = setTimeout(() => {
+			selectionTimer = null;
+			enqueue(makeSelectionChangeRunner(gen));
+		}, 0);
 	}
 
 	async function fieldUpdate(update: FieldUpdate) {
 		if (!activePlugin) return;
-		try {
+		enqueue(async () => {
+			if (!activePlugin) return;
 			await activePlugin.call('on_field_update', JSON.stringify(update));
-		} catch (err) {
-			console.error(`[plugin] on_field_update failed:`, err);
-		}
+		});
 	}
 
 	function disablePlugin(name: string) {
@@ -272,7 +336,8 @@ export function createPluginManager(editor: EditorState, api: Api) {
 			return viewportData;
 		},
 		loadPlugin,
-		resolve,
+		setData,
+		setSelection,
 		fieldUpdate,
 		disablePlugin
 	};

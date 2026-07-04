@@ -116,9 +116,10 @@ struct OnResolveResult {
 struct CharterHints {
     primitive: Option<String>,
     position: Option<[f32; 2]>,
+    #[serde(default)]
+    child_only: bool,
 }
 
-// Metadata-only view descriptor — kits are fetched on demand via kit10_resolve_view
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ViewMeta {
@@ -126,6 +127,8 @@ struct ViewMeta {
     view_name: String,
     #[serde(default)]
     hints: std::collections::HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    resolved_kits: Vec<ResolvedKit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -134,9 +137,12 @@ struct OnResolveInput {
     active_view_id: Option<String>,
     resolved_kits: Vec<ResolvedKit>,
     view_hints: std::collections::HashMap<String, serde_json::Value>,
-    // All views in the project — metadata only, no resolved kits
     #[serde(default)]
     project_views: Vec<ViewMeta>,
+    #[serde(default)]
+    selected_view_primary: Option<String>,
+    #[serde(default)]
+    selected_view_secondary: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -168,23 +174,24 @@ struct FieldUpdate {
     token_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct OnSelectionChangeInput {
+    primary: Option<String>,
+    #[serde(default)]
+    secondary: Vec<String>,
+    // Host always sends this so active_view_id in last_resolve_input never goes stale.
+    #[serde(default)]
+    active_view_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OnSelectionChangeResult {
+    viewport_data: Vec<UiNode>,
+}
+
 #[host_fn]
 extern "ExtismHost" {
     pub fn kit10_write_render_entry_to_layer(input: u64) -> u64;
-    pub fn kit10_resolve_view(input: u64) -> u64;
-}
-
-// Fetch resolved kits for a view via the host cache.
-// Returns None if the view isn't cached and couldn't be resolved.
-fn resolve_view_kits(view_id: &str) -> Option<Vec<ResolvedKit>> {
-    let mem = Memory::from_bytes(view_id).ok()?;
-    let result_offs = unsafe { kit10_resolve_view(mem.offset()) }.ok()?;
-    let result_mem = Memory::find(result_offs)?;
-    let bytes = result_mem.to_vec();
-    if bytes == b"null" {
-        return None;
-    }
-    serde_json::from_slice(&bytes).ok()
 }
 
 fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, ResolvedProperty> {
@@ -285,8 +292,8 @@ fn build_box_node(
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id,
-            width: if width > 0.0 { width } else { 200.0 },
-            height: if height > 0.0 { height } else { 100.0 },
+            width,
+            height,
             max_width: 0.0,
             max_height: 0.0,
             padding: [padding; 4],
@@ -442,18 +449,43 @@ fn text_categories() -> Vec<FieldCategory> {
     }]
 }
 
+fn transparent_box(
+    parent_id: Option<usize>,
+    flex_direction: &str,
+    padding: [f32; 4],
+) -> UiNode {
+    UiNode::Box(UiBoxNode {
+        box_data: BoxData {
+            parent_id,
+            width: 0.0,
+            height: 0.0,
+            max_width: 0.0,
+            max_height: 0.0,
+            padding,
+            bg_color: [0.0; 4],
+            flex_direction: flex_direction.to_string(),
+            show_border: false,
+            border_color: [0.0; 4],
+            border_width: 0.0,
+            corner_radius: 0.0,
+            opacity: 1.0,
+            shadow: None,
+        },
+    })
+}
+
 // Render a view's nodes into the flat viewport buffer.
-// canvas_pos: Some([x,y]) for top-level canvas views, None for embedded children.
-// parent_id: the parent box index when rendering as a child.
+// parent_id: the parent box index (grid cell for top-level, box idx for children).
 // depth guard prevents runaway recursion from circular view references.
 fn render_view_nodes(
     kits: &[ResolvedKit],
     hints: &std::collections::HashMap<String, serde_json::Value>,
-    is_active: bool,
-    canvas_pos: Option<[f32; 2]>,
+    // 0 = none, 1 = secondary selection, 2 = primary / active
+    selection: u8,
     parent_id: Option<usize>,
     viewport: &mut Vec<UiNode>,
     depth: u8,
+    view_map: &std::collections::HashMap<String, &ViewMeta>,
 ) {
     if depth > 4 {
         return;
@@ -474,31 +506,7 @@ fn render_view_nodes(
         .as_deref()
         .unwrap_or_else(|| detect_primitive(&merged));
 
-    // Top-level views get a transparent position wrapper; children attach directly to parent.
-    let content_parent = if let Some(pos) = canvas_pos {
-        let wrapper_idx = viewport.len();
-        viewport.push(UiNode::Box(UiBoxNode {
-            box_data: BoxData {
-                parent_id: None,
-                width: 0.0,
-                height: 0.0,
-                max_width: 0.0,
-                max_height: 0.0,
-                padding: [pos[1], pos[0], pos[1], pos[0]],
-                bg_color: [0.0; 4],
-                flex_direction: "Column".to_string(),
-                show_border: false,
-                border_color: [0.0; 4],
-                border_width: 0.0,
-                corner_radius: 0.0,
-                opacity: 1.0,
-                shadow: None,
-            },
-        }));
-        Some(wrapper_idx)
-    } else {
-        parent_id
-    };
+    let content_parent = parent_id;
 
     if primitive == "text" {
         viewport.push(build_text_node(&merged, content_parent.unwrap_or(0)));
@@ -506,12 +514,22 @@ fn render_view_nodes(
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent);
 
-        if is_active {
-            if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
-                box_data.border_color = [0.0, 0.48, 1.0, 1.0];
-                box_data.show_border = true;
-                box_data.border_width = 2.0;
+        match selection {
+            2 => {
+                if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
+                    box_data.border_color = [0.0, 0.48, 1.0, 1.0];
+                    box_data.show_border = true;
+                    box_data.border_width = 2.0;
+                }
             }
+            1 => {
+                if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
+                    box_data.border_color = [0.6, 0.6, 0.6, 0.7];
+                    box_data.show_border = true;
+                    box_data.border_width = 1.0;
+                }
+            }
+            _ => {}
         }
 
         viewport.push(node);
@@ -519,21 +537,23 @@ fn render_view_nodes(
         let child_ids = collect_child_view_ids(kits);
 
         if child_ids.is_empty() {
-            // No declared children: fall back to inline text for color/content props.
-            if merged.contains_key("color") || merged.contains_key("content") {
+            // Only add inline text when the kit explicitly defines content.
+            // Checking `color` alone would fire for any box kit that sets a text color
+            // (e.g. Button) and produce a spurious "Text" placeholder node.
+            if merged.contains_key("content") {
                 viewport.push(build_text_node(&merged, box_idx));
             }
         } else {
             for child_view_id in &child_ids {
-                if let Some(child_kits) = resolve_view_kits(child_view_id) {
+                if let Some(child_view) = view_map.get(child_view_id) {
                     render_view_nodes(
-                        &child_kits,
-                        &std::collections::HashMap::new(),
-                        false,
-                        None,
+                        &child_view.resolved_kits,
+                        &child_view.hints,
+                        0,
                         Some(box_idx),
                         viewport,
                         depth + 1,
+                        view_map,
                     );
                 }
             }
@@ -548,6 +568,88 @@ pub fn on_init(_input: String) -> FnResult<String> {
     Ok("ok".to_string())
 }
 
+fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
+    let mut viewport_data: Vec<UiNode> = Vec::new();
+
+    let view_map: std::collections::HashMap<String, &ViewMeta> = parsed.project_views
+        .iter()
+        .map(|v| (v.view_id.clone(), v))
+        .collect();
+
+    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, u8)> = parsed.project_views
+        .iter()
+        .filter_map(|view| {
+            let hints: CharterHints = view.hints.get("charter")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            if hints.child_only {
+                return None;
+            }
+            let kits: &Vec<ResolvedKit> = &view.resolved_kits;
+            if kits.is_empty() {
+                return None;
+            }
+            let is_active = parsed.active_view_id.as_deref() == Some(view.view_id.as_str());
+            let is_primary = parsed.selected_view_primary.as_deref() == Some(view.view_id.as_str());
+            let is_secondary = parsed.selected_view_secondary.iter().any(|id| id == &view.view_id);
+            let sel: u8 = if is_active || is_primary { 2 } else if is_secondary { 1 } else { 0 };
+            Some((view, kits, sel))
+        })
+        .collect();
+
+    if !top_views.is_empty() {
+        const COLS: usize = 4;
+        const GAP: f32 = 32.0;
+        const PAD: f32 = 40.0;
+
+        let root_idx = viewport_data.len();
+        viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
+
+        for row in top_views.chunks(COLS) {
+            let row_idx = viewport_data.len();
+            viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
+
+            for (view, kits, sel) in row {
+                let cell_idx = viewport_data.len();
+                viewport_data.push(transparent_box(Some(row_idx), "Column", [0.0, GAP, 0.0, 0.0]));
+
+                render_view_nodes(
+                    kits,
+                    &view.hints,
+                    *sel,
+                    Some(cell_idx),
+                    &mut viewport_data,
+                    0,
+                    &view_map,
+                );
+            }
+        }
+    }
+
+    viewport_data
+}
+
+fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
+    if parsed.resolved_kits.is_empty() {
+        return vec![];
+    }
+    let merged = merge_kits(&parsed.resolved_kits);
+    let charter_hints: CharterHints = parsed
+        .view_hints
+        .get("charter")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    let primitive = charter_hints
+        .primitive
+        .as_deref()
+        .unwrap_or_else(|| detect_primitive(&merged));
+    if primitive == "text" {
+        text_categories()
+    } else {
+        box_categories()
+    }
+}
+
 #[plugin_fn]
 pub fn on_resolve(input: String) -> FnResult<String> {
     let parsed: OnResolveInput = if input.is_empty() {
@@ -556,70 +658,41 @@ pub fn on_resolve(input: String) -> FnResult<String> {
         serde_json::from_str(&input).unwrap_or_default()
     };
 
-    let mut viewport_data: Vec<UiNode> = Vec::new();
-
-    for view in &parsed.project_views {
-        let is_active = parsed.active_view_id.as_deref() == Some(view.view_id.as_str());
-
-        // Active view kits come from the payload directly (already resolved by host).
-        // All other views are fetched on demand from the host resolution cache.
-        let kits: Vec<ResolvedKit> = if is_active {
-            parsed.resolved_kits.clone()
-        } else {
-            match resolve_view_kits(&view.view_id) {
-                Some(k) => k,
-                None => continue,
-            }
-        };
-
-        let charter_hints: CharterHints = view
-            .hints
-            .get("charter")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-
-        let pos = charter_hints.position.unwrap_or([0.0, 0.0]);
-
-        render_view_nodes(
-            &kits,
-            &view.hints,
-            is_active,
-            Some(pos),
-            None,
-            &mut viewport_data,
-            0,
-        );
-    }
-
-    // Field categories are derived from the active view's kits (already in payload).
-    let categories: Vec<FieldCategory> = if !parsed.resolved_kits.is_empty() {
-        let merged = merge_kits(&parsed.resolved_kits);
-        let charter_hints: CharterHints = parsed
-            .view_hints
-            .get("charter")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default();
-
-        let primitive = charter_hints
-            .primitive
-            .as_deref()
-            .unwrap_or_else(|| detect_primitive(&merged));
-
-        if primitive == "text" {
-            text_categories()
-        } else {
-            box_categories()
-        }
-    } else {
-        vec![]
-    };
+    let _ = extism_pdk::var::set("last_resolve_input", input.as_str());
 
     let result = OnResolveResult {
-        categories,
-        viewport_data,
+        categories: build_categories(&parsed),
+        viewport_data: build_viewport(&parsed),
     };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
+}
+
+#[plugin_fn]
+pub fn on_selection_change(input: String) -> FnResult<String> {
+    let selection: OnSelectionChangeInput = serde_json::from_str(&input).unwrap_or_default();
+
+    let last_bytes = extism_pdk::var::get_memory("last_resolve_input")
+        .ok()
+        .flatten()
+        .map(|m| m.to_vec())
+        .unwrap_or_default();
+
+    if last_bytes.is_empty() {
+        return Ok(serde_json::to_string(&OnSelectionChangeResult { viewport_data: vec![] })?);
+    }
+
+    let mut parsed: OnResolveInput = serde_json::from_slice(&last_bytes).unwrap_or_default();
+    parsed.selected_view_primary = selection.primary;
+    parsed.selected_view_secondary = selection.secondary;
+    // Keep active_view_id in sync so the correct view gets its selection highlight.
+    if selection.active_view_id.is_some() {
+        parsed.active_view_id = selection.active_view_id;
+    }
+
+    Ok(serde_json::to_string(&OnSelectionChangeResult {
+        viewport_data: build_viewport(&parsed),
+    })?)
 }
 
 #[plugin_fn]
