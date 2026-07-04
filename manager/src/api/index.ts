@@ -180,6 +180,8 @@ export interface QueryLayer {
 	getLayersByKitId: (
 		kitId: string
 	) => SelectQueryBuilder<Schema, 'layers', { layerId: string; kitId: string; lastModified: Date }>;
+	setLayerChildren: (layerId: string, viewIds: string[]) => Promise<void>;
+	clearLayerChildren: (layerId: string) => Promise<void>;
 }
 
 export interface QueryRenderSnippet {
@@ -582,7 +584,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.values({
 				project_id: projectId,
 				alias: alias ?? null,
-				value: value ?? null,
+				value: (value ?? null) as any,
 				kit_id: scope?.kitId ?? null,
 				view_id: scope?.viewId ?? null
 			})
@@ -705,6 +707,66 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteLayer: async (layerId: string) => {
 		await db.deleteFrom('layers').where('layers.id', '=', layerId).execute();
+	},
+
+	setLayerChildren: async (layerId: string, viewIds: string[]) => {
+		await db.transaction().execute(async (trx) => {
+			let snippet = await trx
+				.selectFrom('render_snippets')
+				.where('render_snippets.layer_id', '=', layerId)
+				.select('render_snippets.id')
+				.orderBy('render_snippets.last_modified', 'asc')
+				.executeTakeFirst();
+
+			if (!snippet) {
+				snippet = await trx
+					.insertInto('render_snippets')
+					.values({ layer_id: layerId })
+					.returning('id')
+					.executeTakeFirst();
+			}
+
+			if (!snippet) return;
+
+			const existing = await trx
+				.selectFrom('render_entries')
+				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+				.where('render_snippets.layer_id', '=', layerId)
+				.where('render_entries.property', '=', 'children')
+				.select('render_entries.id')
+				.executeTakeFirst();
+
+			const value = JSON.stringify(viewIds);
+
+			if (existing) {
+				await trx
+					.updateTable('render_entries')
+					.set({ value } as any)
+					.where('render_entries.id', '=', existing.id)
+					.execute();
+			} else {
+				await trx
+					.insertInto('render_entries')
+					.values({ snippet_id: snippet.id, property: 'children', value, token_id: null } as any)
+					.execute();
+			}
+		});
+	},
+
+	clearLayerChildren: async (layerId: string) => {
+		const snippets = await db
+			.selectFrom('render_snippets')
+			.where('render_snippets.layer_id', '=', layerId)
+			.select('render_snippets.id')
+			.execute();
+
+		if (snippets.length === 0) return;
+
+		await db
+			.deleteFrom('render_entries')
+			.where('render_entries.property', '=', 'children')
+			.where('render_entries.snippet_id', 'in', snippets.map((s) => s.id))
+			.execute();
 	},
 
 	addAxisValueToLayer: async (layerId: string, axisValueId: string) => {

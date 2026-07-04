@@ -17,7 +17,8 @@ function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	return kits.map((k) => ({
 		kitId: k.kitId,
 		kitName: k.kitName,
-		properties: Object.fromEntries(k.properties)
+		properties: Object.fromEntries(k.properties),
+		childViewIds: k.childViewIds,
 	}));
 }
 

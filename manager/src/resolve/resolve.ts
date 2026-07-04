@@ -5,6 +5,7 @@ export interface ResolvedKit {
 	kitId: string;
 	kitName: string;
 	properties: Map<string, ResolvedProperty>;
+	childViewIds: string[];
 }
 
 type AxisValueType =
@@ -20,6 +21,7 @@ export interface ResolvedProperty {
 	isToken: boolean;
 	tokenAlias: string | null;
 	conditionCount: number;
+	childViewIds: string[] | null;
 }
 
 interface LayerCondition {
@@ -88,6 +90,17 @@ export function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 			return true;
 		}
 	}
+}
+
+function tryParseChildViewIds(value: string): string[] | null {
+	if (!value) return null;
+	try {
+		const parsed = JSON.parse(value);
+		if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) return parsed;
+	} catch {
+		// not a valid JSON array
+	}
+	return null;
 }
 
 function computeSpecificity(conditions: LayerCondition[]): number[] {
@@ -202,7 +215,9 @@ export async function resolve(
 	for (const { data } of matchingLayers) {
 		for (const entry of data.entries) {
 			const resolvedValue = entry.tokenId
-				? (entry.tokenValue?.type === 'scalar' ? entry.tokenValue.value : '')
+				? (entry.tokenValue?.type === 'scalar' ? entry.tokenValue.value
+					: entry.tokenValue?.type === 'view' ? entry.tokenValue.view_id
+					: '')
 				: (entry.literalValue ?? '');
 			result.set(entry.property, {
 				property: entry.property,
@@ -212,6 +227,7 @@ export async function resolve(
 				isToken: !!entry.tokenId,
 				tokenAlias: entry.tokenAlias,
 				conditionCount: data.conditions.length,
+				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null,
 			});
 		}
 	}
@@ -258,6 +274,7 @@ export async function resolveMany(
 			kitId: comp.kit_id,
 			kitName: comp.kit_name,
 			properties,
+			childViewIds: properties.get('children')?.childViewIds ?? [],
 		});
 	}
 
@@ -318,7 +335,7 @@ async function gatherScopedTokens(
 }
 
 function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMap: Map<string, string>): void {
-	for (const [prop, resolved] of properties) {
+	for (const [, resolved] of properties) {
 		if (resolved.isToken && resolved.tokenAlias) {
 			const tokenValue = tokenMap.get(resolved.tokenAlias);
 			if (tokenValue !== undefined) {
