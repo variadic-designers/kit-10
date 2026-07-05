@@ -38,6 +38,38 @@ struct FieldCategory {
     fields: Vec<FieldDef>,
 }
 
+// Track/grid types mirror vellum's api.rs — serde output must match exactly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum TrackSize {
+    Px(f32),
+    Fr(f32),
+    Auto,
+    MinContent,
+    MaxContent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum GridLine {
+    Auto,
+    Line(i16),
+    Span(u16),
+}
+
+impl Default for GridLine {
+    fn default() -> Self { GridLine::Auto }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct BoxExtra {
+    #[serde(default)] gap: f32,
+    #[serde(default)] grid_template_columns: Vec<TrackSize>,
+    #[serde(default)] grid_template_rows: Vec<TrackSize>,
+    #[serde(default)] grid_auto_rows: Vec<TrackSize>,
+    #[serde(default)] grid_auto_columns: Vec<TrackSize>,
+    #[serde(default)] grid_column: (GridLine, GridLine),
+    #[serde(default)] grid_row: (GridLine, GridLine),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BoxShadow {
     offset_x: f32,
@@ -64,6 +96,8 @@ struct BoxData {
     corner_radius: f32,
     opacity: f32,
     shadow: Option<BoxShadow>,
+    #[serde(default)]
+    extra: BoxExtra,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,6 +302,46 @@ fn parse_px(s: Option<&str>) -> f32 {
     }
 }
 
+fn parse_track(s: &str) -> TrackSize {
+    let s = s.trim();
+    if s == "auto" { return TrackSize::Auto; }
+    if s == "min-content" { return TrackSize::MinContent; }
+    if s == "max-content" { return TrackSize::MaxContent; }
+    if let Some(n) = s.strip_suffix("fr") {
+        return TrackSize::Fr(n.trim().parse().unwrap_or(1.0));
+    }
+    if let Some(n) = s.strip_suffix("px") {
+        return TrackSize::Px(n.trim().parse().unwrap_or(0.0));
+    }
+    if let Ok(n) = s.parse::<f32>() {
+        return TrackSize::Px(n);
+    }
+    TrackSize::Auto
+}
+
+fn parse_track_list(s: &str) -> Vec<TrackSize> {
+    s.split_whitespace().map(parse_track).collect()
+}
+
+fn parse_grid_line(s: &str) -> GridLine {
+    let s = s.trim();
+    if s == "auto" || s.is_empty() { return GridLine::Auto; }
+    if let Some(rest) = s.strip_prefix("span") {
+        return GridLine::Span(rest.trim().parse().unwrap_or(1));
+    }
+    if let Ok(n) = s.parse::<i16>() {
+        return GridLine::Line(n);
+    }
+    GridLine::Auto
+}
+
+fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
+    let mut parts = s.splitn(2, '/');
+    let start = parse_grid_line(parts.next().unwrap_or("auto"));
+    let end = parse_grid_line(parts.next().unwrap_or("auto"));
+    (start, end)
+}
+
 fn get_prop(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     key: &str,
@@ -289,6 +363,29 @@ fn build_box_node(
 
     let has_border = !border.is_empty() && border != "none";
 
+    let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
+        "row"            => "Row",
+        "row-reverse"    => "RowReverse",
+        "column-reverse" => "ColumnReverse",
+        _                => "Column",
+    }.to_string();
+
+    let extra = BoxExtra {
+        gap: parse_px(get_prop(props, "gap").as_deref()),
+        grid_template_columns: get_prop(props, "grid-template-columns")
+            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+        grid_template_rows: get_prop(props, "grid-template-rows")
+            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+        grid_auto_rows: get_prop(props, "grid-auto-rows")
+            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+        grid_auto_columns: get_prop(props, "grid-auto-columns")
+            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+        grid_column: get_prop(props, "grid-column")
+            .map(|s| parse_grid_line_pair(&s)).unwrap_or_default(),
+        grid_row: get_prop(props, "grid-row")
+            .map(|s| parse_grid_line_pair(&s)).unwrap_or_default(),
+    };
+
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id,
@@ -302,7 +399,7 @@ fn build_box_node(
             } else {
                 [0.9, 0.9, 0.9, 1.0]
             },
-            flex_direction: "Column".to_string(),
+            flex_direction,
             show_border: has_border,
             border_color: if has_border {
                 parse_color(&border)
@@ -319,6 +416,7 @@ fn build_box_node(
             corner_radius: radius,
             opacity: 1.0,
             shadow: None,
+            extra,
         },
     })
 }
@@ -369,7 +467,12 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("border-radius")
         || props.contains_key("padding")
         || props.contains_key("width")
-        || props.contains_key("height");
+        || props.contains_key("height")
+        || props.contains_key("display")
+        || props.contains_key("flex-direction")
+        || props.contains_key("gap")
+        || props.contains_key("grid-template-columns")
+        || props.contains_key("grid-template-rows");
 
     if has_text_props && !has_box_props {
         "text"
@@ -383,39 +486,27 @@ fn box_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "layout".to_string(),
             fields: vec![
-                FieldDef {
-                    key: "padding".to_string(),
-                    display_text: Some("Padding".to_string()),
-                },
-                FieldDef {
-                    key: "width".to_string(),
-                    display_text: None,
-                },
-                FieldDef {
-                    key: "height".to_string(),
-                    display_text: None,
-                },
+                FieldDef { key: "width".to_string(), display_text: None },
+                FieldDef { key: "height".to_string(), display_text: None },
+                FieldDef { key: "padding".to_string(), display_text: Some("Padding".to_string()) },
+                FieldDef { key: "flex-direction".to_string(), display_text: Some("Direction".to_string()) },
+                FieldDef { key: "gap".to_string(), display_text: Some("Gap".to_string()) },
+                FieldDef { key: "display".to_string(), display_text: Some("Display".to_string()) },
+                FieldDef { key: "grid-template-columns".to_string(), display_text: Some("Columns".to_string()) },
+                FieldDef { key: "grid-template-rows".to_string(), display_text: Some("Rows".to_string()) },
+                FieldDef { key: "grid-auto-columns".to_string(), display_text: Some("Auto Cols".to_string()) },
+                FieldDef { key: "grid-auto-rows".to_string(), display_text: Some("Auto Rows".to_string()) },
+                FieldDef { key: "grid-column".to_string(), display_text: Some("Col Span".to_string()) },
+                FieldDef { key: "grid-row".to_string(), display_text: Some("Row Span".to_string()) },
             ],
         },
         FieldCategory {
             name: "box".to_string(),
             fields: vec![
-                FieldDef {
-                    key: "background".to_string(),
-                    display_text: Some("Fill".to_string()),
-                },
-                FieldDef {
-                    key: "border".to_string(),
-                    display_text: None,
-                },
-                FieldDef {
-                    key: "border-radius".to_string(),
-                    display_text: Some("Radius".to_string()),
-                },
-                FieldDef {
-                    key: "outline".to_string(),
-                    display_text: None,
-                },
+                FieldDef { key: "background".to_string(), display_text: Some("Fill".to_string()) },
+                FieldDef { key: "border".to_string(), display_text: None },
+                FieldDef { key: "border-radius".to_string(), display_text: Some("Radius".to_string()) },
+                FieldDef { key: "outline".to_string(), display_text: None },
             ],
         },
     ]
@@ -470,6 +561,7 @@ fn transparent_box(
             corner_radius: 0.0,
             opacity: 1.0,
             shadow: None,
+            extra: BoxExtra::default(),
         },
     })
 }

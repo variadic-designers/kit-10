@@ -49,7 +49,9 @@ Input (`OnResolveInput`):
   "activeViewId": "uuid | null",
   "resolvedKits": [ResolvedKit],
   "viewHints": { "<plugin-name>": { ...plugin-specific data } },
-  "allViews": [ResolvedView]
+  "projectViews": [ResolvedView],
+  "selectedViewPrimary": "uuid | null",
+  "selectedViewSecondary": ["uuid"]
 }
 ```
 
@@ -82,6 +84,30 @@ Input (`FieldUpdate`):
 Exactly one of `value` or `tokenId` must be non-null.
 
 Typically delegates to `kit10_write_render_entry_to_layer` to persist the change.
+
+---
+
+### `on_selection_change(input: string) -> string`
+
+Called when only the selection changes — no axis args, layers, or tokens were modified. This is a fast path that avoids a full re-resolve by patching the selection fields into the last known resolve input and re-running layout.
+
+Input:
+```json
+{
+  "primary": "uuid | null",
+  "secondary": ["uuid"],
+  "activeViewId": "uuid | null"
+}
+```
+
+Output (`{ viewport_data: UiNode[] }`):
+```json
+{
+  "viewport_data": [UiNode]
+}
+```
+
+If `on_resolve` has not been called yet in the session, this function should be a no-op (no stored state to patch).
 
 ---
 
@@ -163,6 +189,7 @@ Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning
 {
   "kitId": "uuid",
   "kitName": "Button",
+  "childViewIds": ["uuid"],
   "properties": {
     "background": {
       "property": "background",
@@ -176,6 +203,9 @@ Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning
   }
 }
 ```
+
+`childViewIds` is derived from the `children` render entry (a JSON array of view IDs). It is empty when the kit has no `children` property.
+
 
 ### `ResolvedView`
 ```json

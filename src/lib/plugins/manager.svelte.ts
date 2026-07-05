@@ -8,32 +8,9 @@ import type {
 	PluginContext,
 	ResolvedView,
 	UiNode,
-	UiTextNode,
 	WriteRenderEntryInput,
 	WriteRenderEntryResult
 } from './types.js';
-
-let _measureCanvas: OffscreenCanvasRenderingContext2D | null = null;
-function getMeasureCtx(): OffscreenCanvasRenderingContext2D {
-	if (!_measureCanvas) {
-		_measureCanvas = new OffscreenCanvas(1, 1).getContext('2d') as OffscreenCanvasRenderingContext2D;
-	}
-	return _measureCanvas;
-}
-
-function measureAndPatchText(nodes: UiNode[]): UiNode[] {
-	const ctx = getMeasureCtx();
-	return nodes.map((node) => {
-		if (!('Text' in node)) return node;
-		const t = (node as UiTextNode).Text;
-		ctx.font = `${t.font_weight} ${t.font_size}px ${t.font_family}`;
-		const m = ctx.measureText(t.content);
-		const height =
-			(m.fontBoundingBoxAscent ?? m.actualBoundingBoxAscent) +
-			(m.fontBoundingBoxDescent ?? m.actualBoundingBoxDescent);
-		return { Text: { ...t, width: m.width, height: height > 0 ? height : t.font_size } } as UiTextNode;
-	});
-}
 
 function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	if (!kits) return null;
@@ -213,7 +190,7 @@ export function createPluginManager(api: Api) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
 			if (parsed.viewport_data) {
-				viewportData = JSON.stringify(measureAndPatchText(parsed.viewport_data));
+				viewportData = JSON.stringify(parsed.viewport_data);
 			}
 		}
 	}
@@ -234,7 +211,7 @@ export function createPluginManager(api: Api) {
 			if (result) {
 				const parsed = JSON.parse(result.text()) as { viewport_data?: UiNode[] };
 				if (parsed.viewport_data?.length) {
-					viewportData = JSON.stringify(measureAndPatchText(parsed.viewport_data));
+					viewportData = JSON.stringify(parsed.viewport_data);
 				}
 			}
 		};

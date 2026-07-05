@@ -9,11 +9,21 @@ export function render(): void;
 
 export function resize(width: number, height: number): void;
 
+export function set_colors(grid_r: number, grid_g: number, grid_b: number, grid_a: number, bg_r: number, bg_g: number, bg_b: number, bg_a: number): void;
+
 export function set_data(json: string): void;
 
 export function set_pan(dx: number, dy: number): void;
 
 export function set_zoom(zoom: number): void;
+
+export function zoom_in(): void;
+
+export function zoom_in_at(cx: number, cy: number): void;
+
+export function zoom_out(): void;
+
+export function zoom_out_at(cx: number, cy: number): void;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -23,12 +33,17 @@ export interface InitOutput {
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly render: () => void;
     readonly resize: (a: number, b: number) => void;
+    readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly set_data: (a: number, b: number) => void;
     readonly set_pan: (a: number, b: number) => void;
     readonly set_zoom: (a: number) => void;
-    readonly __wasm_bindgen_func_elem_7242: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7261: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_5856: (a: number, b: number, c: number) => void;
+    readonly zoom_in: () => void;
+    readonly zoom_in_at: (a: number, b: number) => void;
+    readonly zoom_out: () => void;
+    readonly zoom_out_at: (a: number, b: number) => void;
+    readonly __wasm_bindgen_func_elem_7408: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7427: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6022: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

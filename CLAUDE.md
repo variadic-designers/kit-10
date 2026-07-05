@@ -82,7 +82,7 @@ KIT•10 is a design-system editor that models components as **kits** (style sys
 editorLoading: EditorState          — set once on mount
 editorActivity: EditorActivity      — active workspace/project/view/kit IDs
 selection: EditorSelection          — selected view IDs (primary + secondary)
-resolvedViews: ResolvedView[]       — all project views with resolved kits, updated by live query
+resolvedViews: ResolvedView[]       — all project views with resolved kits, updated by live query (typed as ResolvedView from src/lib/plugins/types.ts; manager exports the structurally identical ResolvedViewData — Editor.svelte casts between them)
 resolvedKits: derived               — resolvedViews entry for activeViewId
 pluginManager: PluginManager        — Charter plugin wrapper
 ```
@@ -115,11 +115,11 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 - `setSelection` captures `selectionGen` at enqueue time; if `setData` fires before execution, the captured generation won't match and `runSelectionChange` is skipped.
 - This prevents stale `on_selection_change` results from overwriting a concurrent `on_resolve`.
 
-**Text measurement:** Charter emits `Text{width:0, height:0}` — unmeasured. The host patches all text nodes with `measureAndPatchText` (OffscreenCanvas singleton) before writing to `viewportData`. Vellum receives fully-measured text.
+**Text measurement:** Charter emits `Text{width:0, height:0}`. Vellum measures text internally during the taffy layout pass (`compute_layout_with_measure` + cosmic-text). The host does NOT patch text nodes; `viewportData` is passed to `vellum.set_data` with zero-dimension text nodes as-is.
 
 **`width: 0.0` semantics (important):**
 - `Box{width:0}` → Vellum auto-sizes this box to its children + padding.
-- `Text{width:0}` → host must patch before Vellum sees it (Charter's responsibility to emit 0, host's responsibility to patch).
+- `Text{width:0, height:0}` → Vellum measures during layout (cosmic-text, constrained by parent available space). Charter must always emit 0 for text dimensions.
 
 **Host functions (Charter → Host calls):**
 | Function | Description |
@@ -136,7 +136,7 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 
 **Owns:** Translating resolved kit data into a flat `UiNode[]` render tree. Layout grid logic. Selection highlighting. Field category definitions.
 
-**Must NOT:** query the DB directly, hold cross-call mutable state beyond Extism `var` storage, or do text measurement (emit `width:0, height:0` for Text nodes, host patches them).
+**Must NOT:** query the DB directly, hold cross-call mutable state beyond Extism `var` storage, or do text measurement (emit `width:0, height:0` for Text nodes; Vellum measures them).
 
 **Entry points:**
 
@@ -177,19 +177,25 @@ Root Column (padding: 40px all sides)
 
 **Owns:** GPU rendering, camera (pan/zoom), layout engine (flex-direction, auto-sizing).
 
-**Must NOT:** be called with unmeasured text nodes (`Text{width:0}` must be patched first).
+**Rebuilding the wasm binary** (source in `taf_can_do/`):
+```
+wasm-pack build --target web --no-default-features --no-opt --out-dir ../kit10/src/lib/vellum
+```
+`--no-default-features` is **required** — the `standalone` feature (desktop winit/pollster) gates out all `#[wasm_bindgen]` exports. Building without it produces a ~17KB stub with no exports. `--no-opt` bypasses wasm-opt, which fails on bulk-memory ops in the bundled wasm-opt version.
+
+**Owns text measurement.** Text nodes arrive with `width:0, height:0`; Vellum measures them during the layout pass using cosmic-text constrained by available space from the parent.
 
 **`UiNode[]` contract:**
 - Nodes are a flat array. Parent-child relationships use `parent_id: number | null` (index into the array).
 - `Box{width:0, height:0}` → auto-size to children + padding. Vellum's layout engine handles this.
-- `Text{width:N, height:M}` → explicit dimensions from host measurement. Vellum does NOT re-measure text.
+- `Text{width:0, height:0}` → Vellum measures during layout. Do not pre-patch text dimensions in the host.
 - `max_width: 0` and `max_height: 0` → no constraint (not "max is 0px").
 - `flex_direction` on Box controls child stacking: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`.
 
 **API surface used:**
 ```ts
 vellum.initialize(canvasId, w, h)  // once on mount
-vellum.set_data(json)              // update UiNode[] — call after measureAndPatchText
+vellum.set_data(json)              // update UiNode[] — text nodes may have zero dimensions
 vellum.render()                    // draw one frame (called from rAF loop)
 vellum.resize(w, h)                // on canvas resize
 vellum.set_pan(dx, dy)             // pan delta
@@ -215,7 +221,6 @@ DB write (axis_args or render_entries)
   → plugin.call('on_resolve', payload)        [Charter WASM, worker thread]
   → on_resolve stores last_resolve_input
   → returns OnResolveResult
-  → measureAndPatchText(viewport_data)        [OffscreenCanvas, main thread]
   → viewportData = JSON                       [Svelte reactive state]
   → Viewport.$effect: vellum.set_data(d)     [next tick]
   → vellum.render()                          [rAF]
@@ -236,7 +241,7 @@ User changes secondary selection only (no activeViewId change)
   → gen check passes → plugin.call('on_selection_change', payload)
   → on_selection_change patches last_resolve_input selection fields
   → re-runs build_viewport → returns viewport_data
-  → measureAndPatchText → viewportData updated
+  → viewportData updated
 ```
 
 ### Field update flow (Styles panel → DB)
@@ -262,7 +267,7 @@ Future: pluginManager.fieldUpdate({layerId, property, value})
 
 2. **`on_selection_change` only fires when selection changes without a data change.** If data changed (new kits, new active view), `setData` increments `selectionGen` and any queued `runSelectionChange` aborts. Only `runResolve` runs in that case.
 
-3. **Measure before rendering.** `vellum.set_data` must only receive text nodes with non-zero dimensions. Always run `measureAndPatchText` on Charter's output before updating `viewportData`.
+3. **Vellum owns text measurement.** Pass Charter's output directly to `vellum.set_data` — text nodes with `width:0, height:0` are expected. Vellum measures during the layout pass. Never pre-patch text dimensions in the host.
 
 4. **`resolveManyViews` is the only resolve call from the editor.** Do not call `resolveMany` per-view in the live-query loop — this was the pre-optimization path (O(views) round-trips). `resolveManyViews` does it in O(1) round-trips.
 

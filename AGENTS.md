@@ -42,7 +42,7 @@ Views ← Layers [Kits ← Axes] ← Tokens
 - Render entries: `value` XOR `token_id` — enforced by DB check constraint. Never both, never neither.
 - Null Layers (zero axis conditions) always match — baseline defaults.
 - Layer override is per-property, not per-Layer.
-- Specificity: (1) axis_count, (2) compounded_axis_order, (3) kit_priority. Implemented as lexicographic comparison of `[count, ...priorityIndex]`.
+- Specificity (within a single kit): `[conditionCount, ...axisPriorityIndices]` — lexicographic comparison. More conditions beats fewer; ties broken by the highest axis priority index present. Kit priority is a separate, higher-level mechanism: kits are iterated in `priority_index` order and later kits overwrite earlier ones, so kit priority always beats within-kit specificity.
 - Range matching: ArgRange `min: null` = -∞, `max: null` = +∞. Overlap semantics, not equality.
 
 ### Testing

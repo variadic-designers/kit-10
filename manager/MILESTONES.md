@@ -165,7 +165,7 @@ Pure function of DB state. Queries layers + conditions + entries, calculates spe
 Multi-kit resolution with kit precedence. Gathers axis args per kit, resolves each, then runs token substitution (Pass 2).
 
 - Input: `db, viewId`
-- Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties`
+- Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties`, `childViewIds`
 
 Supporting functions: `gatherScopedTokens()` (project > kit > view precedence), `substituteTokens()`, `flattenKitResults()`, `matchesArg()` (interval overlap semantics for ranges).
 
@@ -185,7 +185,7 @@ All panels wired to manager via `liveQuery`. No legacy prop drilling.
 
 ### [x] M4.2 — Styles (Render) panel
 
-`Styles.svelte` + `StyleField.svelte` display resolved properties from `resolveMany()`. Per-property trace data shown. No in-memory style mutations.
+`Styles.svelte` + `StyleField.svelte` display resolved properties passed in from the editor's live-query loop. Per-property trace data shown. No in-memory style mutations.
 
 ### [x] M4.3 — Variables (Tokens) panel
 
@@ -193,7 +193,7 @@ All panels wired to manager via `liveQuery`. No legacy prop drilling.
 
 ### [x] M4.4 — Editor resolution pipeline
 
-`Editor.svelte` calls `resolveMany()` reactively. No `kitsPool`/`viewsPool`/`ComponentFlat`/`ComponentView` prop drilling. No `Component.svelte` or `Viewport.svelte`.
+`Editor.svelte` calls `resolveManyViews()` reactively via a single live-query loop. No `kitsPool`/`viewsPool`/`ComponentFlat`/`ComponentView` prop drilling. No `Component.svelte` or `Viewport.svelte`.
 
 ### [x] M4.5 — Delete legacy panel stubs
 
