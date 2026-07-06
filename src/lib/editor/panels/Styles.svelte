@@ -1,19 +1,45 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
 	import StyleField from './StyleField.svelte';
-	import { flattenKitResults, type ResolvedKit, type ResolvedProperty } from 'manager';
+	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { FieldCategory, FieldUpdate } from '$lib/plugins/types.js';
 	import { shapeIcon } from './layer-color.ts';
 
 	type StylesPanel = {
+		api: Api;
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
 		fieldCategories?: FieldCategory[];
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
-	const { selection, resolvedKits, fieldCategories, onFieldUpdate }: StylesPanel = $props();
+	const { api, selection, resolvedKits, fieldCategories, onFieldUpdate }: StylesPanel = $props();
+
+	// Axis names for the winning Layer's key-set, so StyleField can show "Theme + Density · 2
+	// conditions" in its tooltip instead of just a color. Refetched whenever the involved kits change.
+	let axisNameById = $state<Record<string, string>>({});
+
+	$effect(() => {
+		const kitIds = [...new Set((resolvedKits ?? []).map((k) => k.kitId))];
+		if (kitIds.length === 0) {
+			axisNameById = {};
+			return;
+		}
+
+		const loadAxisNames = async () => {
+			const map: Record<string, string> = {};
+			for (const kitId of kitIds) {
+				const axes = await api.getConsumedAxesByKitId(kitId).execute();
+				for (const axis of axes) {
+					map[axis.axisId] = axis.axisName ?? axis.axisId;
+				}
+			}
+			axisNameById = map;
+		};
+
+		loadAxisNames();
+	});
 
 	const stylesContextMenu = () => {
 		return [
@@ -96,6 +122,7 @@
 									key={field.key}
 									value={resolvedMap.get(field.key)?.value}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+									{axisNameById}
 									{onFieldUpdate}
 								/>
 							{/each}

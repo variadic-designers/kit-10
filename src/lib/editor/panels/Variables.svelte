@@ -199,7 +199,8 @@
 			token: TokenRow,
 			scopeClass: string,
 			showTrack: boolean,
-			position: 'top' | 'mid' | 'bottom' | 'solo'
+			position: 'top' | 'mid' | 'bottom' | 'solo',
+			scopeLabel: string
 		)}
 			<li
 				class="token-item"
@@ -230,7 +231,11 @@
 						</Renameable>
 					</span>
 					{#if showTrack}
-						<button class="token__track" title="Token" type="button">
+						<button
+							class="token__track"
+							title="{scopeLabel}-scoped token · a same-alias View-scoped token would override this"
+							type="button"
+						>
 							<i class="fa-solid fa-circle-dot"></i>
 						</button>
 					{/if}
@@ -299,7 +304,7 @@
 											: i === viewRows.length - 1
 												? 'bottom'
 												: 'mid'}
-								{@render tokenRow(token, 'token--view', false, pos)}
+								{@render tokenRow(token, 'token--view', false, pos, 'View')}
 							{/each}
 						</ul>
 					{:else}
@@ -333,7 +338,7 @@
 											: i === kitRows.length - 1
 												? 'bottom'
 												: 'mid'}
-								{@render tokenRow(token, 'token--kit', true, pos)}
+								{@render tokenRow(token, 'token--kit', true, pos, 'Kit')}
 							{/each}
 						</ul>
 					{:else}
@@ -366,7 +371,7 @@
 										: i === projectRows.length - 1
 											? 'bottom'
 											: 'mid'}
-							{@render tokenRow(token, 'token--project', false, pos)}
+							{@render tokenRow(token, 'token--project', false, pos, 'Project')}
 						{/each}
 					</ul>
 				{:else}

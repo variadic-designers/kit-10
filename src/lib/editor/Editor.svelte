@@ -302,6 +302,7 @@
 		{@const api = queryBuilder(editorReady.dialect)}
 
 		<StylesPanel
+			{api}
 			{resolvedKits}
 			{selection}
 			fieldCategories={pluginManager?.fieldCategories}

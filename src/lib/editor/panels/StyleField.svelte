@@ -17,6 +17,7 @@
 		value?: string | null;
 		highlighted?: boolean;
 		position?: 'top' | 'bottom' | 'mid';
+		axisNameById?: Record<string, string>;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
@@ -32,6 +33,7 @@
 		value,
 		highlighted = $bindable(false),
 		position = 'mid',
+		axisNameById = {},
 		onFieldUpdate
 	}: StyleFieldProps = $props();
 
@@ -66,6 +68,19 @@
 	// always shown here as the currently winning value, so it's always "active".
 	function trackColor(axisIds: string[]): string {
 		return layerDotColor(axisIds, true);
+	}
+
+	// Describes which Layer this property is sourced from — same axis key-set the Axes panel's
+	// combo dot for this Layer would show, so hovering here tells you what to go look for there.
+	function layerDescription(axisIds: string[]): string {
+		if (axisIds.length === 0) return 'Base layer · always applies';
+		const names = axisIds.map((id) => axisNameById[id] ?? id).join(' + ');
+		return `${names} · ${axisIds.length} condition${axisIds.length === 1 ? '' : 's'}`;
+	}
+
+	function trackTitle(axisIds: string[], token: string | null | undefined): string {
+		const layer = layerDescription(axisIds);
+		return token ? `${layer} · token: ${token}` : `${layer} · literal`;
 	}
 
 	const editValue = $state({
@@ -139,7 +154,7 @@
 			class="option124__track"
 			style="--track-color: {trackColor(keys)}"
 			aria-label="Tokenized property"
-			title={tokenAlias ?? 'token'}
+			title={trackTitle(keys, tokenAlias)}
 			type="button"
 		>
 			<i class="fa-solid {kitIcon}"></i>
@@ -150,7 +165,7 @@
 			style="--track-color: {trackColor(keys)}"
 			class:option124__track--empty={!value}
 			aria-label="Literal property"
-			title="literal"
+			title={trackTitle(keys, null)}
 			type="button"
 		>
 			<i class="fa-solid {kitIcon}"></i>
