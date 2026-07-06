@@ -13,6 +13,8 @@ export function axisSetHue(axisIds: string[]): number {
 }
 
 export function layerDotColor(axisIds: string[], active: boolean): string {
+	// No axes to combine — the null layer, or a plain single-axis rule. Neutral, not a hash hue.
+	if (axisIds.length === 0) return 'var(--color-text-muted)';
 	const hue = axisSetHue(axisIds);
 	const L = active ? 0.72 : 0.6;
 	const C = active ? 0.24 : 0.18;

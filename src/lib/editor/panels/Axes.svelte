@@ -189,6 +189,12 @@
 		return cellsMap;
 	});
 
+	// The null layer (0 conditions) always applies but doesn't belong to any specific axis value —
+	// surfaced separately so every value can show it as a baseline marker.
+	const nullLayerId = $derived(
+		layerConditionsByLayer.find(({ conds }) => conds.length === 0)?.layerId ?? null
+	);
+
 	// Derive kind from axis values
 	function inferKind(values: any[]): AxisMode {
 		if (values.length === 0) return 'discrete';
@@ -263,6 +269,7 @@
 						{} as Record<string, string>
 					)}
 					{valueLayerCells}
+					{nullLayerId}
 					axisNameById={consumedAxes.reduce(
 						(acc, a) => {
 							acc[a.axisId] = a.axisName ?? a.axisId;

@@ -25,6 +25,7 @@
 			{ layerId: string; active: boolean; conditionCount: number; keys: string[] }[]
 		>;
 		axisNameById?: Record<string, string>;
+		nullLayerId?: string | null;
 		disabled?: boolean;
 		onArgChange: (arg: AxisArgValue | null) => void;
 	};
@@ -47,6 +48,7 @@
 		axisValueIds = {},
 		valueLayerCells = {},
 		axisNameById = {},
+		nullLayerId = null,
 		disabled = false,
 		onArgChange
 	}: AxisProps = $props();
@@ -55,9 +57,13 @@
 	// one dot per other-axis column. A value can be part of several such Layers at once; a more
 	// specific Layer overriding another on a shared property doesn't make the less specific one
 	// inactive, so every Layer whose own conditions currently match gets its own dot.
+	// The null layer (0 conditions) always applies but isn't tied to any one value, so it's
+	// prepended to every variant instead of coming from valueLayerCells.
 	function layerDots(variantId: string) {
 		const axisValueId = axisValueIds[variantId];
-		return (axisValueId && valueLayerCells[axisValueId]) || [];
+		const combos = (axisValueId && valueLayerCells[axisValueId]) || [];
+		if (!nullLayerId) return combos;
+		return [{ layerId: nullLayerId, active: true, conditionCount: 0, keys: [] }, ...combos];
 	}
 
 	// Names of the other axes a Layer combines with, for the dot's tooltip.
@@ -174,10 +180,14 @@
 								{#each layerDots(variantId) as layer, i (layer.layerId)}
 									{#if i > 0}<span class="axis-field__layer-divider">|</span>{/if}
 									<i
-										class="fa-solid {kitShape} axis-field__layer-shape"
+										class="fa-solid {layer.conditionCount === 0
+											? 'fa-circle-dot'
+											: kitShape} axis-field__layer-shape"
 										class:axis-field__layer-shape--active={layer.active}
 										style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
-										title="{axisName} + {otherAxisNames(layer.keys)} · {layer.conditionCount} condition{layer.conditionCount === 1 ? '' : 's'}{layer.active ? ' · active' : ''}"
+										title={layer.conditionCount === 0
+											? 'Base layer · always applies'
+											: `${axisName} + ${otherAxisNames(layer.keys)} · ${layer.conditionCount} condition${layer.conditionCount === 1 ? '' : 's'}${layer.active ? ' · active' : ''}`}
 									></i>
 								{/each}
 							</span>

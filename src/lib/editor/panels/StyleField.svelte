@@ -65,7 +65,6 @@
 	// Matches the Axes panel's layer-combo coloring: same axis key-set, same hue. A property is
 	// always shown here as the currently winning value, so it's always "active".
 	function trackColor(axisIds: string[]): string {
-		if (axisIds.length === 0) return 'var(--color-text-muted)';
 		return layerDotColor(axisIds, true);
 	}
 
