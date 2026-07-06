@@ -3,15 +3,17 @@
 	import StyleField from './StyleField.svelte';
 	import { flattenKitResults, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { FieldCategory } from '$lib/plugins/types.js';
+	import type { FieldCategory, FieldUpdate } from '$lib/plugins/types.js';
+	import { shapeIcon } from './layer-color.ts';
 
 	type StylesPanel = {
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
 		fieldCategories?: FieldCategory[];
+		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
-	const { selection, resolvedKits, fieldCategories }: StylesPanel = $props();
+	const { selection, resolvedKits, fieldCategories, onFieldUpdate }: StylesPanel = $props();
 
 	const stylesContextMenu = () => {
 		return [
@@ -28,25 +30,11 @@
 		resolvedKits ? flattenKitResults(resolvedKits) : new Map<string, ResolvedProperty>()
 	);
 
-	const COMPOSE_ICONS = [
-		'fa-circle',
-		'fa-square',
-		'fa-diamond',
-		'fa-star',
-		'fa-heart',
-		'fa-bolt',
-		'fa-gem',
-		'fa-crown'
-	];
-
 	const kitIconMap = $derived.by(() => {
 		const map = new Map<string, string>();
 		if (!resolvedKits) return map;
 		for (let i = 0; i < resolvedKits.length; i++) {
-			map.set(
-				resolvedKits[i]!.kitId,
-				i >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[i] ?? 'fa-circle')
-			);
+			map.set(resolvedKits[i]!.kitId, shapeIcon(i));
 		}
 		return map;
 	});
@@ -105,6 +93,7 @@
 									key={field.key}
 									value={resolvedMap.get(field.key)?.value}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+									{onFieldUpdate}
 								/>
 							{/each}
 						</div>

@@ -179,7 +179,8 @@ struct OnResolveInput {
     selected_view_secondary: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
+#[encoding(Json)]
 struct WriteRenderEntryInput {
     layer_id: String,
     property: String,
@@ -189,7 +190,8 @@ struct WriteRenderEntryInput {
     token_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
+#[encoding(Json)]
 struct WriteRenderEntryResult {
     success: bool,
     #[serde(default)]
@@ -199,6 +201,7 @@ struct WriteRenderEntryResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct FieldUpdate {
     layer_id: String,
     property: String,
@@ -225,7 +228,9 @@ struct OnSelectionChangeResult {
 
 #[host_fn]
 extern "ExtismHost" {
-    pub fn kit10_write_render_entry_to_layer(input: u64) -> u64;
+    pub fn kit10_write_render_entry_to_layer(
+        input: WriteRenderEntryInput,
+    ) -> WriteRenderEntryResult;
 }
 
 fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, ResolvedProperty> {
@@ -798,13 +803,22 @@ pub fn on_field_update(input: String) -> FnResult<String> {
         token_id: update.token_id,
     };
 
-    let json = serde_json::to_string(&write_input).unwrap_or_default();
-    let input_mem = Memory::from_bytes(&json)?;
-    let result_offs = unsafe { kit10_write_render_entry_to_layer(input_mem.offset()) }?;
-
-    let result_mem = Memory::find(result_offs).unwrap_or(Memory::null());
-    let result: WriteRenderEntryResult =
-        serde_json::from_slice(&result_mem.to_vec()).unwrap_or_default();
+    let result = unsafe { kit10_write_render_entry_to_layer(write_input)? };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
+}
+
+#[cfg(test)]
+mod field_update_tests {
+    use super::FieldUpdate;
+
+    #[test]
+    fn deserializes_camel_case_from_js() {
+        let json = r##"{"layerId":"layer-123","property":"color","value":"#ff0000","tokenId":null}"##;
+        let update: FieldUpdate = serde_json::from_str(json).expect("should deserialize camelCase JSON sent by StyleField.svelte");
+        assert_eq!(update.layer_id, "layer-123");
+        assert_eq!(update.property, "color");
+        assert_eq!(update.value.as_deref(), Some("#ff0000"));
+        assert_eq!(update.token_id, None);
+    }
 }

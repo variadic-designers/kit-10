@@ -251,17 +251,16 @@ User changes secondary selection only (no activeViewId change)
 ### Field update flow (Styles panel → DB)
 
 ```
-User edits a field value in StyleField
-  → confirmUpdateStyle() [STUB — not yet wired to pluginManager.fieldUpdate]
-
-Future: pluginManager.fieldUpdate({layerId, property, value})
+User edits a field value in StyleField, confirms (Enter)
+  → confirmUpdateStyle() calls onFieldUpdate({layerId, property, value})
+  → pluginManager.fieldUpdate(update)
   → enqueue(on_field_update)
   → on_field_update calls kit10_write_render_entry_to_layer
   → host writes render_entry to DB via Manager API
   → DB write triggers resolve flow above
 ```
 
-**Note:** `StyleField.confirmUpdateStyle` is currently a console.log stub. Field editing is read-only; values can only change through axes or token edits.
+**Future (not yet built): hover/preview intermediary value.** The idea is to let the renderer show a value live while the user is still interacting with a suggestion (e.g. hovering a dropdown option) before it's committed to the DB. Don't implement this as mutable cross-call state in Charter — it already has exactly one exemption to "stateless per call" (`last_resolve_input`, used by `on_selection_change` to patch-and-rebuild without a full resolve). The natural fit is a sibling entry point, e.g. `on_field_preview`, that patches the property value into a copy of `last_resolve_input` and reruns `build_viewport`, the same way `on_selection_change` does — never writing the DB and never mutating the stored `last_resolve_input` itself. Keep this in mind before refactoring the `on_selection_change` patch-and-rebuild pattern away, since a future preview path would reuse it.
 
 ---
 
@@ -288,3 +287,5 @@ Future: pluginManager.fieldUpdate({layerId, property, value})
 - **The `render_entries` constraint** (`value` or `token_id`, exactly one) means you cannot have a render entry with both a literal value and a token. The `children` property always uses a literal value (JSON array string).
 
 - **PGlite is single-threaded.** `Promise.all` for multiple queries does not parallelize them — they queue behind each other. The parallelism in `resolveManyViews` is logical (code clarity) but executes sequentially inside PGlite's worker.
+
+- **`#[host_fn]` declarations must use typed structs, never raw `u64`.** extism-pdk's macro always routes non-`()` params/returns through `ToMemory`/`FromBytes`. A parameter typed `u64` gets treated as a plain value and re-serialized into a *new* memory block (its raw bytes), not passed through as the offset you intended — silently corrupting the call instead of erroring. Declare host functions like `fn kit10_write_render_entry_to_layer(input: WriteRenderEntryInput) -> WriteRenderEntryResult;` with both structs deriving `ToBytes, FromBytes` + `#[encoding(Json)]`, and let the macro handle memory marshaling. Also remember every struct that crosses the JS/Rust boundary needs `#[serde(rename_all = "camelCase")]` — Rust's default is snake_case, JS sends camelCase, and a mismatch fails deserialization silently (`unwrap_or_default()` swallows the error).

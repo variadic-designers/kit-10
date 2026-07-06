@@ -301,7 +301,12 @@
 	{#snippet configurable(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
 
-		<StylesPanel {resolvedKits} {selection} fieldCategories={pluginManager?.fieldCategories} />
+		<StylesPanel
+			{resolvedKits}
+			{selection}
+			fieldCategories={pluginManager?.fieldCategories}
+			onFieldUpdate={pluginManager?.fieldUpdate}
+		/>
 
 		<TokensPanel {api} {editorReady} bind:editorActivity />
 

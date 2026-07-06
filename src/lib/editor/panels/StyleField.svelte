@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
 	import { tokenIcon, isColorValue } from './token-utils.ts';
+	import type { FieldUpdate } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
 		key: string;
@@ -15,6 +16,7 @@
 		value?: string | null;
 		highlighted?: boolean;
 		position?: 'top' | 'bottom' | 'mid';
+		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
 	let {
@@ -28,7 +30,8 @@
 		tokenAlias,
 		value,
 		highlighted = $bindable(false),
-		position = 'mid'
+		position = 'mid',
+		onFieldUpdate
 	}: StyleFieldProps = $props();
 
 	const menu = () => {
@@ -77,7 +80,7 @@
 
 	async function startEditing() {
 		editValue.now = true;
-		editValue.content = '';
+		editValue.content = value ?? '';
 
 		await tick();
 
@@ -94,7 +97,25 @@
 
 	function confirmUpdateStyle() {
 		editValue.now = false;
-		console.log(`Update ${key}: ${editValue.content} on layer ${sourceLayerId}`);
+		const trimmed = editValue.content.trim();
+
+		if (!onFieldUpdate) {
+			console.log(`Update ${key}: ${trimmed} on layer ${sourceLayerId} (no callback)`);
+			return;
+		}
+
+		if (!sourceLayerId) {
+			console.warn(`Cannot update ${key}: no source layer`);
+			return;
+		}
+
+		if (trimmed !== value) {
+			onFieldUpdate({
+				layerId: sourceLayerId,
+				property: key,
+				value: trimmed
+			});
+		}
 	}
 </script>
 
