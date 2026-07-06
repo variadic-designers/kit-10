@@ -293,6 +293,30 @@ Compiled with `wasm-pack --target web --no-default-features --no-opt`. Loaded dy
 
 Text nodes emitted by Charter with `width:0, height:0`. Vellum measures text during the taffy layout pass using cosmic-text constrained by parent available space. Host does not pre-patch text dimensions.
 
+### [x] M8.5 — Flexbox: alignment, wrap, grow/shrink, margin
+
+`BoxExtra` gained `align_items`/`justify_content`/`flex_wrap` (container), `flex_grow`/`flex_shrink`/`align_self` (item), and uniform `margin` — mapped 1:1 onto taffy's `Style` (taffy already implemented all of it; the gap was purely the wire schema + Charter's property mapping). `Option`-typed fields mean "leave taffy's own default" when unset, verified with unit tests against the real `Style` struct. Charter maps these from kit properties of the same CSS name. Auto-margin centering deliberately not exposed — `align-items`/`justify-content` on the parent is the more direct modern equivalent.
+
+### [ ] M8.6 — Percentage-based sizing
+
+`width`/`height`/`padding`/`margin` are `parse_px`-only today — percentages, `auto`, `em` all silently become `0.0`. Needs a real dimension type (not a bare `f32`) through the wire format, Charter's property parsing, and `apply_box_extra`/`node_style`.
+
+### [ ] M8.7 — min/max width and height
+
+`max_width`/`max_height` already exist on `UiNode` (`0.0` = no constraint) but Charter hardcodes them to `0.0` always — never reads a kit property into them. `min_width`/`min_height` don't exist in the wire format at all yet. Needs: wire fields for min, Charter mapping for both min and max (`min-width`, `min-height`, `max-width`, `max-height`), and taffy `Style.min_size`/`max_size` wiring in `apply_box_extra`/`node_style`.
+
+### [ ] M8.8 — Overflow / clipping
+
+No overflow or scroll semantics. Content can currently render outside a box's own bounds with no way to clip it.
+
+### [ ] M8.9 — Real absolute positioning
+
+`CharterHints.position` exists but is explicitly vestigial/ignored (see Charter section above) — a leftover from the old absolute-positioning architecture. Needs a real `position: "relative" | "absolute"` + `inset`/`top`/`left`/`right`/`bottom` on `BoxExtra`, mapped to taffy's `Style.position`/`inset`.
+
+### [ ] M8.10 — Box shadow exposed through Charter
+
+Vellum's renderer already supports shadows end-to-end (`BoxShadow`, blur/spread/inset — used today for the disabled-state glow and selection overlay), but Charter hardcodes `shadow: None` at both `BoxData` construction sites and never reads a `box-shadow`-style kit property. Unlike M8.6–M8.9 this isn't a taffy/renderer gap — the renderer-side plumbing exists; only Charter's property mapping is missing.
+
 ---
 
 ## M9: Plugin System
