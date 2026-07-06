@@ -194,6 +194,10 @@ wasm-pack build --target web --no-default-features --no-opt --out-dir ../kit10/s
 ```
 `--no-default-features` is **required** — the `standalone` feature (desktop winit/pollster) gates out all `#[wasm_bindgen]` exports. Building without it produces a ~17KB stub with no exports. `--no-opt` bypasses wasm-opt, which fails on bulk-memory ops in the bundled wasm-opt version.
 
+**`taf_can_do/` is a separate, private repo — do not push it.** Only the compiled `vellum_renderer_bg.wasm` (and the generated JS/`.d.ts` glue) get committed into `kit10`; the Rust source changes stay local to that repo.
+
+**Glyph atlas needs a padding gutter between packed glyphs** (`taf_can_do/src/text/atlas.rs`, `GLYPH_PADDING`). The glyph sampler uses bilinear filtering (`taf_can_do/src/text/mod.rs`); packing glyphs edge-to-edge with no gap means sampling near a glyph's border blends in a texel from whatever's packed next to it — visible as thin lines/fringes bleeding off characters. `ClampToEdge` only guards the whole atlas texture's outer border, not the seams between individual packed glyphs — it does not prevent this.
+
 **Owns text measurement.** Text nodes arrive with `width:0, height:0`; Vellum measures them during the layout pass using cosmic-text constrained by available space from the parent.
 
 **`UiNode[]` contract:**
