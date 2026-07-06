@@ -106,6 +106,13 @@ $effect(() => pluginManager.setSelection(selectedViewPrimary, selectedViewSecond
 ```
 Keeping these separate lets selection changes use the fast `on_selection_change` path instead of a full `on_resolve`.
 
+**Axes panel layer-combo indicators (`Axes.svelte`, `Axis.svelte`, `layer-color.ts`):**
+- Each categorical axis value shows one dot per distinct Layer **key-set** (its sorted axis-id set) it belongs to — not one per literal Layer. Different Layers can share the same key-set (e.g. `theme:dark;density:compact` and `theme:light;density:compact` are both `{theme,density}`); since axis values within one axis are mutually exclusive, at most one can ever be active, and they're visually identical anyway, so `Axes.svelte`'s `valueLayerCells` dedupes by key-set. A group is "active" if any Layer in it currently matches the selected axis args.
+- **Scope boundary:** the null layer (0 conditions) is excluded — it isn't attached to any specific axis value, it applies unconditionally to the whole kit. That concept belongs in the Render panel (`StyleField`'s `conditionCount === 0 → fa-circle-dot`) and Tokens panel, not here. Single-axis Layers (1 condition) **are** included — they're real, value-specific rules, and `StyleField` colors properties sourced from them with a real (non-muted) hue, so excluding them would leave a Render-panel color with no corresponding dot to match against. The exclusion test is `conds.length === 0`, not `conds.length < 2`.
+- **Color = hash of the axis key-set** (`layerDotColor`/`axisSetHue` in `layer-color.ts`), shared identically between the Axes panel dots and the Render panel's `StyleField` track color (`trackColor`) — this is what lets a user visually correlate "this property's color" with "this Layer's dot" across panels. Changing the formula in one call site without the other reintroduces the mismatch.
+- **Shape = the active kit's own icon** (`kitShape`, assigned by composition order — same `shapeIcon`/`SHAPE_ICONS` system `Styles.svelte`'s `kitIconMap` uses), never per-axis or per-Layer. Only hue distinguishes combos; shape always just identifies the kit.
+- **Column alignment:** `Axis.svelte`'s `keySetColumns` computes the union of key-sets across all of an axis's own values (sorted by magnitude) and renders one fixed-width slot per column per value row (empty if that value has no Layer for that key-set) — so the same key-set always lands in the same horizontal position across every value of the axis, instead of packing left.
+
 ---
 
 ### 4. Plugin Manager (`src/lib/plugins/manager.svelte.ts`)
