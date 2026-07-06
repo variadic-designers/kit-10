@@ -154,18 +154,19 @@
 	// Recomputes whenever axis args change (not just when the kit/view changes) — this is what
 	// keeps the "active" flag on each layer-combo dot in sync with the currently selected values.
 	//
-	// One entry per Layer that conditions on this axis value (not one winner per other-axis
-	// column). A value can belong to several multi-axis Layers at once — e.g. {density:compact}
-	// combined with {theme} in one Layer and with {theme,state} in another. Even when a more
-	// specific Layer overrides the others on a shared property, every Layer whose own conditions
-	// currently match is still "active" and gets its own dot — overridden isn't the same as inactive.
+	// One entry per DISTINCT key-set a value combines with (not one per literal Layer). Two
+	// different Layers can share the exact same axis-set — e.g. theme:dark;density:compact and
+	// theme:light;density:compact are both {theme,density} — and since axis values within one
+	// axis are mutually exclusive, at most one of them can ever be active at once. They're also
+	// visually identical (same hue, same shape), so showing both as separate dots is pure clutter,
+	// not information. Grouped by key-set; a group is active if ANY Layer in it currently matches.
 	const valueLayerCells = $derived.by(() => {
-		const cellsMap: Record<
+		const grouped: Record<
 			string,
-			{ layerId: string; active: boolean; conditionCount: number; keys: string[] }[]
+			Record<string, { active: boolean; conditionCount: number; keys: string[] }>
 		> = {};
 
-		for (const { layerId, conds } of layerConditionsByLayer) {
+		for (const { conds } of layerConditionsByLayer) {
 			if (conds.length < 2) continue; // single-axis layers don't "combine" with anything
 
 			const isActive = conds.every((c) => {
@@ -174,18 +175,29 @@
 				return matchesArg(c.value as any, arg as any);
 			});
 			const keys = conds.map((c) => c.axisId);
+			const keySetId = [...new Set(keys)].sort().join('|');
 
 			for (const c of conds) {
-				if (!cellsMap[c.axisValueId]) cellsMap[c.axisValueId] = [];
-				cellsMap[c.axisValueId].push({
-					layerId,
-					active: isActive,
+				if (!grouped[c.axisValueId]) grouped[c.axisValueId] = {};
+				const existing = grouped[c.axisValueId][keySetId];
+				grouped[c.axisValueId][keySetId] = {
+					active: (existing?.active ?? false) || isActive,
 					conditionCount: conds.length,
 					keys
-				});
+				};
 			}
 		}
 
+		const cellsMap: Record<
+			string,
+			{ layerId: string; active: boolean; conditionCount: number; keys: string[] }[]
+		> = {};
+		for (const [axisValueId, bySet] of Object.entries(grouped)) {
+			cellsMap[axisValueId] = Object.entries(bySet).map(([keySetId, entry]) => ({
+				layerId: keySetId,
+				...entry
+			}));
+		}
 		return cellsMap;
 	});
 
