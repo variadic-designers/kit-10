@@ -149,6 +149,8 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 
 **Must NOT:** query the DB directly, hold cross-call mutable state beyond Extism `var` storage, or do text measurement (emit `width:0, height:0` for Text nodes; Vellum measures them).
 
+**Charter does not have to 1:1-expose every CSS-like capability Vellum gains as a literal render-panel property.** As Vellum's layout engine grows (flex-grow, alignment, wrap, margin, etc.), Charter is free to have its own opinion about what a designer should actually need to set by hand versus what it infers/defaults sensibly — it's an opinionated translation layer (VISION.md 1st Principle), not a raw CSS pass-through. Don't treat "Vellum can do X" as "therefore the Render panel must expose a literal `X` property."
+
 **Entry points:**
 
 | Function | Trigger | Input | Output |
@@ -206,6 +208,7 @@ wasm-pack build --target web --no-default-features --no-opt --out-dir ../kit10/s
 - `Text{width:0, height:0}` → Vellum measures during layout. Do not pre-patch text dimensions in the host.
 - `max_width: 0` and `max_height: 0` → no constraint (not "max is 0px").
 - `flex_direction` on Box controls child stacking: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`.
+- `BoxExtra` also carries `align_items`/`justify_content`/`flex_wrap` (container), `flex_grow`/`flex_shrink`/`align_self` (item), and `margin` (uniform, all four sides) — full taffy fields, mapped 1:1 in `apply_box_extra` (`taf_can_do/src/layout/mod.rs`). `None` on the `Option`-typed ones means "don't touch it, leave taffy's own CSS-matching default" rather than "set to some zero value" — `flex_shrink: None` still ends up `1.0` (taffy's default), not `0.0`. Auto-margin centering is deliberately not exposed; use `align_items`/`justify_content` on the parent instead. Charter maps these from kit properties of the same CSS name (`align-items`, `justify-content`, `flex-wrap`, `flex-grow`, `flex-shrink`, `align-self`, `margin`) — see the note in the Charter section above about not needing to 1:1-expose every capability as a literal render-panel property; these were exposed directly because there's no clearer "smarter default" for general-purpose layout primitives yet.
 - Every `Box`/`Text`/`Img` variant has a `selected: u8` field (0/1/2 = none/secondary/primary). Charter sets it; Vellum owns everything about how it's drawn.
 
 **Selection is a separate overlay, not a border override.** `Graphics.selection_decorations` (`taf_can_do/src/render/mod.rs`) captures the layout rect + `selected` kind of every selected node after each layout pass. `rebuild_selection_instances`, called every frame from `write_frame` (not just on scene change), turns those into an outline `RectInstance` (transparent fill, colored border, sitting *outside* the element via an outward offset) plus 4 corner-handle instances, reusing the existing box shader/pipeline — no shader changes needed. The element's own `border_color`/`border_width` are never touched.

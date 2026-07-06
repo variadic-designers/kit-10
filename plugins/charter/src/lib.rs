@@ -59,9 +59,51 @@ impl Default for GridLine {
     fn default() -> Self { GridLine::Auto }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum AlignValue {
+    Start,
+    End,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Baseline,
+    Stretch,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum JustifyValue {
+    Start,
+    End,
+    FlexStart,
+    FlexEnd,
+    Center,
+    Stretch,
+    SpaceBetween,
+    SpaceEvenly,
+    SpaceAround,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum FlexWrapValue {
+    NoWrap,
+    Wrap,
+    WrapReverse,
+}
+
+impl Default for FlexWrapValue {
+    fn default() -> Self { FlexWrapValue::NoWrap }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BoxExtra {
     #[serde(default)] gap: f32,
+    #[serde(default)] align_items: Option<AlignValue>,
+    #[serde(default)] justify_content: Option<JustifyValue>,
+    #[serde(default)] flex_wrap: FlexWrapValue,
+    #[serde(default)] flex_grow: f32,
+    #[serde(default)] flex_shrink: Option<f32>,
+    #[serde(default)] align_self: Option<AlignValue>,
+    #[serde(default)] margin: f32,
     #[serde(default)] grid_template_columns: Vec<TrackSize>,
     #[serde(default)] grid_template_rows: Vec<TrackSize>,
     #[serde(default)] grid_auto_rows: Vec<TrackSize>,
@@ -351,6 +393,42 @@ fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
     (start, end)
 }
 
+fn parse_align(s: Option<&str>) -> Option<AlignValue> {
+    match s? {
+        "start"      => Some(AlignValue::Start),
+        "end"        => Some(AlignValue::End),
+        "flex-start" => Some(AlignValue::FlexStart),
+        "flex-end"   => Some(AlignValue::FlexEnd),
+        "center"     => Some(AlignValue::Center),
+        "baseline"   => Some(AlignValue::Baseline),
+        "stretch"    => Some(AlignValue::Stretch),
+        _            => None,
+    }
+}
+
+fn parse_justify(s: Option<&str>) -> Option<JustifyValue> {
+    match s? {
+        "start"         => Some(JustifyValue::Start),
+        "end"           => Some(JustifyValue::End),
+        "flex-start"    => Some(JustifyValue::FlexStart),
+        "flex-end"      => Some(JustifyValue::FlexEnd),
+        "center"        => Some(JustifyValue::Center),
+        "stretch"       => Some(JustifyValue::Stretch),
+        "space-between" => Some(JustifyValue::SpaceBetween),
+        "space-evenly"  => Some(JustifyValue::SpaceEvenly),
+        "space-around"  => Some(JustifyValue::SpaceAround),
+        _               => None,
+    }
+}
+
+fn parse_wrap(s: Option<&str>) -> FlexWrapValue {
+    match s {
+        Some("wrap")         => FlexWrapValue::Wrap,
+        Some("wrap-reverse") => FlexWrapValue::WrapReverse,
+        _                    => FlexWrapValue::NoWrap,
+    }
+}
+
 fn get_prop(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     key: &str,
@@ -381,6 +459,15 @@ fn build_box_node(
 
     let extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
+        align_items: parse_align(get_prop(props, "align-items").as_deref()),
+        justify_content: parse_justify(get_prop(props, "justify-content").as_deref()),
+        flex_wrap: parse_wrap(get_prop(props, "flex-wrap").as_deref()),
+        flex_grow: get_prop(props, "flex-grow")
+            .map(|s| parse_px(Some(&s))).unwrap_or(0.0),
+        flex_shrink: get_prop(props, "flex-shrink")
+            .map(|s| parse_px(Some(&s))),
+        align_self: parse_align(get_prop(props, "align-self").as_deref()),
+        margin: parse_px(get_prop(props, "margin").as_deref()),
         grid_template_columns: get_prop(props, "grid-template-columns")
             .map(|s| parse_track_list(&s)).unwrap_or_default(),
         grid_template_rows: get_prop(props, "grid-template-rows")
