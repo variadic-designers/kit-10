@@ -51,25 +51,35 @@
 		onArgChange
 	}: AxisProps = $props();
 
-	// One dot per distinct axis key-set this variant combines with — not one per other-axis column,
+	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
 	// and not one per literal Layer (different Layers sharing the same key-set are visually
 	// identical and mutually exclusive within an axis, so they're pre-grouped in valueLayerCells).
-	// A value can belong to several DIFFERENT key-sets at once; a more specific Layer overriding
-	// another on a shared property doesn't make the less specific one inactive, so every key-set
-	// family whose conditions currently match still gets its own dot. The null layer never appears
-	// here — it has no conditions, so it isn't "attached" to any axis value; it belongs to
-	// property/token resolution (Render, Tokens panels), not axis-value selection.
+	// Includes Layers conditioned solely on this axis (no "other" axis at all) — those still color
+	// real properties in the Render panel, so they need a dot to match against. A value can belong
+	// to several DIFFERENT key-sets at once; a more specific Layer overriding another on a shared
+	// property doesn't make the less specific one inactive, so every key-set family whose conditions
+	// currently match still gets its own dot. The null layer never appears here — it has no
+	// conditions, so it isn't "attached" to any axis value; it belongs to property/token resolution
+	// (Render, Tokens panels), not axis-value selection.
 	function layerDots(variantId: string) {
 		const axisValueId = axisValueIds[variantId];
 		return (axisValueId && valueLayerCells[axisValueId]) || [];
 	}
 
-	// Names of the other axes a Layer combines with, for the dot's tooltip.
+	// Names of the other axes a Layer combines with, for the dot's tooltip — empty if this Layer
+	// conditions solely on this one axis.
 	function otherAxisNames(keys: string[]): string {
 		return keys
 			.filter((id) => id !== axisId)
 			.map((id) => axisNameById[id] ?? id)
 			.join(' + ');
+	}
+
+	function dotTitle(layer: { active: boolean; conditionCount: number; keys: string[] }): string {
+		const others = otherAxisNames(layer.keys);
+		const scope = others ? `${axisName} + ${others}` : `${axisName} only`;
+		const conditions = `${layer.conditionCount} condition${layer.conditionCount === 1 ? '' : 's'}`;
+		return `${scope} · ${conditions}${layer.active ? ' · active' : ''}`;
 	}
 
 	const axisContextMenu = [
@@ -181,7 +191,7 @@
 										class="fa-solid {kitShape} axis-field__layer-shape"
 										class:axis-field__layer-shape--active={layer.active}
 										style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
-										title="{axisName} + {otherAxisNames(layer.keys)} · {layer.conditionCount} condition{layer.conditionCount === 1 ? '' : 's'}{layer.active ? ' · active' : ''}"
+										title={dotTitle(layer)}
 									></i>
 								{/each}
 							</span>
