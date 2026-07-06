@@ -66,6 +66,31 @@
 		return (axisValueId && valueLayerCells[axisValueId]) || [];
 	}
 
+	function keySetId(keys: string[]): string {
+		return [...new Set(keys)].sort().join('|');
+	}
+
+	// Stable column order shared across every value of THIS axis — the union of key-sets that
+	// appear for any of its values, sorted by magnitude. Lets matching combos line up vertically
+	// (e.g. the "Theme+Density" dot always sits in the same column for both "dark" and "light")
+	// instead of packing left, where the same combo could land in a different position per row.
+	let keySetColumns = $derived.by(() => {
+		const seen = new Map<string, string[]>();
+		for (const variant of categoricalValues) {
+			for (const layer of layerDots(variant.value)) {
+				const id = keySetId(layer.keys);
+				if (!seen.has(id)) seen.set(id, layer.keys);
+			}
+		}
+		return [...seen.entries()].sort(
+			(a, b) => a[1].length - b[1].length || (a[0] < b[0] ? -1 : 1)
+		);
+	});
+
+	function dotForColumn(variantId: string, columnId: string) {
+		return layerDots(variantId).find((layer) => keySetId(layer.keys) === columnId) ?? null;
+	}
+
 	// Names of the other axes a Layer combines with, for the dot's tooltip — empty if this Layer
 	// conditions solely on this one axis.
 	function otherAxisNames(keys: string[]): string {
@@ -185,14 +210,18 @@
 							/>
 							<span class="axis-field__name">{variant.value}</span>
 							<span class="axis-field__layers">
-								{#each layerDots(variantId) as layer, i (layer.layerId)}
-									{#if i > 0}<span class="axis-field__layer-divider">|</span>{/if}
-									<i
-										class="fa-solid {kitShape} axis-field__layer-shape"
-										class:axis-field__layer-shape--active={layer.active}
-										style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
-										title={dotTitle(layer)}
-									></i>
+								{#each keySetColumns as [columnId] (columnId)}
+									{@const layer = dotForColumn(variantId, columnId)}
+									<span class="axis-field__layer-slot">
+										{#if layer}
+											<i
+												class="fa-solid {kitShape} axis-field__layer-shape"
+												class:axis-field__layer-shape--active={layer.active}
+												style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
+												title={dotTitle(layer)}
+											></i>
+										{/if}
+									</span>
 								{/each}
 							</span>
 						</label>
@@ -370,18 +399,20 @@
 		&__layers {
 			display: flex;
 			align-items: center;
-			gap: calc($x-space-xs / 2);
 			flex-shrink: 0;
 		}
 
-		&__layer-divider {
-			color: var(--color-panel-header-border);
-			font-size: $x-font-size-sm;
-			user-select: none;
+		// Fixed width regardless of whether this slot has a dot, so the same key-set column
+		// lines up at the same horizontal position across every value row of this axis.
+		&__layer-slot {
+			width: $x-font-size-md;
+			display: flex;
+			justify-content: center;
+			flex-shrink: 0;
 		}
 
 		&__layer-shape {
-			font-size: $x-font-size-md;
+			font-size: $x-font-size-sm;
 			color: var(--shape-color);
 			opacity: 0.4;
 
