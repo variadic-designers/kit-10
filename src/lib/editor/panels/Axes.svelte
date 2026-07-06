@@ -153,45 +153,36 @@
 
 	// Recomputes whenever axis args change (not just when the kit/view changes) — this is what
 	// keeps the "active" flag on each layer-combo dot in sync with the currently selected values.
+	//
+	// One entry per Layer that conditions on this axis value (not one winner per other-axis
+	// column). A value can belong to several multi-axis Layers at once — e.g. {density:compact}
+	// combined with {theme} in one Layer and with {theme,state} in another. Even when a more
+	// specific Layer overrides the others on a shared property, every Layer whose own conditions
+	// currently match is still "active" and gets its own dot — overridden isn't the same as inactive.
 	const valueLayerCells = $derived.by(() => {
 		const cellsMap: Record<
 			string,
-			{ hasShape: boolean; active: boolean; conditionCount: number; keys: string[] }[]
+			{ layerId: string; active: boolean; conditionCount: number; keys: string[] }[]
 		> = {};
 
-		for (const { conds } of layerConditionsByLayer) {
-			const isActive =
-				conds.length === 0 ||
-				conds.every((c) => {
-					const arg = axisArgs[c.axisId];
-					if (!arg) return false;
-					return matchesArg(c.value as any, arg as any);
-				});
+		for (const { layerId, conds } of layerConditionsByLayer) {
+			if (conds.length < 2) continue; // single-axis layers don't "combine" with anything
+
+			const isActive = conds.every((c) => {
+				const arg = axisArgs[c.axisId];
+				if (!arg) return false;
+				return matchesArg(c.value as any, arg as any);
+			});
 			const keys = conds.map((c) => c.axisId);
 
 			for (const c of conds) {
-				if (!cellsMap[c.axisValueId]) {
-					cellsMap[c.axisValueId] = consumedAxes.map(() => ({
-						hasShape: false,
-						active: false,
-						conditionCount: 0,
-						keys: []
-					}));
-				}
-				for (let i = 0; i < consumedAxes.length; i++) {
-					const axisHasCond = conds.some((cc) => cc.axisId === consumedAxes[i].axisId);
-					if (axisHasCond) {
-						const existing = cellsMap[c.axisValueId][i];
-						if (!existing.hasShape || (isActive && conds.length > existing.conditionCount)) {
-							cellsMap[c.axisValueId][i] = {
-								hasShape: true,
-								active: isActive,
-								conditionCount: conds.length,
-								keys
-							};
-						}
-					}
-				}
+				if (!cellsMap[c.axisValueId]) cellsMap[c.axisValueId] = [];
+				cellsMap[c.axisValueId].push({
+					layerId,
+					active: isActive,
+					conditionCount: conds.length,
+					keys
+				});
 			}
 		}
 
@@ -272,10 +263,13 @@
 						{} as Record<string, string>
 					)}
 					{valueLayerCells}
-					otherAxes={consumedAxes.map((a) => ({
-						axisId: a.axisId,
-						axisName: a.axisName ?? a.axisId
-					}))}
+					axisNameById={consumedAxes.reduce(
+						(acc, a) => {
+							acc[a.axisId] = a.axisName ?? a.axisId;
+							return acc;
+						},
+						{} as Record<string, string>
+					)}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				/>
 			{/each}

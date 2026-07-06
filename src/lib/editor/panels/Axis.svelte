@@ -22,9 +22,9 @@
 		axisValueIds?: Record<string, string>;
 		valueLayerCells?: Record<
 			string,
-			{ hasShape: boolean; active: boolean; conditionCount: number; keys: string[] }[]
+			{ layerId: string; active: boolean; conditionCount: number; keys: string[] }[]
 		>;
-		otherAxes?: { axisId: string; axisName: string }[];
+		axisNameById?: Record<string, string>;
 		disabled?: boolean;
 		onArgChange: (arg: AxisArgValue | null) => void;
 	};
@@ -46,19 +46,26 @@
 		axisCount = 0,
 		axisValueIds = {},
 		valueLayerCells = {},
-		otherAxes = [],
+		axisNameById = {},
 		disabled = false,
 		onArgChange
 	}: AxisProps = $props();
 
-	// Dots for other axes this variant combines with in some Layer, excluding this axis' own column.
-	// All rendered with the active kit's own shape (kitShape) — shape marks which kit, color marks which combo.
+	// One dot per Layer this variant belongs to (that also conditions on some other axis) — not
+	// one dot per other-axis column. A value can be part of several such Layers at once; a more
+	// specific Layer overriding another on a shared property doesn't make the less specific one
+	// inactive, so every Layer whose own conditions currently match gets its own dot.
 	function layerDots(variantId: string) {
 		const axisValueId = axisValueIds[variantId];
-		const cells = (axisValueId && valueLayerCells[axisValueId]) || [];
-		return otherAxes
-			.map((axis, axisIndex) => ({ axis, cell: cells[axisIndex] }))
-			.filter(({ axis, cell }) => axis.axisId !== axisId && cell?.hasShape);
+		return (axisValueId && valueLayerCells[axisValueId]) || [];
+	}
+
+	// Names of the other axes a Layer combines with, for the dot's tooltip.
+	function otherAxisNames(keys: string[]): string {
+		return keys
+			.filter((id) => id !== axisId)
+			.map((id) => axisNameById[id] ?? id)
+			.join(' + ');
 	}
 
 	const axisContextMenu = [
@@ -164,13 +171,13 @@
 							/>
 							<span class="axis-field__name">{variant.value}</span>
 							<span class="axis-field__layers">
-								{#each layerDots(variantId) as { axis, cell }, i}
+								{#each layerDots(variantId) as layer, i (layer.layerId)}
 									{#if i > 0}<span class="axis-field__layer-divider">|</span>{/if}
 									<i
 										class="fa-solid {kitShape} axis-field__layer-shape"
-										class:axis-field__layer-shape--active={cell.active}
-										style="--shape-color: {layerDotColor(cell.keys, cell.active)}"
-										title="{axisName} + {axis.axisName} · {cell.conditionCount} condition{cell.conditionCount === 1 ? '' : 's'}{cell.active ? ' · active' : ''}"
+										class:axis-field__layer-shape--active={layer.active}
+										style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
+										title="{axisName} + {otherAxisNames(layer.keys)} · {layer.conditionCount} condition{layer.conditionCount === 1 ? '' : 's'}{layer.active ? ' · active' : ''}"
 									></i>
 								{/each}
 							</span>
