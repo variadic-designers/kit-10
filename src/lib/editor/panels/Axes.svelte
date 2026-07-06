@@ -12,6 +12,7 @@
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
+	import { shapeIcon } from './layer-color.ts';
 
 	type AxesPanel = {
 		api: Api;
@@ -60,21 +61,12 @@
 	let consumedAxes = $state<any[]>([]);
 	let axisValues = $state<Record<string, any[]>>({});
 	let axisArgs = $state<Record<string, any>>({});
-	let valueLayerCells = $state<
-		Record<string, { hasShape: boolean; active: boolean; conditionCount: number }[]>
-	>({});
 	let activeKitShape = $state('fa-circle');
 
-	const COMPOSE_ICONS = [
-		'fa-circle',
-		'fa-square',
-		'fa-diamond',
-		'fa-star',
-		'fa-heart',
-		'fa-bolt',
-		'fa-gem',
-		'fa-crown'
-	];
+	// Raw per-layer conditions, kit-scoped only — refetched on kit/view change, NOT on axis-arg change.
+	let layerConditionsByLayer = $state<
+		{ layerId: string; conds: { axisId: string; axisValueId: string; value: any }[] }[]
+	>([]);
 
 	$effect(() => {
 		const currentKitId = editorActivity.activeKitId;
@@ -84,7 +76,7 @@
 			consumedAxes = [];
 			axisValues = {};
 			axisArgs = {};
-			valueLayerCells = {};
+			layerConditionsByLayer = [];
 			return;
 		}
 
@@ -116,73 +108,33 @@
 			const layerIds = layers.map((l) => l.id);
 
 			if (layerIds.length === 0) {
-				valueLayerCells = {};
-				return;
-			}
+				layerConditionsByLayer = [];
+			} else {
+				const conditions = await editorReady.dialect
+					.selectFrom('layer_axis_values')
+					.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+					.where('layer_axis_values.layer_id', 'in', layerIds)
+					.select([
+						'layer_axis_values.layer_id',
+						'layer_axis_values.axis_value_id',
+						'axis_values.axis_id',
+						'axis_values.value'
+					])
+					.execute();
 
-			const conditions = await editorReady.dialect
-				.selectFrom('layer_axis_values')
-				.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
-				.where('layer_axis_values.layer_id', 'in', layerIds)
-				.select([
-					'layer_axis_values.layer_id',
-					'layer_axis_values.axis_value_id',
-					'axis_values.axis_id',
-					'axis_values.value'
-				])
-				.execute();
-
-			const layerConditionsMap = new Map<
-				string,
-				{ axisId: string; axisValueId: string; value: any }[]
-			>();
-			for (const c of conditions) {
-				if (!layerConditionsMap.has(c.layer_id)) layerConditionsMap.set(c.layer_id, []);
-				layerConditionsMap
-					.get(c.layer_id)!
-					.push({ axisId: c.axis_id, axisValueId: c.axis_value_id, value: c.value });
-			}
-
-			const cellsMap: Record<
-				string,
-				{ hasShape: boolean; active: boolean; conditionCount: number }[]
-			> = {};
-
-			for (const layerId of layerIds) {
-				const conds = layerConditionsMap.get(layerId) ?? [];
-				const isActive =
-					conds.length === 0 ||
-					conds.every((c) => {
-						const arg = argsMap[c.axisId];
-						if (!arg) return false;
-						return matchesArg(c.value as any, arg as any);
-					});
-
-				for (const c of conds) {
-					if (!cellsMap[c.axisValueId]) {
-						cellsMap[c.axisValueId] = axes.map(() => ({
-							hasShape: false,
-							active: false,
-							conditionCount: 0
-						}));
-					}
-					for (let i = 0; i < axes.length; i++) {
-						const axisHasCond = conds.some((cc) => cc.axisId === axes[i].axisId);
-						if (axisHasCond) {
-							const existing = cellsMap[c.axisValueId][i];
-							if (!existing.hasShape || (isActive && conds.length > existing.conditionCount)) {
-								cellsMap[c.axisValueId][i] = {
-									hasShape: true,
-									active: isActive,
-									conditionCount: conds.length
-								};
-							}
-						}
-					}
+				const grouped = new Map<string, { axisId: string; axisValueId: string; value: any }[]>();
+				for (const c of conditions) {
+					if (!grouped.has(c.layer_id)) grouped.set(c.layer_id, []);
+					grouped
+						.get(c.layer_id)!
+						.push({ axisId: c.axis_id, axisValueId: c.axis_value_id, value: c.value });
 				}
-			}
 
-			valueLayerCells = cellsMap;
+				layerConditionsByLayer = layerIds.map((layerId) => ({
+					layerId,
+					conds: grouped.get(layerId) ?? []
+				}));
+			}
 
 			let kitShape = 'fa-circle';
 			if (currentViewId) {
@@ -190,14 +142,60 @@
 				const kitIndex = composition.findIndex((k) => k.kitId === currentKitId);
 				if (kitIndex >= 0) {
 					const iconIdx = composition.length - 1 - kitIndex;
-					kitShape =
-						iconIdx >= COMPOSE_ICONS.length ? 'fa-crown' : (COMPOSE_ICONS[iconIdx] ?? 'fa-circle');
+					kitShape = shapeIcon(iconIdx);
 				}
 			}
 			activeKitShape = kitShape;
 		};
 
 		loadAxes();
+	});
+
+	// Recomputes whenever axis args change (not just when the kit/view changes) — this is what
+	// keeps the "active" flag on each layer-combo dot in sync with the currently selected values.
+	const valueLayerCells = $derived.by(() => {
+		const cellsMap: Record<
+			string,
+			{ hasShape: boolean; active: boolean; conditionCount: number; keys: string[] }[]
+		> = {};
+
+		for (const { conds } of layerConditionsByLayer) {
+			const isActive =
+				conds.length === 0 ||
+				conds.every((c) => {
+					const arg = axisArgs[c.axisId];
+					if (!arg) return false;
+					return matchesArg(c.value as any, arg as any);
+				});
+			const keys = conds.map((c) => c.axisId);
+
+			for (const c of conds) {
+				if (!cellsMap[c.axisValueId]) {
+					cellsMap[c.axisValueId] = consumedAxes.map(() => ({
+						hasShape: false,
+						active: false,
+						conditionCount: 0,
+						keys: []
+					}));
+				}
+				for (let i = 0; i < consumedAxes.length; i++) {
+					const axisHasCond = conds.some((cc) => cc.axisId === consumedAxes[i].axisId);
+					if (axisHasCond) {
+						const existing = cellsMap[c.axisValueId][i];
+						if (!existing.hasShape || (isActive && conds.length > existing.conditionCount)) {
+							cellsMap[c.axisValueId][i] = {
+								hasShape: true,
+								active: isActive,
+								conditionCount: conds.length,
+								keys
+							};
+						}
+					}
+				}
+			}
+		}
+
+		return cellsMap;
 	});
 
 	// Derive kind from axis values
@@ -274,6 +272,10 @@
 						{} as Record<string, string>
 					)}
 					{valueLayerCells}
+					otherAxes={consumedAxes.map((a) => ({
+						axisId: a.axisId,
+						axisName: a.axisName ?? a.axisId
+					}))}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				/>
 			{/each}

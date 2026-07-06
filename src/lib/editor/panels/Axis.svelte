@@ -20,7 +20,11 @@
 		kitShape?: string;
 		axisCount?: number;
 		axisValueIds?: Record<string, string>;
-		valueLayerCells?: Record<string, { hasShape: boolean; active: boolean; conditionCount: number }[]>;
+		valueLayerCells?: Record<
+			string,
+			{ hasShape: boolean; active: boolean; conditionCount: number; keys: string[] }[]
+		>;
+		otherAxes?: { axisId: string; axisName: string }[];
 		disabled?: boolean;
 		onArgChange: (arg: AxisArgValue | null) => void;
 	};
@@ -29,6 +33,7 @@
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
+	import { layerDotColor } from './layer-color.ts';
 
 	let {
 		axisId,
@@ -41,9 +46,20 @@
 		axisCount = 0,
 		axisValueIds = {},
 		valueLayerCells = {},
+		otherAxes = [],
 		disabled = false,
 		onArgChange
 	}: AxisProps = $props();
+
+	// Dots for other axes this variant combines with in some Layer, excluding this axis' own column.
+	// All rendered with the active kit's own shape (kitShape) — shape marks which kit, color marks which combo.
+	function layerDots(variantId: string) {
+		const axisValueId = axisValueIds[variantId];
+		const cells = (axisValueId && valueLayerCells[axisValueId]) || [];
+		return otherAxes
+			.map((axis, axisIndex) => ({ axis, cell: cells[axisIndex] }))
+			.filter(({ axis, cell }) => axis.axisId !== axisId && cell?.hasShape);
+	}
 
 	function conditionColor(count: number): string {
 		if (count === 0) return 'var(--color-text-muted)';
@@ -157,6 +173,17 @@
 								{disabled}
 							/>
 							<span class="axis-field__name">{variant.value}</span>
+							<span class="axis-field__layers">
+								{#each layerDots(variantId) as { axis, cell }, i}
+									{#if i > 0}<span class="axis-field__layer-divider">|</span>{/if}
+									<i
+										class="fa-solid {kitShape} axis-field__layer-shape"
+										class:axis-field__layer-shape--active={cell.active}
+										style="--shape-color: {layerDotColor(cell.keys, cell.active)}"
+										title="{axisName} + {axis.axisName} · {cell.conditionCount} condition{cell.conditionCount === 1 ? '' : 's'}{cell.active ? ' · active' : ''}"
+									></i>
+								{/each}
+							</span>
 						</label>
 					</li>
 				{/each}
@@ -326,6 +353,30 @@
 
 			&:hover {
 				color: var(--color-primary);
+			}
+		}
+
+		&__layers {
+			display: flex;
+			align-items: center;
+			gap: calc($x-space-xs / 2);
+			flex-shrink: 0;
+		}
+
+		&__layer-divider {
+			color: var(--color-panel-header-border);
+			font-size: $x-font-size-sm;
+			user-select: none;
+		}
+
+		&__layer-shape {
+			font-size: $x-font-size-md;
+			color: var(--shape-color);
+			opacity: 0.4;
+
+			&--active {
+				opacity: 1;
+				-webkit-text-stroke: 2px var(--color-text);
 			}
 		}
 	}

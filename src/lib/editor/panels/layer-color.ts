@@ -1,0 +1,36 @@
+// Colors a Layer's combination-dot by the *set* of axes it conditions on (its "key set"),
+// not by which specific values were picked. theme:dark;state:hover and theme:dark;state:click
+// share a key set ({theme, state}) and so share a hue — they're siblings along the state axis.
+// theme:dark;density:compact has a different key set ({theme, density}) and gets a different hue,
+// even though both are 2-condition layers.
+export function axisSetHue(axisIds: string[]): number {
+	const key = [...new Set(axisIds)].sort().join('|');
+	let hash = 0;
+	for (let i = 0; i < key.length; i++) {
+		hash = (hash * 31 + key.charCodeAt(i)) | 0;
+	}
+	return Math.abs(hash) % 360;
+}
+
+export function layerDotColor(axisIds: string[], active: boolean): string {
+	const hue = axisSetHue(axisIds);
+	const L = active ? 0.72 : 0.6;
+	const C = active ? 0.24 : 0.18;
+	return `oklch(${L} ${C} ${hue})`;
+}
+
+// Shape-by-position system used to give each Kit a distinct icon (Styles.svelte, Axes.svelte).
+export const SHAPE_ICONS = [
+	'fa-circle',
+	'fa-square',
+	'fa-diamond',
+	'fa-star',
+	'fa-heart',
+	'fa-bolt',
+	'fa-gem',
+	'fa-crown'
+];
+
+export function shapeIcon(index: number): string {
+	return index >= SHAPE_ICONS.length ? 'fa-crown' : (SHAPE_ICONS[index] ?? 'fa-circle');
+}
