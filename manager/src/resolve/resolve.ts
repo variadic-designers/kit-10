@@ -24,7 +24,22 @@ export interface ResolvedProperty {
 	// Axis-id set the winning Layer conditions on — lets the UI color a property by which axes
 	// combine to produce it (e.g. theme+state vs theme+density), not just how many conditions.
 	keys: string[];
+	// Same conditions as `keys`, but with the actual matched value per axis (e.g. theme: "dark"),
+	// for display — "Theme + Density" tells you which axes combine, this tells you which value.
+	conditionValues: { axisId: string; value: string }[];
 	childViewIds: string[] | null;
+}
+
+function formatAxisValue(v: AxisValueType): string {
+	switch (v.type) {
+		case 'literal':
+		case 'discrete':
+			return v.value;
+		case 'range':
+			return v.operator === 'between'
+				? `${v.threshold}–${v.threshold_high ?? v.threshold}`
+				: `${v.operator} ${v.threshold}`;
+	}
 }
 
 interface LayerCondition {
@@ -160,6 +175,10 @@ function matchLayers(
 				tokenAlias: entry.tokenAlias,
 				conditionCount: data.conditions.length,
 				keys: data.conditions.map((c) => c.axisId),
+				conditionValues: data.conditions.map((c) => ({
+					axisId: c.axisId,
+					value: formatAxisValue(c.axisValue),
+				})),
 				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null,
 			});
 		}

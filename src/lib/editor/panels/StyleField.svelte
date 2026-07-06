@@ -12,6 +12,7 @@
 		kitId?: string | null;
 		kitIcon?: string;
 		keys?: string[];
+		conditionValues?: { axisId: string; value: string }[];
 		isToken?: boolean;
 		tokenAlias?: string | null;
 		value?: string | null;
@@ -28,6 +29,7 @@
 		kitId,
 		kitIcon = 'fa-circle',
 		keys = [],
+		conditionValues = [],
 		isToken,
 		tokenAlias,
 		value,
@@ -71,16 +73,14 @@
 	}
 
 	// Describes which Layer this property is sourced from — same axis key-set the Axes panel's
-	// combo dot for this Layer would show, so hovering here tells you what to go look for there.
-	function layerDescription(axisIds: string[]): string {
-		if (axisIds.length === 0) return 'Base layer · always applies';
-		const names = axisIds.map((id) => axisNameById[id] ?? id).join(' + ');
-		return `${names} · ${axisIds.length} condition${axisIds.length === 1 ? '' : 's'}`;
-	}
-
-	function trackTitle(axisIds: string[], token: string | null | undefined): string {
-		const layer = layerDescription(axisIds);
-		return token ? `${layer} · token: ${token}` : `${layer} · literal`;
+	// combo dot for this Layer would show, with the actual matched value per axis (not just which
+	// axes), so hovering here tells you exactly what to go look for there.
+	function trackTitle(conditions: { axisId: string; value: string }[]): string {
+		if (conditions.length === 0) return 'Base layer · always applies';
+		const parts = conditions
+			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
+			.join(', ');
+		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
 	}
 
 	const editValue = $state({
@@ -154,7 +154,7 @@
 			class="option124__track"
 			style="--track-color: {trackColor(keys)}"
 			aria-label="Tokenized property"
-			title={trackTitle(keys, tokenAlias)}
+			title={trackTitle(conditionValues)}
 			type="button"
 		>
 			<i class="fa-solid {kitIcon}"></i>
@@ -165,7 +165,7 @@
 			style="--track-color: {trackColor(keys)}"
 			class:option124__track--empty={!value}
 			aria-label="Literal property"
-			title={trackTitle(keys, null)}
+			title={trackTitle(conditionValues)}
 			type="button"
 		>
 			<i class="fa-solid {kitIcon}"></i>

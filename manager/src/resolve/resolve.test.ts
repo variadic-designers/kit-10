@@ -88,6 +88,7 @@ describe('resolve', () => {
 			tokenAlias: 'colors.bg',
 			conditionCount: 0,
 			keys: [],
+			conditionValues: [],
 			childViewIds: null,
 		});
 		expect(result.get('color')).toEqual({
@@ -99,6 +100,7 @@ describe('resolve', () => {
 			tokenAlias: null,
 			conditionCount: 0,
 			keys: [],
+			conditionValues: [],
 			childViewIds: null,
 		});
 		expect(result.get('padding')).toEqual({
@@ -110,6 +112,7 @@ describe('resolve', () => {
 			tokenAlias: null,
 			conditionCount: 0,
 			keys: [],
+			conditionValues: [],
 			childViewIds: null,
 		});
 	});

@@ -71,6 +71,7 @@
 		kitIcon: string;
 		conditionCount: number;
 		keys: string[];
+		conditionValues: { axisId: string; value: string }[];
 		isToken: boolean;
 		tokenAlias: string | null;
 	} {
@@ -83,6 +84,7 @@
 					prop.conditionCount === 0 ? 'fa-circle-dot' : (kitIconMap.get(prop.kitId) ?? 'fa-circle'),
 				conditionCount: prop.conditionCount,
 				keys: prop.keys,
+				conditionValues: prop.conditionValues,
 				isToken: prop.isToken,
 				tokenAlias: prop.tokenAlias
 			};
@@ -93,6 +95,7 @@
 			kitIcon: 'fa-circle',
 			conditionCount: 0,
 			keys: [],
+			conditionValues: [],
 			isToken: false,
 			tokenAlias: null
 		};
