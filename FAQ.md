@@ -2,69 +2,71 @@
 
 ## Do I need to plan my axes before I can start drawing?
 
-No. Draw first. All properties start on the null layer - a rule with no conditions that always applies. No axes, no setup required.
+No. Start drawing. Every property you add goes on the baseline rule - no conditions, no setup required.
 
-Add axes when you discover you need variation. Drag existing properties to their conditions as your design grows. The system captures your reasoning as you go, not before you start.
+Add axes when you realize you need variation. Drew a button and now you want a dark version? That's when you add a "Theme" axis and say "when theme is dark, change this color." You add complexity when you discover you need it, not before you start.
 
 ---
 
-## What's the null layer?
+## What's the baseline rule?
 
-A rule with no axis conditions. Because it has no conditions to fail, it always matches - making it the lowest-priority fallback.
+A rule with no conditions. Because there's nothing to check, it always applies - it's your fallback for everything.
 
-It's where every design begins. Properties you haven't assigned to any condition yet live here. Once you assign a property to a conditioned rule, that rule takes over for any axis state it matches.
+Every Kit starts with one automatically. All your initial properties live here. When you add a conditioned rule ("when density is compact, reduce padding"), that rule only overrides the specific properties it declares. Everything else still comes from the baseline.
 
 ---
 
 ## What's the difference between a Kit and a View?
 
-A **Kit** is a reusable behavioral specification for one design concern. It defines axes and the rules that respond to them.
+A **Kit** is a recipe. It says: "given these settings, here's what you get."
 
-A **View** is a composition. It assembles one or more Kits and sets the axis values for each. The same Kit in two different Views can produce completely different output if the axis args differ.
+A **View** is a serving of that recipe with specific values plugged in. Two Views using the same Kit look different if they set the axes differently - same rules, different inputs, different output.
 
----
-
-## What happens when two rules contest the same property?
-
-The more specific rule wins. Specificity has three tiers, from highest to lowest:
-
-1. Which Kit it belongs to (higher-priority Kit wins)
-2. How many conditions it has (more conditions win)
-3. Which axes are involved (axes later in the Kit's ordering win)
-
-If two rules can never both be active at once - e.g. `{theme: dark}` and `{theme: light}` - they're mutually exclusive and there's no contest.
-
-See [CONCEPTS.md → Specificity](./CONCEPTS.md) for the full model.
+A View can also combine multiple Kits. Your button recipe and your color-system recipe can coexist in the same View and talk to each other via tokens.
 
 ---
 
-## What's the difference between a token and just writing the value directly in a rule?
+## What if two rules both try to set the same property?
 
-Nothing changes in how the rule behaves. The difference is maintainability.
+The more specific one wins. "More specific" has a clear ranking:
 
-If `#3b82f6` appears in twenty rules and you change your brand color, you update twenty places. With a token named `colors.primary`, you update one.
+1. **Which Kit** - if two Kits both declare a property, the higher-priority Kit wins. No lower-ranked Kit can ever beat this.
+2. **How many conditions** - "when dark AND compact" always beats "when dark." More conditions win regardless of which axes are involved.
+3. **Which axes** - when two rules have the same number of conditions, the one whose axes appear later in the Kit's ordering wins.
 
-Tokens are also scoped. A View token overrides a Kit token of the same name, which overrides a Project token. This lets the same name resolve to a different value per context without duplicating any rules.
+Two rules that can never both be true at once - like "theme is dark" and "theme is light" - don't compete. They can't both fire.
+
+---
+
+## What's the difference between a token and just writing the value directly?
+
+Your design looks the same either way. The difference is maintenance.
+
+If you type `#3b82f6` in fifty rules and your brand color changes, you update fifty places. With a token named `colors.primary`, you update one.
+
+Tokens also have scope. A View token overrides a Kit token of the same name, which overrides a Project token. This means you can have `colors.primary` mean slate-blue in one View and forest-green in another, without touching any rules - just define the token differently per context.
 
 ---
 
 ## What's a render plugin?
 
-The engine resolves your rules to a set of properties - `background: skyblue`, `padding: 8px`, etc. It doesn't know what those properties mean for a given output target. A render plugin takes that resolved output and interprets it.
+The engine resolves your rules to a flat list of properties: `background: #3b82f6`, `padding: 8px`, and so on. It doesn't decide what to do with that list. That's the plugin's job.
 
-A CSS plugin emits custom properties. An SCSS plugin emits variables and mixins. A 3D plugin sets material uniforms. The same rules produce different output depending on the plugin. The viewport in the editor is itself a plugin.
+A CSS plugin turns the list into CSS custom properties. An SCSS plugin makes variables and mixins. A 3D plugin sets material uniforms on a mesh. The rules are the same - the plugin just speaks a different output language.
+
+The editor's own visual preview is itself a plugin.
 
 ---
 
 ## Can I use the same Kit in multiple Views?
 
-Yes. Attach the same Kit to two Views with different axis args and you get two different resolved outputs from the same rules. Change a rule in the Kit and it propagates to every View that uses it automatically.
+Yes. Attach the same Kit to two Views, set different axis values in each, and you get two different results from the same rules. Change a rule in the Kit and it updates everywhere the Kit is used.
 
 ---
 
-## What happens if I delete an axis that layers already reference?
+## What happens if I delete an axis that rules already reference?
 
-Any conditions on that axis are removed from the affected layers. The layers themselves remain, now with fewer conditions. If all conditions are removed from a layer, it becomes a null layer.
+The conditions on that axis are removed from any rules that referenced it. The rules stay - they just have fewer conditions now. If a rule had only that one condition, it becomes a baseline rule and applies everywhere.
 
 ---
 
@@ -72,10 +74,10 @@ Any conditions on that axis are removed from the affected layers. The layers the
 
 In your browser, in a local database. Nothing leaves your machine unless you export it. No account required.
 
-In Firefox private mode, local storage is unavailable. The editor falls back to in-memory storage for that session - everything works, but data is not persisted after the tab closes.
+In Firefox private mode, local storage is unavailable. The editor uses in-memory storage for that session - everything works, but nothing is saved after the tab closes.
 
 ---
 
 ## How do I export my work?
 
-Export depends on which render plugins are installed. A plugin declares what it can produce - CSS, SCSS, Style Dictionary JSON, or anything else the community has built. The core engine can also export the full project as JSON for backup or transfer between browsers.
+Export depends on which render plugins are installed. A plugin declares what it can produce - CSS, SCSS, Style Dictionary JSON, or anything the community has built. The core engine can also export the full project as JSON for backup or transfer to another browser.

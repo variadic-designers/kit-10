@@ -273,20 +273,76 @@ Deleted. Route restructured to `/edit`.
 
 ---
 
+## M8: Vellum Renderer
+
+Integrated the Rust/WASM GPU renderer into the editor viewport.
+
+### [x] M8.1 — Vellum WASM build + initialization
+
+Compiled with `wasm-pack --target web --no-default-features --no-opt`. Loaded dynamically at editor startup with a canvas-size guard (Firefox zero-size workaround). `--no-default-features` required to gate out the `standalone` winit/pollster feature that strips `#[wasm_bindgen]` exports.
+
+### [x] M8.2 — Render loop, pan/zoom, resize
+
+`requestAnimationFrame` loop starts only after data arrives. `ResizeObserver` re-initializes the renderer on layout changes. Pointer and wheel events drive pan, zoom, and selection via the Vellum API.
+
+### [x] M8.3 — Theme-aware colors
+
+`vellum.set_colors()` called on mount and on theme changes. Grid and background colors adapt to dark/light/auto.
+
+### [x] M8.4 — Text-responsive layout
+
+Text nodes emitted by Charter with `width:0, height:0`. Vellum measures text during the taffy layout pass using cosmic-text constrained by parent available space. Host does not pre-patch text dimensions.
+
+---
+
+## M9: Plugin System
+
+Charter WASM plugin and Plugin Manager infrastructure.
+
+### [x] M9.1 — Plugin Manager serial queue
+
+All plugin calls (`on_resolve`, `on_selection_change`, `on_field_update`) chained on `pluginQueue` to prevent concurrent calls into the non-reentrant Extism worker.
+
+### [x] M9.2 — Debounce + generation guard
+
+`setData` increments `selectionGen` and debounces `runResolve`. `setSelection` captures `selectionGen` at enqueue time; if `setData` fires before execution, the captured generation won't match and `runSelectionChange` is skipped. Prevents stale selection results from overwriting a concurrent resolve.
+
+### [x] M9.3 — Charter plugin
+
+Charter translates resolved kit data into a flat `UiNode[]` render tree. `on_resolve` stores `last_resolve_input` in Extism var storage. `on_selection_change` patches the three selection fields and re-runs `build_viewport` without a full re-resolve round-trip.
+
+### [x] M9.4 — Host functions
+
+`kit10_log`, `kit10_kv_get`, `kit10_kv_set`, `kit10_get_resolution`, `kit10_write_render_entry_to_layer`, `kit10_resolve_view`.
+
+### [x] M9.5 — resolveManyViews
+
+4-round-trip resolution for all project views, replacing the per-view `resolveMany` O(views) approach. Fingerprint comparison (`kitFingerprint`) skips Svelte re-renders when resolved data didn't change.
+
+### [ ] M9.6 — Field editing
+
+Wire `StyleField.confirmUpdateStyle` to `pluginManager.fieldUpdate`. Currently a console.log stub — field values are read-only.
+
+---
+
 ## Dependency Order
 
 ```
-M1 (schema) ──► M2 (API) ──► M3 (cascade) ──► M4 (frontend) ──► M5 (routes) ──► M6 (render) ──► M7 (cleanup)
+M1 (schema) ──► M2 (API) ──► M3 (cascade) ──► M4 (frontend) ──► M5 (routes) ──► M6 (render output)
                                         │
                                         └── M4.1, M4.2 depend on M3
                                         └── M4.3 depends on M2.6
                                         └── M4.4 depends on M3
                                         └── M5 depends on M4
+
+M7 (cleanup) runs incrementally alongside M4–M5.
+
+M8 (renderer) and M9 (plugins) run in parallel once M4 is done.
+M9.6 (field editing) depends on M9.3 and M6.
 ```
 
 M1 and M2 can partially overlap (write API as schema stabilizes).
 M4 panels can be migrated in parallel once their respective M2 + M3 deps are done.
-M7 can happen incrementally as each legacy artifact's replacement goes live.
 
 ---
 

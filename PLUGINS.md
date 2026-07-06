@@ -16,7 +16,7 @@ KIT•10 has two kinds of plugins with different roles and different levels of s
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Core renderer (Vellum)** — a single Rust/WGPU crate compiled to WebAssembly via `wasm-bindgen`. It owns the GPU canvas and is loaded directly by the editor. It is not an Extism plugin and cannot be replaced by third parties.
+**Core renderer (Vellum)** — a single Rust/WGPU crate compiled to WebAssembly via `wasm-bindgen`. It owns the GPU canvas and is loaded directly by the editor. It is not an Extism plugin and cannot be replaced by third parties for now. Vellum integration should not get in the way of future renderers.
 
 **Data plugins (Extism)** — sandboxed WASM modules written in any language with an Extism PDK. They receive resolved design data and decide what to draw and what fields to show. This is where all third-party extensibility lives: viewport interpreters, render targets (CSS, SCSS, JSON), domain-specific renderers.
 
