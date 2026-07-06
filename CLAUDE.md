@@ -1,5 +1,11 @@
 # KIT•10 — Architecture & Component Boundaries
 
+## Maintaining this doc
+
+When a factual error is identified in any project MD — either called out by the user or spotted during a task — update the affected file in the same response. Do not defer doc corrections to a follow-up. This applies to CLAUDE.md, CONCEPTS.md, PLUGINS.md, FAQ.md, LIFECYCLE.md, and manager/MILESTONES.md.
+
+---
+
 ## Overview
 
 KIT•10 is a design-system editor that models components as **kits** (style systems), **axes** (dimensions like theme/density/state), and **views** (specific axis configurations). The editor stores everything in an in-browser PostgreSQL database (PGlite), resolves kit properties at runtime, and renders previews via a GPU renderer. A sandboxed WASM plugin (Charter) translates resolved data into a flat render tree.
@@ -104,7 +110,7 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 
 ### 4. Plugin Manager (`src/lib/plugins/manager.svelte.ts`)
 
-**Owns:** Charter plugin lifecycle, call serialization, text measurement, host functions.
+**Owns:** Charter plugin lifecycle, call serialization, host functions.
 
 **Must NOT:** do resolution (use Manager), write DB state directly (only via `kit10_write_render_entry_to_layer`), or expose Svelte reactivity to Charter.
 
@@ -114,8 +120,6 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 - `setData` increments `selectionGen`, cancels any pending selection timer, and debounces `runResolve`.
 - `setSelection` captures `selectionGen` at enqueue time; if `setData` fires before execution, the captured generation won't match and `runSelectionChange` is skipped.
 - This prevents stale `on_selection_change` results from overwriting a concurrent `on_resolve`.
-
-**Text measurement:** Charter emits `Text{width:0, height:0}`. Vellum measures text internally during the taffy layout pass (`compute_layout_with_measure` + cosmic-text). The host does NOT patch text nodes; `viewportData` is passed to `vellum.set_data` with zero-dimension text nodes as-is.
 
 **`width: 0.0` semantics (important):**
 - `Box{width:0}` → Vellum auto-sizes this box to its children + padding.
@@ -263,19 +267,11 @@ Future: pluginManager.fieldUpdate({layerId, property, value})
 
 ## Key Invariants
 
-1. **All plugin calls are serialized.** Never call `plugin.call(...)` concurrently. The serial queue (`pluginQueue`) enforces this.
+1. **Do not call `resolveMany` per-view in the live-query loop.** `resolveManyViews` covers all project views in 4 round-trips. `resolveMany` is the per-view pre-optimization path and is O(views).
 
-2. **`on_selection_change` only fires when selection changes without a data change.** If data changed (new kits, new active view), `setData` increments `selectionGen` and any queued `runSelectionChange` aborts. Only `runResolve` runs in that case.
+2. **Cancelled + version on async resolve.** The resolution `$effect` sets `cancelled = true` on cleanup and checks `version === reResolveVersion` before writing `resolvedViews`. Fast project switching cannot cause stale data to overwrite fresh data.
 
-3. **Vellum owns text measurement.** Pass Charter's output directly to `vellum.set_data` — text nodes with `width:0, height:0` are expected. Vellum measures during the layout pass. Never pre-patch text dimensions in the host.
-
-4. **`resolveManyViews` is the only resolve call from the editor.** Do not call `resolveMany` per-view in the live-query loop — this was the pre-optimization path (O(views) round-trips). `resolveManyViews` does it in O(1) round-trips.
-
-5. **Fingerprint before re-rendering.** `kitFingerprint(kits)` prevents `resolvedViews` from being reassigned (and downstream effects from firing) when the DB change didn't affect resolved property values.
-
-6. **Cancelled + version on async resolve.** The resolution `$effect` sets `cancelled = true` on cleanup and checks `version === reResolveVersion` before writing `resolvedViews`. Fast project switching cannot cause stale data to overwrite fresh data.
-
-7. **Charter is stateless except `last_resolve_input`.** The only cross-call state in Charter is the Extism var `last_resolve_input`. Everything else is rebuilt each call from the payload. KV store (`kit10_kv_get/set`) provides plugin-scoped persistence for Charter's own use.
+3. **Charter is stateless except `last_resolve_input`.** Everything else is rebuilt each call from the payload. KV store (`kit10_kv_get/set`) is for plugin-scoped persistence, not cross-call state.
 
 ---
 
@@ -284,8 +280,6 @@ Future: pluginManager.fieldUpdate({layerId, property, value})
 - **`parse_px` only handles pixel values.** CSS values like `auto`, `%`, `em` silently return `0.0` in Charter. Store only plain numbers or `NNpx` strings in render entries for box sizing properties.
 
 - **`transparent` color is not handled by `parse_color`.** Only hex (`#rrggbb`, `#rrggbbaa`) and `rgb(r,g,b)` are supported. Named CSS colors become black. Store hex values.
-
-- **`position` hint in CharterHints is vestigial.** It was used by the old absolute-positioning architecture. The current grid layout ignores it.
 
 - **Do not add views to `project_views` without a `hints` object.** Charter assumes `hints` is a JSON object; missing hints default to an empty map, which is fine, but `child_only` will default to false and the view will appear in the top-level grid.
 
