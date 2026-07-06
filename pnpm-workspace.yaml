@@ -1,2 +1,6 @@
 packages:
   - 'manager'
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+  svelte-preprocess: true

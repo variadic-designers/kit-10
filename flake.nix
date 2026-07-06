@@ -1,8 +1,9 @@
 {
-  # Use the unstable nixpkgs to use the latest set of node packages
+  # Use nixpkgs-unstable for latest packages with basic CI stability
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/master";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = {
@@ -16,6 +17,7 @@
       overlays = [ (import rust-overlay) ];
       pkgs = import nixpkgs {
         inherit system overlays;
+        config.allowUnfree = true;  # for claude-code
       };
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
@@ -64,10 +66,19 @@
       devShells.default = pkgs.mkShell {
         buildInputs = [
           rustToolchain
-          pkgs.nodejs_20
-          pkgs.nodePackages.pnpm
+          pkgs.nodejs_22
+          pkgs.pnpm
           pkgs.extism-js
           xtp-cli
+
+          # WASM tooling
+          pkgs.wasm-pack        # Vellum rebuild (taf_can_do → kit10/src/lib/vellum)
+          pkgs.binaryen         # wasm-opt manual access
+
+          # Rust dev tools
+          pkgs.cargo-watch      # Auto-rebuild on file changes
+
+          pkgs.claude-code
         ];
       };
     });
