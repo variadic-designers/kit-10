@@ -98,6 +98,10 @@ struct BoxData {
     shadow: Option<BoxShadow>,
     #[serde(default)]
     extra: BoxExtra,
+    // 0 = none, 1 = secondary, 2 = primary/active. Vellum draws its own outside outline +
+    // corner handles from this — never encode selection by mutating border_color/border_width.
+    #[serde(default)]
+    selected: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -422,6 +426,7 @@ fn build_box_node(
             opacity: 1.0,
             shadow: None,
             extra,
+            selected: 0,
         },
     })
 }
@@ -567,6 +572,7 @@ fn transparent_box(
             opacity: 1.0,
             shadow: None,
             extra: BoxExtra::default(),
+            selected: 0,
         },
     })
 }
@@ -611,22 +617,8 @@ fn render_view_nodes(
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent);
 
-        match selection {
-            2 => {
-                if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
-                    box_data.border_color = [0.0, 0.48, 1.0, 1.0];
-                    box_data.show_border = true;
-                    box_data.border_width = 2.0;
-                }
-            }
-            1 => {
-                if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
-                    box_data.border_color = [0.6, 0.6, 0.6, 0.7];
-                    box_data.show_border = true;
-                    box_data.border_width = 1.0;
-                }
-            }
-            _ => {}
+        if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
+            box_data.selected = selection;
         }
 
         viewport.push(node);

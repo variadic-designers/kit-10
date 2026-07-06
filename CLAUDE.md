@@ -145,7 +145,7 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 
 ### 5. Charter Plugin (`plugins/charter/src/lib.rs`)
 
-**Owns:** Translating resolved kit data into a flat `UiNode[]` render tree. Layout grid logic. Selection highlighting. Field category definitions.
+**Owns:** Translating resolved kit data into a flat `UiNode[]` render tree. Layout grid logic. Marking which nodes are selected. Field category definitions.
 
 **Must NOT:** query the DB directly, hold cross-call mutable state beyond Extism `var` storage, or do text measurement (emit `width:0, height:0` for Text nodes; Vellum measures them).
 
@@ -175,7 +175,7 @@ Root Column (padding: 40px all sides)
 
 **Fallback text in box primitive:** only fires when `child_ids` is empty AND the kit has an explicit `content` property. **Never fires on `color` alone** — boxes always have `color` (their text color) but only emit inline text when they own the actual string content.
 
-**Selection highlighting:** when `sel == 2` (active or primary), the box border is overridden to blue (`[0, 0.48, 1, 1]`, 2px). When `sel == 1` (secondary), gray 1px border.
+**Selection marking:** Charter sets `BoxData.selected` (0 = none, 1 = secondary, 2 = primary/active) and otherwise leaves the node's own `border_color`/`border_width` untouched. **Do not go back to overriding border fields for selection** — Vellum owns the actual selection visuals (see its section below) as a separate overlay, keyed off this field.
 
 **`CharterHints` (from view `hints.charter` JSON):**
 - `primitive: "box" | "text"` — override auto-detection
@@ -206,6 +206,11 @@ wasm-pack build --target web --no-default-features --no-opt --out-dir ../kit10/s
 - `Text{width:0, height:0}` → Vellum measures during layout. Do not pre-patch text dimensions in the host.
 - `max_width: 0` and `max_height: 0` → no constraint (not "max is 0px").
 - `flex_direction` on Box controls child stacking: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`.
+- Every `Box`/`Text`/`Img` variant has a `selected: u8` field (0/1/2 = none/secondary/primary). Charter sets it; Vellum owns everything about how it's drawn.
+
+**Selection is a separate overlay, not a border override.** `Graphics.selection_decorations` (`taf_can_do/src/render/mod.rs`) captures the layout rect + `selected` kind of every selected node after each layout pass. `rebuild_selection_instances`, called every frame from `write_frame` (not just on scene change), turns those into an outline `RectInstance` (transparent fill, colored border, sitting *outside* the element via an outward offset) plus 4 corner-handle instances, reusing the existing box shader/pipeline — no shader changes needed. The element's own `border_color`/`border_width` are never touched.
+
+**Why every frame, not just on selection/scene change:** `border_width`, the outset gap, and the handle size are all expressed in world units as `desired_screen_px / view_zoom`, so they render as a constant number of screen pixels regardless of zoom. But `pan`/`zoom_in_at`/`zoom_out_at`/`set_zoom` only update `view_zoom`/`view_offset` and the uniform buffer — they never touch `instance_buffer` or re-run `update()`. If the selection instances were only rebuilt on scene change, they'd go stale (wrong on-screen thickness) the moment the user zoomed without also re-selecting something. Rebuilding cheaply every frame in `write_frame` sidesteps having to hook every current and future zoom/pan mutator individually.
 
 **API surface used:**
 ```ts
