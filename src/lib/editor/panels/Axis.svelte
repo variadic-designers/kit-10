@@ -71,8 +71,9 @@
 	}
 
 	// Stable column order shared across every value of THIS axis — the union of key-sets that
-	// appear for any of its values, sorted by magnitude. Lets matching combos line up vertically
-	// (e.g. the "Theme+Density" dot always sits in the same column for both "dark" and "light")
+	// appear for any of its values, sorted by magnitude descending (most specific first, on the
+	// left) so specificity reads right-to-left. Lets matching combos line up vertically (e.g.
+	// the "Theme+Density" dot always sits in the same column for both "dark" and "light")
 	// instead of packing left, where the same combo could land in a different position per row.
 	let keySetColumns = $derived.by(() => {
 		const seen = new Map<string, string[]>();
@@ -83,7 +84,7 @@
 			}
 		}
 		return [...seen.entries()].sort(
-			(a, b) => a[1].length - b[1].length || (a[0] < b[0] ? -1 : 1)
+			(a, b) => b[1].length - a[1].length || (a[0] < b[0] ? -1 : 1)
 		);
 	});
 
