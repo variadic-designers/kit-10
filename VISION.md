@@ -6,9 +6,15 @@ This document captures the designer's philosophy and the intended endgame, for r
 
 ## 0th Principle — Birth of KIT•10
 
-KIT•10 was born out of love for design and a passionate hate of editor workflows that force you to redraw every UI variant by hand on every change. Tokens are definitions, not conditions — that's what axes are for. A Kit is a unit that stores an opinionated set of rules across axes. A Composition is a set of opinionated Kits consumed by a View thus a View is one form of a UI under a specific set of conditions.
+KIT•10 was born out of love for design and a passionate hate of editor workflows that force you to redraw every UI variant by hand on every change.
 
-The deeper problem KIT•10 solves is handoff hell — the translation tax between designer and developer. When a designer draws "button, hover state, dark theme" and a developer implements `if (hovered && theme === 'dark')`, they are describing the same thing in two different languages with no shared model. KIT•10's specificity system is that shared model. The same axis conditions that resolve a design also describe a state machine a developer would write. The designer and developer are working in the same language; the export just changes the syntax.
+Tokens are definitions, not conditions — that's what axes are for. A Kit is a unit that stores an opinionated set of rules across axes. A Composition is a set of opinionated Kits consumed by a View thus a View is one form of a UI under a specific set of conditions.
+
+The deeper problem KIT•10 solves is handoff hell — the translation tax between designer and developer.
+
+When a designer draws "button, hover state, dark theme" and a developer implements `if (hovered && theme === 'dark')`, they are describing the same thing in two different languages with no shared model.
+
+KIT•10's specificity system is that shared model. The same axis conditions that resolve a design also describe a state machine a developer would write. The designer and developer are working in the same language; the export just changes the syntax.
 
 This is firstly intended for the web but is not expected to stop there. Icons, fonts, and animation are within the horizon.
 
@@ -27,7 +33,11 @@ Avoid designing against extensibility; design for it. Every layer of the stack i
 
 ## 2nd Principle — Refactoring smoothly
 
-The designer declares intent — "when theme is dark and state is hovered, background is this color" — and the framework resolves what applies and when. No imperative logic, no manually wiring conditions together. The specificity system is the implementation; the designer never writes it. This offloads the "how does this work at runtime" question entirely to the export plugin, which translates declarations into whatever target language the developer needs.
+The designer declares intent — "when theme is dark and state is hovered, background is this color" — and the framework resolves what applies and when.
+
+No imperative logic, no manually wiring conditions together. The specificity system is the implementation; the designer never writes it.
+
+This offloads the "how does this work at runtime" question entirely to the export plugin, which translates declarations into whatever target language the developer needs.
 
 UX expectations should reinforce this: encourage users to organize their rules deliberately, without blocking early prototyping. The baseline layer (no conditions) means you can start drawing immediately and add axes only when you discover you need variation.
 
@@ -37,12 +47,22 @@ The longer-term vision: rules can be dragged and dropped between layers and acro
 
 ## 3rd Principle — Export pain, go away
 
-Plugins can declare export capabilities. Users define an Export Profile in the Export Panel specifying which plugin handles which target. A Web plugin can produce HTML + SCSS output for a View with user-defined preferences. A live-vite integration can stream the output CSS directly to a development server, closing the loop between the design editor and the running site.
+Plugins can declare export capabilities. Users define an Export Profile in the Export Panel specifying which plugin handles which target.
+
+A Web plugin can produce HTML + SCSS output for a View with user-defined preferences. A live-vite integration can stream the output CSS directly to a development server, closing the loop between the design editor and the running site.
 
 ## 4th Principle — Community and Commons
 
-Layout patterns, rule structures, and specificity systems are knowledge — not intellectual property. A button's hover logic, a spacing scale, a color ramp: these circulate freely in code today (Stack Overflow, GitHub, shadcn) and should circulate freely in design too.
+Layout patterns, rule structures, and specificity systems are knowledge — not intellectual property.
 
-The early build defaults to public work. What you make is visible — not just the output, but the system behind it. Because a Kit is a set of explicit rules, a new designer can open any public Kit and see exactly how a design was achieved: which axes were defined, what conditions were set, how the dark mode or the hover state was constructed. The process is as public as the result. Others can learn from it, adapt it, build on top of it.
+A button's hover logic, a spacing scale, a color ramp: these circulate freely in code today (Stack Overflow, GitHub, shadcn) and should circulate freely in design too.
 
-The distinction is between the system and the output. The Kit — the rules, the axes, the conditions — belongs to the commons. The export is entirely yours. The website, the SVG, the font, the sitemap, the finished artifact: you own it and license it however you want. Sharing how you built something does not mean sharing what you built with it.
+The early build defaults to public work. What you make is visible — not just the output, but the system behind it.
+
+Because a Kit is a set of explicit rules, a new designer can open any public Kit and see exactly how a design was achieved: which axes were defined, what conditions were set, how the dark mode or the hover state was constructed.
+
+The process is as public as the result. Others can learn from it, adapt it, build on top of it.
+
+The distinction is between the system and the output. The Kit — the rules, the axes, the conditions — belongs to the commons. The export is entirely yours.
+
+The website, the SVG, the font, the sitemap, the finished artifact: you own it and license it however you want. Sharing how you built something does not mean sharing what you built with it.
