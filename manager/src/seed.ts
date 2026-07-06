@@ -18,6 +18,10 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', s('#e2e8f0')))!;
 	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', s('#22c55e')))!;
 	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', s('#ef4444')))!;
+	// Distinct from colors.bg — this is text-on-a-colored-surface, not the neutral page
+	// background. They happen to share a value today, but changing colors.bg (a warmer
+	// off-white, say) shouldn't also silently retint every button's label.
+	const tokenOnColor = (await api.createToken(proj.id, 'colors.onColor', s('#ffffff')))!;
 
 	// Axes
 	const themeAxis = (await api.createAxis(proj.id, 'Theme', 'Light or dark mode', 'categorical'))!;
@@ -138,7 +142,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.addAxisValueToLayer(btnPrimary.id, emphasisPrimary.id);
 	const btnPrimarySnip = (await api.createRenderSnippet(btnPrimary.id))!;
 	await api.createRenderEntry(btnPrimarySnip.id, 'background', null, tokenPrimary.id);
-	await api.createRenderEntry(btnPrimarySnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(btnPrimarySnip.id, 'color', null, tokenOnColor.id);
 	await api.createRenderEntry(btnPrimarySnip.id, 'font-weight', '600');
 
 	// {emphasis: secondary}
@@ -146,14 +150,14 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.addAxisValueToLayer(btnSecondary.id, emphasisSecondary.id);
 	const btnSecondarySnip = (await api.createRenderSnippet(btnSecondary.id))!;
 	await api.createRenderEntry(btnSecondarySnip.id, 'background', null, tokenSecondary.id);
-	await api.createRenderEntry(btnSecondarySnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(btnSecondarySnip.id, 'color', null, tokenOnColor.id);
 
 	// {emphasis: tertiary}
 	const btnTertiary = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnTertiary.id, emphasisTertiary.id);
 	const btnTertiarySnip = (await api.createRenderSnippet(btnTertiary.id))!;
 	await api.createRenderEntry(btnTertiarySnip.id, 'background', null, tokenTertiary.id);
-	await api.createRenderEntry(btnTertiarySnip.id, 'color', '#1a1a1a');
+	await api.createRenderEntry(btnTertiarySnip.id, 'color', null, tokenText.id);
 
 	// {emphasis: ghost}
 	const btnGhost = (await api.createLayer(buttonKit.id))!;
@@ -167,14 +171,14 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.addAxisValueToLayer(btnPositive.id, sentimentPositive.id);
 	const btnPositiveSnip = (await api.createRenderSnippet(btnPositive.id))!;
 	await api.createRenderEntry(btnPositiveSnip.id, 'background', null, tokenSuccess.id);
-	await api.createRenderEntry(btnPositiveSnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(btnPositiveSnip.id, 'color', null, tokenOnColor.id);
 
 	// {sentiment: danger}
 	const btnDanger = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnDanger.id, sentimentDanger.id);
 	const btnDangerSnip = (await api.createRenderSnippet(btnDanger.id))!;
 	await api.createRenderEntry(btnDangerSnip.id, 'background', null, tokenDanger.id);
-	await api.createRenderEntry(btnDangerSnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(btnDangerSnip.id, 'color', null, tokenOnColor.id);
 
 	// {state: hover}
 	const btnHover = (await api.createLayer(buttonKit.id))!;
@@ -256,6 +260,41 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const btnDangerHoverSnip = (await api.createRenderSnippet(btnDangerHover.id))!;
 	await api.createRenderEntry(btnDangerHoverSnip.id, 'background', '#dc2626');
 
+	// {sentiment: danger, state: click} — without this, any view combining
+	// sentiment:danger with emphasis:primary (or any other 2-condition emphasis/theme combo)
+	// at state:click renders danger invisibly: btnDanger alone is only 1 condition, so it loses
+	// to btnPrimaryClick {emphasis, state} on raw condition count, regardless of sentiment's
+	// higher axis priority. Same axis pair shape as btnPrimaryClick (sentiment+state vs
+	// emphasis+state) means the tie is broken by priority instead — sentiment (4000) beats
+	// emphasis (3000), so danger correctly wins here.
+	const btnDangerClick = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnDangerClick.id, sentimentDanger.id);
+	await api.addAxisValueToLayer(btnDangerClick.id, stateClick.id);
+	const btnDangerClickSnip = (await api.createRenderSnippet(btnDangerClick.id))!;
+	await api.createRenderEntry(btnDangerClickSnip.id, 'background', '#b91c1c');
+
+	// {sentiment: danger, state: disabled} — mirrors btnPrimaryDisabled's pale/washed-out
+	// treatment, same reasoning as click: without it, a disabled danger button falls back to
+	// whatever 2-condition emphasis/theme combo happens to be active instead of reading as
+	// disabled.
+	const btnDangerDisabled = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnDangerDisabled.id, sentimentDanger.id);
+	await api.addAxisValueToLayer(btnDangerDisabled.id, stateDisabled.id);
+	const btnDangerDisabledSnip = (await api.createRenderSnippet(btnDangerDisabled.id))!;
+	await api.createRenderEntry(btnDangerDisabledSnip.id, 'background', '#fca5a5');
+	await api.createRenderEntry(btnDangerDisabledSnip.id, 'opacity', '0.4');
+
+	// {theme: dark, sentiment: danger} — mirrors btnDarkPrimary's role: the dark-theme,
+	// default-state danger look, and the only thing that can beat btnDarkPrimary {theme,
+	// emphasis} on 'color' for a dark-themed danger button (same reasoning as above — same
+	// condition count, sentiment's higher priority wins the tie).
+	const btnDarkDanger = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnDarkDanger.id, themeDark.id);
+	await api.addAxisValueToLayer(btnDarkDanger.id, sentimentDanger.id);
+	const btnDarkDangerSnip = (await api.createRenderSnippet(btnDarkDanger.id))!;
+	await api.createRenderEntry(btnDarkDangerSnip.id, 'background', null, tokenDanger.id);
+	await api.createRenderEntry(btnDarkDangerSnip.id, 'color', null, tokenOnColor.id);
+
 	// 3-condition layers
 
 	// {theme: dark, emphasis: primary, state: hover}
@@ -283,6 +322,17 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const btnDarkDangerHoverSnip = (await api.createRenderSnippet(btnDarkDangerHover.id))!;
 	await api.createRenderEntry(btnDarkDangerHoverSnip.id, 'background', '#b91c1c');
 
+	// {theme: dark, sentiment: danger, state: disabled} — mirrors btnDarkPrimaryDisabled,
+	// completing danger's coverage to the same depth as primary: base, hover, click, disabled,
+	// and dark-theme variants of each of those that has one.
+	const btnDarkDangerDisabled = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, themeDark.id);
+	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, sentimentDanger.id);
+	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, stateDisabled.id);
+	const btnDarkDangerDisabledSnip = (await api.createRenderSnippet(btnDarkDangerDisabled.id))!;
+	await api.createRenderEntry(btnDarkDangerDisabledSnip.id, 'background', '#7f1d1d');
+	await api.createRenderEntry(btnDarkDangerDisabledSnip.id, 'opacity', '0.4');
+
 	// Button label kit — text child rendered inside each button box
 	const labelKit = (await api.createKitInProject(proj.id, 'ButtonLabel'))!;
 	await api.consumeAxis(labelKit.id, themeAxis.id);
@@ -304,20 +354,20 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.addAxisValueToLayer(lblPrimary.id, emphasisPrimary.id);
 	const lblPrimarySnip = (await api.createRenderSnippet(lblPrimary.id))!;
 	await api.createRenderEntry(lblPrimarySnip.id, 'content', 'Submit');
-	await api.createRenderEntry(lblPrimarySnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(lblPrimarySnip.id, 'color', null, tokenOnColor.id);
 	await api.createRenderEntry(lblPrimarySnip.id, 'font-weight', '600');
 
 	const lblSecondary = (await api.createLayer(labelKit.id))!;
 	await api.addAxisValueToLayer(lblSecondary.id, emphasisSecondary.id);
 	const lblSecondarySnip = (await api.createRenderSnippet(lblSecondary.id))!;
 	await api.createRenderEntry(lblSecondarySnip.id, 'content', 'Cancel');
-	await api.createRenderEntry(lblSecondarySnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(lblSecondarySnip.id, 'color', null, tokenOnColor.id);
 
 	const lblTertiary = (await api.createLayer(labelKit.id))!;
 	await api.addAxisValueToLayer(lblTertiary.id, emphasisTertiary.id);
 	const lblTertiarySnip = (await api.createRenderSnippet(lblTertiary.id))!;
 	await api.createRenderEntry(lblTertiarySnip.id, 'content', 'Learn More');
-	await api.createRenderEntry(lblTertiarySnip.id, 'color', '#1a1a1a');
+	await api.createRenderEntry(lblTertiarySnip.id, 'color', null, tokenText.id);
 
 	const lblGhost = (await api.createLayer(labelKit.id))!;
 	await api.addAxisValueToLayer(lblGhost.id, emphasisGhost.id);
@@ -329,13 +379,13 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.addAxisValueToLayer(lblPositive.id, sentimentPositive.id);
 	const lblPositiveSnip = (await api.createRenderSnippet(lblPositive.id))!;
 	await api.createRenderEntry(lblPositiveSnip.id, 'content', 'Confirm');
-	await api.createRenderEntry(lblPositiveSnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(lblPositiveSnip.id, 'color', null, tokenOnColor.id);
 
 	const lblDanger = (await api.createLayer(labelKit.id))!;
 	await api.addAxisValueToLayer(lblDanger.id, sentimentDanger.id);
 	const lblDangerSnip = (await api.createRenderSnippet(lblDanger.id))!;
 	await api.createRenderEntry(lblDangerSnip.id, 'content', 'Delete');
-	await api.createRenderEntry(lblDangerSnip.id, 'color', '#ffffff');
+	await api.createRenderEntry(lblDangerSnip.id, 'color', null, tokenOnColor.id);
 
 	// Disabled state label
 	const lblDisabled = (await api.createLayer(labelKit.id))!;
