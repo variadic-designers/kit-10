@@ -160,10 +160,12 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.createRenderEntry(btnTertiarySnip.id, 'color', null, tokenText.id);
 
 	// {emphasis: ghost}
+	// 'transparent' is not a color parse_color understands (only hex/rgb) — it falls through
+	// to opaque black. Use an explicit 8-digit hex with a zero alpha channel instead.
 	const btnGhost = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnGhost.id, emphasisGhost.id);
 	const btnGhostSnip = (await api.createRenderSnippet(btnGhost.id))!;
-	await api.createRenderEntry(btnGhostSnip.id, 'background', 'transparent');
+	await api.createRenderEntry(btnGhostSnip.id, 'background', '#00000000');
 	await api.createRenderEntry(btnGhostSnip.id, 'border', 'none');
 
 	// {sentiment: positive}
@@ -201,20 +203,23 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.createRenderEntry(btnDisabledSnip.id, 'cursor', 'not-allowed');
 
 	// 2-condition layers
-
-	// {theme: dark, density: compact}
-	const btnDarkCompact = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkCompact.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkCompact.id, densityCompact.id);
-	const btnDarkCompactSnip = (await api.createRenderSnippet(btnDarkCompact.id))!;
-	await api.createRenderEntry(btnDarkCompactSnip.id, 'padding', '8px');
-
-	// {theme: dark, density: dense}
-	const btnDarkDense = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkDense.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkDense.id, densityDense.id);
-	const btnDarkDenseSnip = (await api.createRenderSnippet(btnDarkDense.id))!;
-	await api.createRenderEntry(btnDarkDenseSnip.id, 'padding', '24px');
+	//
+	// Density never gets theme-crossed: padding is a spacing decision, not a color one, and
+	// theme has no reason to change it. Similarly, primary/positive/danger don't get a
+	// {theme:dark, role} variant — a saturated brand color reads fine on any page background,
+	// and re-tinting every solid button for dark mode is the kind of combinatorial expansion
+	// that looks thorough but isn't actually a design decision anyone made on purpose. Theme's
+	// job is the neutral/default look only (btnDark, above) — once a role sets its own
+	// background, theme steps out of the way entirely.
+	//
+	// Only the three semantic/hero roles — primary (emphasis), positive and danger (sentiment)
+	// — get a full base→hover→click→disabled ramp. Secondary/tertiary/ghost deliberately share
+	// the universal 1-condition state layers (btnHover/btnClick/btnDisabled) instead of each
+	// getting bespoke interaction colors — not every variant needs its own hover art, and a
+	// shared "lower emphasis" feedback treatment is itself a legitimate, common pattern.
+	//
+	// The hover/click/disabled shade step is the same for every role: darken one and two
+	// Tailwind steps for hover/click, and a pale/desaturated tint at 40% opacity for disabled.
 
 	// {emphasis: primary, state: hover}
 	const btnPrimaryHover = (await api.createLayer(buttonKit.id))!;
@@ -238,20 +243,27 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.createRenderEntry(btnPrimaryDisabledSnip.id, 'background', '#93c5fd');
 	await api.createRenderEntry(btnPrimaryDisabledSnip.id, 'opacity', '0.4');
 
-	// {theme: dark, emphasis: primary}
-	const btnDarkPrimary = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkPrimary.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkPrimary.id, emphasisPrimary.id);
-	const btnDarkPrimarySnip = (await api.createRenderSnippet(btnDarkPrimary.id))!;
-	await api.createRenderEntry(btnDarkPrimarySnip.id, 'background', '#3b82f6');
-	await api.createRenderEntry(btnDarkPrimarySnip.id, 'color', '#0f172a');
-
 	// {sentiment: positive, state: hover}
 	const btnPositiveHover = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnPositiveHover.id, sentimentPositive.id);
 	await api.addAxisValueToLayer(btnPositiveHover.id, stateHover.id);
 	const btnPositiveHoverSnip = (await api.createRenderSnippet(btnPositiveHover.id))!;
 	await api.createRenderEntry(btnPositiveHoverSnip.id, 'background', '#16a34a');
+
+	// {sentiment: positive, state: click}
+	const btnPositiveClick = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnPositiveClick.id, sentimentPositive.id);
+	await api.addAxisValueToLayer(btnPositiveClick.id, stateClick.id);
+	const btnPositiveClickSnip = (await api.createRenderSnippet(btnPositiveClick.id))!;
+	await api.createRenderEntry(btnPositiveClickSnip.id, 'background', '#15803d');
+
+	// {sentiment: positive, state: disabled}
+	const btnPositiveDisabled = (await api.createLayer(buttonKit.id))!;
+	await api.addAxisValueToLayer(btnPositiveDisabled.id, sentimentPositive.id);
+	await api.addAxisValueToLayer(btnPositiveDisabled.id, stateDisabled.id);
+	const btnPositiveDisabledSnip = (await api.createRenderSnippet(btnPositiveDisabled.id))!;
+	await api.createRenderEntry(btnPositiveDisabledSnip.id, 'background', '#86efac');
+	await api.createRenderEntry(btnPositiveDisabledSnip.id, 'opacity', '0.4');
 
 	// {sentiment: danger, state: hover}
 	const btnDangerHover = (await api.createLayer(buttonKit.id))!;
@@ -283,55 +295,6 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const btnDangerDisabledSnip = (await api.createRenderSnippet(btnDangerDisabled.id))!;
 	await api.createRenderEntry(btnDangerDisabledSnip.id, 'background', '#fca5a5');
 	await api.createRenderEntry(btnDangerDisabledSnip.id, 'opacity', '0.4');
-
-	// {theme: dark, sentiment: danger} — mirrors btnDarkPrimary's role: the dark-theme,
-	// default-state danger look, and the only thing that can beat btnDarkPrimary {theme,
-	// emphasis} on 'color' for a dark-themed danger button (same reasoning as above — same
-	// condition count, sentiment's higher priority wins the tie).
-	const btnDarkDanger = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkDanger.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkDanger.id, sentimentDanger.id);
-	const btnDarkDangerSnip = (await api.createRenderSnippet(btnDarkDanger.id))!;
-	await api.createRenderEntry(btnDarkDangerSnip.id, 'background', null, tokenDanger.id);
-	await api.createRenderEntry(btnDarkDangerSnip.id, 'color', null, tokenOnColor.id);
-
-	// 3-condition layers
-
-	// {theme: dark, emphasis: primary, state: hover}
-	const btnDarkPrimaryHover = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkPrimaryHover.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkPrimaryHover.id, emphasisPrimary.id);
-	await api.addAxisValueToLayer(btnDarkPrimaryHover.id, stateHover.id);
-	const btnDarkPrimaryHoverSnip = (await api.createRenderSnippet(btnDarkPrimaryHover.id))!;
-	await api.createRenderEntry(btnDarkPrimaryHoverSnip.id, 'background', '#60a5fa');
-
-	// {theme: dark, emphasis: primary, state: disabled}
-	const btnDarkPrimaryDisabled = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkPrimaryDisabled.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkPrimaryDisabled.id, emphasisPrimary.id);
-	await api.addAxisValueToLayer(btnDarkPrimaryDisabled.id, stateDisabled.id);
-	const btnDarkPrimaryDisabledSnip = (await api.createRenderSnippet(btnDarkPrimaryDisabled.id))!;
-	await api.createRenderEntry(btnDarkPrimaryDisabledSnip.id, 'background', '#1e3a5f');
-	await api.createRenderEntry(btnDarkPrimaryDisabledSnip.id, 'opacity', '0.4');
-
-	// {theme: dark, sentiment: danger, state: hover}
-	const btnDarkDangerHover = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkDangerHover.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkDangerHover.id, sentimentDanger.id);
-	await api.addAxisValueToLayer(btnDarkDangerHover.id, stateHover.id);
-	const btnDarkDangerHoverSnip = (await api.createRenderSnippet(btnDarkDangerHover.id))!;
-	await api.createRenderEntry(btnDarkDangerHoverSnip.id, 'background', '#b91c1c');
-
-	// {theme: dark, sentiment: danger, state: disabled} — mirrors btnDarkPrimaryDisabled,
-	// completing danger's coverage to the same depth as primary: base, hover, click, disabled,
-	// and dark-theme variants of each of those that has one.
-	const btnDarkDangerDisabled = (await api.createLayer(buttonKit.id))!;
-	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, themeDark.id);
-	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, sentimentDanger.id);
-	await api.addAxisValueToLayer(btnDarkDangerDisabled.id, stateDisabled.id);
-	const btnDarkDangerDisabledSnip = (await api.createRenderSnippet(btnDarkDangerDisabled.id))!;
-	await api.createRenderEntry(btnDarkDangerDisabledSnip.id, 'background', '#7f1d1d');
-	await api.createRenderEntry(btnDarkDangerDisabledSnip.id, 'opacity', '0.4');
 
 	// Button label kit — text child rendered inside each button box
 	const labelKit = (await api.createKitInProject(proj.id, 'ButtonLabel'))!;
