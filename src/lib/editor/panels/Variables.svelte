@@ -92,6 +92,7 @@
 	let addingScope = $state<'project' | 'kit' | 'view' | null>(null);
 	let editingAlias = $state<Record<string, boolean>>({});
 	let editingValue = $state<Record<string, boolean>>({});
+	let draftValue = $state<Record<string, string>>({});
 
 	const viewName = $derived(
 		activeViewQuery.rows.find((v) => v.viewId === editorActivity.activeViewId)?.viewName ?? 'View'
@@ -170,6 +171,9 @@
 				displayText: 'Edit Value',
 				icon: 'fa-solid fa-pencil',
 				onClick: () => {
+					const token = [...projectTokensQuery.rows, ...kitTokensQuery.rows, ...viewTokensQuery.rows]
+						.find((t: TokenRow) => t.tokenId === tokenId);
+					draftValue[tokenId] = tokenStr(token?.tokenValue) ?? '';
 					editingValue[tokenId] = true;
 				}
 			},
@@ -234,18 +238,25 @@
 						<input
 							class="token__value-input"
 							type="text"
-							value={tokenStr(token.tokenValue) ?? ''}
+							bind:value={draftValue[token.tokenId]}
 							onblur={() => {
+								const draft = draftValue[token.tokenId];
+								if (draft !== undefined && draft !== tokenStr(token.tokenValue)) {
+									api.updateTokenValue(token.tokenId, { type: 'scalar', value: draft });
+								}
 								editingValue[token.tokenId] = false;
 							}}
 							onkeydown={(e) => {
 								if (e.key === 'Enter') {
-									api.updateTokenValue(token.tokenId, { type: 'scalar', value: (e.target as HTMLInputElement).value });
+									const draft = draftValue[token.tokenId];
+									if (draft !== undefined && draft !== tokenStr(token.tokenValue)) {
+										api.updateTokenValue(token.tokenId, { type: 'scalar', value: draft });
+									}
+									editingValue[token.tokenId] = false;
+								} else if (e.key === 'Escape') {
+									draftValue[token.tokenId] = tokenStr(token.tokenValue) ?? '';
 									editingValue[token.tokenId] = false;
 								}
-							}}
-							oninput={(e) => {
-								api.updateTokenValue(token.tokenId, { type: 'scalar', value: (e.target as HTMLInputElement).value });
 							}}
 						/>
 					{:else}
@@ -253,6 +264,7 @@
 							class="token__value"
 							class:token__value--new={!token.tokenValue}
 							onclick={() => {
+								draftValue[token.tokenId] = tokenStr(token.tokenValue) ?? '';
 								editingValue[token.tokenId] = true;
 							}}
 						>
