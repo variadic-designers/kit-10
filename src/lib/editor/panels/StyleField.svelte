@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
 	import { tokenIcon, isColorValue } from './token-utils.ts';
+	import { layerDotColor } from './layer-color.ts';
 	import type { FieldUpdate } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
@@ -10,7 +11,7 @@
 		sourceLayerId?: string | null;
 		kitId?: string | null;
 		kitIcon?: string;
-		conditionCount?: number;
+		keys?: string[];
 		isToken?: boolean;
 		tokenAlias?: string | null;
 		value?: string | null;
@@ -25,7 +26,7 @@
 		sourceLayerId,
 		kitId,
 		kitIcon = 'fa-circle',
-		conditionCount = 0,
+		keys = [],
 		isToken,
 		tokenAlias,
 		value,
@@ -61,14 +62,11 @@
 		];
 	};
 
-	function conditionColor(count: number): string {
-		if (count === 0) return 'var(--color-text-muted)';
-		const max = 5;
-		const t = Math.min(count / max, 1);
-		const L = 0.65;
-		const C = 0.13;
-		const hue = 250 - 250 * t;
-		return `oklch(${L} ${C} ${hue})`;
+	// Matches the Axes panel's layer-combo coloring: same axis key-set, same hue. A property is
+	// always shown here as the currently winning value, so it's always "active".
+	function trackColor(axisIds: string[]): string {
+		if (axisIds.length === 0) return 'var(--color-text-muted)';
+		return layerDotColor(axisIds, true);
 	}
 
 	const editValue = $state({
@@ -140,7 +138,7 @@
 	{#if isToken}
 		<button
 			class="option124__track"
-			style="--track-color: {conditionColor(conditionCount)}"
+			style="--track-color: {trackColor(keys)}"
 			aria-label="Tokenized property"
 			title={tokenAlias ?? 'token'}
 			type="button"
@@ -150,7 +148,7 @@
 	{:else}
 		<button
 			class="option124__track"
-			style="--track-color: {conditionColor(conditionCount)}"
+			style="--track-color: {trackColor(keys)}"
 			class:option124__track--empty={!value}
 			aria-label="Literal property"
 			title="literal"

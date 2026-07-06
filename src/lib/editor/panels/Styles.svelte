@@ -44,6 +44,7 @@
 		kitId: string | null;
 		kitIcon: string;
 		conditionCount: number;
+		keys: string[];
 		isToken: boolean;
 		tokenAlias: string | null;
 	} {
@@ -55,6 +56,7 @@
 				kitIcon:
 					prop.conditionCount === 0 ? 'fa-circle-dot' : (kitIconMap.get(prop.kitId) ?? 'fa-circle'),
 				conditionCount: prop.conditionCount,
+				keys: prop.keys,
 				isToken: prop.isToken,
 				tokenAlias: prop.tokenAlias
 			};
@@ -64,6 +66,7 @@
 			kitId: null,
 			kitIcon: 'fa-circle',
 			conditionCount: 0,
+			keys: [],
 			isToken: false,
 			tokenAlias: null
 		};

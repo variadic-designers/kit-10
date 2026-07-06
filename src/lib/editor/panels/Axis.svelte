@@ -61,16 +61,6 @@
 			.filter(({ axis, cell }) => axis.axisId !== axisId && cell?.hasShape);
 	}
 
-	function conditionColor(count: number): string {
-		if (count === 0) return 'var(--color-text-muted)';
-		const max = 5;
-		const t = Math.min(count / max, 1);
-		const L = 0.65;
-		const C = 0.13;
-		const hue = 250 - 250 * t;
-		return `oklch(${L} ${C} ${hue})`;
-	}
-
 	const axisContextMenu = [
 		{
 			name: 'custom axis',

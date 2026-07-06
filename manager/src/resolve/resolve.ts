@@ -21,6 +21,9 @@ export interface ResolvedProperty {
 	isToken: boolean;
 	tokenAlias: string | null;
 	conditionCount: number;
+	// Axis-id set the winning Layer conditions on — lets the UI color a property by which axes
+	// combine to produce it (e.g. theme+state vs theme+density), not just how many conditions.
+	keys: string[];
 	childViewIds: string[] | null;
 }
 
@@ -156,6 +159,7 @@ function matchLayers(
 				isToken: !!entry.tokenId,
 				tokenAlias: entry.tokenAlias,
 				conditionCount: data.conditions.length,
+				keys: data.conditions.map((c) => c.axisId),
 				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null,
 			});
 		}
