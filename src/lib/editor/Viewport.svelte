@@ -233,13 +233,19 @@
 		display: grid;
 		place-items: center;
 		pointer-events: none;
-		view-transition-name: kit10-logo;
 		opacity: 1;
 		transition: opacity 0.4s ease;
 
+		// The transition name lives on ::after, not this inset:0 wrapper -- the View
+		// Transitions API morphs between the *captured box geometry* of the old and new
+		// elements sharing a name, and the wrapper spans the whole viewport panel while the
+		// hero page's .hero-glyph (the other end of this transition) is tightly sized to the
+		// glyph itself. Naming the wrapper made the browser scale the shared element up to
+		// match the wrapper's much larger box instead of the actual glyph size.
 		&::after {
 			content: '';
 			display: block;
+			view-transition-name: kit10-logo;
 			clip-path: url(#logoClip);
 			width: min(50%, 12rem);
 			aspect-ratio: 622.31 / 476;
