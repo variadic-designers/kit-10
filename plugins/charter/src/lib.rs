@@ -30,6 +30,44 @@ struct FieldDef {
     key: String,
     #[serde(rename = "displayText")]
     display_text: Option<String>,
+    // "color" | "text" | "number" | "select" | "slider" | "font" -- how the editor should render
+    // this field's input. None means the editor's default (plain text).
+    #[serde(rename = "inputType", default)]
+    input_type: Option<String>,
+    // Names which utility plugin + functions serve suggestions for this field -- the editor
+    // never hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's
+    // 1st Principle: "no lock-in to a specific tool for a specific job."
+    #[serde(rename = "suggestionsFrom", default)]
+    suggestions_from: Option<SuggestionSource>,
+}
+
+impl FieldDef {
+    fn new(key: &str, display_text: Option<&str>) -> Self {
+        FieldDef {
+            key: key.to_string(),
+            display_text: display_text.map(str::to_string),
+            input_type: None,
+            suggestions_from: None,
+        }
+    }
+
+    // Charter only ever claims *what kind* of field this is (e.g. "font" -- this holds a font
+    // family name). It deliberately never names a specific suggestion-provider plugin --
+    // *which* plugin currently serves that inputType is an editor/project-level choice (see
+    // src/lib/plugins/suggestion-providers.ts), swappable without recompiling Charter.
+    fn with_input_type(mut self, input_type: &str) -> Self {
+        self.input_type = Some(input_type.to_string());
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuggestionSource {
+    plugin: String,
+    search_fn: String,
+    #[serde(default)]
+    fetch_fn: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +132,17 @@ impl Default for FlexWrapValue {
     fn default() -> Self { FlexWrapValue::NoWrap }
 }
 
+// Mirrors vellum's api.rs — serde output must match exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum NodePosition {
+    Relative,
+    Absolute { x: f32, y: f32 },
+}
+
+impl Default for NodePosition {
+    fn default() -> Self { NodePosition::Relative }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BoxExtra {
     #[serde(default)] gap: f32,
@@ -104,6 +153,7 @@ struct BoxExtra {
     #[serde(default)] flex_shrink: Option<f32>,
     #[serde(default)] align_self: Option<AlignValue>,
     #[serde(default)] margin: f32,
+    #[serde(default)] position: NodePosition,
     #[serde(default)] grid_template_columns: Vec<TrackSize>,
     #[serde(default)] grid_template_rows: Vec<TrackSize>,
     #[serde(default)] grid_auto_rows: Vec<TrackSize>,
@@ -195,9 +245,17 @@ struct OnResolveResult {
 #[serde(rename_all = "camelCase")]
 struct CharterHints {
     primitive: Option<String>,
-    position: Option<[f32; 2]>,
     #[serde(default)]
     child_only: bool,
+}
+
+// Hints consumed straight-through into Vellum's UiNode wire fields with no Charter-side
+// interpretation, kept separate from CharterHints (which holds Charter's own translation
+// choices — primitive override, child_only filtering).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct VellumHints {
+    position: Option<[f32; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -436,19 +494,54 @@ fn get_prop(
     props.get(key).map(|p| p.value.clone())
 }
 
-fn build_box_node(
+// Fill/border/radius are paint properties, not structural ones -- plain text can legitimately
+// have a background, a border, and padding in real CSS (a highlighted/pill label, say), so both
+// build_box_node and build_text_node read them the same way. `default_bg` differs: a box with no
+// declared fill still reads as a visible neutral placeholder box in the editor; a text node with
+// no declared fill should stay fully transparent (it's not a container by default).
+struct PaintProps {
+    bg_color: [f32; 4],
+    show_border: bool,
+    border_color: [f32; 4],
+    border_width: f32,
+    corner_radius: f32,
+    padding: [f32; 4],
+}
+
+fn extract_paint_props(
     props: &std::collections::HashMap<String, ResolvedProperty>,
-    parent_id: Option<usize>,
-) -> UiNode {
+    default_bg: [f32; 4],
+) -> PaintProps {
     let bg = get_prop(props, "background").unwrap_or_default();
     let border = get_prop(props, "border").unwrap_or_default();
     let border_width = parse_px(get_prop(props, "border-width").as_deref());
     let radius = parse_px(get_prop(props, "border-radius").as_deref());
     let padding = parse_px(get_prop(props, "padding").as_deref());
+    let has_border = !border.is_empty() && border != "none";
+
+    PaintProps {
+        bg_color: if !bg.is_empty() { parse_color(&bg) } else { default_bg },
+        show_border: has_border,
+        border_color: if has_border { parse_color(&border) } else { [0.0; 4] },
+        border_width: if border_width > 0.0 {
+            border_width
+        } else if has_border {
+            1.0
+        } else {
+            0.0
+        },
+        corner_radius: radius,
+        padding: [padding; 4],
+    }
+}
+
+fn build_box_node(
+    props: &std::collections::HashMap<String, ResolvedProperty>,
+    parent_id: Option<usize>,
+) -> UiNode {
+    let paint = extract_paint_props(props, [0.9, 0.9, 0.9, 1.0]);
     let width = parse_px(get_prop(props, "width").as_deref());
     let height = parse_px(get_prop(props, "height").as_deref());
-
-    let has_border = !border.is_empty() && border != "none";
 
     let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
         "row"            => "Row",
@@ -468,6 +561,7 @@ fn build_box_node(
             .map(|s| parse_px(Some(&s))),
         align_self: parse_align(get_prop(props, "align-self").as_deref()),
         margin: parse_px(get_prop(props, "margin").as_deref()),
+        position: NodePosition::default(),
         grid_template_columns: get_prop(props, "grid-template-columns")
             .map(|s| parse_track_list(&s)).unwrap_or_default(),
         grid_template_rows: get_prop(props, "grid-template-rows")
@@ -489,27 +583,13 @@ fn build_box_node(
             height,
             max_width: 0.0,
             max_height: 0.0,
-            padding: [padding; 4],
-            bg_color: if !bg.is_empty() {
-                parse_color(&bg)
-            } else {
-                [0.9, 0.9, 0.9, 1.0]
-            },
+            padding: paint.padding,
+            bg_color: paint.bg_color,
             flex_direction,
-            show_border: has_border,
-            border_color: if has_border {
-                parse_color(&border)
-            } else {
-                [0.0; 4]
-            },
-            border_width: if border_width > 0.0 {
-                border_width
-            } else if has_border {
-                1.0
-            } else {
-                0.0
-            },
-            corner_radius: radius,
+            show_border: paint.show_border,
+            border_color: paint.border_color,
+            border_width: paint.border_width,
+            corner_radius: paint.corner_radius,
             opacity: 1.0,
             shadow: None,
             extra,
@@ -524,24 +604,29 @@ fn build_text_node(
 ) -> UiNode {
     let color = get_prop(props, "color").unwrap_or_default();
     let font_size = parse_px(get_prop(props, "font-size").as_deref());
+    let font_weight = parse_px(get_prop(props, "font-weight").as_deref()) as u16;
     let content = get_prop(props, "content").unwrap_or_else(|| "Text".to_string());
+    let font_family = get_prop(props, "font-family").unwrap_or_else(|| "sans-serif".to_string());
+    // A text node with no declared fill stays fully transparent -- unlike a Box, it isn't a
+    // container by default, so there's no "neutral placeholder" to fall back to.
+    let paint = extract_paint_props(props, [0.0; 4]);
 
     UiNode::Text(UiTextNode {
         text_data: TextData {
             parent_id: Some(parent_id),
             width: 0.0,
             height: 0.0,
-            padding: [0.0; 4],
-            bg_color: [0.0; 4],
-            show_border: false,
-            border_color: [0.0; 4],
-            border_width: 0.0,
-            corner_radius: 0.0,
+            padding: paint.padding,
+            bg_color: paint.bg_color,
+            show_border: paint.show_border,
+            border_color: paint.border_color,
+            border_width: paint.border_width,
+            corner_radius: paint.corner_radius,
             opacity: 1.0,
             content,
             font_size: if font_size > 0.0 { font_size } else { 16.0 },
-            font_family: "sans-serif".to_string(),
-            font_weight: 400,
+            font_family,
+            font_weight: if font_weight > 0 { font_weight } else { 400 },
             font_style: "Normal".to_string(),
             text_color: if !color.is_empty() {
                 parse_color(&color)
@@ -559,11 +644,17 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("text-decoration")
         || props.contains_key("color");
 
-    let has_box_props = props.contains_key("background")
-        || props.contains_key("border")
-        || props.contains_key("border-radius")
-        || props.contains_key("padding")
-        || props.contains_key("width")
+    // Only properties that Text has nowhere to put -- i.e. genuinely imply "this node arranges
+    // children" -- count as box-forcing. Fill/border/radius/padding are deliberately excluded:
+    // real CSS text can have a background, a border, and padding without stopping being text
+    // (a highlighted/pill label), and build_text_node now actually reads and renders them
+    // itself (Vellum already supports a Text node carrying its own paint properties). Forcing
+    // a wrap into Box for those would silently swap the whole node's sizing algorithm (Text's
+    // direct cosmic-text auto-measurement vs. Box's auto-size-to-children) for a property that
+    // has nothing to do with layout structure. `width`/`height` stay box-forcing because
+    // build_text_node always emits width:0/height:0 regardless -- an explicit size can only
+    // ever take effect on a Box.
+    let has_box_props = props.contains_key("width")
         || props.contains_key("height")
         || props.contains_key("display")
         || props.contains_key("flex-direction")
@@ -583,58 +674,58 @@ fn box_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "layout".to_string(),
             fields: vec![
-                FieldDef { key: "width".to_string(), display_text: None },
-                FieldDef { key: "height".to_string(), display_text: None },
-                FieldDef { key: "padding".to_string(), display_text: Some("Padding".to_string()) },
-                FieldDef { key: "flex-direction".to_string(), display_text: Some("Direction".to_string()) },
-                FieldDef { key: "gap".to_string(), display_text: Some("Gap".to_string()) },
-                FieldDef { key: "display".to_string(), display_text: Some("Display".to_string()) },
-                FieldDef { key: "grid-template-columns".to_string(), display_text: Some("Columns".to_string()) },
-                FieldDef { key: "grid-template-rows".to_string(), display_text: Some("Rows".to_string()) },
-                FieldDef { key: "grid-auto-columns".to_string(), display_text: Some("Auto Cols".to_string()) },
-                FieldDef { key: "grid-auto-rows".to_string(), display_text: Some("Auto Rows".to_string()) },
-                FieldDef { key: "grid-column".to_string(), display_text: Some("Col Span".to_string()) },
-                FieldDef { key: "grid-row".to_string(), display_text: Some("Row Span".to_string()) },
+                FieldDef::new("width", None),
+                FieldDef::new("height", None),
+                FieldDef::new("padding", Some("Padding")),
+                FieldDef::new("flex-direction", Some("Direction")),
+                FieldDef::new("gap", Some("Gap")),
+                FieldDef::new("display", Some("Display")),
+                FieldDef::new("grid-template-columns", Some("Columns")),
+                FieldDef::new("grid-template-rows", Some("Rows")),
+                FieldDef::new("grid-auto-columns", Some("Auto Cols")),
+                FieldDef::new("grid-auto-rows", Some("Auto Rows")),
+                FieldDef::new("grid-column", Some("Col Span")),
+                FieldDef::new("grid-row", Some("Row Span")),
             ],
         },
         FieldCategory {
             name: "box".to_string(),
             fields: vec![
-                FieldDef { key: "background".to_string(), display_text: Some("Fill".to_string()) },
-                FieldDef { key: "border".to_string(), display_text: None },
-                FieldDef { key: "border-radius".to_string(), display_text: Some("Radius".to_string()) },
-                FieldDef { key: "outline".to_string(), display_text: None },
+                FieldDef::new("background", Some("Fill")),
+                FieldDef::new("border", None),
+                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("outline", None),
             ],
         },
     ]
 }
 
 fn text_categories() -> Vec<FieldCategory> {
-    vec![FieldCategory {
-        name: "text".to_string(),
-        fields: vec![
-            FieldDef {
-                key: "color".to_string(),
-                display_text: Some("Fill".to_string()),
-            },
-            FieldDef {
-                key: "font-size".to_string(),
-                display_text: Some("Size".to_string()),
-            },
-            FieldDef {
-                key: "font-weight".to_string(),
-                display_text: Some("Weight".to_string()),
-            },
-            FieldDef {
-                key: "text-align".to_string(),
-                display_text: Some("Align".to_string()),
-            },
-            FieldDef {
-                key: "text-decoration".to_string(),
-                display_text: Some("Decor".to_string()),
-            },
-        ],
-    }]
+    vec![
+        FieldCategory {
+            name: "text".to_string(),
+            fields: vec![
+                FieldDef::new("color", Some("Fill")),
+                FieldDef::new("font-family", Some("Family")).with_input_type("font"),
+                FieldDef::new("font-size", Some("Size")),
+                FieldDef::new("font-weight", Some("Weight")),
+                FieldDef::new("text-align", Some("Align")),
+                FieldDef::new("text-decoration", Some("Decor")),
+            ],
+        },
+        // Paint properties a text node can carry directly (a highlighted/pill label) without
+        // becoming a Box -- see build_text_node/extract_paint_props and the note in
+        // detect_primitive about why these don't force box treatment.
+        FieldCategory {
+            name: "highlight".to_string(),
+            fields: vec![
+                FieldDef::new("background", Some("Highlight")),
+                FieldDef::new("border", Some("Border")),
+                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("padding", Some("Padding")),
+            ],
+        },
+    ]
 }
 
 fn transparent_box(
@@ -659,6 +750,34 @@ fn transparent_box(
             opacity: 1.0,
             shadow: None,
             extra: BoxExtra::default(),
+            selected: 0,
+        },
+    })
+}
+
+// A top-level view cell placed at a fixed world-space position, escaping the auto-flow grid
+// entirely (see build_viewport). Always a root (parent_id: None).
+fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
+    UiNode::Box(UiBoxNode {
+        box_data: BoxData {
+            parent_id: None,
+            width: 0.0,
+            height: 0.0,
+            max_width: 0.0,
+            max_height: 0.0,
+            padding: [0.0; 4],
+            bg_color: [0.0; 4],
+            flex_direction: flex_direction.to_string(),
+            show_border: false,
+            border_color: [0.0; 4],
+            border_width: 0.0,
+            corner_radius: 0.0,
+            opacity: 1.0,
+            shadow: None,
+            extra: BoxExtra {
+                position: NodePosition::Absolute { x: pos[0], y: pos[1] },
+                ..BoxExtra::default()
+            },
             selected: 0,
         },
     })
@@ -752,7 +871,7 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
         .map(|v| (v.view_id.clone(), v))
         .collect();
 
-    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, u8)> = parsed.project_views
+    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, u8, Option<[f32; 2]>)> = parsed.project_views
         .iter()
         .filter_map(|view| {
             let hints: CharterHints = view.hints.get("charter")
@@ -769,11 +888,26 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
             let is_primary = parsed.selected_view_primary.as_deref() == Some(view.view_id.as_str());
             let is_secondary = parsed.selected_view_secondary.iter().any(|id| id == &view.view_id);
             let sel: u8 = if is_active || is_primary { 2 } else if is_secondary { 1 } else { 0 };
-            Some((view, kits, sel))
+            let vellum_hints: VellumHints = view.hints.get("vellum")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+            Some((view, kits, sel, vellum_hints.position))
         })
         .collect();
 
-    if !top_views.is_empty() {
+    // Views with an explicit world position float independently, each as its own root —
+    // no shared flex parent to couple their placement to a sibling's content size.
+    let (positioned, flowing): (Vec<_>, Vec<_>) =
+        top_views.into_iter().partition(|(_, _, _, pos)| pos.is_some());
+
+    for (view, kits, sel, pos) in &positioned {
+        let cell_idx = viewport_data.len();
+        viewport_data.push(absolute_box("Column", pos.unwrap()));
+        render_view_nodes(kits, &view.hints, *sel, Some(cell_idx), &mut viewport_data, 0, &view_map);
+    }
+
+    // Views without a position hint keep flowing through the legacy auto-flow grid.
+    if !flowing.is_empty() {
         const COLS: usize = 4;
         const GAP: f32 = 32.0;
         const PAD: f32 = 40.0;
@@ -781,11 +915,11 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
         let root_idx = viewport_data.len();
         viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
 
-        for row in top_views.chunks(COLS) {
+        for row in flowing.chunks(COLS) {
             let row_idx = viewport_data.len();
             viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
 
-            for (view, kits, sel) in row {
+            for (view, kits, sel, _) in row {
                 let cell_idx = viewport_data.len();
                 viewport_data.push(transparent_box(Some(row_idx), "Column", [0.0, GAP, 0.0, 0.0]));
 
@@ -899,5 +1033,182 @@ mod field_update_tests {
         assert_eq!(update.property, "color");
         assert_eq!(update.value.as_deref(), Some("#ff0000"));
         assert_eq!(update.token_id, None);
+    }
+}
+
+#[cfg(test)]
+mod position_wire_tests {
+    use super::*;
+
+    #[test]
+    fn absolute_position_serializes_as_expected() {
+        let extra = BoxExtra { position: NodePosition::Absolute { x: 500.0, y: 400.0 }, ..BoxExtra::default() };
+        let json = serde_json::to_string(&extra).unwrap();
+        println!("BoxExtra JSON: {}", json);
+        assert!(json.contains(r#""position":{"Absolute":{"x":500.0,"y":400.0}}"#), "json was: {}", json);
+    }
+
+    #[test]
+    fn build_viewport_places_positioned_view_as_independent_root() {
+        let mut hints = std::collections::HashMap::new();
+        hints.insert("vellum".to_string(), serde_json::json!({ "position": [500.0, 400.0] }));
+
+        let view = ViewMeta {
+            view_id: "v1".to_string(),
+            view_name: "View 1".to_string(),
+            hints,
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "k1".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("background".to_string(), ResolvedProperty {
+                        property: "background".to_string(),
+                        value: "#ff0000".to_string(),
+                        source_layer_id: "l1".to_string(),
+                        kit_id: "k1".to_string(),
+                        is_token: false,
+                        token_alias: None,
+                        condition_count: 0,
+                        child_view_ids: None,
+                    });
+                    m
+                },
+                child_view_ids: vec![],
+            }],
+        };
+
+        let input = OnResolveInput {
+            active_view_id: None,
+            resolved_kits: vec![],
+            view_hints: std::collections::HashMap::new(),
+            project_views: vec![view],
+            selected_view_primary: None,
+            selected_view_secondary: vec![],
+        };
+
+        let viewport = build_viewport(&input);
+        println!("viewport JSON: {}", serde_json::to_string_pretty(&viewport).unwrap());
+        assert_eq!(viewport.len(), 2, "expected the positioned root cell + its one content box");
+        if let UiNode::Box(UiBoxNode { box_data }) = &viewport[0] {
+            assert_eq!(box_data.parent_id, None);
+            assert_eq!(box_data.extra.position, NodePosition::Absolute { x: 500.0, y: 400.0 });
+        } else {
+            panic!("expected a Box node");
+        }
+    }
+}
+
+#[cfg(test)]
+mod text_paint_properties_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            child_view_ids: None,
+        }
+    }
+
+    #[test]
+    fn paint_only_properties_never_force_box_detection() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("font-size".to_string(), prop("14px"));
+        props.insert("color".to_string(), prop("#111111"));
+        assert_eq!(detect_primitive(&props), "text");
+
+        for key in ["background", "border", "border-radius", "padding"] {
+            let mut with_paint = props.clone();
+            with_paint.insert(key.to_string(), prop("#eeeeee"));
+            assert_eq!(
+                detect_primitive(&with_paint),
+                "text",
+                "{key} is a paint property and must not flip text to box"
+            );
+        }
+    }
+
+    #[test]
+    fn structural_properties_still_force_box_detection() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("font-size".to_string(), prop("14px"));
+        props.insert("color".to_string(), prop("#111111"));
+
+        for key in ["width", "height", "display", "flex-direction", "gap", "grid-template-columns"] {
+            let mut with_structural = props.clone();
+            with_structural.insert(key.to_string(), prop("1px"));
+            assert_eq!(
+                detect_primitive(&with_structural),
+                "box",
+                "{key} genuinely implies a container and should still force box"
+            );
+        }
+    }
+
+    #[test]
+    fn build_text_node_renders_its_own_background_and_border() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("background".to_string(), prop("#ff0000"));
+        props.insert("border".to_string(), prop("#00ff00"));
+        props.insert("border-radius".to_string(), prop("4px"));
+        props.insert("padding".to_string(), prop("8px"));
+
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(UiTextNode { text_data }) = node else {
+            panic!("expected a Text node");
+        };
+        assert_eq!(text_data.bg_color, [1.0, 0.0, 0.0, 1.0]);
+        assert!(text_data.show_border);
+        assert_eq!(text_data.border_color, [0.0, 1.0, 0.0, 1.0]);
+        assert_eq!(text_data.corner_radius, 4.0);
+        assert_eq!(text_data.padding, [8.0; 4]);
+        // Still always auto-measured -- paint properties never affect sizing.
+        assert_eq!(text_data.width, 0.0);
+        assert_eq!(text_data.height, 0.0);
+    }
+
+    #[test]
+    fn build_text_node_with_no_paint_stays_fully_transparent() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(UiTextNode { text_data }) = node else {
+            panic!("expected a Text node");
+        };
+        assert_eq!(text_data.bg_color, [0.0; 4]);
+        assert!(!text_data.show_border);
+    }
+
+    #[test]
+    fn build_text_node_reads_font_weight_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("font-weight".to_string(), prop("600"));
+
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(UiTextNode { text_data }) = node else {
+            panic!("expected a Text node");
+        };
+        assert_eq!(text_data.font_weight, 600);
+    }
+
+    #[test]
+    fn build_text_node_defaults_font_weight_to_400_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(UiTextNode { text_data }) = node else {
+            panic!("expected a Text node");
+        };
+        assert_eq!(text_data.font_weight, 400);
     }
 }

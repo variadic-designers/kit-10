@@ -180,6 +180,11 @@ export interface QueryLayer {
 	getLayersByKitId: (
 		kitId: string
 	) => SelectQueryBuilder<Schema, 'layers', { layerId: string; kitId: string; lastModified: Date }>;
+	// The layer with zero attached axis_values -- applies unconditionally, always wins lowest
+	// specificity. Not a distinct flag in the schema, just a layer nobody's attached a condition
+	// to (see seed.ts's `*Null` layers) -- this is the fallback write target for a property that
+	// has never been given a value on any layer yet (so it doesn't show up in a resolve at all).
+	getNullLayerId: (kitId: string) => Promise<string | undefined>;
 	setLayerChildren: (layerId: string, viewIds: string[]) => Promise<void>;
 	clearLayerChildren: (layerId: string) => Promise<void>;
 }
@@ -1093,6 +1098,29 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'layers.kit_id as kitId',
 				'layers.last_modified as lastModified'
 			]);
+	},
+
+	getNullLayerId: async (kitId: string) => {
+		const layers = await db
+			.selectFrom('layers')
+			.where('layers.kit_id', '=', kitId)
+			.select(['layers.id'])
+			.execute();
+		if (layers.length === 0) return undefined;
+
+		const conditioned = await db
+			.selectFrom('layer_axis_values')
+			.where(
+				'layer_axis_values.layer_id',
+				'in',
+				layers.map((l) => l.id)
+			)
+			.select(['layer_axis_values.layer_id'])
+			.distinct()
+			.execute();
+		const conditionedIds = new Set(conditioned.map((c) => c.layer_id));
+
+		return layers.find((l) => !conditionedIds.has(l.id))?.id;
 	},
 
 	getRenderSnippetsByLayerId: (layerId: string) => {

@@ -1,0 +1,95 @@
+[
+  {
+    "family": "Inter",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" }
+    ]
+  },
+  {
+    "family": "Roboto",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2" }
+    ]
+  },
+  {
+    "family": "Open Sans",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/opensans/v44/memvYaGs126MiZpBA-UvWbX2vVnXBbObj2OVTS-muw.woff2" }
+    ]
+  },
+  {
+    "family": "Lato",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 400, "style": "normal", "url": "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHjx4wXg.woff2" },
+      { "weightMin": 700, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVSwiPGQ.woff2" }
+    ]
+  },
+  {
+    "family": "Poppins",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 400, "style": "normal", "url": "https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrJJfecg.woff2" },
+      { "weightMin": 700, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2" }
+    ]
+  },
+  {
+    "family": "Montserrat",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2" }
+    ]
+  },
+  {
+    "family": "Nunito",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2" }
+    ]
+  },
+  {
+    "family": "Source Sans 3",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/sourcesans3/v19/nwpStKy2OAdR1K-IwhWudF-R3w8aZQ.woff2" }
+    ]
+  },
+  {
+    "family": "Work Sans",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/worksans/v24/QGYsz_wNahGAdqQ43Rh_fKDp.woff2" }
+    ]
+  },
+  {
+    "family": "DM Sans",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2" }
+    ]
+  },
+  {
+    "family": "Playfair Display",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTzYgA.woff2" }
+    ]
+  },
+  {
+    "family": "Merriweather",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/merriweather/v33/u-4e0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiSeqqJ-k.woff2" }
+    ]
+  },
+  {
+    "family": "JetBrains Mono",
+    "vendor": "google",
+    "variants": [
+      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2" }
+    ]
+  }
+]

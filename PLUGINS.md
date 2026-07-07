@@ -20,6 +20,14 @@ KIT•10 has two kinds of plugins with different roles and different levels of s
 
 **Data plugins (Extism)** — sandboxed WASM modules written in any language with an Extism PDK. They receive resolved design data and decide what to draw and what fields to show. This is where all third-party extensibility lives: viewport interpreters, render targets (CSS, SCSS, JSON), domain-specific renderers.
 
+**Utility plugins** — a third category, called on demand rather than participating in the `on_resolve`/`on_selection_change`/`on_field_update` lifecycle at all. Loaded via the editor's `loadUtilityPlugin` (not `loadPlugin`) so they coexist with the active viewport-interpreter plugin instead of replacing it, and invoked with `callUtilityPlugin(name, fn, payload)` whenever something needs them — no continuous resolve loop. Extism's `allowedHosts` capability (requires `runInWorker: true`) lets a utility plugin make sandboxed HTTP requests, restricted to an explicit host allowlist. `plugins/fontavious/` (fetches WOFF2 font files from vendor CDNs) is the first example — its only exports are `on_init` plus two on-demand functions, no viewport/resolve entry points at all.
+
+**Adding a new suggestion-backed field type (fonts are just the first case):**
+1. Write a utility plugin exposing a search function returning `Vec<{ value, label }>` JSON (substring/fuzzy match against whatever catalogue it owns), and optionally a fetch function taking `{ value }` and returning raw bytes if picking a suggestion needs to fetch/produce something (fonts do; a plain autocomplete wouldn't need this).
+2. In the plugin that *defines* the field (e.g. Charter), set `FieldDef.inputType` to a name for the kind (e.g. `"font"`, `"icon"`) — nothing more. **Never put the provider plugin's name in the defining plugin's source** — that's the lock-in this whole mechanism exists to avoid (see VISION.md's 1st Principle).
+3. Register the mapping in `src/lib/plugins/suggestion-providers.ts`: `inputType → { plugin, searchFn, fetchFn? }`. This is the one place "which plugin currently serves this kind" lives — editable without recompiling any plugin.
+4. `StyleField.svelte`'s `SuggestField.svelte` handles the rest generically (search-as-you-type, keyboard nav, fetch-on-pick). If the fetched bytes need special handling (like `vellum.load_font()` for `"font"`), that goes in `StyleField.svelte`'s `confirmSuggestionPick`, keyed off `inputType` — that's the one place allowed to have an opinion about what a specific *kind* means, since `SuggestField` itself stays fully generic.
+
 ---
 
 ## Plugin functions

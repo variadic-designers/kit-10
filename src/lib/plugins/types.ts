@@ -1,6 +1,14 @@
 import type { ResolvedKit } from 'manager';
 
-export type InputType = 'color' | 'text' | 'number' | 'select' | 'slider';
+export type InputType = 'color' | 'text' | 'number' | 'select' | 'slider' | 'font';
+
+// Names which utility plugin + functions serve suggestions for a field -- the editor never
+// hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
+export interface SuggestionSource {
+	plugin: string;
+	searchFn: string;
+	fetchFn?: string;
+}
 
 export interface FieldDef {
 	key: string;
@@ -8,6 +16,7 @@ export interface FieldDef {
 	inputType?: InputType;
 	options?: string[];
 	layerId?: string;
+	suggestionsFrom?: SuggestionSource;
 }
 
 export interface FieldCategory {

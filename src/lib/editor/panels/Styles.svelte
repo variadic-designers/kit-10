@@ -3,7 +3,8 @@
 	import StyleField from './StyleField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { FieldCategory, FieldUpdate } from '$lib/plugins/types.js';
+	import type { FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
+	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { shapeIcon } from './layer-color.ts';
 
 	type StylesPanel = {
@@ -12,9 +13,11 @@
 		resolvedKits: ResolvedKit[] | null;
 		fieldCategories?: FieldCategory[];
 		onFieldUpdate?: (update: FieldUpdate) => void;
+		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 	};
 
-	const { api, selection, resolvedKits, fieldCategories, onFieldUpdate }: StylesPanel = $props();
+	const { api, selection, resolvedKits, fieldCategories, onFieldUpdate, callUtilityPlugin }: StylesPanel =
+		$props();
 
 	// Axis names for the winning Layer's key-set, so StyleField can show "Theme + Density · 2
 	// conditions" in its tooltip instead of just a color. Refetched whenever the involved kits change.
@@ -39,6 +42,33 @@
 		};
 
 		loadAxisNames();
+	});
+
+	// Which kit a brand-new (never-before-set) property should be written to. Matches Compose
+	// panel's kit selection when the user has picked one; otherwise falls back to the
+	// highest-priority kit (last in composition order -- same as flattenKitResults' own
+	// later-kit-wins rule) so a property still lands somewhere sensible by default.
+	const activeKitId = $derived.by(() => {
+		if (!resolvedKits || resolvedKits.length === 0) return null;
+		const idx = selection.selectedKitIndex;
+		if (idx != null && resolvedKits[idx]) return resolvedKits[idx]!.kitId;
+		return resolvedKits[resolvedKits.length - 1]!.kitId;
+	});
+
+	// The active kit's null (unconditional) layer -- the fallback write target for a property
+	// that has never been given a value on any layer, so it doesn't appear in `resolvedMap` at
+	// all. Refetched whenever the active kit changes.
+	let nullLayerId = $state<string | null>(null);
+
+	$effect(() => {
+		const kitId = activeKitId;
+		if (!kitId) {
+			nullLayerId = null;
+			return;
+		}
+		api.getNullLayerId(kitId).then((id) => {
+			nullLayerId = id ?? null;
+		});
 	});
 
 	const stylesContextMenu = () => {
@@ -90,9 +120,9 @@
 			};
 		}
 		return {
-			sourceLayerId: null,
-			kitId: null,
-			kitIcon: 'fa-circle',
+			sourceLayerId: nullLayerId,
+			kitId: activeKitId,
+			kitIcon: 'fa-circle-dot',
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
@@ -110,7 +140,7 @@
 	{#snippet content()}
 		{#if resolvedKits}
 			<div style="display:contents">
-				{#snippet styleSection(category: string, fields: { key: string; displayText?: string }[])}
+				{#snippet styleSection(category: string, fields: FieldDef[])}
 					<details class="style-section" open>
 						<summary class="style-section__heading">
 							<h3>{category}</h3>
@@ -126,7 +156,10 @@
 									value={resolvedMap.get(field.key)?.value}
 									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 									{axisNameById}
+									inputType={field.inputType}
+									suggestionsFrom={resolveSuggestionSource(field.inputType, field.suggestionsFrom)}
 									{onFieldUpdate}
+									{callUtilityPlugin}
 								/>
 							{/each}
 						</div>
@@ -153,6 +186,7 @@
 
 					{@render styleSection('text', [
 						{ key: 'color', displayText: 'Fill' },
+						{ key: 'font-family', displayText: 'Family' },
 						{ key: 'font-size', displayText: 'Size' },
 						{ key: 'font-weight', displayText: 'Weight' },
 						{ key: 'text-align', displayText: 'Align' },

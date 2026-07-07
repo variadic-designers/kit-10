@@ -386,21 +386,26 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.attachKitToComposition(labelKit.id, labelDangerView.id);
 	await api.setAxisArg(labelDangerView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'danger' });
 
-	// Wire children onto button layers — specificity handles which label wins per view:
-	// sentiment (priority 4000) beats emphasis (3000) beats null layer
+	// Only the null layer sets children -- deliberately NOT per emphasis/sentiment layer.
+	// `children` is just another render-entry property, resolved through the same layer
+	// machinery as background/color, so making it axis-conditional is a legitimate capability
+	// (a kit CAN legitimately vary its children by axis) -- but doing so here meant the
+	// button's auto-sized box visibly grew/shrank every time emphasis or sentiment changed,
+	// since each value pointed at a different label view with different (differently-long)
+	// text. That coupled two independent concerns (how emphasized is this button vs. what does
+	// it say) that this demo didn't actually intend to couple. Content now stays fixed at
+	// Label: Default regardless of emphasis/sentiment; only paint properties (background,
+	// color, font-weight, border) vary. See VISION.md's 1st Principle note on view-level token
+	// overrides for the real long-term mechanism when a kit *does* want axis-conditional
+	// children with a per-instance escape hatch.
 	await api.setLayerChildren(btnNull.id, [labelDefaultView.id]);
-	await api.setLayerChildren(btnPrimary.id, [labelPrimaryView.id]);
-	await api.setLayerChildren(btnSecondary.id, [labelSecondaryView.id]);
-	await api.setLayerChildren(btnTertiary.id, [labelTertiaryView.id]);
-	await api.setLayerChildren(btnGhost.id, [labelGhostView.id]);
-	await api.setLayerChildren(btnPositive.id, [labelPositiveView.id]);
-	await api.setLayerChildren(btnDanger.id, [labelDangerView.id]);
 
 	// --- Views ---
 
 	// View: Light Default
 	const lightDefaultView = (await api.createViewInProject(proj.id, 'Light Default', {
-		charter: { primitive: 'box', position: [0, 0] }
+		charter: { primitive: 'box' },
+		vellum: { position: [0, 0] }
 	}))!;
 	await api.attachKitToComposition(buttonKit.id, lightDefaultView.id);
 	await api.setAxisArg(lightDefaultView.id, buttonKit.id, themeAxis.id, {
@@ -426,7 +431,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 
 	// View: Dark Default
 	const darkDefaultView = (await api.createViewInProject(proj.id, 'Dark Default', {
-		charter: { primitive: 'box', position: [280, 0] }
+		charter: { primitive: 'box' },
+		vellum: { position: [500, 0] }
 	}))!;
 	await api.attachKitToComposition(buttonKit.id, darkDefaultView.id);
 	await api.setAxisArg(darkDefaultView.id, buttonKit.id, themeAxis.id, {
@@ -455,7 +461,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		proj.id,
 		'Light Dense Primary Hover',
 		{
-			charter: { primitive: 'box', position: [560, 0] }
+			charter: { primitive: 'box' },
+			vellum: { position: [1000, 0] }
 		}
 	))!;
 	await api.attachKitToComposition(buttonKit.id, lightDensePrimaryHoverView.id);
@@ -485,7 +492,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		proj.id,
 		'Dark Dense Danger Click',
 		{
-			charter: { primitive: 'box', position: [0, 120] }
+			charter: { primitive: 'box' },
+			vellum: { position: [0, 400] }
 		}
 	))!;
 	await api.attachKitToComposition(buttonKit.id, darkDenseDangerClickView.id);
@@ -515,7 +523,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		proj.id,
 		'Light Compact Ghost Disabled',
 		{
-			charter: { primitive: 'box', position: [280, 120] }
+			charter: { primitive: 'box' },
+			vellum: { position: [500, 400] }
 		}
 	))!;
 	await api.attachKitToComposition(buttonKit.id, lightCompactGhostDisabledView.id);
@@ -545,7 +554,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		proj.id,
 		'Dark Compact Positive',
 		{
-			charter: { primitive: 'box', position: [560, 120] }
+			charter: { primitive: 'box' },
+			vellum: { position: [1000, 400] }
 		}
 	))!;
 	await api.attachKitToComposition(buttonKit.id, darkCompactSecondaryPositiveView.id);
@@ -575,7 +585,8 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		proj.id,
 		'Light Dense Tertiary Click',
 		{
-			charter: { primitive: 'box', position: [840, 120] }
+			charter: { primitive: 'box' },
+			vellum: { position: [1500, 400] }
 		}
 	))!;
 	await api.attachKitToComposition(buttonKit.id, lightDenseTertiaryClickView.id);

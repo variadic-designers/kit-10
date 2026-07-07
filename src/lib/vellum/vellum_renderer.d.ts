@@ -5,6 +5,12 @@ export function get_selection(x: number, y: number): number | undefined;
 
 export function initialize(canvas_id: string, width: number, height: number): Promise<void>;
 
+export function is_font_loaded(name: string): boolean;
+
+export function is_font_variant_loaded(name: string, weight: number): boolean;
+
+export function load_font(bytes: Uint8Array): string[];
+
 export function render(): void;
 
 export function resize(width: number, height: number): void;
@@ -31,6 +37,9 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly get_selection: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
+    readonly is_font_loaded: (a: number, b: number) => number;
+    readonly is_font_variant_loaded: (a: number, b: number, c: number) => number;
+    readonly load_font: (a: number, b: number, c: number) => void;
     readonly render: () => void;
     readonly resize: (a: number, b: number) => void;
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
@@ -41,14 +50,15 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7445: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7464: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6059: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7744: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7763: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6357: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
     readonly __wbindgen_export4: (a: number, b: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
+    readonly __wbindgen_export5: (a: number, b: number, c: number) => void;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

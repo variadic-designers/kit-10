@@ -3,7 +3,9 @@
 	import { contextMenu } from '$lib/components/contextMenu';
 	import { tokenIcon, isColorValue } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
-	import type { FieldUpdate } from '$lib/plugins/types.js';
+	import SuggestField from '$lib/components/SuggestField.svelte';
+	import { getVellumInstance } from '../vellum-instance.js';
+	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
 		key: string;
@@ -19,7 +21,10 @@
 		highlighted?: boolean;
 		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
+		inputType?: InputType;
+		suggestionsFrom?: SuggestionSource;
 		onFieldUpdate?: (update: FieldUpdate) => void;
+		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 	};
 
 	let {
@@ -36,7 +41,10 @@
 		highlighted = $bindable(false),
 		position = 'mid',
 		axisNameById = {},
-		onFieldUpdate
+		inputType,
+		suggestionsFrom,
+		onFieldUpdate,
+		callUtilityPlugin
 	}: StyleFieldProps = $props();
 
 	const menu = () => {
@@ -129,6 +137,27 @@
 			});
 		}
 	}
+
+	function confirmSuggestionPick(picked: string, fetched?: Uint8Array) {
+		// inputType-specific: "font" means the fetched bytes are a font file to register with
+		// Vellum before persisting the value. A different inputType could interpret `fetched`
+		// differently -- SuggestField itself has no opinion, it just passes bytes through.
+		if (inputType === 'font' && fetched) {
+			getVellumInstance()?.load_font(fetched);
+		}
+
+		if (!onFieldUpdate) {
+			console.log(`Update ${key}: ${picked} on layer ${sourceLayerId} (no callback)`);
+			return;
+		}
+		if (!sourceLayerId) {
+			console.warn(`Cannot update ${key}: no source layer`);
+			return;
+		}
+		if (picked !== value) {
+			onFieldUpdate({ layerId: sourceLayerId, property: key, value: picked });
+		}
+	}
 </script>
 
 <div
@@ -172,7 +201,21 @@
 		</button>
 	{/if}
 
-	{#if editValue.now}
+	{#if suggestionsFrom && !isToken}
+		<div class="option124__value">
+			<SuggestField
+				{value}
+				pluginName={suggestionsFrom.plugin}
+				searchFn={suggestionsFrom.searchFn}
+				fetchFn={suggestionsFrom.fetchFn}
+				{callUtilityPlugin}
+				isLoaded={inputType === 'font'
+					? (v) => getVellumInstance()?.is_font_loaded(v) ?? false
+					: undefined}
+				onPick={(picked, fetched) => confirmSuggestionPick(picked, fetched)}
+			/>
+		</div>
+	{:else if editValue.now}
 		<input
 			type="text"
 			title="Edit Value"

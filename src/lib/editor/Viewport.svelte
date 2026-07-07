@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { theme, getTheme, type Theme } from '$lib/theming.js';
+	import { setVellumInstance } from './vellum-instance.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -51,6 +52,7 @@
 			});
 		await initCanvas();
 		initialized = true;
+		setVellumInstance(vellum);
 		applyColors(getTheme());
 
 		resizeObserver = new ResizeObserver(() => {

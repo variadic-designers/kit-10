@@ -215,11 +215,13 @@
 			.join('|');
 	}
 	import type { ResolvedView } from '$lib/plugins/types.js';
+	import type { FontFetchPayload } from '$lib/plugins/suggestion-providers.js';
 	import { onMount } from 'svelte';
 
 	import type { EditorState, EditorQueryBuilder, Api } from 'manager';
 	import { initializeEditorState } from 'manager';
 	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
+	import { getVellumInstance } from './vellum-instance.js';
 
 	let pluginManager = $state<PluginManager | null>(null);
 
@@ -229,6 +231,14 @@
 				editorLoading = e;
 				pluginManager = createPluginManager(queryBuilder(e.dialect));
 				await pluginManager.loadPlugin({ wasm: [{ url: '/charter.wasm' }] }, 'charter');
+				// Utility plugin -- never touches the resolve/selection lifecycle above, only
+				// called on demand (font picker, resolve-time scan). allowedHosts restricts it
+				// to fetching from Google Fonts' CDN only; no other host is reachable.
+				await pluginManager.loadUtilityPlugin(
+					{ wasm: [{ url: '/fontavious.wasm' }] },
+					'fontavious',
+					{ allowedHosts: ['fonts.gstatic.com'] }
+				);
 			}
 		});
 	});
@@ -262,6 +272,62 @@
 			selection.selectedViewPrimary,
 			selection.selectedViewSecondary
 		);
+	});
+
+	// Resolve-time fallback: catches font-family/font-weight values that were typed/imported
+	// directly, or edited independently after a font was already picked, rather than fetched via
+	// SuggestField (which only ever fetches the family at weight 400 when a font is first
+	// picked). Best-effort only -- a catalogue miss or fetch failure just leaves that weight
+	// falling back to whatever's already loaded, exactly as it already does today; never
+	// surfaced as an error to the user.
+	//
+	// Tracks (family, weight) PAIRS, not just families: a fetched static Google Font file is a
+	// single fixed weight, unlike the bundled variable Satoshi (one face, any weight via
+	// interpolation) -- "Inter at 400 is loaded" says nothing about whether "Inter at 700" is,
+	// so `vellum.is_font_loaded` (family-only) can't be used here. `is_font_variant_loaded`
+	// checks the exact weight. Without this, editing font-weight on a kit whose font-family was
+	// already picked silently did nothing: only the 400 variant was ever fetched, and nothing
+	// noticed 700 was still missing.
+	const attemptedVariants = new Set<string>();
+
+	$effect(() => {
+		if (!pluginManager) return;
+
+		const variants = new Map<string, { family: string; weight: number }>();
+		for (const view of resolvedViews) {
+			for (const kit of view.resolvedKits) {
+				const family = kit.properties.get('font-family')?.value;
+				if (!family) continue;
+				const weightStr = kit.properties.get('font-weight')?.value;
+				const weight = weightStr ? parseInt(weightStr, 10) : 400;
+				variants.set(`${family}::${weight}`, { family, weight: weight > 0 ? weight : 400 });
+			}
+		}
+
+		for (const [key, { family, weight }] of variants) {
+			if (attemptedVariants.has(key)) continue;
+			attemptedVariants.add(key);
+
+			const vellum = getVellumInstance();
+			if (!vellum || vellum.is_font_variant_loaded(family, weight)) continue;
+
+			const payload: FontFetchPayload = { value: family, weight, style: 'normal' };
+			pluginManager
+				.callUtilityPlugin('fontavious', 'fetch_font', JSON.stringify(payload))
+				.then((result) => {
+					const bytes = (result as { bytes(): Uint8Array } | undefined)?.bytes();
+					if (bytes) vellum.load_font(bytes);
+				})
+				.catch((err) => {
+					// Not in Fontavious's catalogue, or the fetch failed -- this is expected/fine
+					// for a genuinely uncatalogued family (falls back to sans-serif, same as
+					// always), so never surfaced as a user-facing error. But warn to the console
+					// rather than swallowing it outright -- a real bug here (a bad payload shape,
+					// an unreachable host) previously looked identical to "just not catalogued"
+					// and cost real time to track down by hand.
+					console.warn(`[fontavious] fetch_font failed for ${key}:`, err);
+				});
+		}
 	});
 </script>
 
@@ -307,6 +373,7 @@
 			{selection}
 			fieldCategories={pluginManager?.fieldCategories}
 			onFieldUpdate={pluginManager?.fieldUpdate}
+			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 		/>
 
 		<TokensPanel {api} {editorReady} bind:editorActivity />

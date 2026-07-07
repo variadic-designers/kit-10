@@ -1,4 +1,4 @@
-import createPlugin, { type ManifestLike, type Plugin } from '@extism/extism';
+import createPlugin, { type ExtismPluginOptions, type ManifestLike, type Plugin } from '@extism/extism';
 import type { Api, ResolvedKit } from 'manager';
 import type {
 	FieldCategory,
@@ -39,6 +39,18 @@ export function createPluginManager(api: Api) {
 	let context: PluginContext = { resolvedKits: null };
 
 	let activePlugin: Plugin | null = null;
+
+	// Utility plugins (e.g. Fontavious) never join the viewport/resolve lifecycle above --
+	// they're called on demand, by name, whenever something needs them. Kept as a separate
+	// map so loading one can never evict `activePlugin` the way a second loadPlugin call would.
+	const utilityPlugins = new Map<string, Plugin>();
+	// Per-plugin serial chain -- Extism plugin instances are not re-entrant (same reason
+	// `pluginQueue` exists below for the viewport-interpreter plugin). Without this, e.g.
+	// search-as-you-type firing one callUtilityPlugin per keystroke sends overlapping calls
+	// into the same plugin instance, which corrupts its state after a few calls and makes it
+	// stop responding. Keyed per plugin name so multiple utility plugins don't serialize
+	// against each other, only against their own prior calls.
+	const utilityQueues = new Map<string, Promise<unknown>>();
 
 	// Latest state — always reflects the most recent setter call
 	let _kits: ResolvedKit[] | null = null;
@@ -241,6 +253,44 @@ export function createPluginManager(api: Api) {
 		}
 	}
 
+	// Loads a plugin that is only ever called on demand (by name, via callUtilityPlugin) --
+	// never wired into the on_resolve/on_selection_change/on_field_update lifecycle above, so
+	// it can coexist with the viewport-interpreter plugin (Charter) without disturbing it.
+	async function loadUtilityPlugin(
+		manifest: ManifestLike | PromiseLike<ManifestLike>,
+		name: string,
+		options?: Partial<ExtismPluginOptions>
+	) {
+		plugins = [...plugins, { name, status: 'loading' }];
+
+		try {
+			const plugin = await createPlugin(manifest, {
+				runInWorker: true,
+				useWasi: true,
+				functions: makeHostFunctions(name),
+				...options
+			});
+
+			utilityPlugins.set(name, plugin);
+			await plugin.call('on_init', JSON.stringify({ name }));
+			plugins = plugins.map((p) => (p.name === name ? { name, status: 'ready' } : p));
+		} catch (err) {
+			plugins = plugins.map((p) =>
+				p.name === name ? { name, status: 'error', error: String(err) } : p
+			);
+		}
+	}
+
+	function callUtilityPlugin(name: string, fn: string, payload: string): Promise<unknown> {
+		const plugin = utilityPlugins.get(name);
+		if (!plugin) return Promise.reject(new Error(`utility plugin "${name}" not loaded`));
+
+		const prior = utilityQueues.get(name) ?? Promise.resolve();
+		const next = prior.catch(() => {}).then(() => plugin.call(fn, payload));
+		utilityQueues.set(name, next);
+		return next;
+	}
+
 	function setData(
 		kits: ResolvedKit[] | null,
 		hints: Record<string, unknown> | null,
@@ -313,6 +363,8 @@ export function createPluginManager(api: Api) {
 			return viewportData;
 		},
 		loadPlugin,
+		loadUtilityPlugin,
+		callUtilityPlugin,
 		setData,
 		setSelection,
 		fieldUpdate,
