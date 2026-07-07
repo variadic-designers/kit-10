@@ -31,7 +31,13 @@ export function selectView(
 // Mirrors the Views panel's "Deselect" context-menu action -- used by the Viewport when a
 // click hits empty canvas (no node under the cursor, or a structural grid-scaffolding node
 // with no owning view).
-export function deselectView(selection: SelectableSelection) {
+//
+// Also clears activeViewId: Charter's compute_selection draws the primary-selection border
+// if EITHER activeViewId OR selectedViewPrimary matches a view, so leaving activeViewId set
+// left the border stuck on screen after a deselect. Styles/Axes panels already have an
+// empty state for activeViewId === null, so this is safe.
+export function deselectView(activity: SelectableActivity, selection: SelectableSelection) {
+	activity.activeViewId = null;
 	selection.selectedViewPrimary = null;
 	selection.selectedKitIndex = null;
 }

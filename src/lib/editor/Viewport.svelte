@@ -164,7 +164,7 @@
 		if (viewId) {
 			selectView(editorActivity, selection, viewId);
 		} else {
-			deselectView(selection);
+			deselectView(editorActivity, selection);
 		}
 	}
 

@@ -193,7 +193,7 @@ export function createPluginManager(api: Api) {
 		if (!activePlugin) return;
 		const payload = JSON.stringify({
 			activeViewId: _viewId,
-			resolvedKits: serializeResolvedKits(_kits),
+			resolvedKits: serializeResolvedKits(_kits) ?? [],
 			viewHints: _hints ?? {},
 			projectViews: serializeResolvedViews(_projectViews) ?? [],
 			selectedViewPrimary: _selPrimary,

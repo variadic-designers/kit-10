@@ -414,7 +414,9 @@
 
 		<PluginsPanel manager={pluginManager} />
 
-		<pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
+    <!--
+      <pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
+    -->
 	{/snippet}
 </Layout>
 

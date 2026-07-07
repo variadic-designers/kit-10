@@ -98,7 +98,7 @@
 				displayText: 'Deselect',
 				icon: 'fa-solid fa-minus',
 				onClick: () => {
-					deselectView(selection);
+					deselectView(editorActivity, selection);
 				}
 			},
 			'hr',
@@ -136,18 +136,35 @@
 		return api.getViewsByProjectId(activity.activeProjectId);
 	});
 
+	// Plain (non-$state) bookkeeping var -- tracks the last project this effect settled on, so
+	// it can tell "just switched projects / never selected anything yet" (auto-select rows[0])
+	// apart from "user deliberately deselected within the same project" (activeViewId === null,
+	// leave it alone). Without this distinction, deselectView setting activeViewId to null would
+	// immediately trigger this effect (it reads activeViewId) and snap the selection right back.
+	let lastProjectId: string | null = null;
+
 	$effect(() => {
 		const proj = editorActivity.activeProjectId;
 		const rows = viewsQuery.rows;
 
 		if (!proj) {
 			editorActivity.activeViewId = null;
+			lastProjectId = null;
 			return;
 		}
 
 		if (viewsQuery.isFetching) return;
 
-		if (!rows.some((v) => v.viewId === editorActivity.activeViewId)) {
+		const projectChanged = proj !== lastProjectId;
+		lastProjectId = proj;
+
+		const currentId = editorActivity.activeViewId;
+		const currentIsValid = currentId !== null && rows.some((v) => v.viewId === currentId);
+
+		// Auto-select a fallback view on a genuine project switch, or when the current id points
+		// at a view that no longer exists (e.g. it was deleted). Don't auto-select when the id is
+		// null within the same project -- that's an explicit deselect, not a stale reference.
+		if (!currentIsValid && (projectChanged || currentId !== null)) {
 			editorActivity.activeViewId = rows[0]?.viewId ?? null;
 		}
 	});
