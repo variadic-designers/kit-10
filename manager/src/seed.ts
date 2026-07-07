@@ -311,6 +311,11 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	await api.createRenderEntry(lblNullSnip.id, 'color', null, tokenText.id);
 	await api.createRenderEntry(lblNullSnip.id, 'font-size', '14px');
 	await api.createRenderEntry(lblNullSnip.id, 'font-weight', '400');
+	// A real, catalogued font -- fetched via Fontavious on load (Editor.svelte's resolve-time
+	// scan). Chargen (Vellum's bundled fallback) should only ever be seen if that fetch/load
+	// genuinely fails; seeding a real family here means the demo's normal state is "Inter loaded
+	// correctly", not "nothing ever asked for a real font in the first place".
+	await api.createRenderEntry(lblNullSnip.id, 'font-family', 'Inter');
 
 	// Per-emphasis content
 	const lblPrimary = (await api.createLayer(labelKit.id))!;
