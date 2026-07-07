@@ -1,19 +1,15 @@
 <script lang="ts">
-	import { getTheme } from '$lib/theming';
+	import { getTheme, initializeTheme } from '$lib/theming';
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 
 	import '$lib/fonts/Satoshi/Satoshi.css';
 
-	let currentTheme = $state<string>('auto');
-
-	import { initializeTheme } from '$lib/theming';
 	import { initializeReducedMotion } from '$lib/reduced-motion';
 	import { page } from '$app/state';
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
 		initializeReducedMotion(page.data.reducedMotion);
-		currentTheme = getTheme();
 	});
 </script>
 
@@ -26,7 +22,7 @@
 	<meta name="description" content="Yor Designs Editor Superpowered" />
 </svelte:head>
 
-<div id="landing" data-prefers-color-scheme data-compel-color-scheme={currentTheme}>
+<div id="landing" data-prefers-color-scheme data-compel-color-scheme={getTheme()}>
 	<nav>
 		<a href="/" class="branding">
 			<img src="/favicon.svg" alt="KIT•10" />
