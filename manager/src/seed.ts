@@ -35,7 +35,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	}))!;
 	const densityDense = (await api.createAxisValue(densityAxis.id, {
 		type: 'literal',
-		value: 'dense'
+		value: 'comfort'
 	}))!;
 
 	const emphasisAxis = (await api.createAxis(
@@ -461,10 +461,10 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		value: 'default'
 	});
 
-	// View: Light Dense Primary Hover
+	// View: Light Comfort Primary Hover
 	const lightDensePrimaryHoverView = (await api.createViewInProject(
 		proj.id,
-		'Light Dense Primary Hover',
+		'Light Comfort Primary Hover',
 		{
 			charter: { primitive: 'box' },
 			vellum: { position: [1000, 0] }
@@ -477,7 +477,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	});
 	await api.setAxisArg(lightDensePrimaryHoverView.id, buttonKit.id, densityAxis.id, {
 		type: 'literal',
-		value: 'dense'
+		value: 'comfort'
 	});
 	await api.setAxisArg(lightDensePrimaryHoverView.id, buttonKit.id, emphasisAxis.id, {
 		type: 'literal',
@@ -492,10 +492,10 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		value: 'hover'
 	});
 
-	// View: Dark Dense Danger Click
+	// View: Dark Comfort Danger Click
 	const darkDenseDangerClickView = (await api.createViewInProject(
 		proj.id,
-		'Dark Dense Danger Click',
+		'Dark Comfort Danger Click',
 		{
 			charter: { primitive: 'box' },
 			vellum: { position: [0, 400] }
@@ -508,7 +508,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	});
 	await api.setAxisArg(darkDenseDangerClickView.id, buttonKit.id, densityAxis.id, {
 		type: 'literal',
-		value: 'dense'
+		value: 'comfort'
 	});
 	await api.setAxisArg(darkDenseDangerClickView.id, buttonKit.id, emphasisAxis.id, {
 		type: 'literal',
@@ -585,10 +585,10 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		value: 'default'
 	});
 
-	// View: Light Dense Tertiary Neutral Click
+	// View: Light Comfort Tertiary Neutral Click
 	const lightDenseTertiaryClickView = (await api.createViewInProject(
 		proj.id,
-		'Light Dense Tertiary Click',
+		'Light Comfort Tertiary Click',
 		{
 			charter: { primitive: 'box' },
 			vellum: { position: [1500, 400] }
@@ -601,7 +601,7 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	});
 	await api.setAxisArg(lightDenseTertiaryClickView.id, buttonKit.id, densityAxis.id, {
 		type: 'literal',
-		value: 'dense'
+		value: 'comfort'
 	});
 	await api.setAxisArg(lightDenseTertiaryClickView.id, buttonKit.id, emphasisAxis.id, {
 		type: 'literal',
