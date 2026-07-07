@@ -85,22 +85,19 @@ fn default_style() -> String {
     "normal".to_string()
 }
 
-/// Looks up the matching variant's URL in the catalogue and fetches it via Extism's built-in
-/// HTTP capability (allowed only for hosts the manifest's `allowedHosts` permits). Returns the
-/// raw WOFF2 bytes as the call's output -- no JSON wrapping -- so the caller reads them
-/// straight off via the JS SDK's `.bytes()` and hands them to `vellum.load_font()` unmodified.
-#[plugin_fn]
-pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
-    let input: FetchFontInput = serde_json::from_str(&input)?;
-
+/// Shared by `fetch_font` and `variant_url` -- finds the catalogue entry (by family, case
+/// insensitive) and the specific variant within it whose weight range covers the requested
+/// weight (a variable-font entry's range genuinely covers many weights from one URL; a static
+/// entry's `weightMin == weightMax` only ever covers its own exact weight).
+fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
     let entry = catalogue()
         .into_iter()
         .find(|e| e.family.eq_ignore_ascii_case(&input.value))
         .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
 
-    let variant = entry
+    entry
         .variants
-        .iter()
+        .into_iter()
         .find(|v| {
             input.weight >= v.weight_min && input.weight <= v.weight_max && v.style == input.style
         })
@@ -109,7 +106,17 @@ pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
                 "no variant for {} weight={} style={}",
                 input.value, input.weight, input.style
             ))
-        })?;
+        })
+}
+
+/// Looks up the matching variant's URL in the catalogue and fetches it via Extism's built-in
+/// HTTP capability (allowed only for hosts the manifest's `allowedHosts` permits). Returns the
+/// raw WOFF2 bytes as the call's output -- no JSON wrapping -- so the caller reads them
+/// straight off via the JS SDK's `.bytes()` and hands them to `vellum.load_font()` unmodified.
+#[plugin_fn]
+pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
+    let input: FetchFontInput = serde_json::from_str(&input)?;
+    let variant = find_matching_variant(&input)?;
 
     let req = HttpRequest::new(&variant.url);
     let res: HttpResponse = http::request::<()>(&req, None)?;
@@ -123,6 +130,25 @@ pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
         .into());
     }
     Ok(res.body())
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct VariantUrlOutput {
+    url: String,
+}
+
+/// Answers "which URL would `fetch_font` use for this (family, weight, style)" without any
+/// network I/O -- pure catalogue lookup, reusing the exact same range-matching logic. This is
+/// what lets the editor's resolve-time scan (Editor.svelte) decide "have I already fetched the
+/// file that covers this weight" using nothing but a plain set of already-loaded URLs, instead
+/// of Vellum having to learn to introspect a loaded font's actual variable-axis range. Fontavious
+/// already knows this fact (it's right there in the catalogue, decided at curation time); no
+/// other layer needs to rediscover it at runtime.
+#[plugin_fn]
+pub fn variant_url(input: String) -> FnResult<String> {
+    let input: FetchFontInput = serde_json::from_str(&input)?;
+    let variant = find_matching_variant(&input)?;
+    Ok(serde_json::to_string(&VariantUrlOutput { url: variant.url })?)
 }
 
 #[cfg(test)]
@@ -187,5 +213,33 @@ mod catalogue_tests {
             find_variant(lato, 550, "normal").is_none(),
             "no variable axis for Lato -- an in-between weight has no file to serve it"
         );
+    }
+
+    // Exercises the actual production function `variant_url` calls (family lookup + range
+    // match together), not just the range match in isolation -- this is what proves the "ask
+    // for the URL, compare against what's already loaded" scheme in Editor.svelte will actually
+    // work: two different weights of a variable font must resolve to the identical URL.
+    #[test]
+    fn find_matching_variant_resolves_variable_weights_to_the_same_url() {
+        let input_400 = FetchFontInput { value: "Inter".to_string(), weight: 400, style: "normal".to_string() };
+        let input_700 = FetchFontInput { value: "Inter".to_string(), weight: 700, style: "normal".to_string() };
+        let v400 = find_matching_variant(&input_400).expect("Inter@400 should resolve");
+        let v700 = find_matching_variant(&input_700).expect("Inter@700 should resolve");
+        assert_eq!(v400.url, v700.url, "same variable file should serve both weights");
+    }
+
+    #[test]
+    fn find_matching_variant_resolves_static_weights_to_different_urls() {
+        let input_400 = FetchFontInput { value: "Lato".to_string(), weight: 400, style: "normal".to_string() };
+        let input_700 = FetchFontInput { value: "Lato".to_string(), weight: 700, style: "normal".to_string() };
+        let v400 = find_matching_variant(&input_400).expect("Lato@400 should resolve");
+        let v700 = find_matching_variant(&input_700).expect("Lato@700 should resolve");
+        assert_ne!(v400.url, v700.url, "static family: each weight is a genuinely different file");
+    }
+
+    #[test]
+    fn find_matching_variant_errors_on_uncatalogued_weight() {
+        let input = FetchFontInput { value: "Lato".to_string(), weight: 600, style: "normal".to_string() };
+        assert!(find_matching_variant(&input).is_err());
     }
 }

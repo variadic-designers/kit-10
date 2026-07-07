@@ -282,13 +282,21 @@
 	// surfaced as an error to the user.
 	//
 	// Tracks (family, weight) PAIRS, not just families: a fetched static Google Font file is a
-	// single fixed weight, unlike the bundled variable Satoshi (one face, any weight via
-	// interpolation) -- "Inter at 400 is loaded" says nothing about whether "Inter at 700" is,
-	// so `vellum.is_font_loaded` (family-only) can't be used here. `is_font_variant_loaded`
-	// checks the exact weight. Without this, editing font-weight on a kit whose font-family was
-	// already picked silently did nothing: only the 400 variant was ever fetched, and nothing
-	// noticed 700 was still missing.
+	// single fixed weight, unlike a variable font (one file, any weight in its range via
+	// interpolation) -- "Inter at 400 is loaded" says nothing on its own about whether "Inter at
+	// 700" needs a separate fetch.
+	//
+	// Deliberately does NOT ask Vellum "is this weight loaded" -- that would mean Vellum has to
+	// learn to introspect a loaded font's actual variable-axis range (it used to, via `swash`;
+	// removed). Fontavious's catalogue already knows whether a given (family, weight) maps to
+	// the same URL as another weight (that's exactly what its weightMin/weightMax entries
+	// encode) -- so instead we ask Fontavious's cheap, no-HTTP `variant_url` which URL a request
+	// would resolve to, and keep our own plain set of URLs already fetched+loaded. Same URL as
+	// something already loaded -> skip. Different URL -> fetch. Vellum never needs to know
+	// anything about variable fonts to answer "should I fetch again"; it only ever loads bytes
+	// it's handed and renders them, which cosmic-text already does correctly regardless.
 	const attemptedVariants = new Set<string>();
+	const loadedFontUrls = new Set<string>();
 
 	$effect(() => {
 		if (!pluginManager) return;
@@ -309,23 +317,33 @@
 			attemptedVariants.add(key);
 
 			const vellum = getVellumInstance();
-			if (!vellum || vellum.is_font_variant_loaded(family, weight)) continue;
+			if (!vellum) continue;
 
 			const payload: FontFetchPayload = { value: family, weight, style: 'normal' };
 			pluginManager
-				.callUtilityPlugin('fontavious', 'fetch_font', JSON.stringify(payload))
+				.callUtilityPlugin('fontavious', 'variant_url', JSON.stringify(payload))
 				.then((result) => {
-					const bytes = (result as { bytes(): Uint8Array } | undefined)?.bytes();
-					if (bytes) vellum.load_font(bytes);
+					const { url } = JSON.parse((result as { text(): string }).text()) as { url: string };
+					if (loadedFontUrls.has(url)) return; // same file already fetched+loaded
+
+					return pluginManager
+						?.callUtilityPlugin('fontavious', 'fetch_font', JSON.stringify(payload))
+						.then((fetchResult) => {
+							const bytes = (fetchResult as { bytes(): Uint8Array } | undefined)?.bytes();
+							if (bytes) {
+								vellum.load_font(bytes);
+								loadedFontUrls.add(url);
+							}
+						});
 				})
 				.catch((err) => {
 					// Not in Fontavious's catalogue, or the fetch failed -- this is expected/fine
-					// for a genuinely uncatalogued family (falls back to sans-serif, same as
-					// always), so never surfaced as a user-facing error. But warn to the console
-					// rather than swallowing it outright -- a real bug here (a bad payload shape,
-					// an unreachable host) previously looked identical to "just not catalogued"
-					// and cost real time to track down by hand.
-					console.warn(`[fontavious] fetch_font failed for ${key}:`, err);
+					// for a genuinely uncatalogued family/weight (falls back to whatever's
+					// already loaded, same as always), so never surfaced as a user-facing error.
+					// But warn to the console rather than swallowing it outright -- a real bug
+					// here (a bad payload shape, an unreachable host) previously looked identical
+					// to "just not catalogued" and cost real time to track down by hand.
+					console.warn(`[fontavious] variant_url/fetch_font failed for ${key}:`, err);
 				});
 		}
 	});

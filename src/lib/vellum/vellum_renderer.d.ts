@@ -7,8 +7,6 @@ export function initialize(canvas_id: string, width: number, height: number): Pr
 
 export function is_font_loaded(name: string): boolean;
 
-export function is_font_variant_loaded(name: string, weight: number): boolean;
-
 export function load_font(bytes: Uint8Array): string[];
 
 export function render(): void;
@@ -38,7 +36,6 @@ export interface InitOutput {
     readonly get_selection: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly is_font_loaded: (a: number, b: number) => number;
-    readonly is_font_variant_loaded: (a: number, b: number, c: number) => number;
     readonly load_font: (a: number, b: number, c: number) => void;
     readonly render: () => void;
     readonly resize: (a: number, b: number) => void;
@@ -50,9 +47,9 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7744: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7763: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6357: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7738: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7757: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6351: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
