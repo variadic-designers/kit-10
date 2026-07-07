@@ -60,7 +60,7 @@
 		if (!vellum) return;
 		const effective = resolveEffective(t);
 		if (effective === 'dark') {
-			vellum.set_colors(0.12, 0.12, 0.12, 1.0, 0.005, 0.005, 0.005, 1.0);
+			vellum.set_colors(0.0, 0.0, 0.0, 1.0, 0.005, 0.005, 0.005, 1.0);
 		} else {
 			vellum.set_colors(0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0);
 		}
