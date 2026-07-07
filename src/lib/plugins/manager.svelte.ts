@@ -36,6 +36,8 @@ export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
 	let viewportData = $state<string>('[]');
+	// Parallel to viewportData (same length/order) -- see OnResolveResult.node_view_ids.
+	let nodeViewIds = $state<string[]>([]);
 	let context: PluginContext = { resolvedKits: null };
 
 	let activePlugin: Plugin | null = null;
@@ -59,6 +61,7 @@ export function createPluginManager(api: Api) {
 	let _projectViews: ResolvedView[] = [];
 	let _selPrimary: string | null = null;
 	let _selSecondary: string[] = [];
+	let _hoveredViewId: string | null = null;
 
 	// Debounce timers
 	let dataTimer: ReturnType<typeof setTimeout> | null = null;
@@ -203,6 +206,7 @@ export function createPluginManager(api: Api) {
 			fieldCategories = parsed.categories ?? [];
 			if (parsed.viewport_data) {
 				viewportData = JSON.stringify(parsed.viewport_data);
+				nodeViewIds = parsed.node_view_ids ?? [];
 			}
 		}
 	}
@@ -216,14 +220,19 @@ export function createPluginManager(api: Api) {
 			const payload = JSON.stringify({
 				primary: _selPrimary,
 				secondary: _selSecondary,
-				activeViewId: _viewId
+				activeViewId: _viewId,
+				hoveredViewId: _hoveredViewId
 			});
 
 			const result = await activePlugin.call('on_selection_change', payload);
 			if (result) {
-				const parsed = JSON.parse(result.text()) as { viewport_data?: UiNode[] };
+				const parsed = JSON.parse(result.text()) as {
+					viewport_data?: UiNode[];
+					node_view_ids?: string[];
+				};
 				if (parsed.viewport_data?.length) {
 					viewportData = JSON.stringify(parsed.viewport_data);
+					nodeViewIds = parsed.node_view_ids ?? [];
 				}
 			}
 		};
@@ -319,11 +328,11 @@ export function createPluginManager(api: Api) {
 		}, 0);
 	}
 
-	function setSelection(primary: string | null, secondary: string[]) {
-		_selPrimary = primary;
-		_selSecondary = secondary;
-
-		// Data resolve already pending — it will send the updated selection, skip separate update
+	// Shared by setSelection and setHover -- both just mutate a piece of interaction state and
+	// then need the same debounced on_selection_change call carrying ALL current state
+	// (primary/secondary/activeViewId/hoveredViewId), not just the field that changed.
+	function scheduleSelectionChange() {
+		// Data resolve already pending — it will send the updated state, skip separate update
 		if (dataTimer !== null) return;
 
 		const gen = selectionGen;
@@ -332,6 +341,21 @@ export function createPluginManager(api: Api) {
 			selectionTimer = null;
 			enqueue(makeSelectionChangeRunner(gen));
 		}, 0);
+	}
+
+	function setSelection(primary: string | null, secondary: string[]) {
+		_selPrimary = primary;
+		_selSecondary = secondary;
+		scheduleSelectionChange();
+	}
+
+	// Hover is independent from selection -- a view can be hovered while a different view stays
+	// selected -- but shares the same wire call (on_selection_change) and debounce/generation
+	// plumbing, since the host always sends the full current interaction state together.
+	function setHover(viewId: string | null) {
+		if (_hoveredViewId === viewId) return;
+		_hoveredViewId = viewId;
+		scheduleSelectionChange();
 	}
 
 	async function fieldUpdate(update: FieldUpdate) {
@@ -350,6 +374,7 @@ export function createPluginManager(api: Api) {
 		}
 		fieldCategories = [];
 		viewportData = '[]';
+		nodeViewIds = [];
 	}
 
 	return {
@@ -362,11 +387,15 @@ export function createPluginManager(api: Api) {
 		get viewportData() {
 			return viewportData;
 		},
+		get nodeViewIds() {
+			return nodeViewIds;
+		},
 		loadPlugin,
 		loadUtilityPlugin,
 		callUtilityPlugin,
 		setData,
 		setSelection,
+		setHover,
 		fieldUpdate,
 		disablePlugin
 	};

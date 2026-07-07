@@ -3,6 +3,7 @@
 	import Panel from '../Panel.svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
+	import { selectView as selectViewShared, deselectView } from '../selection.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -10,6 +11,7 @@
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
 		api: Api;
+		hoveredViewId?: string | null;
 	};
 
 	let {
@@ -18,15 +20,12 @@
 		// new API
 		api,
 		editorReady,
-		editorActivity = $bindable()
+		editorActivity = $bindable(),
+		hoveredViewId = $bindable(null)
 	}: ViewsPanel = $props();
 
-	export const selectView = (id: string, name: string) => {
-		if (editorActivity.activeViewId !== id) {
-			editorActivity.activeViewId = id;
-		}
-		selection.selectedViewPrimary = id;
-		selection.selectedViewSecondary = [];
+	export const selectView = (id: string, _name: string) => {
+		selectViewShared(editorActivity, selection, id);
 	};
 
 	let kitsContextMenu: ContextMenuContentGenerator = () => [
@@ -99,8 +98,7 @@
 				displayText: 'Deselect',
 				icon: 'fa-solid fa-minus',
 				onClick: () => {
-					selection.selectedViewPrimary = null;
-					selection.selectedKitIndex = null;
+					deselectView(selection);
 				}
 			},
 			'hr',
@@ -178,13 +176,21 @@
 
 	{@const viewIcon = v.viewLocked ? 'fa-solid fa-lock' : 'fa-regular fa-window-maximize'}
 
-	<li class="view-field" class:selected={editorActivity.activeViewId === v.viewId}>
+	<li
+		class="view-field"
+		class:selected={editorActivity.activeViewId === v.viewId}
+		class:hovered={hoveredViewId === v.viewId}
+	>
 		<button
 			style="--level: {level}"
 			class="view"
 			use:contextMenu={menu(v.viewId)}
 			aria-label={v.viewName}
 			onclick={() => selectView(v.viewId, v.viewName)}
+			onmouseenter={() => (hoveredViewId = v.viewId)}
+			onmouseleave={() => {
+				if (hoveredViewId === v.viewId) hoveredViewId = null;
+			}}
 		>
 			<i class="view__icon {viewIcon}"></i>
 			<div class="view__name">
@@ -230,6 +236,14 @@
 					color: var(--color-primary-hover);
 				}
 			}
+		}
+
+		// Reflects hoveredViewId regardless of source (this row's own mouseenter, or the
+		// Viewport hovering the same view in the canvas) -- subtler than .selected since it's a
+		// lighter-weight affordance, not a competing one.
+		&.hovered:not(.selected) {
+			background-color: var(--color-surface-alt);
+			opacity: 0.7;
 		}
 	}
 

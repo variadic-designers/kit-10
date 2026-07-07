@@ -112,6 +112,10 @@ export type UiNode = UiBoxNode | UiTextNode | UiImgNode;
 export interface OnResolveResult {
 	categories: FieldCategory[];
 	viewport_data: UiNode[];
+	// Parallel to viewport_data (same length/order) -- which view each node belongs to. "" for
+	// structural grid scaffolding nodes that don't belong to any view. Used to resolve a
+	// viewport click-to-select hit-test index (from vellum.get_selection) back to a view id.
+	node_view_ids: string[];
 }
 
 export interface PluginMeta {

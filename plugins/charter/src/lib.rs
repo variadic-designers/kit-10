@@ -194,6 +194,10 @@ struct BoxData {
     // corner handles from this — never encode selection by mutating border_color/border_width.
     #[serde(default)]
     selected: u8,
+    // Independent from `selected` — a view can be hovered while a different view stays
+    // selected. Vellum draws a plain highlight border for this, no corner handles.
+    #[serde(default)]
+    hovered: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,6 +224,10 @@ struct TextData {
     font_weight: u16,
     font_style: String,
     text_color: [f32; 4],
+    #[serde(default)]
+    selected: u8,
+    #[serde(default)]
+    hovered: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,10 +243,19 @@ enum UiNode {
     Text(UiTextNode),
 }
 
+// No rename_all here -- viewport_data/node_view_ids are read as snake_case by
+// manager.svelte.ts (matching the pre-existing viewport_data convention), unlike the
+// camelCase-input structs elsewhere in this file that come from JS-authored payloads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OnResolveResult {
     categories: Vec<FieldCategory>,
     viewport_data: Vec<UiNode>,
+    // Parallel to viewport_data (same length/order) — which view each node belongs to, for the
+    // editor to resolve a viewport click-to-select hit-test index back to a view id. "" for
+    // structural grid scaffolding nodes that don't belong to any view. Deliberately not a field
+    // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
+    // the wire format Vellum deserializes.
+    node_view_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -281,6 +298,11 @@ struct OnResolveInput {
     selected_view_primary: Option<String>,
     #[serde(default)]
     selected_view_secondary: Vec<String>,
+    // Patched in by on_selection_change alongside the selection fields above — persisted here
+    // (rather than only in OnSelectionChangeInput) so it survives being stashed into
+    // last_resolve_input and re-read on the next selection-only patch.
+    #[serde(default)]
+    hovered_view_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
@@ -315,7 +337,14 @@ struct FieldUpdate {
     token_id: Option<String>,
 }
 
+// rename_all is required here -- the host (manager.svelte.ts) sends camelCase
+// (activeViewId/hoveredViewId). This struct was previously missing it entirely; that went
+// unnoticed for active_view_id because a mismatched key just silently deserializes to None
+// (#[serde(default)]), and active_view_id happened to get re-synced via the next full
+// on_resolve call anyway (OnResolveInput does have rename_all). hovered_view_id has no such
+// fallback -- without this attribute it was always silently None, so hover never worked at all.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 struct OnSelectionChangeInput {
     primary: Option<String>,
     #[serde(default)]
@@ -323,11 +352,18 @@ struct OnSelectionChangeInput {
     // Host always sends this so active_view_id in last_resolve_input never goes stale.
     #[serde(default)]
     active_view_id: Option<String>,
+    // Unlike active_view_id, always overwritten unconditionally (including with null) — the
+    // host sends null exactly when the mouse leaves a hoverable area, and that must actually
+    // clear the hover border, not leave the last-hovered view highlighted.
+    #[serde(default)]
+    hovered_view_id: Option<String>,
 }
 
+// No rename_all here -- same reasoning as OnResolveResult above.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct OnSelectionChangeResult {
     viewport_data: Vec<UiNode>,
+    node_view_ids: Vec<String>,
 }
 
 #[host_fn]
@@ -594,6 +630,7 @@ fn build_box_node(
             shadow: None,
             extra,
             selected: 0,
+            hovered: false,
         },
     })
 }
@@ -633,6 +670,8 @@ fn build_text_node(
             } else {
                 [0.2, 0.2, 0.2, 1.0]
             },
+            selected: 0,
+            hovered: false,
         },
     })
 }
@@ -751,6 +790,7 @@ fn transparent_box(
             shadow: None,
             extra: BoxExtra::default(),
             selected: 0,
+            hovered: false,
         },
     })
 }
@@ -779,20 +819,48 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
                 ..BoxExtra::default()
             },
             selected: 0,
+            hovered: false,
         },
     })
+}
+
+// Bundles the interaction-state fields needed to answer "is view X selected/hovered right
+// now" — passed down through render_view_nodes' recursion so both a top-level view and any
+// view reached via child_view_ids resolve their own selection/hover against the same source
+// of truth, instead of the caller precomputing it only for the top level.
+struct SelectionCtx<'a> {
+    active_view_id: Option<&'a str>,
+    selected_view_primary: Option<&'a str>,
+    selected_view_secondary: &'a [String],
+    hovered_view_id: Option<&'a str>,
+}
+
+// 0 = none, 1 = secondary selection, 2 = primary / active.
+fn compute_selection(view_id: &str, ctx: &SelectionCtx) -> u8 {
+    let is_active = ctx.active_view_id == Some(view_id);
+    let is_primary = ctx.selected_view_primary == Some(view_id);
+    let is_secondary = ctx.selected_view_secondary.iter().any(|id| id == view_id);
+    if is_active || is_primary { 2 } else if is_secondary { 1 } else { 0 }
+}
+
+fn compute_hovered(view_id: &str, ctx: &SelectionCtx) -> bool {
+    ctx.hovered_view_id == Some(view_id)
 }
 
 // Render a view's nodes into the flat viewport buffer.
 // parent_id: the parent box index (grid cell for top-level, box idx for children).
 // depth guard prevents runaway recursion from circular view references.
+// node_view_ids: parallel accumulator to viewport — every push here is paired with a push
+// there recording which view (view_id) that node belongs to, for the editor's viewport
+// click-to-select hit-test lookup.
 fn render_view_nodes(
     kits: &[ResolvedKit],
     hints: &std::collections::HashMap<String, serde_json::Value>,
-    // 0 = none, 1 = secondary selection, 2 = primary / active
-    selection: u8,
+    view_id: &str,
+    ctx: &SelectionCtx,
     parent_id: Option<usize>,
     viewport: &mut Vec<UiNode>,
+    node_view_ids: &mut Vec<String>,
     depth: u8,
     view_map: &std::collections::HashMap<String, &ViewMeta>,
 ) {
@@ -816,18 +884,28 @@ fn render_view_nodes(
         .unwrap_or_else(|| detect_primitive(&merged));
 
     let content_parent = parent_id;
+    let selection = compute_selection(view_id, ctx);
+    let hovered = compute_hovered(view_id, ctx);
 
     if primitive == "text" {
-        viewport.push(build_text_node(&merged, content_parent.unwrap_or(0)));
+        let mut node = build_text_node(&merged, content_parent.unwrap_or(0));
+        if let UiNode::Text(UiTextNode { text_data }) = &mut node {
+            text_data.selected = selection;
+            text_data.hovered = hovered;
+        }
+        viewport.push(node);
+        node_view_ids.push(view_id.to_string());
     } else {
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent);
 
         if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
             box_data.selected = selection;
+            box_data.hovered = hovered;
         }
 
         viewport.push(node);
+        node_view_ids.push(view_id.to_string());
 
         let child_ids = collect_child_view_ids(kits);
 
@@ -835,8 +913,12 @@ fn render_view_nodes(
             // Only add inline text when the kit explicitly defines content.
             // Checking `color` alone would fire for any box kit that sets a text color
             // (e.g. Button) and produce a spurious "Text" placeholder node.
+            // Left at its selected/hovered defaults (0/false) deliberately -- it's inline
+            // content belonging to the box above, not a separate selectable view; the box
+            // itself already carries the real selection/hover state.
             if merged.contains_key("content") {
                 viewport.push(build_text_node(&merged, box_idx));
+                node_view_ids.push(view_id.to_string());
             }
         } else {
             for child_view_id in &child_ids {
@@ -844,9 +926,11 @@ fn render_view_nodes(
                     render_view_nodes(
                         &child_view.resolved_kits,
                         &child_view.hints,
-                        0,
+                        child_view_id,
+                        ctx,
                         Some(box_idx),
                         viewport,
+                        node_view_ids,
                         depth + 1,
                         view_map,
                     );
@@ -863,15 +947,27 @@ pub fn on_init(_input: String) -> FnResult<String> {
     Ok("ok".to_string())
 }
 
-fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
+// Returns (viewport_data, node_view_ids) — the two are always parallel (same length/order).
+// "" entries in node_view_ids mark structural grid scaffolding (root/row/cell wrapper boxes)
+// that don't belong to any view; a click resolving to one of those should be treated the same
+// as clicking empty space.
+fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
     let mut viewport_data: Vec<UiNode> = Vec::new();
+    let mut node_view_ids: Vec<String> = Vec::new();
+
+    let ctx = SelectionCtx {
+        active_view_id: parsed.active_view_id.as_deref(),
+        selected_view_primary: parsed.selected_view_primary.as_deref(),
+        selected_view_secondary: &parsed.selected_view_secondary,
+        hovered_view_id: parsed.hovered_view_id.as_deref(),
+    };
 
     let view_map: std::collections::HashMap<String, &ViewMeta> = parsed.project_views
         .iter()
         .map(|v| (v.view_id.clone(), v))
         .collect();
 
-    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, u8, Option<[f32; 2]>)> = parsed.project_views
+    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, Option<[f32; 2]>)> = parsed.project_views
         .iter()
         .filter_map(|view| {
             let hints: CharterHints = view.hints.get("charter")
@@ -884,26 +980,26 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
             if kits.is_empty() {
                 return None;
             }
-            let is_active = parsed.active_view_id.as_deref() == Some(view.view_id.as_str());
-            let is_primary = parsed.selected_view_primary.as_deref() == Some(view.view_id.as_str());
-            let is_secondary = parsed.selected_view_secondary.iter().any(|id| id == &view.view_id);
-            let sel: u8 = if is_active || is_primary { 2 } else if is_secondary { 1 } else { 0 };
             let vellum_hints: VellumHints = view.hints.get("vellum")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
-            Some((view, kits, sel, vellum_hints.position))
+            Some((view, kits, vellum_hints.position))
         })
         .collect();
 
     // Views with an explicit world position float independently, each as its own root —
     // no shared flex parent to couple their placement to a sibling's content size.
     let (positioned, flowing): (Vec<_>, Vec<_>) =
-        top_views.into_iter().partition(|(_, _, _, pos)| pos.is_some());
+        top_views.into_iter().partition(|(_, _, pos)| pos.is_some());
 
-    for (view, kits, sel, pos) in &positioned {
+    for (view, kits, pos) in &positioned {
         let cell_idx = viewport_data.len();
         viewport_data.push(absolute_box("Column", pos.unwrap()));
-        render_view_nodes(kits, &view.hints, *sel, Some(cell_idx), &mut viewport_data, 0, &view_map);
+        node_view_ids.push(String::new());
+        render_view_nodes(
+            kits, &view.hints, &view.view_id, &ctx,
+            Some(cell_idx), &mut viewport_data, &mut node_view_ids, 0, &view_map,
+        );
     }
 
     // Views without a position hint keep flowing through the legacy auto-flow grid.
@@ -914,21 +1010,26 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
 
         let root_idx = viewport_data.len();
         viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
+        node_view_ids.push(String::new());
 
         for row in flowing.chunks(COLS) {
             let row_idx = viewport_data.len();
             viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
+            node_view_ids.push(String::new());
 
-            for (view, kits, sel, _) in row {
+            for (view, kits, _) in row {
                 let cell_idx = viewport_data.len();
                 viewport_data.push(transparent_box(Some(row_idx), "Column", [0.0, GAP, 0.0, 0.0]));
+                node_view_ids.push(String::new());
 
                 render_view_nodes(
                     kits,
                     &view.hints,
-                    *sel,
+                    &view.view_id,
+                    &ctx,
                     Some(cell_idx),
                     &mut viewport_data,
+                    &mut node_view_ids,
                     0,
                     &view_map,
                 );
@@ -936,7 +1037,7 @@ fn build_viewport(parsed: &OnResolveInput) -> Vec<UiNode> {
         }
     }
 
-    viewport_data
+    (viewport_data, node_view_ids)
 }
 
 fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
@@ -970,9 +1071,11 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let _ = extism_pdk::var::set("last_resolve_input", input.as_str());
 
+    let (viewport_data, node_view_ids) = build_viewport(&parsed);
     let result = OnResolveResult {
         categories: build_categories(&parsed),
-        viewport_data: build_viewport(&parsed),
+        viewport_data,
+        node_view_ids,
     };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -989,7 +1092,10 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
         .unwrap_or_default();
 
     if last_bytes.is_empty() {
-        return Ok(serde_json::to_string(&OnSelectionChangeResult { viewport_data: vec![] })?);
+        return Ok(serde_json::to_string(&OnSelectionChangeResult {
+            viewport_data: vec![],
+            node_view_ids: vec![],
+        })?);
     }
 
     let mut parsed: OnResolveInput = serde_json::from_slice(&last_bytes).unwrap_or_default();
@@ -999,10 +1105,10 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
     if selection.active_view_id.is_some() {
         parsed.active_view_id = selection.active_view_id;
     }
+    parsed.hovered_view_id = selection.hovered_view_id;
 
-    Ok(serde_json::to_string(&OnSelectionChangeResult {
-        viewport_data: build_viewport(&parsed),
-    })?)
+    let (viewport_data, node_view_ids) = build_viewport(&parsed);
+    Ok(serde_json::to_string(&OnSelectionChangeResult { viewport_data, node_view_ids })?)
 }
 
 #[plugin_fn]
@@ -1033,6 +1139,32 @@ mod field_update_tests {
         assert_eq!(update.property, "color");
         assert_eq!(update.value.as_deref(), Some("#ff0000"));
         assert_eq!(update.token_id, None);
+    }
+}
+
+#[cfg(test)]
+mod selection_change_input_wire_tests {
+    use super::OnSelectionChangeInput;
+
+    // Regression test: this struct previously had no rename_all at all. A mismatched key
+    // silently deserializes to None (#[serde(default)]) instead of erroring, so this class of
+    // bug produces no test failure unless a test actually asserts the field ends up Some(..)
+    // from real camelCase JSON -- exactly what manager.svelte.ts's payload looks like.
+    #[test]
+    fn deserializes_camel_case_from_js() {
+        let json = r##"{"primary":"v1","secondary":[],"activeViewId":"v1","hoveredViewId":"v2"}"##;
+        let input: OnSelectionChangeInput = serde_json::from_str(json)
+            .expect("should deserialize camelCase JSON sent by manager.svelte.ts");
+        assert_eq!(input.primary.as_deref(), Some("v1"));
+        assert_eq!(input.active_view_id.as_deref(), Some("v1"), "activeViewId must not silently become None");
+        assert_eq!(input.hovered_view_id.as_deref(), Some("v2"), "hoveredViewId must not silently become None");
+    }
+
+    #[test]
+    fn hovered_view_id_null_deserializes_to_none() {
+        let json = r##"{"primary":null,"secondary":[],"activeViewId":null,"hoveredViewId":null}"##;
+        let input: OnSelectionChangeInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.hovered_view_id, None);
     }
 }
 
@@ -1085,17 +1217,185 @@ mod position_wire_tests {
             project_views: vec![view],
             selected_view_primary: None,
             selected_view_secondary: vec![],
+            hovered_view_id: None,
         };
 
-        let viewport = build_viewport(&input);
+        let (viewport, node_view_ids) = build_viewport(&input);
         println!("viewport JSON: {}", serde_json::to_string_pretty(&viewport).unwrap());
         assert_eq!(viewport.len(), 2, "expected the positioned root cell + its one content box");
+        assert_eq!(node_view_ids, vec![String::new(), "v1".to_string()], "root cell is structural (\"\"), content box belongs to v1");
         if let UiNode::Box(UiBoxNode { box_data }) = &viewport[0] {
             assert_eq!(box_data.parent_id, None);
             assert_eq!(box_data.extra.position, NodePosition::Absolute { x: 500.0, y: 400.0 });
         } else {
             panic!("expected a Box node");
         }
+    }
+}
+
+#[cfg(test)]
+mod selection_and_hover_tests {
+    use super::*;
+
+    fn box_prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            child_view_ids: None,
+        }
+    }
+
+    fn box_view(view_id: &str, child_view_ids: Vec<String>, child_only: bool) -> ViewMeta {
+        let mut hints = std::collections::HashMap::new();
+        if child_only {
+            hints.insert("charter".to_string(), serde_json::json!({ "childOnly": true }));
+        }
+        ViewMeta {
+            view_id: view_id.to_string(),
+            view_name: view_id.to_string(),
+            hints,
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("width".to_string(), box_prop("width", "100px"));
+                    m
+                },
+                child_view_ids,
+            }],
+        }
+    }
+
+    fn text_view(view_id: &str) -> ViewMeta {
+        ViewMeta {
+            view_id: view_id.to_string(),
+            view_name: view_id.to_string(),
+            hints: std::collections::HashMap::new(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("font-size".to_string(), box_prop("font-size", "14px"));
+                    m.insert("color".to_string(), box_prop("color", "#111111"));
+                    m
+                },
+                child_view_ids: vec![],
+            }],
+        }
+    }
+
+    fn input(project_views: Vec<ViewMeta>, primary: Option<&str>, hovered: Option<&str>) -> OnResolveInput {
+        OnResolveInput {
+            active_view_id: None,
+            resolved_kits: vec![],
+            view_hints: std::collections::HashMap::new(),
+            project_views,
+            selected_view_primary: primary.map(str::to_string),
+            selected_view_secondary: vec![],
+            hovered_view_id: hovered.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn text_primitive_view_gets_selected_marking() {
+        let input = input(vec![text_view("t1")], Some("t1"), None);
+        let (viewport, node_view_ids) = build_viewport(&input);
+
+        let text_idx = node_view_ids.iter().position(|id| id == "t1").expect("t1 node present");
+        let UiNode::Text(UiTextNode { text_data }) = &viewport[text_idx] else {
+            panic!("expected a Text node for a text-primitive view");
+        };
+        assert_eq!(text_data.selected, 2, "selected view's Text primitive must be marked selected");
+    }
+
+    #[test]
+    fn child_only_view_gets_own_selection_when_it_is_the_active_selection() {
+        let parent = box_view("parent", vec!["child".to_string()], false);
+        let child = box_view("child", vec![], true);
+        let input = input(vec![parent, child], Some("child"), None);
+        let (viewport, node_view_ids) = build_viewport(&input);
+
+        let parent_idx = node_view_ids.iter().position(|id| id == "parent").expect("parent node present");
+        let child_idx = node_view_ids.iter().position(|id| id == "child").expect("child node present");
+
+        let UiNode::Box(UiBoxNode { box_data: parent_data }) = &viewport[parent_idx] else { panic!("expected Box") };
+        let UiNode::Box(UiBoxNode { box_data: child_data }) = &viewport[child_idx] else { panic!("expected Box") };
+        assert_eq!(parent_data.selected, 0, "parent itself isn't selected");
+        assert_eq!(child_data.selected, 2, "nested child_only view that IS the active selection must show selected, not a hardcoded 0");
+    }
+
+    #[test]
+    fn hover_is_independent_from_selection() {
+        let parent = box_view("parent", vec!["child".to_string()], false);
+        let child = box_view("child", vec![], true);
+        let input = input(vec![parent, child], Some("parent"), Some("child"));
+        let (viewport, node_view_ids) = build_viewport(&input);
+
+        let parent_idx = node_view_ids.iter().position(|id| id == "parent").unwrap();
+        let child_idx = node_view_ids.iter().position(|id| id == "child").unwrap();
+
+        let UiNode::Box(UiBoxNode { box_data: parent_data }) = &viewport[parent_idx] else { panic!("expected Box") };
+        let UiNode::Box(UiBoxNode { box_data: child_data }) = &viewport[child_idx] else { panic!("expected Box") };
+        assert_eq!(parent_data.selected, 2, "parent is selected");
+        assert!(!parent_data.hovered, "parent is not hovered");
+        assert_eq!(child_data.selected, 0, "child is not selected");
+        assert!(child_data.hovered, "child is hovered, independently of parent's selection");
+    }
+
+    #[test]
+    fn node_view_ids_tags_nested_child_with_its_own_view_id_not_parents() {
+        let parent = box_view("parent", vec!["child".to_string()], false);
+        let child = box_view("child", vec![], true);
+        let input = input(vec![parent, child], None, None);
+        let (_viewport, node_view_ids) = build_viewport(&input);
+
+        assert!(node_view_ids.contains(&"parent".to_string()));
+        assert!(node_view_ids.contains(&"child".to_string()));
+    }
+
+    #[test]
+    fn structural_grid_scaffolding_has_empty_view_id() {
+        let input = input(vec![box_view("v1", vec![], false)], None, None);
+        let (_viewport, node_view_ids) = build_viewport(&input);
+        assert!(node_view_ids.contains(&String::new()), "root/row/cell wrapper boxes should be tagged as belonging to no view");
+    }
+
+    // Regression test: OnResolveResult/OnSelectionChangeResult must serialize their fields as
+    // snake_case ("viewport_data"/"node_view_ids"), matching what manager.svelte.ts's
+    // `parsed.viewport_data`/`parsed.node_view_ids` reads. Every other test above only checks
+    // Rust-side struct fields, never the actual wire JSON -- an accidental
+    // #[serde(rename_all = "camelCase")] on these two structs would pass every one of them while
+    // silently producing "viewportData"/"nodeViewIds" keys the JS side never reads, and the
+    // whole viewport would go blank with zero errors anywhere.
+    #[test]
+    fn on_resolve_result_serializes_snake_case_keys() {
+        let result = OnResolveResult {
+            categories: vec![],
+            viewport_data: vec![],
+            node_view_ids: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"viewport_data\""), "json was: {json}");
+        assert!(json.contains("\"node_view_ids\""), "json was: {json}");
+        assert!(!json.contains("\"viewportData\""), "json was: {json}");
+        assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
+    }
+
+    #[test]
+    fn on_selection_change_result_serializes_snake_case_keys() {
+        let result = OnSelectionChangeResult { viewport_data: vec![], node_view_ids: vec![] };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"viewport_data\""), "json was: {json}");
+        assert!(json.contains("\"node_view_ids\""), "json was: {json}");
+        assert!(!json.contains("\"viewportData\""), "json was: {json}");
+        assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
     }
 }
 

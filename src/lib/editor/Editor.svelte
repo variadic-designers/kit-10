@@ -108,6 +108,11 @@
 		selectedKitIndex: null
 	});
 
+	// Shared between the Views panel (row mouseenter/leave) and the Viewport (pointermove +
+	// vellum.get_selection hit-test) -- either source updates the same piece of state, so
+	// hovering one highlights the other for free.
+	let hoveredViewId: string | null = $state(null);
+
 	let resolvedViews = $state<ResolvedView[]>([]);
 	const resolvedKits = $derived(
 		resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.resolvedKits ?? null
@@ -274,6 +279,11 @@
 		);
 	});
 
+	$effect(() => {
+		if (!pluginManager) return;
+		pluginManager.setHover(hoveredViewId);
+	});
+
 	// Resolve-time fallback: catches font-family/font-weight values that were typed/imported
 	// directly, or edited independently after a font was already picked, rather than fetched via
 	// SuggestField (which only ever fetches the family at weight 400 when a font is first
@@ -371,7 +381,7 @@
 
 		<ProjectPanel {api} {editorReady} bind:editorActivity />
 
-		<ViewsPanel {api} {editorReady} bind:editorActivity bind:selection />
+		<ViewsPanel {api} {editorReady} bind:editorActivity bind:selection bind:hoveredViewId />
 
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
@@ -379,7 +389,13 @@
 	{/snippet}
 
 	{#snippet dash(editorReady)}
-		<Viewport data={pluginManager?.viewportData ?? '[]'} />
+		<Viewport
+			data={pluginManager?.viewportData ?? '[]'}
+			nodeViewIds={pluginManager?.nodeViewIds ?? []}
+			bind:editorActivity
+			bind:selection
+			bind:hoveredViewId
+		/>
 	{/snippet}
 
 	{#snippet configurable(editorReady)}

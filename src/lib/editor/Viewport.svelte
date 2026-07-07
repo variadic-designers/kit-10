@@ -2,10 +2,24 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { theme, getTheme, type Theme } from '$lib/theming.js';
 	import { setVellumInstance } from './vellum-instance.js';
+	import type { EditorActivity, EditorSelection } from './Editor.svelte';
+	import { selectView, deselectView } from './selection.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
-	let { data = '[]' }: { data?: string } = $props();
+	let {
+		data = '[]',
+		nodeViewIds = [],
+		editorActivity = $bindable(),
+		selection = $bindable(),
+		hoveredViewId = $bindable(null)
+	}: {
+		data?: string;
+		nodeViewIds?: string[];
+		editorActivity: EditorActivity;
+		selection: EditorSelection;
+		hoveredViewId?: string | null;
+	} = $props();
 
 	let canvas: HTMLCanvasElement;
 	let rafId: number;
@@ -16,6 +30,24 @@
 	let panning = false;
 	let lastX = 0;
 	let lastY = 0;
+	// Captured once on pointerdown (unlike lastX/lastY, which move continuously for pan
+	// deltas) -- used on pointerup to tell a click apart from a drag-to-pan.
+	let downX = 0;
+	let downY = 0;
+	const CLICK_DRAG_THRESHOLD_PX = 4;
+
+	let hoverRaf = 0;
+
+	// Resolves a vellum.get_selection(x, y) hit-test index to the view it belongs to, via
+	// Charter's node_view_ids side-map (parallel to the viewport_data array). "" (structural
+	// grid scaffolding, no owning view) and an out-of-range index both mean "no view".
+	function resolveViewIdAt(x: number, y: number): string | null {
+		if (!vellum) return null;
+		const index: number | undefined = vellum.get_selection(x, y);
+		if (index === undefined) return null;
+		const viewId = nodeViewIds[index];
+		return viewId ? viewId : null;
+	}
 
 	function resolveEffective(t: Theme): 'light' | 'dark' {
 		if (t === 'auto') {
@@ -94,21 +126,54 @@
 		panning = true;
 		lastX = e.clientX;
 		lastY = e.clientY;
+		downX = e.clientX;
+		downY = e.clientY;
 		canvas.setPointerCapture(e.pointerId);
 	}
 
 	function onPointerMove(e: PointerEvent) {
-		if (!panning || !vellum) return;
-		const dx = e.clientX - lastX;
-		const dy = e.clientY - lastY;
-		lastX = e.clientX;
-		lastY = e.clientY;
-		vellum.set_pan(dx, dy);
+		if (panning && vellum) {
+			const dx = e.clientX - lastX;
+			const dy = e.clientY - lastY;
+			lastX = e.clientX;
+			lastY = e.clientY;
+			vellum.set_pan(dx, dy);
+			return;
+		}
+
+		// Hover hit-test, throttled to once per animation frame -- a canvas pointermove can
+		// fire far more often than that, and get_selection's rect scan is wasted work between
+		// frames.
+		if (!vellum || hoverRaf) return;
+		hoverRaf = requestAnimationFrame(() => {
+			hoverRaf = 0;
+			const rect = canvas.getBoundingClientRect();
+			hoveredViewId = resolveViewIdAt(e.clientX - rect.left, e.clientY - rect.top);
+		});
 	}
 
 	function onPointerUp(e: PointerEvent) {
 		panning = false;
 		canvas.releasePointerCapture(e.pointerId);
+
+		const movedDistance = Math.hypot(e.clientX - downX, e.clientY - downY);
+		if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return; // was a drag-to-pan, not a click
+
+		const rect = canvas.getBoundingClientRect();
+		const viewId = resolveViewIdAt(e.clientX - rect.left, e.clientY - rect.top);
+		if (viewId) {
+			selectView(editorActivity, selection, viewId);
+		} else {
+			deselectView(selection);
+		}
+	}
+
+	function onPointerLeave() {
+		if (hoverRaf) {
+			cancelAnimationFrame(hoverRaf);
+			hoverRaf = 0;
+		}
+		hoveredViewId = null;
 	}
 
 	function onWheel(e: WheelEvent) {
@@ -130,6 +195,7 @@
 		onpointerdown={onPointerDown}
 		onpointermove={onPointerMove}
 		onpointerup={onPointerUp}
+		onpointerleave={onPointerLeave}
 		onwheel={onWheel}
 	></canvas>
 

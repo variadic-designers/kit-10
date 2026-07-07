@@ -349,6 +349,24 @@ Wire `StyleField.confirmUpdateStyle` to `pluginManager.fieldUpdate`. Currently a
 
 ---
 
+## M10: Selection & Interaction UX
+
+Selection previously only flowed one direction (Views panel click → Charter `on_selection_change` → Vellum draws an outline), and two things in that path were broken/missing.
+
+### [x] M10.1 — Text & nested-view selection fix
+
+Charter's `TextData` had no `selected` field (unlike `BoxData`), so a view whose top-level primitive was Text never got marked selected — even though Vellum's `UiNode::Text` already supported `selected` and would render the outline correctly if Charter set it. Same root cause silently dropped selection for a child-only view that happened to be the active view: the recursive `render_view_nodes` call always passed a hardcoded `selection: 0` for child views instead of checking whether that child's own `view_id` matched the active/primary/secondary selection. Both are fixed via a shared `compute_selection(view_id, ctx)` helper, reused for both top-level views and recursion. No Vellum/wasm rebuild was needed for this half — `UiNode::Text`/`UiNode::Img` already carried `selected: u8`.
+
+### [x] M10.2 — Click-to-select in the viewport
+
+Vellum already exported a hit-test (`get_selection(x, y) -> Option<usize>`), but nothing called it — `Viewport.svelte` had no click handler. Now wired up: `LayoutRect` gained a real `index` field (set from the original `&[UiNode]` position during tree traversal) so `hit_test`'s returned index is guaranteed to match the array `set_data` was given, not just coincide with it (traversal/append order and array order aren't the same thing — a unit test proves this with a deliberately reversed parent/child array order). Charter returns a parallel `node_view_ids` side-map (`OnResolveResult`/`OnSelectionChangeResult`, same length/order as `viewport_data`) rather than tagging `UiNode` itself with view identity — view id has no rendering relevance, so it never crosses into the wire format Vellum deserializes; Vellum stays unaware of what a "view" is altogether. A shared `selectView`/`deselectView` helper (`src/lib/editor/selection.ts`) keeps the Views panel and the Viewport's click handler from drifting apart; clicking empty canvas deselects, same as the existing "Deselect" context-menu action. Shift-click / multi-select into `selectedViewSecondary` is out of scope — nothing populates that today from any UI.
+
+### [x] M10.3 — Hover highlight border
+
+New `hovered: bool` wire field on every `UiNode` variant, independent from `selected` (a view can be hovered while a different view stays selected) — rendered as a separate, thinner overlay with no corner handles (handles are a selection-specific affordance). Charter's `on_selection_change` payload gained a `hovered_view_id`, patched into `last_resolve_input` and stamped the same way `selected` is, reusing the existing patch-and-rebuild-`build_viewport` pattern rather than a new plugin export. Hover state (`hoveredViewId`) is shared between the Views panel (row `mouseenter`/`mouseleave`) and the Viewport (`pointermove` + hit-test, throttled to one hit-test per animation frame), so hovering either one highlights the other.
+
+---
+
 ## Dependency Order
 
 ```
@@ -363,6 +381,7 @@ M7 (cleanup) runs incrementally alongside M4–M5.
 
 M8 (renderer) and M9 (plugins) run in parallel once M4 is done.
 M9.6 (field editing) depends on M9.3 and M6.
+M10 (selection/interaction UX) depends on M8 (renderer) and M9.3 (Charter plugin).
 ```
 
 M1 and M2 can partially overlap (write API as schema stabilizes).
