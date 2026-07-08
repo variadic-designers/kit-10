@@ -4,7 +4,7 @@
 	import { tokenIcon, isColorValue } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
-	import { getVellumInstance } from '../vellum-instance.js';
+	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
 	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
@@ -144,6 +144,7 @@
 		// differently -- SuggestField itself has no opinion, it just passes bytes through.
 		if (inputType === 'font' && fetched) {
 			getVellumInstance()?.load_font(fetched);
+			requestVellumRender();
 		}
 
 		if (!onFieldUpdate) {

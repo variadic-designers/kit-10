@@ -226,7 +226,7 @@
 	import type { EditorState, EditorQueryBuilder, Api } from 'manager';
 	import { initializeEditorState } from 'manager';
 	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
-	import { getVellumInstance } from './vellum-instance.js';
+	import { getVellumInstance, requestVellumRender } from './vellum-instance.js';
 
 	let pluginManager = $state<PluginManager | null>(null);
 
@@ -343,6 +343,7 @@
 							if (bytes) {
 								vellum.load_font(bytes);
 								loadedFontUrls.add(url);
+								requestVellumRender();
 							}
 						});
 				})

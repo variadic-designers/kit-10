@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { theme, getTheme, type Theme } from '$lib/theming.js';
-	import { setVellumInstance } from './vellum-instance.js';
+	import { setVellumInstance, setRenderRequester } from './vellum-instance.js';
 	import type { EditorActivity, EditorSelection } from './Editor.svelte';
 	import { selectView, deselectView } from './selection.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -22,7 +22,6 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
-	let rafId: number;
 	let initialized = false;
 	let hasData = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
@@ -37,6 +36,37 @@
 	const CLICK_DRAG_THRESHOLD_PX = 4;
 
 	let hoverRaf = 0;
+
+	// On-demand rendering: only paint a frame when something Vellum-visible actually changed
+	// (data, theme, pan, zoom, resize -- see every requestRender() call site below, plus
+	// vellum-instance.ts's requestVellumRender for the load_font call sites outside this
+	// component), instead of a perpetual requestAnimationFrame loop running at full refresh
+	// rate forever regardless of activity. `rafId` doubles as the "a frame is already
+	// scheduled" guard, which also makes this naturally coalesce bursts of calls (e.g. rapid
+	// pointermove while panning) into a single paint per frame.
+	let rafId = 0;
+	// Flips the loop back into continuous-every-frame mode -- kept for actual animation work
+	// later (something driving continuous visual change frame over frame, e.g. eased pan/zoom
+	// or a live token preview), not currently called by anything. Not exposed outside this
+	// component yet since nothing needs it yet; wire it through `bind:this` when something does.
+	let continuousMode = false;
+
+	function renderFrame() {
+		rafId = 0;
+		if (vellum) vellum.render();
+		if (continuousMode) requestRender();
+	}
+
+	function requestRender() {
+		// Gated on hasData -- the first real set_data() call, not just "vellum itself finished
+		// initializing" -- so nothing ever paints before there's real content to show. Without
+		// this, calls that can legitimately fire before that (ResizeObserver's own initial
+		// callback, the colors-applied-on-init call) would paint an empty background+grid frame
+		// visible through/around the loading logo overlay while PGlite/Charter are still
+		// resolving, instead of the single clean reveal once real data lands.
+		if (!vellum || rafId || !hasData) return;
+		rafId = requestAnimationFrame(renderFrame);
+	}
 
 	// Resolves a vellum.get_selection(x, y) hit-test index to the view it belongs to, via
 	// Charter's node_view_ids side-map (parallel to the viewport_data array). "" (structural
@@ -64,6 +94,7 @@
 		} else {
 			vellum.set_colors(0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0);
 		}
+		requestRender();
 	}
 
 	onMount(async () => {
@@ -85,6 +116,7 @@
 		await initCanvas();
 		initialized = true;
 		setVellumInstance(vellum);
+		setRenderRequester(requestRender);
 		applyColors(getTheme());
 
 		resizeObserver = new ResizeObserver(() => {
@@ -93,6 +125,7 @@
 			const h = canvas.clientHeight;
 			if (w === 0 || h === 0) return;
 			vellum.resize(w, h);
+			requestRender();
 		});
 		resizeObserver.observe(canvas);
 	});
@@ -106,14 +139,8 @@
 		const d = data;
 		if (initialized && vellum && d) {
 			vellum.set_data(d);
-			if (!hasData) {
-				hasData = true;
-				const draw = () => {
-					if (vellum) vellum.render();
-					rafId = requestAnimationFrame(draw);
-				};
-				rafId = requestAnimationFrame(draw);
-			}
+			hasData = true;
+			requestRender();
 		}
 	});
 
@@ -138,6 +165,7 @@
 			lastX = e.clientX;
 			lastY = e.clientY;
 			vellum.set_pan(dx, dy);
+			requestRender();
 			return;
 		}
 
@@ -184,6 +212,7 @@
 		const cy = e.clientY - rect.top;
 		if (e.deltaY < 0) vellum.zoom_in_at(cx, cy);
 		else vellum.zoom_out_at(cx, cy);
+		requestRender();
 	}
 </script>
 
