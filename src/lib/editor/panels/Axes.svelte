@@ -13,6 +13,7 @@
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
 	import { shapeIcon } from './layer-color.ts';
+	import { draggable, dropZone } from '../dnd.svelte.ts';
 
 	type AxesPanel = {
 		api: Api;
@@ -226,6 +227,30 @@
 		return raw as AxisArgValue;
 	}
 
+	// Drop-to-reorder: place the dragged axis on the target's before/after edge, then persist the
+	// whole new order in one collision-safe call. consumedAxes isn't a live query (it's fetched by
+	// the $effect above), so refetch it explicitly here rather than waiting for a reactive re-run.
+	async function handleAxisReorder(
+		draggedAxisId: string,
+		targetAxisId: string,
+		edge: 'before' | 'after' = 'before'
+	) {
+		const kitId = editorActivity.activeKitId;
+		if (!kitId || draggedAxisId === targetAxisId) return;
+
+		const ids = consumedAxes.map((a) => a.axisId);
+		const from = ids.indexOf(draggedAxisId);
+		if (from < 0) return;
+		ids.splice(from, 1);
+
+		const ti = ids.indexOf(targetAxisId);
+		if (ti < 0) return;
+		ids.splice(edge === 'after' ? ti + 1 : ti, 0, draggedAxisId);
+
+		await api.setConsumedAxesOrder(kitId, ids);
+		consumedAxes = await api.getConsumedAxesByKitId(kitId).execute();
+	}
+
 	// Handle arg changes from Axis component
 	async function handleArgChange(axisId: string, arg: AxisArgValue | null) {
 		if (!editorActivity.activeViewId || !editorActivity.activeKitId) return;
@@ -258,10 +283,39 @@
 				<i class="fa-solid fa-up-long"></i> Add axes to the selected kit
 			</p>
 		{:else}
-			{#each consumedAxes as axisData}
+			{#each consumedAxes as axisData (axisData.axisId)}
 				{@const values = axisValues[axisData.axisId] ?? []}
 				{@const kind = inferKind(values)}
 				{@const currentArg = getCurrentArg(axisData.axisId)}
+				<div
+					class="axis-row"
+					use:dropZone={{
+						accepts: 'axis',
+						mode: 'reorder',
+						canDrop: (p) => p.kind === 'axis' && p.axisId !== axisData.axisId,
+						onDrop: (p, { edge }) => {
+							if (p.kind === 'axis') handleAxisReorder(p.axisId, axisData.axisId, edge);
+						}
+					}}
+				>
+				<!-- Dedicated drag handle. The Axis header is a <details><summary>, which owns the
+				     click-to-expand gesture -- making the whole row the drag source made "grab to
+				     reorder" and "click to expand" the same target, so a reorder attempt just toggled
+				     the panel. The grip sits in its own left gutter and is the only draggable element. -->
+				<div
+					class="axis-row__grip"
+					title="Drag to reorder"
+					aria-label="Reorder axis"
+					use:draggable={{
+						preview: axisData.axisName ?? 'Axis',
+						payload: () =>
+							editorActivity.activeKitId
+								? { kind: 'axis', axisId: axisData.axisId, kitId: editorActivity.activeKitId }
+								: null
+					}}
+				>
+					<i class="fa-solid fa-grip-vertical"></i>
+				</div>
 				<Axis
 					axisId={axisData.axisId}
 					axisName={axisData.axisName ?? axisData.axisId}
@@ -288,6 +342,7 @@
 					)}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				/>
+				</div>
 			{/each}
 		{/if}
 	{/snippet}
@@ -295,6 +350,64 @@
 
 <style lang="scss">
 	@use '_index' as *;
+
+	// Drag-to-reorder wrapper around each Axis. The Axis is pushed right to open a left gutter for
+	// the grip handle; a live insertion line marks the edge the dragged axis will land against.
+	.axis-row {
+		position: relative;
+		padding-left: 16px;
+
+		// The dnd-* classes are applied at runtime by the dnd controller, not present in this
+		// component's markup, so they must be :global() -- otherwise Svelte's scoped-CSS pass prunes
+		// them as "unused" and the indicator never renders.
+		&:global(.dnd-insert-before)::before,
+		&:global(.dnd-insert-after)::after {
+			content: '';
+			position: absolute;
+			left: 16px;
+			right: 0;
+			height: 2px;
+			background: var(--color-primary);
+			box-shadow: 0 0 0 1px var(--color-primary);
+			z-index: 3;
+			pointer-events: none;
+		}
+		&:global(.dnd-insert-before)::before {
+			top: -1px;
+		}
+		&:global(.dnd-insert-after)::after {
+			bottom: -1px;
+		}
+
+		// The grip is the sole drag source (see the markup comment). It lives in the gutter opened
+		// by padding-left, aligned to the summary bar at the top of the row, so it never overlaps
+		// the axis name or the collapse chevron.
+		&__grip {
+			position: absolute;
+			left: 0;
+			top: 0;
+			width: 16px;
+			height: 1.9rem;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: grab;
+			color: var(--color-text-muted);
+			opacity: 0.35;
+			font-size: $x-font-size-xs;
+			z-index: 1;
+
+			&:hover {
+				opacity: 1;
+				color: var(--color-primary);
+			}
+
+			&:global(.dnd-dragging) {
+				cursor: grabbing;
+				opacity: 1;
+			}
+		}
+	}
 
 	.axes-empty {
 		padding: $x-space-sm;

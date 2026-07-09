@@ -50,6 +50,7 @@
 	import { type Api, type EditorState, type TokenValue } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { tokenIcon, isColorValue, tokenStr, formatViewArray } from './token-utils.ts';
+	import { draggable } from '../dnd.svelte.ts';
 
 	type TokenRow = {
 		tokenId: string;
@@ -254,7 +255,19 @@
 					style="--color-icon: {tokenStr(token.tokenValue) ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
-					<span class="token__name">
+					<span
+						class="token__name"
+						use:draggable={{
+							disabled: editingAlias[token.tokenId] === true,
+							preview: token.tokenAlias ?? 'token',
+							payload: () => ({
+								kind: 'token',
+								tokenId: token.tokenId,
+								alias: token.tokenAlias ?? 'token',
+								valueType: token.tokenValue?.type
+							})
+						}}
+					>
 						<i
 							class="fa-solid {tokenIcon(token.tokenValue)} token__icon"
 							class:token__icon--color={isColorValue(token.tokenValue)}
@@ -648,6 +661,13 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		padding-inline: calc($x-space-xs / 2);
+		// Drag the token name onto a Render-panel field to bind that field to this token.
+		cursor: grab;
+
+		&.dnd-dragging {
+			opacity: 0.4;
+			cursor: grabbing;
+		}
 	}
 
 	.token__value {

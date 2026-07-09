@@ -248,6 +248,28 @@ describe('api', () => {
 		expect(themeEntry!.priorityIndex).toBe(500);
 	});
 
+	it('bulk-reorders consumed axes without a unique-priority collision', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const a1 = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const a2 = (await ctx.api.createAxis(proj.id, 'density'))!;
+		const a3 = (await ctx.api.createAxis(proj.id, 'state'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		await ctx.api.consumeAxis(kit.id, a1.id); // 1000
+		await ctx.api.consumeAxis(kit.id, a2.id); // 2000
+		await ctx.api.consumeAxis(kit.id, a3.id); // 3000
+
+		// Move density (currently top) to the bottom -- the intermediate priorities it and its
+		// neighbours would pass through overlap, so a per-row sequence would trip the
+		// unique_priority_of_axis_per_kit constraint. The single transaction must not.
+		await ctx.api.setConsumedAxesOrder(kit.id, [a1.id, a3.id, a2.id]);
+
+		const list = await ctx.api.getConsumedAxesByKitId(kit.id).execute();
+		expect(list.map((e) => e.axisName)).toEqual(['theme', 'state', 'density']);
+		expect(list.map((e) => e.priorityIndex)).toEqual([3000, 2000, 1000]);
+	});
+
 	// ---- Axis Args ----
 
 	it('sets and queries axis args per view+kit', async () => {

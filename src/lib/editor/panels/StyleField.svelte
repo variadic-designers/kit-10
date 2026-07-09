@@ -4,6 +4,7 @@
 	import { tokenIcon, isColorValue } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
+	import { dropZone } from '../dnd.svelte.ts';
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
 	import type { Api } from 'manager';
 	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
@@ -191,6 +192,25 @@
 		}
 	}
 
+	// Drop a token (from the Tokens panel) onto this row to point its render entry at that token.
+	// view-list tokens are rejected -- those are the `children` field's concern (ChildViewField),
+	// not a scalar style property. Needs a source layer to write to (the null layer when the
+	// property has never been set), same precondition as an inline edit.
+	function canDropToken(payload: { kind: string; valueType?: string }): boolean {
+		return (
+			payload.kind === 'token' &&
+			payload.valueType !== 'view-list' &&
+			!!sourceLayerId &&
+			!!onFieldUpdate
+		);
+	}
+
+	function handleTokenDrop(payload: { kind: string; tokenId?: string }) {
+		if (payload.kind !== 'token' || !payload.tokenId) return;
+		if (!onFieldUpdate || !sourceLayerId) return;
+		onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: payload.tokenId });
+	}
+
 	function confirmSuggestionPick(picked: string, fetched?: Uint8Array) {
 		// inputType-specific: "font" means the fetched bytes are a font file to register with
 		// Vellum before persisting the value. A different inputType could interpret `fetched`
@@ -219,6 +239,7 @@
 	class:option124--top={position === 'top'}
 	class:option124--bottom={position === 'bottom'}
 	class:option124--mid={position !== 'top' && position !== 'bottom'}
+	use:dropZone={{ accepts: 'token', canDrop: canDropToken, onDrop: handleTokenDrop }}
 >
 	<button
 		class="option124__style-name"
@@ -356,6 +377,18 @@
 
 		@include layout-respond-max('xl') {
 			font-size: $x-font-size-sm;
+		}
+
+		// A compatible token is being dragged over this row -- outline it as a live drop target.
+		// dnd-over is applied at runtime by the dnd controller, so it must be :global() or Svelte's
+		// scoped-CSS pass prunes it as unused.
+		&:global(.dnd-over) {
+			outline: 1px dashed var(--color-primary);
+			outline-offset: -1px;
+
+			:global(.option124__value) {
+				background: var(--color-surface-alt);
+			}
 		}
 
 		&__track {

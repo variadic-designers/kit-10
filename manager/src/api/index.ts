@@ -233,6 +233,7 @@ export interface QueryAxisConsumed {
 	) => Promise<{ kit_id: string; axis_id: string; priority_index: number } | undefined>;
 	unconsumeAxis: (kitId: string, axisId: string) => Promise<void>;
 	reorderAxesInKit: (kitId: string, axisId: string, newPriority: number) => Promise<void>;
+	setConsumedAxesOrder: (kitId: string, orderedAxisIds: string[]) => Promise<void>;
 	getConsumedAxesByKitId: (
 		kitId: string
 	) => SelectQueryBuilder<
@@ -1124,6 +1125,39 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.where('axes_consumed.kit_id', '=', kitId)
 			.where('axes_consumed.axis_id', '=', axisId)
 			.execute();
+	},
+
+	// Renumber a kit's consumed axes to exactly `orderedAxisIds` (top-of-panel first). `axes_consumed`
+	// has a unique-per-kit constraint on priority_index that Postgres checks per-row *within* a
+	// statement (it's not DEFERRABLE), so a reorder that has any axis pass through a priority another
+	// axis still holds collides -- true even for a single CASE update. Hence two phases in one
+	// transaction: first park every listed axis at a distinct *negative* temp (can't clash with the
+	// existing positive priorities, nor with each other), then stamp the final positive priorities
+	// (can't clash with the now-negative rows, nor with each other). `orderedAxisIds` must be the
+	// kit's complete consumed-axis set. Priorities descend (getConsumedAxesByKitId orders
+	// `priority_index desc`) so index 0 lands highest and stays at the top.
+	setConsumedAxesOrder: async (kitId: string, orderedAxisIds: string[]) => {
+		if (orderedAxisIds.length === 0) return;
+		const n = orderedAxisIds.length;
+		await db.transaction().execute(async (trx) => {
+			const park = sql.join(
+				orderedAxisIds.map((axisId, i) => sql`when ${axisId} then ${-(i + 1)}`),
+				sql` `
+			);
+			await sql`
+				update axes_consumed set priority_index = case axis_id ${park} else priority_index end
+				where kit_id = ${kitId} and axis_id in (${sql.join(orderedAxisIds)})
+			`.execute(trx);
+
+			const finals = sql.join(
+				orderedAxisIds.map((axisId, i) => sql`when ${axisId} then ${(n - i) * 1000}`),
+				sql` `
+			);
+			await sql`
+				update axes_consumed set priority_index = case axis_id ${finals} else priority_index end
+				where kit_id = ${kitId} and axis_id in (${sql.join(orderedAxisIds)})
+			`.execute(trx);
+		});
 	},
 
 	setAxisArg: async (viewId: string, kitId: string, axisId: string, value: any) => {
