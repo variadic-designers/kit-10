@@ -603,48 +603,52 @@ export interface ResolutionRows {
 	entries: EntryRow[];
 }
 
-interface ViewRow {
+// These row interfaces describe the exact jsonb the batched fetch emits per branch.
+// They're exported so `fetch-keyset.test.ts` can assert the SQL's key set still matches
+// each interface -- the one drift an output-parity test can miss (a field read with a
+// `?? default` fallback stays green even when its key silently disappears).
+export interface ViewRow {
 	id: string;
 	name: string;
 	hints: unknown;
 }
-interface CompositionRow {
+export interface CompositionRow {
 	view_id: string;
 	kit_id: string;
 	priority_index: number;
 	kit_name: string;
 }
-interface AxisArgRow {
+export interface AxisArgRow {
 	view_id: string;
 	kit_id: string;
 	axis_id: string;
 	value: unknown;
 }
-interface ProjectTokenRow {
+export interface ProjectTokenRow {
 	alias: string | null;
 	value: TokenValue | null;
 }
-interface ViewTokenRow {
+export interface ViewTokenRow {
 	view_id: string | null;
 	alias: string | null;
 	value: TokenValue | null;
 }
-interface KitTokenRow {
+export interface KitTokenRow {
 	alias: string | null;
 	value: TokenValue | null;
 	kit_id: string | null;
 }
-interface LayerRow {
+export interface LayerRow {
 	id: string;
 	kit_id: string;
 }
-interface ConditionRow {
+export interface ConditionRow {
 	layer_id: string;
 	value: unknown;
 	axis_id: string;
 	priority_index: number;
 }
-interface EntryRow {
+export interface EntryRow {
 	layer_id: string;
 	property: string;
 	literal_value: string | null;
