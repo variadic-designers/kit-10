@@ -8,6 +8,7 @@
 		"build:watch": "tsc --watch",
 		"start": "node ./dist/index.js",
 		"test": "vitest",
+		"bench": "vitest bench --run src/resolve/resolve.bench.ts",
 		"dev": "concurrently \"tsc --watch\" \"pglite-server --db=./pgdata --run 'nodemon ./dist/index.js' --include-database-url\""
 	},
 	"main": "./src/index.ts",
