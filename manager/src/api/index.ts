@@ -1,5 +1,88 @@
-import type { Schema, SchemaDialect, TokenValue } from '../schema.js';
-import type { SelectQueryBuilder } from 'kysely';
+import {
+	CURRENT_SCHEMA_VERSION,
+	type Schema,
+	type SchemaDialect,
+	type TokenValue,
+	type PluginKind,
+	type PluginActivation,
+	type PluginManifest
+} from '../schema.js';
+import { sql, type SelectQueryBuilder } from 'kysely';
+
+// TokenValue's view_id (type: 'view') is a reference to a view row, but it lives inside a jsonb
+// blob rather than a real FK column -- the schema has no way to enforce or cascade it. Importing
+// a project must still remap it, or an imported view-type token would point at the *source*
+// project's view (or nothing, if that project no longer exists).
+function remapTokenValue(value: TokenValue | null, viewIdMap: Map<string, string>): TokenValue | null {
+	if (value && value.type === 'view') {
+		return { ...value, view_id: viewIdMap.get(value.view_id) ?? value.view_id };
+	}
+	return value;
+}
+
+// Same situation as TokenValue.view_id, for the "children" render-entry property: its value is
+// a literal JSON-array-of-view-ids string (see CLAUDE.md's render_entries note), not a real FK,
+// so it needs the same manual remap. Every other property's value is passed through untouched.
+function remapRenderEntryValue(
+	property: string,
+	value: string | null,
+	viewIdMap: Map<string, string>
+): string | null {
+	if (property !== 'children' || !value) return value;
+	try {
+		const viewIds: string[] = JSON.parse(value);
+		return JSON.stringify(viewIds.map((id) => viewIdMap.get(id) ?? id));
+	} catch {
+		return value;
+	}
+}
+
+// Fails fast with a specific, readable message before importProjectData touches the DB at all --
+// without this, a malformed or unrelated file (someone picks the wrong .yaml, or a hand-edited
+// export with a typo) only surfaces as whatever generic error the first broken insert happens to
+// throw (a raw Postgres constraint violation, or "Cannot read properties of undefined"), several
+// tables into the transaction.
+const EXPORTED_ARRAY_FIELDS = [
+	'views',
+	'kits',
+	'compositions',
+	'tokens',
+	'axes',
+	'axisValues',
+	'axesConsumed',
+	'axisArgs',
+	'layers',
+	'renderSnippets',
+	'renderEntries',
+	'layerAxisValues'
+] as const;
+
+// Deliberately typed as (data: any): void, not a type-narrowing assertion function -- the
+// caller's `data` stays plain `any` afterward (matching exportProject's own untyped return),
+// so the rest of importProjectData can keep using ordinary dot-notation property access instead
+// of index-signature bracket access everywhere.
+function validateExportedProjectData(data: any): void {
+	if (!data || typeof data !== 'object') {
+		throw new Error('Import failed: file does not contain a valid KIT-10 project export.');
+	}
+
+	if (!data.project || typeof data.project !== 'object' || typeof data.project.name !== 'string') {
+		throw new Error('Import failed: missing or invalid "project" section.');
+	}
+
+	for (const field of EXPORTED_ARRAY_FIELDS) {
+		if (field in data && !Array.isArray(data[field])) {
+			throw new Error(`Import failed: "${field}" must be an array.`);
+		}
+	}
+
+	if ('interpreterPlugin' in data && data.interpreterPlugin !== null) {
+		const ip = data.interpreterPlugin;
+		if (typeof ip !== 'object' || typeof ip.name !== 'string') {
+			throw new Error('Import failed: "interpreterPlugin" must be null or {name: string}.');
+		}
+	}
+}
 
 export interface QueryOrdering {
 	attachKitToComposition: (
@@ -76,6 +159,12 @@ export interface QueryView {
 	renameView: (viewId: string, newName: string) => Promise<void>;
 	toggleViewLock: (viewId: string, locked: boolean) => Promise<void>;
 	toggleViewHide: (viewId: string, hidden: boolean) => Promise<void>;
+	// Shallow top-level merge into the existing hints jsonb column (Postgres `||`) -- the
+	// caller is responsible for constructing an already-merged sub-object for whichever
+	// namespace it's touching (e.g. passing a full `{ charter: { ...current, primitive: 'text' } }`
+	// rather than just `{ charter: { primitive: 'text' } }`, or it would clobber other keys
+	// within that same namespace). Manager stays hint-shape-agnostic on purpose.
+	updateViewHints: (viewId: string, hints: Record<string, unknown>) => Promise<void>;
 }
 
 export interface QueryAxis {
@@ -296,6 +385,20 @@ export interface QueryAction {
 		name: string
 	) => Promise<{ id: string; project_id: string } | undefined>;
 	exportProject: (projectId: string) => Promise<any | undefined>;
+	// Inverse of exportProject -- `data` is expected to be shaped exactly like exportProject's
+	// return value (validated up front; throws a specific error for anything that doesn't look
+	// like a real export rather than failing deep inside the transaction). Creates a brand-new
+	// project in `workspaceId` with every id (project, views, kits, axes, axis values, layers,
+	// render snippets, render entries, tokens) regenerated and every reference to those ids --
+	// including the two the schema doesn't enforce as real FKs, TokenValue's view_id and the
+	// "children" render-entry property's JSON array of view ids -- remapped to match. Never
+	// collides with the source project even if it's still in the same DB. `warnings` covers
+	// non-fatal mismatches (schema version drift, a referenced interpreter plugin that isn't
+	// installed here) that don't block the import but are worth surfacing.
+	importProjectData: (
+		workspaceId: string,
+		data: any
+	) => Promise<{ id: string; name: string; warnings: string[] } | undefined>;
 }
 
 export interface QueryBuilder {
@@ -337,7 +440,13 @@ export interface QueryBuilder {
 	) => SelectQueryBuilder<
 		Schema,
 		'views',
-		{ viewId: string; viewName: string; viewLocked: boolean; viewHidden: boolean }
+		{
+			viewId: string;
+			viewName: string;
+			viewLocked: boolean;
+			viewHidden: boolean;
+			hints: Record<string, unknown> | null;
+		}
 	>;
 	getKitCompositionByViewId: (
 		viewId: string | null
@@ -349,6 +458,39 @@ export interface QueryBuilder {
 	getKitsExceptFromViewId: (
 		viewId: string | null
 	) => SelectQueryBuilder<Schema, 'kits', { kitId: string; kitName: string }>;
+}
+
+export interface PluginRow {
+	id: string;
+	name: string;
+	kind: PluginKind;
+	activation: PluginActivation | null;
+	manifest: PluginManifest;
+	options: Record<string, unknown> | null;
+	content_hash: string | null;
+}
+
+export interface QueryPlugin {
+	// Upsert-by-name -- re-registering an already-known plugin (e.g. every app boot) just
+	// refreshes its manifest/options/hash/activation in place rather than creating a duplicate
+	// row.
+	registerPlugin: (input: {
+		name: string;
+		kind: PluginKind;
+		activation?: PluginActivation | null;
+		manifest: PluginManifest;
+		options?: Record<string, unknown> | null;
+		contentHash?: string | null;
+	}) => Promise<PluginRow | undefined>;
+	// A project's one interpreter (Charter today) -- the only genuinely per-project plugin
+	// choice. Utility plugins (Fontavious, Tenner) are install-level, not project-scoped at all;
+	// see listPlugins + PluginActivation for how those load instead.
+	getProjectInterpreter: (projectId: string) => Promise<PluginRow | null>;
+	setProjectInterpreter: (projectId: string, pluginId: string) => Promise<void>;
+	// The whole catalogue, unscoped to any project -- used both to decide which import providers
+	// are installed (there's no project to scope to before one exists) and to find every eager
+	// utility plugin to load at editor boot.
+	listPlugins: () => Promise<PluginRow[]>;
 }
 
 export interface Api
@@ -365,7 +507,8 @@ export interface Api
 		QueryAxisArgs,
 		QueryLayer,
 		QueryRenderSnippet,
-		QueryRenderEntry {}
+		QueryRenderEntry,
+		QueryPlugin {}
 
 export const queryBuilder = (db: SchemaDialect): Api => ({
 	createWorkspace: async (name: string) => {
@@ -393,6 +536,18 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				.executeTakeFirst();
 			if (!project) throw 'Project does not exist';
 
+			// Resolved by name, not carried as the source's raw plugin id -- ids are never
+			// meaningful across a different DB (or even the same DB after a reseed), only the
+			// catalogue name is. importProjectData re-resolves this name against whatever's
+			// actually installed on the importing side.
+			const interpreterPlugin = project.interpreter_plugin_id
+				? ((await trx
+						.selectFrom('plugins')
+						.select('name')
+						.where('id', '=', project.interpreter_plugin_id)
+						.executeTakeFirst()) ?? null)
+				: null;
+
 			const views = await trx
 				.selectFrom('views')
 				.selectAll()
@@ -406,16 +561,24 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			const kitIds = kits.map((k) => k.id);
 			const viewIds = views.map((v) => v.id);
 
-			const compositions = await trx
-				.selectFrom('compositions')
-				.selectAll()
-				.where((eb) =>
-					eb.or([
-						eb('compositions.kit_id', 'in', kitIds),
-						eb('compositions.view_id', 'in', viewIds)
-					])
-				)
-				.execute();
+			// `where(col, 'in', ids)` compiles straight to `IN (...)` -- with an empty ids
+			// array that's `IN ()`, which Postgres rejects outright as a syntax error, not as
+			// "matches nothing" the way an ORM might paper over. A brand-new project (no kits
+			// or views yet) hits this on literally every query below, so each one that's keyed
+			// off a possibly-empty id list short-circuits to [] instead of round-tripping.
+			const compositions =
+				kitIds.length === 0 && viewIds.length === 0
+					? []
+					: await trx
+							.selectFrom('compositions')
+							.selectAll()
+							.where((eb) =>
+								eb.or([
+									eb('compositions.kit_id', 'in', kitIds),
+									eb('compositions.view_id', 'in', viewIds)
+								])
+							)
+							.execute();
 
 			const tokens = await trx
 				.selectFrom('tokens')
@@ -427,52 +590,72 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				.selectAll()
 				.where('axes.project_id', '=', projectId)
 				.execute();
-			const axisValues = await trx
-				.selectFrom('axis_values')
-				.selectAll()
-				.where(
-					'axis_values.axis_id',
-					'in',
-					axes.map((a) => a.id)
-				)
-				.execute();
-			const axesConsumed = await trx
-				.selectFrom('axes_consumed')
-				.selectAll()
-				.where('axes_consumed.kit_id', 'in', kitIds)
-				.execute();
-			const axisArgs = await trx
-				.selectFrom('axis_args')
-				.selectAll()
-				.where('axis_args.kit_id', 'in', kitIds)
-				.execute();
+			const axisIds = axes.map((a) => a.id);
+			const axisValues =
+				axisIds.length === 0
+					? []
+					: await trx
+							.selectFrom('axis_values')
+							.selectAll()
+							.where('axis_values.axis_id', 'in', axisIds)
+							.execute();
+			const axesConsumed =
+				kitIds.length === 0
+					? []
+					: await trx
+							.selectFrom('axes_consumed')
+							.selectAll()
+							.where('axes_consumed.kit_id', 'in', kitIds)
+							.execute();
+			const axisArgs =
+				kitIds.length === 0
+					? []
+					: await trx
+							.selectFrom('axis_args')
+							.selectAll()
+							.where('axis_args.kit_id', 'in', kitIds)
+							.execute();
 
-			const layers = await trx
-				.selectFrom('layers')
-				.selectAll()
-				.where('layers.kit_id', 'in', kitIds)
-				.execute();
+			const layers =
+				kitIds.length === 0
+					? []
+					: await trx
+							.selectFrom('layers')
+							.selectAll()
+							.where('layers.kit_id', 'in', kitIds)
+							.execute();
 			const layerIds = layers.map((l) => l.id);
 
-			const renderSnippets = await trx
-				.selectFrom('render_snippets')
-				.selectAll()
-				.where('render_snippets.layer_id', 'in', layerIds)
-				.execute();
+			const renderSnippets =
+				layerIds.length === 0
+					? []
+					: await trx
+							.selectFrom('render_snippets')
+							.selectAll()
+							.where('render_snippets.layer_id', 'in', layerIds)
+							.execute();
 			const snippetIds = renderSnippets.map((s) => s.id);
 
-			const renderEntries = await trx
-				.selectFrom('render_entries')
-				.selectAll()
-				.where('render_entries.snippet_id', 'in', snippetIds)
-				.execute();
-			const layerAxisValues = await trx
-				.selectFrom('layer_axis_values')
-				.selectAll()
-				.where('layer_axis_values.layer_id', 'in', layerIds)
-				.execute();
+			const renderEntries =
+				snippetIds.length === 0
+					? []
+					: await trx
+							.selectFrom('render_entries')
+							.selectAll()
+							.where('render_entries.snippet_id', 'in', snippetIds)
+							.execute();
+			const layerAxisValues =
+				layerIds.length === 0
+					? []
+					: await trx
+							.selectFrom('layer_axis_values')
+							.selectAll()
+							.where('layer_axis_values.layer_id', 'in', layerIds)
+							.execute();
 
 			return {
+				schemaVersion: CURRENT_SCHEMA_VERSION,
+				interpreterPlugin,
 				project,
 				views,
 				kits,
@@ -487,6 +670,248 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				renderEntries,
 				layerAxisValues
 			};
+		});
+	},
+
+	importProjectData: async (workspaceId: string, data: any) => {
+		validateExportedProjectData(data);
+		const warnings: string[] = [];
+
+		if (data.schemaVersion && data.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+			warnings.push(
+				`Exported from schema version "${data.schemaVersion}", this app is on "${CURRENT_SCHEMA_VERSION}" -- data may not import cleanly.`
+			);
+		}
+
+		return await db.transaction().execute(async (trx) => {
+			const newId = () => crypto.randomUUID();
+			const idMap = (rows: { id: string }[]) =>
+				new Map<string, string>(rows.map((row) => [row.id, newId()]));
+
+			const projectId = newId();
+			const viewIdMap = idMap(data.views ?? []);
+			const kitIdMap = idMap(data.kits ?? []);
+			const axisIdMap = idMap(data.axes ?? []);
+			const axisValueIdMap = idMap(data.axisValues ?? []);
+			const layerIdMap = idMap(data.layers ?? []);
+			const snippetIdMap = idMap(data.renderSnippets ?? []);
+			const tokenIdMap = idMap(data.tokens ?? []);
+
+			const project = data.project;
+
+			// Re-resolved by name against THIS db's own catalogue -- the source's plugin id
+			// means nothing here (see exportProject's interpreterPlugin comment). If the named
+			// interpreter isn't installed on the importing system, the project just ends up
+			// with no active interpreter (same as any other project created without one) rather
+			// than failing the whole import over it.
+			let interpreterPluginId: string | null = null;
+			if (data.interpreterPlugin?.name) {
+				const interpreterRow = await trx
+					.selectFrom('plugins')
+					.select('id')
+					.where('name', '=', data.interpreterPlugin.name)
+					.executeTakeFirst();
+				if (interpreterRow) {
+					interpreterPluginId = interpreterRow.id;
+				} else {
+					warnings.push(
+						`Interpreter "${data.interpreterPlugin.name}" is not installed; project has no active interpreter yet.`
+					);
+				}
+			}
+
+			await trx
+				.insertInto('projects')
+				.values({
+					id: projectId,
+					name: project.name,
+					description: project.description ?? null,
+					hints: (project.hints ?? {}) as any,
+					license: project.license,
+					author: project.author,
+					workspace_id: workspaceId,
+					interpreter_plugin_id: interpreterPluginId
+				})
+				.execute();
+
+			// Insertion order follows the schema's FK dependency graph (see CLAUDE.md's migration
+			// for the exact references) -- every table below only ever points at ids already
+			// inserted by the time it's reached.
+
+			if (data.axes?.length) {
+				await trx
+					.insertInto('axes')
+					.values(
+						data.axes.map((a: any) => ({
+							id: axisIdMap.get(a.id)!,
+							project_id: projectId,
+							name: a.name,
+							description: a.description,
+							kind: a.kind,
+							hint: a.hint,
+							hints: (a.hints ?? {}) as any,
+							default_value: a.default_value
+						}))
+					)
+					.execute();
+			}
+
+			if (data.axisValues?.length) {
+				await trx
+					.insertInto('axis_values')
+					.values(
+						data.axisValues.map((av: any) => ({
+							id: axisValueIdMap.get(av.id)!,
+							axis_id: axisIdMap.get(av.axis_id)!,
+							hints: (av.hints ?? {}) as any,
+							value: av.value
+						}))
+					)
+					.execute();
+			}
+
+			if (data.views?.length) {
+				await trx
+					.insertInto('views')
+					.values(
+						data.views.map((v: any) => ({
+							id: viewIdMap.get(v.id)!,
+							name: v.name,
+							hints: (v.hints ?? {}) as any,
+							project_id: projectId,
+							lock: v.lock,
+							hide: v.hide
+						}))
+					)
+					.execute();
+			}
+
+			if (data.kits?.length) {
+				await trx
+					.insertInto('kits')
+					.values(
+						data.kits.map((k: any) => ({
+							id: kitIdMap.get(k.id)!,
+							name: k.name,
+							hints: (k.hints ?? {}) as any,
+							project_id: projectId
+						}))
+					)
+					.execute();
+			}
+
+			if (data.compositions?.length) {
+				await trx
+					.insertInto('compositions')
+					.values(
+						data.compositions.map((c: any) => ({
+							priority_index: c.priority_index,
+							kit_id: kitIdMap.get(c.kit_id)!,
+							view_id: viewIdMap.get(c.view_id)!
+						}))
+					)
+					.execute();
+			}
+
+			if (data.axesConsumed?.length) {
+				await trx
+					.insertInto('axes_consumed')
+					.values(
+						data.axesConsumed.map((ac: any) => ({
+							kit_id: kitIdMap.get(ac.kit_id)!,
+							axis_id: axisIdMap.get(ac.axis_id)!,
+							priority_index: ac.priority_index
+						}))
+					)
+					.execute();
+			}
+
+			if (data.axisArgs?.length) {
+				await trx
+					.insertInto('axis_args')
+					.values(
+						data.axisArgs.map((aa: any) => ({
+							view_id: viewIdMap.get(aa.view_id)!,
+							kit_id: kitIdMap.get(aa.kit_id)!,
+							axis_id: axisIdMap.get(aa.axis_id)!,
+							value: aa.value
+						}))
+					)
+					.execute();
+			}
+
+			if (data.layers?.length) {
+				await trx
+					.insertInto('layers')
+					.values(
+						data.layers.map((l: any) => ({
+							id: layerIdMap.get(l.id)!,
+							kit_id: kitIdMap.get(l.kit_id)!,
+							hints: (l.hints ?? {}) as any
+						}))
+					)
+					.execute();
+			}
+
+			if (data.layerAxisValues?.length) {
+				await trx
+					.insertInto('layer_axis_values')
+					.values(
+						data.layerAxisValues.map((lav: any) => ({
+							layer_id: layerIdMap.get(lav.layer_id)!,
+							axis_value_id: axisValueIdMap.get(lav.axis_value_id)!
+						}))
+					)
+					.execute();
+			}
+
+			if (data.renderSnippets?.length) {
+				await trx
+					.insertInto('render_snippets')
+					.values(
+						data.renderSnippets.map((s: any) => ({
+							id: snippetIdMap.get(s.id)!,
+							layer_id: layerIdMap.get(s.layer_id)!,
+							hints: (s.hints ?? {}) as any
+						}))
+					)
+					.execute();
+			}
+
+			if (data.tokens?.length) {
+				await trx
+					.insertInto('tokens')
+					.values(
+						data.tokens.map((t: any) => ({
+							id: tokenIdMap.get(t.id)!,
+							project_id: projectId,
+							alias: t.alias,
+							value: remapTokenValue(t.value, viewIdMap) as any,
+							hints: (t.hints ?? {}) as any,
+							kit_id: t.kit_id ? (kitIdMap.get(t.kit_id) ?? null) : null,
+							view_id: t.view_id ? (viewIdMap.get(t.view_id) ?? null) : null
+						}))
+					)
+					.execute();
+			}
+
+			if (data.renderEntries?.length) {
+				await trx
+					.insertInto('render_entries')
+					.values(
+						data.renderEntries.map((e: any) => ({
+							id: newId(),
+							snippet_id: snippetIdMap.get(e.snippet_id)!,
+							property: e.property,
+							value: remapRenderEntryValue(e.property, e.value, viewIdMap),
+							hints: (e.hints ?? {}) as any,
+							token_id: e.token_id ? (tokenIdMap.get(e.token_id) ?? null) : null
+						}))
+					)
+					.execute();
+			}
+
+			return { id: projectId, name: project.name as string, warnings };
 		});
 	},
 
@@ -534,6 +959,14 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	toggleViewHide: async (viewId: string, hidden: boolean) => {
 		await db.updateTable('views').set({ hide: hidden }).where('views.id', '=', viewId).execute();
+	},
+
+	updateViewHints: async (viewId: string, hints: Record<string, unknown>) => {
+		await db
+			.updateTable('views')
+			.set({ hints: sql`hints || ${JSON.stringify(hints)}::jsonb` as any })
+			.where('views.id', '=', viewId)
+			.execute();
 	},
 
 	createKitInProject: async (projectId: string, name: string) => {
@@ -905,7 +1338,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 					'views.id as viewId',
 					'views.name as viewName',
 					'views.lock as viewLocked',
-					'views.hide as viewHidden'
+					'views.hide as viewHidden',
+					'views.hints as hints'
 				]);
 		return db
 			.selectFrom('views')
@@ -915,7 +1349,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'views.id as viewId',
 				'views.name as viewName',
 				'views.lock as viewLocked',
-				'views.hide as viewHidden'
+				'views.hide as viewHidden',
+				'views.hints as hints'
 			]);
 	},
 
@@ -1160,5 +1595,60 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'render_entries.value',
 				'render_entries.token_id as tokenId'
 			]);
+	},
+
+	registerPlugin: async (input) => {
+		return await db
+			.insertInto('plugins')
+			.values({
+				name: input.name,
+				kind: input.kind,
+				activation: input.activation ?? null,
+				manifest: input.manifest as any,
+				options: (input.options ?? null) as any,
+				content_hash: input.contentHash ?? null
+			})
+			.onConflict((oc) =>
+				oc.column('name').doUpdateSet({
+					kind: input.kind,
+					activation: input.activation ?? null,
+					manifest: input.manifest as any,
+					options: (input.options ?? null) as any,
+					content_hash: input.contentHash ?? null
+				})
+			)
+			.returningAll()
+			.executeTakeFirst();
+	},
+
+	getProjectInterpreter: async (projectId: string) => {
+		const row = await db
+			.selectFrom('projects')
+			.innerJoin('plugins', 'plugins.id', 'projects.interpreter_plugin_id')
+			.select([
+				'plugins.id as id',
+				'plugins.name as name',
+				'plugins.kind as kind',
+				'plugins.activation as activation',
+				'plugins.manifest as manifest',
+				'plugins.options as options',
+				'plugins.content_hash as content_hash'
+			])
+			.where('projects.id', '=', projectId)
+			.executeTakeFirst();
+
+		return row ?? null;
+	},
+
+	setProjectInterpreter: async (projectId: string, pluginId: string) => {
+		await db
+			.updateTable('projects')
+			.set({ interpreter_plugin_id: pluginId })
+			.where('projects.id', '=', projectId)
+			.execute();
+	},
+
+	listPlugins: async () => {
+		return await db.selectFrom('plugins').selectAll().execute();
 	}
 });

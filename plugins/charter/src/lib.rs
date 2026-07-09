@@ -262,13 +262,11 @@ struct OnResolveResult {
 #[serde(rename_all = "camelCase")]
 struct CharterHints {
     primitive: Option<String>,
-    #[serde(default)]
-    child_only: bool,
 }
 
 // Hints consumed straight-through into Vellum's UiNode wire fields with no Charter-side
 // interpretation, kept separate from CharterHints (which holds Charter's own translation
-// choices — primitive override, child_only filtering).
+// choices — currently just the primitive override).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct VellumHints {
@@ -736,6 +734,13 @@ fn box_categories() -> Vec<FieldCategory> {
                 FieldDef::new("outline", None),
             ],
         },
+        FieldCategory {
+            name: "content".to_string(),
+            fields: vec![
+                FieldDef::new("content", Some("Content")),
+                FieldDef::new("children", Some("Children")).with_input_type("children"),
+            ],
+        },
     ]
 }
 
@@ -744,6 +749,7 @@ fn text_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "text".to_string(),
             fields: vec![
+                FieldDef::new("content", Some("Content")),
                 FieldDef::new("color", Some("Fill")),
                 FieldDef::new("font-family", Some("Family")).with_input_type("font"),
                 FieldDef::new("font-size", Some("Size")),
@@ -847,6 +853,24 @@ fn compute_hovered(view_id: &str, ctx: &SelectionCtx) -> bool {
     ctx.hovered_view_id == Some(view_id)
 }
 
+// Shared by render_view_nodes' own primitive computation and by a parent view deciding whether
+// a candidate child is even eligible to be recursed into (see the containment rule in
+// render_view_nodes below) -- same charter_hints-override-else-detect_primitive logic either
+// way, just returning an owned String so it can be computed for a view this function isn't
+// already "inside" of (detect_primitive's &'static str can't be returned when the hint-override
+// path needs to hand back a String owned by a local CharterHints instead).
+fn primitive_for_view(view: &ViewMeta) -> String {
+    let merged = merge_kits(&view.resolved_kits);
+    let charter_hints: CharterHints = view
+        .hints
+        .get("charter")
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default();
+    charter_hints
+        .primitive
+        .unwrap_or_else(|| detect_primitive(&merged).to_string())
+}
+
 // Render a view's nodes into the flat viewport buffer.
 // parent_id: the parent box index (grid cell for top-level, box idx for children).
 // depth guard prevents runaway recursion from circular view references.
@@ -895,6 +919,33 @@ fn render_view_nodes(
         }
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
+
+        // Containment rule (Charter's own opinion, not enforced anywhere upstream): a Text
+        // view may contain other Text views (e.g. multiple inline runs), never a Box -- a
+        // candidate whose own resolved primitive isn't "text" is silently skipped, the same
+        // way a missing/deleted view id already is below. Nested text children are parented to
+        // this node's own container (content_parent), not to this text node's index -- Vellum's
+        // layout tree expects a Box as a layout parent, and content_parent already traces back
+        // to one (or None at a genuine root), so this reuses a proven relationship instead of
+        // introducing an unverified "Text as layout parent" case.
+        for child_view_id in &collect_child_view_ids(kits) {
+            if let Some(child_view) = view_map.get(child_view_id) {
+                if primitive_for_view(child_view) != "text" {
+                    continue;
+                }
+                render_view_nodes(
+                    &child_view.resolved_kits,
+                    &child_view.hints,
+                    child_view_id,
+                    ctx,
+                    content_parent,
+                    viewport,
+                    node_view_ids,
+                    depth + 1,
+                    view_map,
+                );
+            }
+        }
     } else {
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent);
@@ -967,13 +1018,21 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
         .map(|v| (v.view_id.clone(), v))
         .collect();
 
+    // A view is never "top-level" or "child" by its own declaration -- that's derived from
+    // whether some other view's box currently lists it in `children`. Union every view's own
+    // child references (collect_child_view_ids is already used per-view for recursion below;
+    // here it's run across the whole project) into one set, so a referenced view is
+    // automatically excluded from the top-level grid no matter which view claims it, with no
+    // separate flag to keep in sync by hand.
+    let referenced: std::collections::HashSet<String> = parsed.project_views
+        .iter()
+        .flat_map(|v| collect_child_view_ids(&v.resolved_kits))
+        .collect();
+
     let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, Option<[f32; 2]>)> = parsed.project_views
         .iter()
         .filter_map(|view| {
-            let hints: CharterHints = view.hints.get("charter")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            if hints.child_only {
+            if referenced.contains(&view.view_id) {
                 return None;
             }
             let kits: &Vec<ResolvedKit> = &view.resolved_kits;
@@ -1250,15 +1309,11 @@ mod selection_and_hover_tests {
         }
     }
 
-    fn box_view(view_id: &str, child_view_ids: Vec<String>, child_only: bool) -> ViewMeta {
-        let mut hints = std::collections::HashMap::new();
-        if child_only {
-            hints.insert("charter".to_string(), serde_json::json!({ "childOnly": true }));
-        }
+    fn box_view(view_id: &str, child_view_ids: Vec<String>) -> ViewMeta {
         ViewMeta {
             view_id: view_id.to_string(),
             view_name: view_id.to_string(),
-            hints,
+            hints: std::collections::HashMap::new(),
             resolved_kits: vec![ResolvedKit {
                 kit_id: "kit".to_string(),
                 kit_name: "Kit".to_string(),
@@ -1316,9 +1371,9 @@ mod selection_and_hover_tests {
     }
 
     #[test]
-    fn child_only_view_gets_own_selection_when_it_is_the_active_selection() {
-        let parent = box_view("parent", vec!["child".to_string()], false);
-        let child = box_view("child", vec![], true);
+    fn referenced_child_view_gets_own_selection_when_it_is_the_active_selection() {
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
         let input = input(vec![parent, child], Some("child"), None);
         let (viewport, node_view_ids) = build_viewport(&input);
 
@@ -1328,13 +1383,13 @@ mod selection_and_hover_tests {
         let UiNode::Box(UiBoxNode { box_data: parent_data }) = &viewport[parent_idx] else { panic!("expected Box") };
         let UiNode::Box(UiBoxNode { box_data: child_data }) = &viewport[child_idx] else { panic!("expected Box") };
         assert_eq!(parent_data.selected, 0, "parent itself isn't selected");
-        assert_eq!(child_data.selected, 2, "nested child_only view that IS the active selection must show selected, not a hardcoded 0");
+        assert_eq!(child_data.selected, 2, "nested referenced-as-child view that IS the active selection must show selected, not a hardcoded 0");
     }
 
     #[test]
     fn hover_is_independent_from_selection() {
-        let parent = box_view("parent", vec!["child".to_string()], false);
-        let child = box_view("child", vec![], true);
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
         let input = input(vec![parent, child], Some("parent"), Some("child"));
         let (viewport, node_view_ids) = build_viewport(&input);
 
@@ -1351,8 +1406,8 @@ mod selection_and_hover_tests {
 
     #[test]
     fn node_view_ids_tags_nested_child_with_its_own_view_id_not_parents() {
-        let parent = box_view("parent", vec!["child".to_string()], false);
-        let child = box_view("child", vec![], true);
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
         let input = input(vec![parent, child], None, None);
         let (_viewport, node_view_ids) = build_viewport(&input);
 
@@ -1362,7 +1417,7 @@ mod selection_and_hover_tests {
 
     #[test]
     fn structural_grid_scaffolding_has_empty_view_id() {
-        let input = input(vec![box_view("v1", vec![], false)], None, None);
+        let input = input(vec![box_view("v1", vec![])], None, None);
         let (_viewport, node_view_ids) = build_viewport(&input);
         assert!(node_view_ids.contains(&String::new()), "root/row/cell wrapper boxes should be tagged as belonging to no view");
     }
@@ -1396,6 +1451,173 @@ mod selection_and_hover_tests {
         assert!(json.contains("\"node_view_ids\""), "json was: {json}");
         assert!(!json.contains("\"viewportData\""), "json was: {json}");
         assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
+    }
+}
+
+#[cfg(test)]
+mod children_containment_tests {
+    use super::*;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            child_view_ids: None,
+        }
+    }
+
+    // A "child" fixture here needs no self-declaration at all -- being listed in the parent's
+    // child_view_ids is what excludes it from the top-level grid now (see build_viewport's
+    // `referenced` set), so node_view_ids.contains(...) being true only ever means recursion
+    // actually worked, not that the top-level grid happened to render it too.
+    fn box_view(view_id: &str, child_view_ids: Vec<String>) -> ViewMeta {
+        ViewMeta {
+            view_id: view_id.to_string(),
+            view_name: view_id.to_string(),
+            hints: std::collections::HashMap::new(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("width".to_string(), prop("width", "100px"));
+                    m
+                },
+                child_view_ids,
+            }],
+        }
+    }
+
+    fn text_view(view_id: &str, child_view_ids: Vec<String>) -> ViewMeta {
+        ViewMeta {
+            view_id: view_id.to_string(),
+            view_name: view_id.to_string(),
+            hints: std::collections::HashMap::new(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("font-size".to_string(), prop("font-size", "14px"));
+                    m.insert("color".to_string(), prop("color", "#111111"));
+                    m
+                },
+                child_view_ids,
+            }],
+        }
+    }
+
+    fn input(project_views: Vec<ViewMeta>) -> OnResolveInput {
+        OnResolveInput {
+            active_view_id: None,
+            resolved_kits: vec![],
+            view_hints: std::collections::HashMap::new(),
+            project_views,
+            selected_view_primary: None,
+            selected_view_secondary: vec![],
+            hovered_view_id: None,
+        }
+    }
+
+    #[test]
+    fn box_categories_declares_a_children_field() {
+        let categories = box_categories();
+        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "children");
+        assert!(found, "box_categories() should declare a \"children\" field");
+    }
+
+    #[test]
+    fn text_categories_does_not_declare_a_children_field() {
+        let categories = text_categories();
+        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "children");
+        assert!(!found, "text_categories() should not declare \"children\" -- children are only ever authored on a Box");
+    }
+
+    #[test]
+    fn text_categories_declares_a_content_field() {
+        let categories = text_categories();
+        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "content");
+        assert!(found, "text_categories() should declare a \"content\" field -- a Text node's own string is otherwise only ever settable via seed data");
+    }
+
+    #[test]
+    fn box_categories_declares_a_content_field() {
+        let categories = box_categories();
+        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "content");
+        assert!(found, "box_categories() should declare a \"content\" field -- a Box's inline-text fallback (see render_view_nodes) reads the same property");
+    }
+
+    #[test]
+    fn box_parent_recurses_into_a_text_child() {
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = text_view("child", vec![]);
+        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+
+        let child_idx = node_view_ids.iter().position(|id| id == "child");
+        assert!(child_idx.is_some(), "a Box parent's Text child should be rendered");
+        assert!(matches!(viewport[child_idx.unwrap()], UiNode::Text(_)));
+    }
+
+    #[test]
+    fn text_parent_recurses_into_a_text_child() {
+        let parent = text_view("parent", vec!["child".to_string()]);
+        let child = text_view("child", vec![]);
+        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+
+        let child_idx = node_view_ids.iter().position(|id| id == "child");
+        assert!(child_idx.is_some(), "a Text parent's Text child should be rendered");
+        assert!(matches!(viewport[child_idx.unwrap()], UiNode::Text(_)));
+    }
+
+    #[test]
+    fn text_parent_skips_a_box_child() {
+        let parent = text_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
+        let (_viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+
+        assert!(
+            !node_view_ids.contains(&"child".to_string()),
+            "a Text parent must never render a Box child"
+        );
+    }
+
+    #[test]
+    fn box_parent_still_recurses_into_a_box_child() {
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
+        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+
+        let child_idx = node_view_ids.iter().position(|id| id == "child");
+        assert!(child_idx.is_some(), "a Box parent's Box child should still be rendered (unchanged existing behavior)");
+        assert!(matches!(viewport[child_idx.unwrap()], UiNode::Box(_)));
+    }
+
+    #[test]
+    fn referenced_child_view_is_excluded_from_the_top_level_grid_automatically() {
+        // No childOnly-equivalent flag anywhere on any of these fixtures -- being listed in
+        // "parent"'s child_view_ids is the only thing that should keep "child" out of its own
+        // top-level grid cell.
+        let parent = box_view("parent", vec!["child".to_string()]);
+        let child = box_view("child", vec![]);
+        let orphan = box_view("orphan", vec![]);
+        let (_viewport, node_view_ids) = build_viewport(&input(vec![parent, child, orphan]));
+
+        let child_occurrences = node_view_ids.iter().filter(|id| **id == "child").count();
+        assert_eq!(
+            child_occurrences, 1,
+            "a referenced child should render exactly once, via recursion under its parent -- not also get its own top-level cell"
+        );
+
+        let orphan_occurrences = node_view_ids.iter().filter(|id| **id == "orphan").count();
+        assert_eq!(
+            orphan_occurrences, 1,
+            "a view referenced by nobody must still render, as its own top-level cell"
+        );
     }
 }
 

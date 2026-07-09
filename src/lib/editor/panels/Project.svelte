@@ -1,16 +1,28 @@
 <script lang="ts">
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import {
+		contextMenu,
+		type ContextMenuContent,
+		type ContextMenuContentGenerator
+	} from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
 	import type { EditorState } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { queryBuilder, type Api } from 'manager';
+	import { PROJECT_EXPORT_PROVIDERS } from '$lib/plugins/project-export-providers.js';
+	import { PROJECT_IMPORT_PROVIDERS } from '$lib/plugins/project-import-providers.js';
 
 	const {
 		editorReady,
 		editorActivity = $bindable(),
-		api
-	}: { editorReady: EditorState; editorActivity: EditorActivity; api: Api } = $props();
+		api,
+		callUtilityPlugin
+	}: {
+		editorReady: EditorState;
+		editorActivity: EditorActivity;
+		api: Api;
+		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+	} = $props();
 
 	const projectsQuery = liveQuery((api, activity) => {
 		return api.getProjectsByWorkspaceId(activity.activeWorkspaceId);
@@ -35,6 +47,87 @@
 		}
 	});
 
+	// Which PROJECT_EXPORT_PROVIDERS / PROJECT_IMPORT_PROVIDERS entries actually have a matching
+	// plugin registered in the DB-backed catalogue. Both are install-level now (see
+	// PluginActivation in schema.ts) -- neither is scoped per-project the way it used to be, so
+	// export and import share the exact same availability check, fetched once: the catalogue
+	// only changes on app bootstrap (registerBuiltinPlugins), not during a normal session.
+	let availableExportProviders: typeof PROJECT_EXPORT_PROVIDERS = $state([]);
+	let availableImportProviders: typeof PROJECT_IMPORT_PROVIDERS = $state([]);
+
+	$effect(() => {
+		api.listPlugins().then((plugins) => {
+			availableExportProviders = PROJECT_EXPORT_PROVIDERS.filter((provider) =>
+				plugins.some((p) => p.name === provider.id)
+			);
+			availableImportProviders = PROJECT_IMPORT_PROVIDERS.filter((provider) =>
+				plugins.some((p) => p.name === provider.id)
+			);
+		});
+	});
+
+	// Prompts a native file picker, reads the chosen file as text, and hands it to the import
+	// provider's plugin function along with the active workspace to create the new project in.
+	// Mirrors buildExportSubmenu's callUtilityPlugin shape, just in the opposite direction. On
+	// success the plugin returns the new project's {id, name} as its plain text result, which we
+	// use to select it immediately -- the project list itself updates via the existing live query.
+	const pickFileAndImport = (provider: (typeof PROJECT_IMPORT_PROVIDERS)[number]) => {
+		const workspaceId = editorActivity.activeWorkspaceId;
+		if (!workspaceId) {
+			console.error('No active workspace to import into');
+			return;
+		}
+
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = provider.accept;
+		input.onchange = () => {
+			const file = input.files?.[0];
+			if (!file) return;
+
+			file
+				.text()
+				.then((text) =>
+					callUtilityPlugin?.(
+						provider.id,
+						provider.fn,
+						JSON.stringify({ workspace_id: workspaceId, text })
+					)
+				)
+				.then((result) => {
+					if (!result) return;
+					const project = JSON.parse((result as { text(): string }).text()) as {
+						id: string;
+						name: string;
+					};
+					selectProject(project.id, project.name);
+				})
+				.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
+		};
+		input.click();
+	};
+
+	const buildImportSubmenu = (): ContextMenuContent => {
+		if (availableImportProviders.length === 0) {
+			return [
+				{
+					name: 'check_store_for_import_options',
+					displayText: 'Check Store for Options',
+					icon: 'fa-solid fa-store',
+					disabled: true,
+					description: 'No import plugins are available yet.'
+				}
+			];
+		}
+
+		return availableImportProviders.map((provider) => ({
+			name: `import_${provider.id}`,
+			displayText: provider.label,
+			icon: 'fa-solid fa-file-import',
+			onClick: () => pickFileAndImport(provider)
+		}));
+	};
+
 	const projectPanelContextMenu: ContextMenuContentGenerator = () => {
 		return [
 			{
@@ -53,17 +146,68 @@
 						}
 					});
 				}
+			},
+			'hr',
+			{
+				name: 'import_project',
+				displayText: 'Import',
+				icon: 'fa-solid fa-file-import',
+				submenu: buildImportSubmenu()
 			}
 		];
 	};
 
-	import YAML from 'yaml';
-
 	let projectEditing: Record<string, boolean> = $state({});
 
-	const projectListingContextMenu: (projectId: string) => ContextMenuContentGenerator = (
-		projectId
-	) => {
+	const downloadText = (text: string, filename: string, mimeType: string) => {
+		const blob = new Blob([text], { type: mimeType });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		a.click();
+		URL.revokeObjectURL(url);
+	};
+
+	// Builds the "Export" submenu from whichever PROJECT_EXPORT_PROVIDERS entries are actually
+	// installed (see availableExportProviders above). Never hardcodes Tenner (or any other
+	// specific plugin) by name here -- that mapping lives entirely in
+	// project-export-providers.ts, so a future second export plugin needs no change to this file.
+	const buildExportSubmenu = (projectId: string, projectName: string): ContextMenuContent => {
+		const providers = availableExportProviders;
+
+		if (providers.length === 0) {
+			return [
+				{
+					name: 'check_store_for_export_options',
+					displayText: 'Check Store for Options',
+					icon: 'fa-solid fa-store',
+					disabled: true,
+					description: 'No export plugins are available for this project yet.'
+				}
+			];
+		}
+
+		return providers.map((provider) => ({
+			name: `export_${provider.id}`,
+			displayText: provider.label,
+			icon: 'fa-solid fa-file-export',
+			onClick: () => {
+				callUtilityPlugin
+					?.(provider.id, provider.fn, JSON.stringify({ project_id: projectId }))
+					.then((result) => {
+						const text = (result as { text(): string }).text();
+						downloadText(text, `${projectName}.${provider.fileExtension}`, provider.mimeType);
+					})
+					.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
+			}
+		}));
+	};
+
+	const projectListingContextMenu: (
+		projectId: string,
+		projectName: string
+	) => ContextMenuContentGenerator = (projectId, projectName) => {
 		return () => [
 			{
 				name: 'rename_project',
@@ -85,11 +229,7 @@
 				name: 'export_project',
 				displayText: 'Export',
 				icon: 'fa-solid fa-file-export',
-				onClick: () => {
-					api.exportProject(projectId).then((p) => {
-						console.log(YAML.stringify(p, null, 8));
-					});
-				}
+				submenu: buildExportSubmenu(projectId, projectName)
 			}
 		];
 	};
@@ -109,7 +249,7 @@
 				<button
 					onclick={() => selectProject(p.projectId, p.projectName)}
 					class:selected={p.projectId === editorActivity.activeProjectId}
-					use:contextMenu={projectListingContextMenu(p.projectId)}
+					use:contextMenu={projectListingContextMenu(p.projectId, p.projectName)}
 					title={`by ${p.author} - ${p.license}`}
 				>
 					<span class="project-listing__name"

@@ -1,14 +1,22 @@
 import type { SchemaDialect } from './schema.js';
 import { queryBuilder, type Api } from './api/index.js';
 import type { TokenValue } from './schema.js';
+import type { BuiltinPlugins } from './plugins-bootstrap.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
-export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
+export async function seedDemoProject(
+	dialect: SchemaDialect,
+	builtinPlugins: BuiltinPlugins
+): Promise<void> {
 	const api: Api = queryBuilder(dialect);
 
 	const ws = (await api.getAllWorkspaces().execute())[0]!;
 	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'KIT\u202210 Demo'))!;
+
+	await api.setProjectInterpreter(proj.id, builtinPlugins.charter.id);
+	// No utility-plugin linking -- Fontavious and Tenner are install-level (see
+	// PluginActivation in schema.ts), loaded globally rather than per-project.
 
 	// Project-scoped tokens
 	const tokenBg = (await api.createToken(proj.id, 'colors.bg', s('#ffffff')))!;
@@ -361,49 +369,79 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 	const lblDisabledSnip = (await api.createRenderSnippet(lblDisabled.id))!;
 	await api.createRenderEntry(lblDisabledSnip.id, 'content', 'Unavailable');
 
-	// Label views — child_only so charter skips them as top-level frames
-	const childOnlyHint = { charter: { primitive: 'text', childOnly: true } };
+	// Label views. Forced to the text primitive explicitly (cheap insurance -- they'd
+	// auto-detect as text anyway, given only paint properties). Whether a view renders as its
+	// own top-level frame or only as someone's child is derived by Charter from the composition
+	// graph now, not declared here: labelDefaultView is excluded because btnNull's children
+	// references it below; the rest aren't referenced by anything yet, so they render as their
+	// own top-level frames until something actually composes them, same as any unclaimed view.
+	const textPrimitiveHint = { charter: { primitive: 'text' } };
 
-	const labelDefaultView = (await api.createViewInProject(proj.id, 'Label: Default', childOnlyHint))!;
+	const labelDefaultView = (await api.createViewInProject(proj.id, 'Label: Default', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelDefaultView.id);
 
-	const labelPrimaryView = (await api.createViewInProject(proj.id, 'Label: Primary', childOnlyHint))!;
+	const labelPrimaryView = (await api.createViewInProject(proj.id, 'Label: Primary', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelPrimaryView.id);
 	await api.setAxisArg(labelPrimaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
 
-	const labelSecondaryView = (await api.createViewInProject(proj.id, 'Label: Secondary', childOnlyHint))!;
+	const labelSecondaryView = (await api.createViewInProject(proj.id, 'Label: Secondary', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelSecondaryView.id);
 	await api.setAxisArg(labelSecondaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'secondary' });
 
-	const labelTertiaryView = (await api.createViewInProject(proj.id, 'Label: Tertiary', childOnlyHint))!;
+	const labelTertiaryView = (await api.createViewInProject(proj.id, 'Label: Tertiary', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelTertiaryView.id);
 	await api.setAxisArg(labelTertiaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'tertiary' });
 
-	const labelGhostView = (await api.createViewInProject(proj.id, 'Label: Ghost', childOnlyHint))!;
+	const labelGhostView = (await api.createViewInProject(proj.id, 'Label: Ghost', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelGhostView.id);
 	await api.setAxisArg(labelGhostView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'ghost' });
 
-	const labelPositiveView = (await api.createViewInProject(proj.id, 'Label: Positive', childOnlyHint))!;
+	const labelPositiveView = (await api.createViewInProject(proj.id, 'Label: Positive', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelPositiveView.id);
 	await api.setAxisArg(labelPositiveView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'positive' });
 
-	const labelDangerView = (await api.createViewInProject(proj.id, 'Label: Danger', childOnlyHint))!;
+	const labelDangerView = (await api.createViewInProject(proj.id, 'Label: Danger', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelDangerView.id);
 	await api.setAxisArg(labelDangerView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'danger' });
 
-	// Only the null layer sets children -- deliberately NOT per emphasis/sentiment layer.
-	// `children` is just another render-entry property, resolved through the same layer
-	// machinery as background/color, so making it axis-conditional is a legitimate capability
-	// (a kit CAN legitimately vary its children by axis) -- but doing so here meant the
-	// button's auto-sized box visibly grew/shrank every time emphasis or sentiment changed,
-	// since each value pointed at a different label view with different (differently-long)
-	// text. That coupled two independent concerns (how emphasized is this button vs. what does
-	// it say) that this demo didn't actually intend to couple. Content now stays fixed at
-	// Label: Default regardless of emphasis/sentiment; only paint properties (background,
-	// color, font-weight, border) vary. See VISION.md's 1st Principle note on view-level token
-	// overrides for the real long-term mechanism when a kit *does* want axis-conditional
-	// children with a per-instance escape hatch.
-	await api.setLayerChildren(btnNull.id, [labelDefaultView.id]);
+	const labelDisabledView = (await api.createViewInProject(proj.id, 'Label: Disabled', textPrimitiveHint))!;
+	await api.attachKitToComposition(labelKit.id, labelDisabledView.id);
+	await api.setAxisArg(labelDisabledView.id, labelKit.id, stateAxis.id, { type: 'literal', value: 'disabled' });
+
+	// Three more emphasis=primary label views, one dedicated to each of the three primary-emphasis
+	// button variants below -- NOT a shared reference to labelPrimaryView, even though all four
+	// resolve identical "Submit" content via the same lblPrimary layer. Reusing labelPrimaryView
+	// as more than one button's child would violate the one-reference rule (see the childrenBaseToken
+	// comment below); labelPrimaryView itself stays unclaimed library content.
+	const labelLightDefaultView = (await api.createViewInProject(proj.id, 'Label: Light Default', textPrimitiveHint))!;
+	await api.attachKitToComposition(labelKit.id, labelLightDefaultView.id);
+	await api.setAxisArg(labelLightDefaultView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+
+	const labelDarkDefaultView = (await api.createViewInProject(proj.id, 'Label: Dark Default', textPrimitiveHint))!;
+	await api.attachKitToComposition(labelKit.id, labelDarkDefaultView.id);
+	await api.setAxisArg(labelDarkDefaultView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+
+	const labelPrimaryHoverView = (await api.createViewInProject(proj.id, 'Label: Light Comfort Primary Hover', textPrimitiveHint))!;
+	await api.attachKitToComposition(labelKit.id, labelPrimaryHoverView.id);
+	await api.setAxisArg(labelPrimaryHoverView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+
+	// The null layer's children is token-backed, not a literal -- a literal here would mean
+	// EVERY view composing buttonKit resolves the exact same view_ids unconditionally (the null
+	// layer applies regardless of axis args), so whatever view that literal named would end up
+	// genuinely rendered once per button view: not N different labels, one view referenced N
+	// times, all correctly highlighting together on hover since they really are the same view
+	// (see CLAUDE.md: views are unique, reference-based, not instanced). A view is referenced as
+	// a child at most once, ever -- no exceptions, not even for two views that would otherwise
+	// resolve identical content -- so the kit-scoped token here is a genuinely empty fallback
+	// (never actually reached; every button view below gets its own view-scoped override token
+	// with a freshly-created, dedicated label view), not a shared default to fall back to.
+	const childrenBaseToken = (await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [] },
+		{ kitId: buttonKit.id }
+	))!;
+	await api.createRenderEntry(btnNullSnip.id, 'children', null, childrenBaseToken.id);
 
 	// --- Views ---
 
@@ -433,6 +471,12 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'default'
 	});
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelLightDefaultView.id] },
+		{ viewId: lightDefaultView.id }
+	);
 
 	// View: Dark Default
 	const darkDefaultView = (await api.createViewInProject(proj.id, 'Dark Default', {
@@ -460,6 +504,12 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'default'
 	});
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelDarkDefaultView.id] },
+		{ viewId: darkDefaultView.id }
+	);
 
 	// View: Light Comfort Primary Hover
 	const lightDensePrimaryHoverView = (await api.createViewInProject(
@@ -491,6 +541,12 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'hover'
 	});
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelPrimaryHoverView.id] },
+		{ viewId: lightDensePrimaryHoverView.id }
+	);
 
 	// View: Dark Comfort Danger Click
 	const darkDenseDangerClickView = (await api.createViewInProject(
@@ -522,6 +578,14 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'click'
 	});
+	// Its own dedicated view-scoped children token -- labelDangerView isn't referenced by
+	// any other view.
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelDangerView.id] },
+		{ viewId: darkDenseDangerClickView.id }
+	);
 
 	// View: Light Compact Ghost Disabled
 	const lightCompactGhostDisabledView = (await api.createViewInProject(
@@ -553,6 +617,13 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'disabled'
 	});
+	// Its own dedicated view-scoped children token.
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelDisabledView.id] },
+		{ viewId: lightCompactGhostDisabledView.id }
+	);
 
 	// View: Dark Compact Secondary Positive Default
 	const darkCompactSecondaryPositiveView = (await api.createViewInProject(
@@ -584,6 +655,13 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'default'
 	});
+	// Its own dedicated view-scoped children token.
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelPositiveView.id] },
+		{ viewId: darkCompactSecondaryPositiveView.id }
+	);
 
 	// View: Light Comfort Tertiary Neutral Click
 	const lightDenseTertiaryClickView = (await api.createViewInProject(
@@ -615,6 +693,13 @@ export async function seedDemoProject(dialect: SchemaDialect): Promise<void> {
 		type: 'literal',
 		value: 'click'
 	});
+	// Its own dedicated view-scoped children token.
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelTertiaryView.id] },
+		{ viewId: lightDenseTertiaryClickView.id }
+	);
 
 	console.log('Demo project seeded: KIT\u202210 Demo');
 }

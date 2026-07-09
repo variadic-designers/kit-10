@@ -227,6 +227,7 @@
 	import { initializeEditorState } from 'manager';
 	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
 	import { getVellumInstance, requestVellumRender } from './vellum-instance.js';
+	import type { ExtismPluginOptions } from '@extism/extism';
 
 	let pluginManager = $state<PluginManager | null>(null);
 
@@ -235,15 +236,43 @@
 			if (e) {
 				editorLoading = e;
 				pluginManager = createPluginManager(queryBuilder(e.dialect));
-				await pluginManager.loadPlugin({ wasm: [{ url: '/charter.wasm' }] }, 'charter');
-				// Utility plugin -- never touches the resolve/selection lifecycle above, only
-				// called on demand (font picker, resolve-time scan). allowedHosts restricts it
-				// to fetching from Google Fonts' CDN only; no other host is reachable.
-				await pluginManager.loadUtilityPlugin(
-					{ wasm: [{ url: '/fontavious.wasm' }] },
-					'fontavious',
-					{ allowedHosts: ['fonts.gstatic.com'] }
-				);
+
+				// Eager utility plugins (Fontavious: font fetching is needed the moment any
+				// project has text to render) are install-level, not a per-project choice --
+				// loaded once here, unconditionally, before any project is even selected.
+				// 'lazy' utility plugins (Tenner) deliberately aren't loaded here; they load
+				// themselves on first actual use (see callUtilityPlugin in manager.svelte.ts).
+				const bootApi = queryBuilder(e.dialect);
+				const catalogue = await bootApi.listPlugins();
+				for (const plugin of catalogue) {
+					if (plugin.kind === 'utility' && plugin.activation === 'eager') {
+						await pluginManager.loadUtilityPlugin(
+							plugin.manifest,
+							plugin.name,
+							(plugin.options ?? undefined) as Partial<ExtismPluginOptions> | undefined
+						);
+					}
+				}
+			}
+		});
+	});
+
+	// The interpreter is the one genuinely per-project plugin choice (see PluginActivation in
+	// schema.ts) -- reacts to the active project changing, skips reloading if it's already the
+	// currently-loaded interpreter.
+	let loadedInterpreterName: string | null = null;
+
+	$effect(() => {
+		const projectId = editorActivity.activeProjectId;
+		const manager = pluginManager;
+		const editor = editorLoading;
+		if (!manager || !editor || !projectId) return;
+
+		const api = queryBuilder(editor.dialect);
+		api.getProjectInterpreter(projectId).then((interpreter) => {
+			if (interpreter && interpreter.name !== loadedInterpreterName) {
+				loadedInterpreterName = interpreter.name;
+				manager.loadPlugin(interpreter.manifest, interpreter.name);
 			}
 		});
 	});
@@ -380,9 +409,14 @@
 	{#snippet management(editorReady)}
 		{@const api = queryBuilder(editorReady.dialect)}
 
-		<ProjectPanel {api} {editorReady} bind:editorActivity />
+		<ProjectPanel
+			{api}
+			{editorReady}
+			bind:editorActivity
+			callUtilityPlugin={pluginManager?.callUtilityPlugin}
+		/>
 
-		<ViewsPanel {api} {editorReady} bind:editorActivity bind:selection bind:hoveredViewId />
+		<ViewsPanel {api} {editorReady} {resolvedViews} bind:editorActivity bind:selection bind:hoveredViewId />
 
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
@@ -407,6 +441,7 @@
 			{resolvedKits}
 			{selection}
 			fieldCategories={pluginManager?.fieldCategories}
+			activeProjectId={editorActivity.activeProjectId}
 			onFieldUpdate={pluginManager?.fieldUpdate}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 		/>

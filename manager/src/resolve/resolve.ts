@@ -20,6 +20,10 @@ export interface ResolvedProperty {
 	kitId: string;
 	isToken: boolean;
 	tokenAlias: string | null;
+	// The render entry's own token row id (not the alias-override winner from pass 2) -- lets the
+	// UI update a token-backed property's value in place (e.g. ChildViewField writing to its
+	// per-view `children` token) without a separate lookup-by-alias round trip.
+	tokenId: string | null;
 	conditionCount: number;
 	// Axis-id set the winning Layer conditions on — lets the UI color a property by which axes
 	// combine to produce it (e.g. theme+state vs theme+density), not just how many conditions.
@@ -173,6 +177,7 @@ function matchLayers(
 				kitId,
 				isToken: !!entry.tokenId,
 				tokenAlias: entry.tokenAlias,
+				tokenId: entry.tokenId ?? null,
 				conditionCount: data.conditions.length,
 				keys: data.conditions.map((c) => c.axisId),
 				conditionValues: data.conditions.map((c) => ({
@@ -339,16 +344,27 @@ async function resolveAll(
 	return results;
 }
 
+export interface ScopedTokenMaps {
+	// alias -> scalar string value, narrowest scope (project -> kit -> view) wins.
+	scalarMap: Map<string, string>;
+	// alias -> list of view ids, same scope-precedence rule. Separate map rather than widening
+	// scalarMap's value type -- keeps the existing scalar substitution path completely untouched,
+	// and a property only ever wants one or the other (children wants view-list, everything else
+	// wants scalar), never both.
+	viewListMap: Map<string, string[]>;
+}
+
 async function gatherScopedTokens(
 	db: SchemaDialect,
 	projectId: string | undefined,
 	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
 	kitIds: string[],
 	viewId: string,
-): Promise<Map<string, string>> {
-	const aliasToValue = new Map<string, string>();
+): Promise<ScopedTokenMaps> {
+	const scalarMap = new Map<string, string>();
+	const viewListMap = new Map<string, string[]>();
 
-	if (!projectId) return aliasToValue;
+	if (!projectId) return { scalarMap, viewListMap };
 
 	const [projectTokens, kitTokenRows, viewTokens] = await Promise.all([
 		db
@@ -377,9 +393,13 @@ async function gatherScopedTokens(
 			.execute(),
 	]);
 
-	for (const t of projectTokens) {
-		if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
-	}
+	const apply = (alias: string | null, value: TokenValue | null) => {
+		if (!alias || !value) return;
+		if (value.type === 'scalar') scalarMap.set(alias, value.value);
+		else if (value.type === 'view-list') viewListMap.set(alias, value.view_ids);
+	};
+
+	for (const t of projectTokens) apply(t.alias, t.value);
 
 	// Group kit tokens by kit_id, then apply in kitIds order so priority is preserved.
 	const tokensByKit = new Map<string, typeof kitTokenRows>();
@@ -389,26 +409,26 @@ async function gatherScopedTokens(
 		tokensByKit.get(t.kit_id)!.push(t);
 	}
 	for (const kitId of kitIds) {
-		for (const t of tokensByKit.get(kitId) ?? []) {
-			if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
-		}
+		for (const t of tokensByKit.get(kitId) ?? []) apply(t.alias, t.value);
 	}
 
-	for (const t of viewTokens) {
-		if (t.alias && t.value?.type === 'scalar') aliasToValue.set(t.alias, t.value.value);
-	}
+	for (const t of viewTokens) apply(t.alias, t.value);
 
-	return aliasToValue;
+	return { scalarMap, viewListMap };
 }
 
-function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMap: Map<string, string>): void {
+function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMaps: ScopedTokenMaps): void {
 	for (const [, resolved] of properties) {
-		if (resolved.isToken && resolved.tokenAlias) {
-			const tokenValue = tokenMap.get(resolved.tokenAlias);
-			if (tokenValue !== undefined) {
-				resolved.value = tokenValue;
-			}
+		if (!resolved.isToken || !resolved.tokenAlias) continue;
+
+		if (resolved.property === 'children') {
+			const viewIds = tokenMaps.viewListMap.get(resolved.tokenAlias);
+			if (viewIds !== undefined) resolved.childViewIds = viewIds;
+			continue;
 		}
+
+		const scalarValue = tokenMaps.scalarMap.get(resolved.tokenAlias);
+		if (scalarValue !== undefined) resolved.value = scalarValue;
 	}
 }
 
@@ -598,8 +618,11 @@ export async function resolveManyViews(
 
 	// Build token maps
 	const baseTokenMap = new Map<string, string>();
+	const baseViewListMap = new Map<string, string[]>();
 	for (const t of projectTokens) {
-		if (t.alias && t.value?.type === 'scalar') baseTokenMap.set(t.alias, t.value.value);
+		if (!t.alias || !t.value) continue;
+		if (t.value.type === 'scalar') baseTokenMap.set(t.alias, t.value.value);
+		else if (t.value.type === 'view-list') baseViewListMap.set(t.alias, t.value.view_ids);
 	}
 	const tokensByKit = new Map<string, typeof kitTokenRows>();
 	for (const t of kitTokenRows) {
@@ -633,13 +656,18 @@ export async function resolveManyViews(
 
 		// Token resolution order: project → kit (in composition order) → view
 		const tokenMap = new Map(baseTokenMap);
+		const viewListTokenMap = new Map(baseViewListMap);
 		for (const comp of comps) {
 			for (const t of tokensByKit.get(comp.kit_id) ?? []) {
-				if (t.alias && t.value?.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+				if (!t.alias || !t.value) continue;
+				if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+				else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
 			}
 		}
 		for (const t of tokensByView.get(v.id) ?? []) {
-			if (t.alias && t.value?.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+			if (!t.alias || !t.value) continue;
+			if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+			else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
 		}
 
 		const resolvedKits: ResolvedKit[] = comps.map((comp) => {
@@ -649,7 +677,7 @@ export async function resolveManyViews(
 				kitLayerDataMaps.get(comp.kit_id) ?? new Map(),
 				args,
 			);
-			substituteTokens(properties, tokenMap);
+			substituteTokens(properties, { scalarMap: tokenMap, viewListMap: viewListTokenMap });
 			return {
 				kitId: comp.kit_id,
 				kitName: comp.kit_name,

@@ -18,7 +18,12 @@ interface TokenValueView {
 	view_id: string;
 }
 
-type TokenValue = TokenValueScalar | TokenValueView;
+interface TokenValueViewList {
+	type: 'view-list';
+	view_ids: string[];
+}
+
+type TokenValue = TokenValueScalar | TokenValueView | TokenValueViewList;
 
 // --- Axis value types (condition side) ---
 
@@ -56,6 +61,15 @@ interface ArgRange {
 
 type ArgValue = ArgLiteral | ArgRange;
 
+// --- Plugin registry types ---
+
+type PluginKind = 'interpreter' | 'utility';
+type PluginActivation = 'eager' | 'lazy';
+
+interface PluginManifest {
+	wasm: { url: string }[];
+}
+
 // --- Schema ---
 
 export interface DB2026_04_21 {
@@ -77,6 +91,8 @@ export interface DB2026_04_21 {
 	render_entries: RenderEntriesTable;
 
 	tokens: TokensTable;
+
+	plugins: PluginsTable;
 }
 
 // ------------------------------
@@ -98,6 +114,7 @@ export interface ProjectsTable {
 	license: Generated<string>;
 	author: string;
 	workspace_id: Generated<string>;
+	interpreter_plugin_id: string | null;
 }
 
 export interface ViewsTable {
@@ -108,7 +125,6 @@ export interface ViewsTable {
 	project_id: string;
 	lock: boolean;
 	hide: boolean;
-	is_template: Generated<boolean>;
 }
 
 export interface CompositionsTable {
@@ -204,6 +220,18 @@ export interface TokensTable {
 
 // ------------------------------
 
+export interface PluginsTable {
+	id: Generated<string>;
+	name: string;
+	kind: PluginKind;
+	activation: PluginActivation | null;
+	manifest: JSONColumnType<PluginManifest>;
+	options: JSONColumnType<Record<string, unknown>> | null;
+	content_hash: string | null;
+}
+
+// ------------------------------
+
 export async function up(dialect: DAny) {
 	await dialect.schema
 		.createTable('workspaces')
@@ -228,6 +256,9 @@ export async function up(dialect: DAny) {
 		.addColumn('workspace_id', 'uuid', (col) =>
 			col.references('workspaces.id').onDelete('cascade').notNull()
 		)
+		// No inline FK yet -- the plugins table this references doesn't exist until later in
+		// this same up(). The constraint is added via alterTable right after plugins is created.
+		.addColumn('interpreter_plugin_id', 'uuid')
 		.execute();
 
 	await dialect.schema
@@ -264,7 +295,6 @@ export async function up(dialect: DAny) {
 		.addColumn('project_id', 'uuid', (col) => col.references('projects.id').onDelete('cascade'))
 		.addColumn('lock', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
 		.addColumn('hide', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
-		.addColumn('is_template', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
 		.execute();
 
 	await dialect.schema
@@ -398,9 +428,40 @@ export async function up(dialect: DAny) {
 			sql`(value IS NOT NULL) != (token_id IS NOT NULL)`
 		)
 		.execute();
+
+	await dialect.schema
+		.createTable('plugins')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('name', 'text', (col) => col.notNull())
+		.addColumn('kind', 'text', (col) => col.notNull())
+		// Only meaningful for kind: 'utility' ('eager' loads at editor boot regardless of
+		// project, e.g. Fontavious; 'lazy' loads on first actual use, e.g. Tenner). Null for
+		// interpreter-kind rows -- their loading is driven by which project is active instead.
+		.addColumn('activation', 'text')
+		.addColumn('manifest', 'jsonb', (col) => col.notNull())
+		.addColumn('options', 'jsonb')
+		.addColumn('content_hash', 'text')
+		.addUniqueConstraint('plugins_name_unique', ['name'])
+		.execute();
+
+	// The project<->interpreter FK, added only now that plugins exists. Utility plugins are
+	// install-level (see PluginActivation above) -- there is no equivalent join table for them,
+	// they're just loaded globally, so a project only ever needs to reference its one interpreter.
+	await dialect.schema
+		.alterTable('projects')
+		.addForeignKeyConstraint(
+			'projects_interpreter_plugin_id_fkey',
+			['interpreter_plugin_id'],
+			'plugins',
+			['id']
+		)
+		.onDelete('set null')
+		.execute();
 }
 
 export async function down(dialect: DAny) {
+	await dialect.schema.dropTable('plugins').ifExists().cascade().execute();
 	await dialect.schema.dropTable('render_entries').ifExists().cascade().execute();
 	await dialect.schema.dropTable('layer_axis_values').ifExists().cascade().execute();
 	await dialect.schema.dropTable('render_snippets').ifExists().cascade().execute();

@@ -4,6 +4,7 @@ import { resolve, resolveMany, flattenKitResults } from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
+const vl = (viewIds: string[]): TokenValue => ({ type: 'view-list', view_ids: viewIds });
 
 describe('resolve', () => {
 	let ctx: TestContext;
@@ -86,6 +87,7 @@ describe('resolve', () => {
 			kitId: s.kit.id,
 			isToken: true,
 			tokenAlias: 'colors.bg',
+			tokenId: s.tokenBg.id,
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
@@ -98,6 +100,7 @@ describe('resolve', () => {
 			kitId: s.kit.id,
 			isToken: false,
 			tokenAlias: null,
+			tokenId: null,
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
@@ -110,6 +113,7 @@ describe('resolve', () => {
 			kitId: s.kit.id,
 			isToken: false,
 			tokenAlias: null,
+			tokenId: null,
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
@@ -626,6 +630,32 @@ describe('range overlap matching', () => {
 			const flat = flattenKitResults(results);
 			// View token #10b981 should win over both project #3b82f6 and kit #ef4444
 			expect(flat.get('color')!.value).toBe('#10b981');
+		});
+
+		it('view-list token on children: view-scoped override wins over kit-scoped token, ignoring specificity', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Children Token Override'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const view = (await ctx.api.createViewInProject(proj.id, 'Parent View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
+			const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
+
+			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), { kitId: kit.id }))!;
+			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), { viewId: view.id }))!;
+
+			// Kit-scoped layer has 0 conditions (highest possible resolve-pass-1 specificity here);
+			// the view-scoped token must still win in pass 2 regardless.
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitToken.id);
+
+			const results = await resolveMany(ctx.db, view.id);
+			const flat = flattenKitResults(results);
+			expect(flat.get('children')!.childViewIds).toEqual([childB.id]);
+			expect(viewToken.id).not.toBe(kitToken.id);
 		});
 	});
 });

@@ -4,6 +4,7 @@
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
+	import type { ResolvedView } from '$lib/plugins/types.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -12,6 +13,7 @@
 		editorActivity: EditorActivity;
 		api: Api;
 		hoveredViewId?: string | null;
+		resolvedViews?: ResolvedView[];
 	};
 
 	let {
@@ -21,7 +23,8 @@
 		api,
 		editorReady,
 		editorActivity = $bindable(),
-		hoveredViewId = $bindable(null)
+		hoveredViewId = $bindable(null),
+		resolvedViews = []
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
@@ -136,6 +139,53 @@
 		return api.getViewsByProjectId(activity.activeProjectId);
 	});
 
+	// A view's own child references, unioned across its resolved kits -- the same computation
+	// Charter's collect_child_view_ids does per-view, done here client-side so this panel can
+	// nest views the same way build_viewport does (see CLAUDE.md: a view is never "top-level" or
+	// "child" by declaration, only by whether some other view's box currently lists it).
+	const childrenByViewId = $derived.by(() => {
+		const map = new Map<string, string[]>();
+		for (const view of resolvedViews) {
+			const ids = new Set<string>();
+			for (const kit of view.resolvedKits) {
+				for (const id of kit.childViewIds ?? []) ids.add(id);
+			}
+			map.set(view.viewId, [...ids]);
+		}
+		return map;
+	});
+
+	// Project-wide union of every view referenced as somebody's child -- mirrors build_viewport's
+	// own `referenced` set. A view NOT in this set is a root (rendered at the top level); a view
+	// that IS gets nested under whichever parent(s) reference it instead. Views are unique rows
+	// referenced by id, not instanced (see CLAUDE.md) -- a view referenced by more than one
+	// parent is a real DAG, not a tree, so it's rendered once per parent that claims it.
+	const referencedViewIds = $derived.by(() => {
+		const set = new Set<string>();
+		for (const ids of childrenByViewId.values()) {
+			for (const id of ids) set.add(id);
+		}
+		return set;
+	});
+
+	const rowsByViewId = $derived(new Map(viewsQuery.rows.map((v) => [v.viewId, v] as const)));
+
+	// viewsQuery (a plain `views` table select) settles well before resolvedViews (the full
+	// resolve pipeline -- layers, axis args, tokens) does, so rendering the tree the instant
+	// viewsQuery lands would show every view flatly at the root for one frame, then reflow into
+	// the real nesting once resolvedViews (and therefore referencedViewIds) catches up -- the
+	// exact flat-then-nested flash this guards against. Same single-reveal principle
+	// Viewport.svelte's hasData gate already uses: wait until every current view id has a
+	// resolvedViews entry, then reveal the correctly-nested tree in one clean render instead of
+	// reflowing visibly. An empty project (no views at all) counts as trivially hydrated so the
+	// empty state still renders immediately rather than hanging.
+	const resolvedViewIdSet = $derived(new Set(resolvedViews.map((v) => v.viewId)));
+	const viewsHydrated = $derived(
+		viewsQuery.rows.length === 0 || viewsQuery.rows.every((v) => resolvedViewIdSet.has(v.viewId))
+	);
+
+	const rootViews = $derived(viewsQuery.rows.filter((v) => !referencedViewIds.has(v.viewId)));
+
 	// Plain (non-$state) bookkeeping var -- tracks the last project this effect settled on, so
 	// it can tell "just switched projects / never selected anything yet" (auto-select rows[0])
 	// apart from "user deliberately deselected within the same project" (activeViewId === null,
@@ -174,16 +224,16 @@
 	{#snippet content()}
 		<!-- <pre>{JSON.stringify(viewsQuery, null, 2)}</pre> -->
 		<ul class="views">
-			{#if viewsQuery.rows}
-				{#each viewsQuery.rows as v (v.viewId)}
-					{@render kitter(v, 0)}
+			{#if viewsQuery.rows && viewsHydrated}
+				{#each rootViews as v (v.viewId)}
+					{@render kitter(v, 0, [])}
 				{/each}
 			{/if}
 		</ul>
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v: any, level: number)}
+{#snippet kitter(v: any, level: number, ancestors: string[])}
 	<!--
 				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
 				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}
@@ -224,6 +274,18 @@
 			</div>
 		</button>
 	</li>
+
+	<!-- Views are unique, reference-based, not instanced -- the composition graph is a DAG, not
+	     strictly a tree, so a child is rendered under every parent that currently references it.
+	     The `!ancestors.includes(id)` filter is a cycle guard, not a "already shown" dedupe: if a
+	     chain of children ever loops back to a view already open in this exact render path (A's
+	     children include B, B's include A), that branch just stops instead of recursing forever. -->
+	{#each (childrenByViewId.get(v.viewId) ?? []).filter((id) => id !== v.viewId && !ancestors.includes(id)) as childId (childId)}
+		{@const childRow = rowsByViewId.get(childId)}
+		{#if childRow}
+			{@render kitter(childRow, level + 1, [...ancestors, v.viewId])}
+		{/if}
+	{/each}
 {/snippet}
 
 <style lang="scss">

@@ -1,6 +1,8 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function ensure_index_visible(index: number): boolean;
+
 export function get_selection(x: number, y: number): number | undefined;
 
 export function initialize(canvas_id: string, width: number, height: number): Promise<void>;
@@ -33,6 +35,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly ensure_index_visible: (a: number) => number;
     readonly get_selection: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly is_font_loaded: (a: number, b: number) => number;
@@ -47,9 +50,9 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7764: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7783: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6376: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7770: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7789: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6382: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

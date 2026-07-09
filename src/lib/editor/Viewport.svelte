@@ -144,6 +144,22 @@
 		}
 	});
 
+	// Pans the selected view into view when it isn't already visible -- e.g. clicking a row in
+	// the Views panel that's off-screen. Fires on every selectedViewPrimary change regardless of
+	// origin (Views panel vs. a canvas click), rather than only for panel-originated selection,
+	// because that distinction doesn't need to exist here: ensure_index_visible is itself a
+	// no-op when the node's already on-screen (see its own doc comment in taf_can_do), which a
+	// canvas click's target always is. Re-reads nodeViewIds too so this stays correct if the
+	// resolve pipeline updates the index map slightly after the selection itself changes.
+	$effect(() => {
+		const viewId = selection.selectedViewPrimary;
+		const ids = nodeViewIds;
+		if (!initialized || !vellum || !hasData || !viewId) return;
+		const index = ids.indexOf(viewId);
+		if (index === -1) return;
+		if (vellum.ensure_index_visible(index)) requestRender();
+	});
+
 	onDestroy(() => {
 		if (rafId) cancelAnimationFrame(rafId);
 		if (resizeObserver) resizeObserver.disconnect();

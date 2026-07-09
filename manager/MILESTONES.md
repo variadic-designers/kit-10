@@ -343,9 +343,9 @@ Charter translates resolved kit data into a flat `UiNode[]` render tree. `on_res
 
 4-round-trip resolution for all project views, replacing the per-view `resolveMany` O(views) approach. Fingerprint comparison (`kitFingerprint`) skips Svelte re-renders when resolved data didn't change.
 
-### [ ] M9.6 — Field editing
+### [x] M9.6 — Field editing
 
-Wire `StyleField.confirmUpdateStyle` to `pluginManager.fieldUpdate`. Currently a console.log stub — field values are read-only.
+`StyleField.confirmUpdateStyle`/`confirmSuggestionPick` call `onFieldUpdate`, wired in `Editor.svelte` to `pluginManager.fieldUpdate` → `on_field_update` → `kit10_write_render_entry_to_layer`. No longer a stub.
 
 ---
 

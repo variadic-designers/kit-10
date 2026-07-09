@@ -49,7 +49,7 @@
 	import Panel from '../Panel.svelte';
 	import { type Api, type EditorState, type TokenValue } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
-	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
+	import { tokenIcon, isColorValue, tokenStr, formatViewArray } from './token-utils.ts';
 
 	type TokenRow = {
 		tokenId: string;
@@ -89,6 +89,8 @@
 
 	let newTokenAlias = $state('');
 	let newTokenValue = $state('');
+	let newTokenValueType = $state<'scalar' | 'view-list'>('scalar');
+	let newTokenViewIds = $state<string[]>([]);
 	let addingScope = $state<'project' | 'kit' | 'view' | null>(null);
 	let editingAlias = $state<Record<string, boolean>>({});
 	let editingValue = $state<Record<string, boolean>>({});
@@ -102,8 +104,30 @@
 		activeKitQuery.rows.find((k) => k.kitId === editorActivity.activeKitId)?.kitName ?? 'Kit'
 	);
 
+	const viewNameById = $derived(
+		new Map(activeViewQuery.rows.map((v) => [v.viewId, v.viewName] as const))
+	);
+
+	// A view-list token's value has no meaningful plain-text form (tokenStr returns null for it)
+	// -- render it as the literal array of view names it represents instead, same as
+	// ChildViewField's own value box, rather than an opaque alias pill with invisible contents.
+	function tokenValueDisplay(token: TokenRow): string {
+		if (token.tokenValue?.type === 'view-list') {
+			return formatViewArray(token.tokenValue.view_ids.map((id) => viewNameById.get(id) ?? '?'));
+		}
+		return tokenStr(token.tokenValue) ?? '+';
+	}
+
+	function toggleNewTokenViewId(viewId: string) {
+		newTokenViewIds = newTokenViewIds.includes(viewId)
+			? newTokenViewIds.filter((id) => id !== viewId)
+			: [...newTokenViewIds, viewId];
+	}
+
 	async function addToken(scope: 'project' | 'kit' | 'view') {
-		if (!newTokenAlias || !newTokenValue) return;
+		if (!newTokenAlias) return;
+		if (newTokenValueType === 'scalar' && !newTokenValue) return;
+		if (newTokenValueType === 'view-list' && newTokenViewIds.length === 0) return;
 		const projectId = editorActivity.activeProjectId;
 		if (!projectId) return;
 
@@ -114,9 +138,16 @@
 					? { viewId: editorActivity.activeViewId }
 					: undefined;
 
-		await api.createToken(projectId, newTokenAlias, { type: 'scalar', value: newTokenValue }, scopeObj);
+		const value: TokenValue =
+			newTokenValueType === 'scalar'
+				? { type: 'scalar', value: newTokenValue }
+				: { type: 'view-list', view_ids: newTokenViewIds };
+
+		await api.createToken(projectId, newTokenAlias, value, scopeObj);
 		newTokenAlias = '';
 		newTokenValue = '';
+		newTokenViewIds = [];
+		newTokenValueType = 'scalar';
 		addingScope = null;
 	}
 
@@ -157,35 +188,44 @@
 	];
 
 	function tokenContextMenu(tokenId: string): ContextMenuContent {
-		return () => [
-			{
-				name: 'rename',
-				displayText: 'Rename',
-				icon: 'fa-solid fa-i-cursor',
-				onClick: () => {
-					editingAlias[tokenId] = true;
+		return () => {
+			const token = [...projectTokensQuery.rows, ...kitTokensQuery.rows, ...viewTokensQuery.rows].find(
+				(t: TokenRow) => t.tokenId === tokenId
+			);
+			// view-list tokens aren't editable via the plain-text value input (see the readonly
+			// branch in tokenRow below) -- committing that input always writes back a scalar,
+			// which would silently downgrade this token's type. No inline view-list editor yet.
+			const isViewList = token?.tokenValue?.type === 'view-list';
+
+			return [
+				{
+					name: 'rename',
+					displayText: 'Rename',
+					icon: 'fa-solid fa-i-cursor',
+					onClick: () => {
+						editingAlias[tokenId] = true;
+					}
+				},
+				{
+					name: 'editValue',
+					displayText: 'Edit Value',
+					icon: 'fa-solid fa-pencil',
+					disabled: isViewList,
+					onClick: () => {
+						draftValue[tokenId] = tokenStr(token?.tokenValue) ?? '';
+						editingValue[tokenId] = true;
+					}
+				},
+				'hr',
+				{
+					name: 'delete',
+					displayText: 'Delete',
+					icon: 'fa-solid fa-trash-can',
+					tone: 'destructive' as const,
+					onClick: () => deleteToken(tokenId)
 				}
-			},
-			{
-				name: 'editValue',
-				displayText: 'Edit Value',
-				icon: 'fa-solid fa-pencil',
-				onClick: () => {
-					const token = [...projectTokensQuery.rows, ...kitTokensQuery.rows, ...viewTokensQuery.rows]
-						.find((t: TokenRow) => t.tokenId === tokenId);
-					draftValue[tokenId] = tokenStr(token?.tokenValue) ?? '';
-					editingValue[tokenId] = true;
-				}
-			},
-			'hr',
-			{
-				name: 'delete',
-				displayText: 'Delete',
-				icon: 'fa-solid fa-trash-can',
-				tone: 'destructive' as const,
-				onClick: () => deleteToken(tokenId)
-			}
-		];
+			];
+		};
 	}
 </script>
 
@@ -264,6 +304,10 @@
 								}
 							}}
 						/>
+					{:else if token.tokenValue?.type === 'view-list'}
+						<span class="token__value token__value--readonly" title="Edit via the field's picker in the Render panel">
+							{tokenValueDisplay(token)}
+						</span>
 					{:else}
 						<button
 							class="token__value"
@@ -389,6 +433,10 @@
 					addToken(addingScope!);
 				}}
 			>
+				<select bind:value={newTokenValueType} class="token-add__scope">
+					<option value="scalar">Scalar</option>
+					<option value="view-list">View List</option>
+				</select>
 				<select bind:value={addingScope} class="token-add__scope">
 					{#if editorActivity.activeViewId}
 						<option value="view">View</option>
@@ -404,14 +452,32 @@
 					placeholder="alias"
 					class="token-add__input"
 				/>
-				<input
-					type="text"
-					bind:value={newTokenValue}
-					placeholder="value"
-					class="token-add__input"
-				/>
-				<button type="submit" disabled={!newTokenAlias || !newTokenValue} class="token-add__btn"
-					>Add</button
+				{#if newTokenValueType === 'scalar'}
+					<input
+						type="text"
+						bind:value={newTokenValue}
+						placeholder="value"
+						class="token-add__input"
+					/>
+				{:else}
+					<div class="token-add__view-list">
+						{#each activeViewQuery.rows as view (view.viewId)}
+							<label class="token-add__view-list-row">
+								<input
+									type="checkbox"
+									checked={newTokenViewIds.includes(view.viewId)}
+									onchange={() => toggleNewTokenViewId(view.viewId)}
+								/>
+								{view.viewName}
+							</label>
+						{/each}
+					</div>
+				{/if}
+				<button
+					type="submit"
+					disabled={!newTokenAlias ||
+						(newTokenValueType === 'scalar' ? !newTokenValue : newTokenViewIds.length === 0)}
+					class="token-add__btn">Add</button
 				>
 				<button
 					type="button"
@@ -419,6 +485,8 @@
 						addingScope = null;
 						newTokenAlias = '';
 						newTokenValue = '';
+						newTokenViewIds = [];
+						newTokenValueType = 'scalar';
 					}}
 					class="token-add__btn token-add__btn--cancel">✕</button
 				>
@@ -607,6 +675,11 @@
 			cursor: pointer;
 			text-align: center;
 		}
+
+		&--readonly {
+			cursor: default;
+			opacity: 0.75;
+		}
 	}
 
 	.token__value-input {
@@ -625,6 +698,7 @@
 
 	.token-add {
 		display: flex;
+		flex-wrap: wrap;
 		gap: calc($x-space-xs / 2);
 		padding: $x-space-xs;
 		align-items: center;
@@ -642,6 +716,30 @@
 
 			&:nth-of-type(2) {
 				width: 10ch;
+			}
+		}
+
+		&__view-list {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			flex: 1 1 100%;
+			order: 10;
+			max-height: 8rem;
+			overflow-y: auto;
+			border: 1px solid var(--color-panel-header-border);
+			padding: calc($x-space-xs / 2);
+		}
+
+		&__view-list-row {
+			display: flex;
+			align-items: center;
+			gap: calc($x-space-xs / 2);
+			font-size: $x-font-size-xs;
+			cursor: pointer;
+
+			input[type='checkbox'] {
+				all: revert;
 			}
 		}
 

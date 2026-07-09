@@ -1,6 +1,6 @@
 import type { ResolvedKit } from 'manager';
 
-export type InputType = 'color' | 'text' | 'number' | 'select' | 'slider' | 'font';
+export type InputType = 'color' | 'text' | 'number' | 'select' | 'slider' | 'font' | 'children';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.

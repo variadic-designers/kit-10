@@ -127,6 +127,42 @@ export function createPluginManager(api: Api) {
 					return cp.store(JSON.stringify(data));
 				},
 
+				// Exposes Manager's exportProject (a full project data dump -- views, kits, axes,
+				// layers, render entries, tokens, etc.) to any plugin that wants it, rather than the
+				// host pre-marshaling it into a call's input. Lets multiple export-target plugins
+				// (Tenner today, others later) all pull the same data on demand without the host
+				// needing a per-plugin-shaped payload.
+				async kit10_get_project_export(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { project_id } = JSON.parse(rawJson) as { project_id: string };
+
+					try {
+						const data = await api.exportProject(project_id);
+						return cp.store(JSON.stringify({ success: true, data }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
+				// Inverse of kit10_get_project_export -- wraps Manager's importProjectData, which
+				// creates a brand-new project (fresh ids throughout) from an exportProject-shaped
+				// payload. The plugin (Tenner) only ever hands this a parsed data blob; all id
+				// generation and remapping happens in Manager, never here.
+				async kit10_import_project_data(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { workspace_id, data } = JSON.parse(rawJson) as {
+						workspace_id: string;
+						data: unknown;
+					};
+
+					try {
+						const project = await api.importProjectData(workspace_id, data);
+						return cp.store(JSON.stringify({ success: true, project }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
 				async kit10_write_render_entry_to_layer(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const input: WriteRenderEntryInput = JSON.parse(rawJson);
@@ -290,12 +326,33 @@ export function createPluginManager(api: Api) {
 		}
 	}
 
-	function callUtilityPlugin(name: string, fn: string, payload: string): Promise<unknown> {
-		const plugin = utilityPlugins.get(name);
-		if (!plugin) return Promise.reject(new Error(`utility plugin "${name}" not loaded`));
+	// 'lazy'-activation utility plugins (e.g. Tenner -- an occasional, explicit user action,
+	// not core to using the editor) never get an eager loadUtilityPlugin call at boot; they
+	// load themselves here, on first actual invocation. 'eager' ones (e.g. Fontavious) are
+	// already loaded by the time anything calls them, so this is a no-op for those (the
+	// utilityPlugins.has check short-circuits before the catalogue round-trip).
+	async function ensureUtilityPluginLoaded(name: string): Promise<void> {
+		if (utilityPlugins.has(name)) return;
 
+		const catalogue = await api.listPlugins();
+		const row = catalogue.find((p) => p.name === name && p.kind === 'utility');
+		if (!row) throw new Error(`utility plugin "${name}" is not registered`);
+
+		await loadUtilityPlugin(
+			row.manifest,
+			row.name,
+			(row.options ?? undefined) as Partial<ExtismPluginOptions> | undefined
+		);
+	}
+
+	function callUtilityPlugin(name: string, fn: string, payload: string): Promise<unknown> {
 		const prior = utilityQueues.get(name) ?? Promise.resolve();
-		const next = prior.catch(() => {}).then(() => plugin.call(fn, payload));
+		const next = prior.catch(() => {}).then(async () => {
+			await ensureUtilityPluginLoaded(name);
+			const plugin = utilityPlugins.get(name);
+			if (!plugin) throw new Error(`utility plugin "${name}" failed to load`);
+			return plugin.call(fn, payload);
+		});
 		utilityQueues.set(name, next);
 		return next;
 	}

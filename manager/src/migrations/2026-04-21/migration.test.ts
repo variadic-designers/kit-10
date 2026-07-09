@@ -29,6 +29,15 @@ describe('migration 2026-04-21', () => {
 		expect(tableNames).toContain('layers');
 		expect(tableNames).toContain('layer_axis_values');
 		expect(tableNames).toContain('tokens');
+		expect(tableNames).toContain('plugins');
+	});
+
+	it('projects table has an interpreter_plugin_id column', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const projects = cols.find((t) => t.name === 'projects');
+		expect(projects).toBeDefined();
+		const colNames = projects!.columns.map((c) => c.name);
+		expect(colNames).toContain('interpreter_plugin_id');
 	});
 
 	it('seeds a default workspace', async () => {
@@ -63,6 +72,48 @@ describe('migration 2026-04-21', () => {
 		expect(layers).toBeDefined();
 		const colNames = layers!.columns.map((c) => c.name).sort();
 		expect(colNames).not.toContain('render_snippet_id');
+	});
+
+	it('plugins table has a unique name constraint', async () => {
+		const proj = (await ctx.api.createProjectInWorkspace(
+			(await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId,
+			'test-plugins'
+		))!;
+		void proj;
+
+		await ctx.db
+			.insertInto('plugins')
+			.values({ name: 'dup', kind: 'utility', manifest: { wasm: [{ url: '/dup.wasm' }] } } as any)
+			.execute();
+
+		await expect(
+			ctx.db
+				.insertInto('plugins')
+				.values({ name: 'dup', kind: 'utility', manifest: { wasm: [{ url: '/dup2.wasm' }] } } as any)
+				.execute()
+		).rejects.toThrow();
+	});
+
+	it('projects.interpreter_plugin_id is set null if the referenced plugin is deleted', async () => {
+		const proj = (await ctx.api.createProjectInWorkspace(
+			(await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId,
+			'test-interpreter-set-null'
+		))!;
+		const plugin = (await ctx.api.registerPlugin({
+			name: 'interp-a',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/a.wasm' }] }
+		}))!;
+
+		await ctx.api.setProjectInterpreter(proj.id, plugin.id);
+		await ctx.db.deleteFrom('plugins').where('id', '=', plugin.id).execute();
+
+		const row = await ctx.db
+			.selectFrom('projects')
+			.select('interpreter_plugin_id')
+			.where('id', '=', proj.id)
+			.executeTakeFirstOrThrow();
+		expect(row.interpreter_plugin_id).toBeNull();
 	});
 
 	it('layer_axis_values has composite PK on (layer_id, axis_value_id)', async () => {

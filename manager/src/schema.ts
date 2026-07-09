@@ -14,7 +14,17 @@ export interface TokenValueView {
 	view_id: string;
 }
 
-export type TokenValue = TokenValueScalar | TokenValueView;
+// The list-valued counterpart to TokenValueView -- for properties whose resolved value is
+// inherently a list of view references (currently just `children`), not a single one. Kept as
+// its own variant rather than widening TokenValueView.view_id to string | string[], so the two
+// concepts (a token that IS a view vs. a token that IS a list of views) stay unambiguous at the
+// type level rather than needing runtime array-vs-string discrimination.
+export interface TokenValueViewList {
+	type: 'view-list';
+	view_ids: string[];
+}
+
+export type TokenValue = TokenValueScalar | TokenValueView | TokenValueViewList;
 
 // --- Axis value types ---
 
@@ -52,9 +62,29 @@ interface ArgRange {
 
 export type ArgValue = ArgLiteral | ArgRange;
 
+// --- Plugin registry types ---
+
+export type PluginKind = 'interpreter' | 'utility';
+
+// Only meaningful for kind: 'utility' -- 'eager' plugins (Fontavious: font fetching is needed
+// the moment any project has text to render) load once, unconditionally, at editor boot.
+// 'lazy' plugins (Tenner: invoked occasionally, by explicit user action) load themselves on
+// first actual use instead. null for interpreter-kind rows, whose loading is driven entirely by
+// which project is active, not this field.
+export type PluginActivation = 'eager' | 'lazy';
+
+export interface PluginManifest {
+	wasm: { url: string }[];
+}
+
+// Stamped into exportProject's output and checked by importProjectData -- bump this whenever
+// the DB2026_07_09 interface below is renamed for an actual schema change (not for every minor
+// edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
+export const CURRENT_SCHEMA_VERSION = '2026-07-09';
+
 // --- Schema tables ---
 
-export interface DB2026_06_07 {
+export interface DB2026_07_09 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
@@ -73,6 +103,8 @@ export interface DB2026_06_07 {
 	render_entries: RenderEntriesTable;
 
 	tokens: TokensTable;
+
+	plugins: PluginsTable;
 }
 
 export interface WorkspacesTable {
@@ -92,6 +124,10 @@ export interface ProjectsTable {
 	license: Generated<string>;
 	author: string;
 	workspace_id: Generated<string>;
+	// The project's single viewport interpreter (Charter today). This is the one genuinely
+	// per-project plugin choice -- unlike utility plugins (install-level, see PluginActivation),
+	// a project's kits really are resolved by exactly one interpreter.
+	interpreter_plugin_id: string | null;
 }
 
 export interface ViewsTable {
@@ -102,7 +138,6 @@ export interface ViewsTable {
 	project_id: string;
 	lock: boolean;
 	hide: boolean;
-	is_template: Generated<boolean>;
 }
 
 export interface CompositionsTable {
@@ -196,9 +231,21 @@ export interface TokensTable {
 	view_id: string | null;
 }
 
+// ------------------------------
+
+export interface PluginsTable {
+	id: Generated<string>;
+	name: string;
+	kind: PluginKind;
+	activation: PluginActivation | null;
+	manifest: JSONColumnType<PluginManifest>;
+	options: JSONColumnType<Record<string, unknown>> | null;
+	content_hash: string | null;
+}
+
 // Current version of db
-export type SchemaTS = Kysely<DB2026_06_07>;
-export type Schema = DB2026_06_07;
+export type SchemaTS = Kysely<DB2026_07_09>;
+export type Schema = DB2026_07_09;
 export type SchemaDialect = Kysely<Schema>;
 
 export type SchemaQueryBuilder<O, Tb extends keyof Schema = keyof Schema> = SelectQueryBuilder<

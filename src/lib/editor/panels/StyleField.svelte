@@ -5,6 +5,7 @@
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
+	import type { Api } from 'manager';
 	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
@@ -23,6 +24,8 @@
 		axisNameById?: Record<string, string>;
 		inputType?: InputType;
 		suggestionsFrom?: SuggestionSource;
+		api?: Api;
+		projectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 	};
@@ -43,6 +46,8 @@
 		axisNameById = {},
 		inputType,
 		suggestionsFrom,
+		api,
+		projectId,
 		onFieldUpdate,
 		callUtilityPlugin
 	}: StyleFieldProps = $props();
@@ -54,7 +59,8 @@
 				description: 'Save as Token',
 				displayText: 'Tokenize',
 				icon: 'fa-solid fa-square-binary',
-				disabled: !!isToken
+				disabled: !!isToken,
+				onClick: () => startTokenizing()
 			},
 			{
 				name: 'unwrap',
@@ -113,6 +119,53 @@
 	function cancelEditing() {
 		editValue.now = false;
 		editValue.content = '';
+	}
+
+	// Same inline-edit-input pattern as editValue above, but prompts for an alias instead of a
+	// value: the property's current `value` becomes the new project-scoped token's value, and the
+	// render entry is repointed at the new token via tokenId (see confirmTokenize).
+	const tokenizeState = $state({
+		now: false,
+		alias: ''
+	});
+
+	let tokenizeInputRef: HTMLInputElement | undefined = $state();
+
+	async function startTokenizing() {
+		tokenizeState.now = true;
+		tokenizeState.alias = '';
+
+		await tick();
+
+		if (tokenizeInputRef) {
+			tokenizeInputRef.focus();
+		}
+	}
+
+	function cancelTokenizing() {
+		tokenizeState.now = false;
+		tokenizeState.alias = '';
+	}
+
+	async function confirmTokenize() {
+		tokenizeState.now = false;
+		const alias = tokenizeState.alias.trim();
+		tokenizeState.alias = '';
+
+		if (!alias) return;
+		if (!api || !projectId) {
+			console.warn(`Cannot tokenize ${key}: no project context`);
+			return;
+		}
+		if (!onFieldUpdate || !sourceLayerId) {
+			console.warn(`Cannot tokenize ${key}: no source layer`);
+			return;
+		}
+
+		const token = await api.createToken(projectId, alias, { type: 'scalar', value: value ?? '' });
+		if (!token) return;
+
+		onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: token.id });
 	}
 
 	function confirmUpdateStyle() {
@@ -202,7 +255,24 @@
 		</button>
 	{/if}
 
-	{#if suggestionsFrom && !isToken}
+	{#if tokenizeState.now}
+		<input
+			type="text"
+			title="Token alias"
+			bind:this={tokenizeInputRef}
+			bind:value={tokenizeState.alias}
+			placeholder="alias"
+			class="option124__value option124__value--edit"
+			onblur={() => cancelTokenizing()}
+			onkeydown={(e: KeyboardEvent) => {
+				if (e.key === 'Enter') {
+					confirmTokenize();
+				} else if (e.key === 'Escape') {
+					cancelTokenizing();
+				}
+			}}
+		/>
+	{:else if suggestionsFrom && !isToken}
 		<div class="option124__value">
 			<SuggestField
 				{value}

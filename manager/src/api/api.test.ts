@@ -84,6 +84,28 @@ describe('api', () => {
 		expect(views[0]!.viewHidden).toBe(true);
 	});
 
+	it('updateViewHints shallow-merges into hints, preserving sibling top-level keys', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v', {
+			charter: { primitive: 'box' },
+			vellum: { position: [0, 0] }
+		}))!;
+
+		await ctx.api.updateViewHints(view.id, { charter: { primitive: 'text' } });
+
+		const row = await ctx.db
+			.selectFrom('views')
+			.select('hints')
+			.where('id', '=', view.id)
+			.executeTakeFirstOrThrow();
+		expect(row.hints).toEqual({
+			charter: { primitive: 'text' },
+			vellum: { position: [0, 0] }
+		});
+	});
+
 	// ---- Kits + Composition ----
 
 	it('creates kit, attaches to view, and detaches', async () => {
@@ -445,5 +467,240 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(exported.renderSnippets).toHaveLength(1);
 		expect(exported.renderEntries).toHaveLength(1);
 		expect(exported.layerAxisValues).toHaveLength(1);
+	});
+
+	it('exports a brand-new project with no kits/views/axes yet without erroring', async () => {
+		// Regression test: every id-list-scoped query below (compositions, axisValues,
+		// axesConsumed, axisArgs, layers, renderSnippets, renderEntries, layerAxisValues) used
+		// to compile straight to `IN ()` when its id list was empty -- a genuine Postgres syntax
+		// error, not "matches nothing" -- so exporting a project with nothing in it yet
+		// (immediately after "New Project", before adding a single kit) threw instead of
+		// returning empty arrays.
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'empty'))!;
+
+		const exported = await ctx.api.exportProject(proj.id);
+		expect(exported.views).toEqual([]);
+		expect(exported.kits).toEqual([]);
+		expect(exported.compositions).toEqual([]);
+		expect(exported.axes).toEqual([]);
+		expect(exported.axisValues).toEqual([]);
+		expect(exported.axesConsumed).toEqual([]);
+		expect(exported.axisArgs).toEqual([]);
+		expect(exported.layers).toEqual([]);
+		expect(exported.renderSnippets).toEqual([]);
+		expect(exported.renderEntries).toEqual([]);
+		expect(exported.layerAxisValues).toEqual([]);
+		expect(exported.interpreterPlugin).toBeNull();
+	});
+
+	it('imports an exported project as a brand-new project with every id remapped', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'source'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'k'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+		// Exercises the two "soft" FK cases importProjectData has to remap by hand: a view-type
+		// token, and the 'children' property's JSON-array-of-view-ids.
+		await ctx.api.createRenderEntry(snippet.id, 'children', JSON.stringify([view.id]));
+		await ctx.api.addAxisValueToLayer(layer.id, av.id);
+		await ctx.api.consumeAxis(kit.id, axis.id);
+		await ctx.api.setAxisArg(view.id, kit.id, axis.id, { type: 'literal', value: 'light' });
+		await ctx.api.createToken(proj.id, 'primary', s('#FFFFFF'));
+		await ctx.api.createToken(proj.id, 'heroView', { type: 'view', view_id: view.id });
+		await ctx.api.attachKitToComposition(kit.id, view.id);
+
+		const charter = (await ctx.api.registerPlugin({
+			name: 'charter',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/charter.wasm' }] }
+		}))!;
+		await ctx.api.setProjectInterpreter(proj.id, charter.id);
+
+		const exported = await ctx.api.exportProject(proj.id);
+		expect(exported.schemaVersion).toBeDefined();
+		expect(exported.interpreterPlugin).toEqual({ name: 'charter' });
+
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		expect(imported.id).not.toBe(proj.id);
+		expect(imported.name).toBe('source');
+		expect(imported.warnings).toEqual([]);
+
+		const importedInterpreter = await ctx.api.getProjectInterpreter(imported.id);
+		expect(importedInterpreter?.name).toBe('charter');
+
+		const reimported = await ctx.api.exportProject(imported.id);
+		expect(reimported.project.id).not.toBe(exported.project.id);
+		expect(reimported.views).toHaveLength(1);
+		expect(reimported.kits).toHaveLength(1);
+		expect(reimported.compositions).toHaveLength(1);
+		expect(reimported.tokens).toHaveLength(2);
+		expect(reimported.axes).toHaveLength(1);
+		expect(reimported.axisValues).toHaveLength(1);
+		expect(reimported.axesConsumed).toHaveLength(1);
+		expect(reimported.axisArgs).toHaveLength(1);
+		expect(reimported.layers).toHaveLength(1);
+		expect(reimported.renderSnippets).toHaveLength(1);
+		expect(reimported.renderEntries).toHaveLength(1);
+		expect(reimported.layerAxisValues).toHaveLength(1);
+
+		// Every id in the re-exported copy must be fresh, not reused from the source project.
+		const newViewId = reimported.views[0]!.id;
+		expect(newViewId).not.toBe(view.id);
+		expect(reimported.kits[0]!.id).not.toBe(kit.id);
+
+		// The view-type token must now point at the NEW view, not the source project's.
+		const reimportedViewToken = reimported.tokens.find((t: any) => t.alias === 'heroView');
+		expect(reimportedViewToken.value.view_id).toBe(newViewId);
+		expect(reimportedViewToken.value.view_id).not.toBe(view.id);
+
+		// The 'children' render entry's JSON array must reference the new view id too.
+		const childrenEntry = reimported.renderEntries.find((e: any) => e.property === 'children');
+		expect(JSON.parse(childrenEntry.value)).toEqual([newViewId]);
+
+		// The source project itself must be completely untouched by the import.
+		const original = await ctx.api.exportProject(proj.id);
+		expect(original.views).toHaveLength(1);
+		expect(original.views[0]!.id).toBe(view.id);
+		const originalViewToken = original.tokens.find((t: any) => t.alias === 'heroView');
+		expect(originalViewToken.value.view_id).toBe(view.id);
+	});
+
+	it('importProjectData warns instead of failing when the source interpreter is not installed', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'source'))!;
+		const exported = await ctx.api.exportProject(proj.id);
+		exported.interpreterPlugin = { name: 'some-uninstalled-interpreter' };
+
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		expect(imported.warnings).toHaveLength(1);
+		expect(imported.warnings[0]).toMatch(/not installed/);
+
+		const interpreter = await ctx.api.getProjectInterpreter(imported.id);
+		expect(interpreter).toBeNull();
+	});
+
+	it('importProjectData warns on a schema version mismatch but still imports', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'source'))!;
+		const exported = await ctx.api.exportProject(proj.id);
+		exported.schemaVersion = '1999-01-01';
+
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		expect(imported.warnings.some((w: string) => w.includes('1999-01-01'))).toBe(true);
+	});
+
+	it('importProjectData rejects data that is not a valid project export', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+
+		await expect(ctx.api.importProjectData(wsId, null)).rejects.toThrow(/valid KIT-10/);
+		await expect(ctx.api.importProjectData(wsId, {})).rejects.toThrow(/project/);
+		await expect(
+			ctx.api.importProjectData(wsId, { project: { name: 'x' }, views: 'not-an-array' })
+		).rejects.toThrow(/views.*array/);
+	});
+
+	// ---- Plugins ----
+
+	it('registerPlugin upserts by name', async () => {
+		const first = (await ctx.api.registerPlugin({
+			name: 'charter',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/charter.wasm' }] },
+			contentHash: 'abc'
+		}))!;
+		expect(first.content_hash).toBe('abc');
+		expect(first.activation).toBeNull();
+
+		const second = (await ctx.api.registerPlugin({
+			name: 'charter',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/charter.wasm' }] },
+			contentHash: 'def'
+		}))!;
+
+		expect(second.id).toBe(first.id);
+		expect(second.content_hash).toBe('def');
+
+		const all = await ctx.db.selectFrom('plugins').selectAll().execute();
+		expect(all).toHaveLength(1);
+	});
+
+	it('registerPlugin records activation for utility plugins', async () => {
+		const tenner = (await ctx.api.registerPlugin({
+			name: 'tenner',
+			kind: 'utility',
+			activation: 'lazy',
+			manifest: { wasm: [{ url: '/tenner.wasm' }] }
+		}))!;
+		expect(tenner.activation).toBe('lazy');
+
+		const fontavious = (await ctx.api.registerPlugin({
+			name: 'fontavious',
+			kind: 'utility',
+			activation: 'eager',
+			manifest: { wasm: [{ url: '/fontavious.wasm' }] }
+		}))!;
+		expect(fontavious.activation).toBe('eager');
+	});
+
+	it('getProjectInterpreter returns the project\'s interpreter plugin', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const charter = (await ctx.api.registerPlugin({
+			name: 'charter',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/charter.wasm' }] }
+		}))!;
+
+		expect(await ctx.api.getProjectInterpreter(proj.id)).toBeNull();
+
+		await ctx.api.setProjectInterpreter(proj.id, charter.id);
+
+		const interpreter = await ctx.api.getProjectInterpreter(proj.id);
+		expect(interpreter?.name).toBe('charter');
+	});
+
+	it('setProjectInterpreter replaces the previous interpreter, not adds to it', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const pluginA = (await ctx.api.registerPlugin({
+			name: 'interp-a',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/a.wasm' }] }
+		}))!;
+		const pluginB = (await ctx.api.registerPlugin({
+			name: 'interp-b',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/b.wasm' }] }
+		}))!;
+
+		await ctx.api.setProjectInterpreter(proj.id, pluginA.id);
+		await ctx.api.setProjectInterpreter(proj.id, pluginB.id);
+
+		const interpreter = await ctx.api.getProjectInterpreter(proj.id);
+		expect(interpreter?.name).toBe('interp-b');
+	});
+
+	it('listPlugins returns the whole catalogue, unscoped to any project', async () => {
+		await ctx.api.registerPlugin({
+			name: 'charter',
+			kind: 'interpreter',
+			manifest: { wasm: [{ url: '/charter.wasm' }] }
+		});
+		await ctx.api.registerPlugin({
+			name: 'fontavious',
+			kind: 'utility',
+			manifest: { wasm: [{ url: '/fontavious.wasm' }] }
+		});
+
+		const all = await ctx.api.listPlugins();
+		expect(all.map((p) => p.name).sort()).toEqual(['charter', 'fontavious']);
 	});
 });

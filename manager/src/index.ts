@@ -58,6 +58,7 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 
 import { up, down } from './migrations/2026-04-21/index.js';
 import { seedDemoProject } from './seed.js';
+import { registerBuiltinPlugins } from './plugins-bootstrap.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
 	await sql`CREATE EXTENSION IF NOT EXISTS pg_uuidv7`.execute(dialect);
@@ -66,7 +67,8 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 	await up(dialect as any);
 
 	await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
-	await seedDemoProject(dialect);
+	const builtinPlugins = await registerBuiltinPlugins(dialect);
+	await seedDemoProject(dialect, builtinPlugins);
 
 	console.log('-------- Projects --------');
 	const projects = await dialect.selectFrom('projects').selectAll().execute();
@@ -74,7 +76,8 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 };
 
 export { jsonArrayFrom } from 'kysely/helpers/postgres';
-export { type Api } from './api/index.js';
+export { type Api, type PluginRow } from './api/index.js';
+export { registerBuiltinPlugins, type BuiltinPlugins } from './plugins-bootstrap.js';
 export { type TokenValue, type TokenValueScalar, type TokenValueView } from './schema.js';
 export {
 	resolve,

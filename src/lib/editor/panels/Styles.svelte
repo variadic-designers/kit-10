@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
 	import StyleField from './StyleField.svelte';
+	import ChildViewField, { type ChildViewCandidate } from './ChildViewField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
@@ -12,12 +13,46 @@
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
 		fieldCategories?: FieldCategory[];
+		activeProjectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 	};
 
-	const { api, selection, resolvedKits, fieldCategories, onFieldUpdate, callUtilityPlugin }: StylesPanel =
-		$props();
+	const {
+		api,
+		selection,
+		resolvedKits,
+		fieldCategories,
+		activeProjectId,
+		onFieldUpdate,
+		callUtilityPlugin
+	}: StylesPanel = $props();
+
+	// Candidates for the "children" field's view picker -- every other view in the project
+	// (never the one currently being edited). Whether a candidate ends up rendered top-level or
+	// only as someone's child is derived by Charter from the composition graph itself (is this
+	// view's id referenced in any box's children?) -- not a flag set here. Refetched whenever
+	// the project or the active view changes.
+	let projectViewRows = $state<{ viewId: string; viewName: string }[]>([]);
+
+	$effect(() => {
+		const projectId = activeProjectId;
+		if (!projectId) {
+			projectViewRows = [];
+			return;
+		}
+		api
+			.getViewsByProjectId(projectId)
+			.execute()
+			.then((rows) => {
+				projectViewRows = rows;
+			});
+	});
+
+	const candidateViews = $derived.by((): ChildViewCandidate[] => {
+		const editingViewId = selection.selectedViewPrimary;
+		return projectViewRows.filter((row) => row.viewId !== editingViewId);
+	});
 
 	// Axis names for the winning Layer's key-set, so StyleField can show "Theme + Density · 2
 	// conditions" in its tooltip instead of just a color. Refetched whenever the involved kits change.
@@ -104,6 +139,7 @@
 		conditionValues: { axisId: string; value: string }[];
 		isToken: boolean;
 		tokenAlias: string | null;
+		tokenId: string | null;
 	} {
 		const prop = resolvedMap.get(key);
 		if (prop) {
@@ -116,7 +152,8 @@
 				keys: prop.keys,
 				conditionValues: prop.conditionValues,
 				isToken: prop.isToken,
-				tokenAlias: prop.tokenAlias
+				tokenAlias: prop.tokenAlias,
+				tokenId: prop.tokenId
 			};
 		}
 		return {
@@ -127,7 +164,8 @@
 			keys: [],
 			conditionValues: [],
 			isToken: false,
-			tokenAlias: null
+			tokenAlias: null,
+			tokenId: null
 		};
 	}
 </script>
@@ -149,18 +187,36 @@
 
 						<div class="style-section__content">
 							{#each fields as field, i}
-								<StyleField
-									{...track(field.key)}
-									displayText={field.displayText ?? field.key}
-									key={field.key}
-									value={resolvedMap.get(field.key)?.value}
-									position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
-									{axisNameById}
-									inputType={field.inputType}
-									suggestionsFrom={resolveSuggestionSource(field.inputType, field.suggestionsFrom)}
-									{onFieldUpdate}
-									{callUtilityPlugin}
-								/>
+								{#if field.inputType === 'children'}
+									<ChildViewField
+										{...track(field.key)}
+										displayText={field.displayText ?? field.key}
+										key={field.key}
+										childViewIds={resolvedMap.get(field.key)?.childViewIds ?? []}
+										{candidateViews}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{axisNameById}
+										{api}
+										projectId={activeProjectId}
+										viewId={selection.selectedViewPrimary}
+										{onFieldUpdate}
+									/>
+								{:else}
+									<StyleField
+										{...track(field.key)}
+										displayText={field.displayText ?? field.key}
+										key={field.key}
+										value={resolvedMap.get(field.key)?.value}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{axisNameById}
+										inputType={field.inputType}
+										suggestionsFrom={resolveSuggestionSource(field.inputType, field.suggestionsFrom)}
+										{api}
+										projectId={activeProjectId}
+										{onFieldUpdate}
+										{callUtilityPlugin}
+									/>
+								{/if}
 							{/each}
 						</div>
 					</details>

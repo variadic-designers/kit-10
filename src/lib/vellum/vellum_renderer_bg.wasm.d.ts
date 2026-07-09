@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const ensure_index_visible: (a: number) => number;
 export const get_selection: (a: number, b: number) => number;
 export const initialize: (a: number, b: number, c: number, d: number) => number;
 export const is_font_loaded: (a: number, b: number) => number;
@@ -15,9 +16,9 @@ export const zoom_in: () => void;
 export const zoom_in_at: (a: number, b: number) => void;
 export const zoom_out: () => void;
 export const zoom_out_at: (a: number, b: number) => void;
-export const __wasm_bindgen_func_elem_7764: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_7783: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_6376: (a: number, b: number, c: number) => void;
+export const __wasm_bindgen_func_elem_7770: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_7789: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_6382: (a: number, b: number, c: number) => void;
 export const __wbindgen_export: (a: number, b: number) => number;
 export const __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_export3: (a: number) => void;
