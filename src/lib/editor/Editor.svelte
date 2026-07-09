@@ -118,7 +118,10 @@
 		resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.resolvedKits ?? null
 	);
 	const viewHints = $derived(
-		(resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.hints ?? null) as Record<string, unknown> | null
+		(resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.hints ?? null) as Record<
+			string,
+			unknown
+		> | null
 	);
 
 	$effect(() => {
@@ -133,23 +136,53 @@
 		let reResolveVersion = 0;
 		let reResolveTimer: ReturnType<typeof setTimeout> | null = null;
 		let liveUnsubscribe: (() => Promise<void>) | null = null;
+		// Input-level dedup: the key of the last rows we actually resolved from. When a
+		// fetch returns rows with the same key, `resolveViewsFromRows` (pure) would
+		// produce identical output, so we skip the resolve + serialize + plugin call
+		// entirely. This replaces the old output fingerprint -- it cannot omit a field
+		// because it serializes the raw rows, not a hand-picked subset of output fields.
+		let lastRowsKey: string | null = null;
 
 		const reResolve = async () => {
 			const version = ++reResolveVersion;
-			const allResolved = await resolveManyViewsManager(editor.dialect, projectId);
+			mark('resolve:cycle:start');
+			// Single IPC crossing (the batched UNION ALL fetch). The version counter guards
+			// this one async window: if a newer reResolve is issued before this fetch
+			// completes, the version check below discards this result (latest-wins) without
+			// paying for the sync resolve -- strictly better than the old 4-crossing layout,
+			// where stale results were discarded only after all 4 RTs had run.
+			const rows = await fetchResolutionRows(editor.dialect, projectId);
 			if (cancelled || version !== reResolveVersion) return;
 
-			const prevMap = new Map(resolvedViews.map((v) => [v.viewId, v]));
-			let changed = allResolved.length !== resolvedViews.length;
-			const merged = allResolved.map((v) => {
-				const old = prevMap.get(v.viewId);
-				if (!old || kitFingerprint(v.resolvedKits) !== kitFingerprint(old.resolvedKits)) {
-					changed = true;
-					return v;
-				}
-				return old;
-			});
-			if (changed) resolvedViews = merged as ResolvedView[];
+			mark('resolve:dedup:start');
+			const key = rowsKey(rows);
+			mark('resolve:dedup:end');
+			measure('resolve:dedup:start', 'resolve:dedup:end', 'rowsKey');
+			if (lastRowsKey === key) {
+				// Rows unchanged -- skip resolve + downstream. The live query fired but the
+				// data it triggered on didn't actually change resolution-relevant rows (e.g.
+				// a write to a non-resolution column, or a no-op update). Downstream effects
+				// (setData → on_resolve) are not re-fired, exactly as the old fingerprint
+				// intended -- but the skip now happens at the input, before the resolve work.
+				measure(
+					'resolve:cycle:start',
+					'resolve:dedup:end',
+					'reResolve total (skipped, rows unchanged)'
+				);
+				return;
+			}
+			lastRowsKey = key;
+
+			// resolveViewsFromRows is pure and synchronous -- no second async window to guard.
+			// The version check above is sufficient; no re-check needed here.
+			const allResolved = resolveViewsFromRowsManager(rows);
+
+			// Svelte 5 reactivity is reference-based on $state: reassigning resolvedViews
+			// with a new array reference fires the downstream $effect (→ setData → on_resolve).
+			// The row-key dedup above is what prevents that reassignment when nothing changed
+			// -- Svelte cannot do content-based dedup on its own.
+			resolvedViews = allResolved as ResolvedView[];
+			measure('resolve:cycle:start', 'resolve:dedup:end', 'reResolve total (fetch + dedup)');
 		};
 
 		const scheduleReResolve = () => {
@@ -163,21 +196,10 @@
 		const init = async () => {
 			// Single live query touching all resolution-relevant tables.
 			// PGlite tracks table access from the query plan — this reliably fires
-			// on any write to views, compositions, layers, axis_args, render_entries, or tokens.
+			// on any write to views, compositions, kits, layers, axis_args, render_entries, or tokens.
+			// The SQL + its table-coverage assertion live in resolve-live-query.ts.
 			const live = await editor.core.live.query(
-				`SELECT v.id AS view_id
-				 FROM views v
-				 LEFT JOIN compositions c ON c.view_id = v.id
-				 LEFT JOIN layers l ON l.kit_id = c.kit_id
-				 LEFT JOIN layer_axis_values lav ON lav.layer_id = l.id
-				 LEFT JOIN axis_values axv ON axv.id = lav.axis_value_id
-				 LEFT JOIN axes_consumed ac ON ac.kit_id = c.kit_id
-				 LEFT JOIN axis_args aa ON aa.view_id = v.id
-				 LEFT JOIN render_snippets rs ON rs.layer_id = l.id
-				 LEFT JOIN render_entries re ON re.snippet_id = rs.id
-				 LEFT JOIN tokens t ON t.project_id = v.project_id
-				 WHERE v.project_id = $1
-				 GROUP BY v.id`,
+				RESOLVE_LIVE_QUERY_SQL,
 				[projectId],
 				scheduleReResolve
 			);
@@ -204,21 +226,14 @@
 
 	import Nav from './Nav.svelte';
 	import Viewport from './Viewport.svelte';
-	import { resolveManyViews as resolveManyViewsManager, type ResolvedKit } from 'manager';
+	import {
+		fetchResolutionRows,
+		resolveViewsFromRows as resolveViewsFromRowsManager,
+		rowsKey
+	} from 'manager';
+	import { mark, measure } from './profile.js';
+	import { RESOLVE_LIVE_QUERY_SQL } from './resolve-live-query.js';
 
-	function kitFingerprint(kits: ResolvedKit[]): string {
-		return kits
-			.map(
-				(k) =>
-					k.kitId +
-					':' +
-					[...k.properties.entries()]
-						.sort(([a], [b]) => a.localeCompare(b))
-						.map(([p, r]) => `${p}=${r.value}`)
-						.join(',')
-			)
-			.join('|');
-	}
 	import type { ResolvedView } from '$lib/plugins/types.js';
 	import type { FontFetchPayload } from '$lib/plugins/suggestion-providers.js';
 	import { onMount } from 'svelte';
@@ -292,20 +307,12 @@
 
 	$effect(() => {
 		if (!pluginManager) return;
-		pluginManager.setData(
-			resolvedKits,
-			viewHints,
-			editorActivity.activeViewId,
-			resolvedViews
-		);
+		pluginManager.setData(resolvedKits, viewHints, editorActivity.activeViewId, resolvedViews);
 	});
 
 	$effect(() => {
 		if (!pluginManager) return;
-		pluginManager.setSelection(
-			selection.selectedViewPrimary,
-			selection.selectedViewSecondary
-		);
+		pluginManager.setSelection(selection.selectedViewPrimary, selection.selectedViewSecondary);
 	});
 
 	$effect(() => {
@@ -416,7 +423,14 @@
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 		/>
 
-		<ViewsPanel {api} {editorReady} {resolvedViews} bind:editorActivity bind:selection bind:hoveredViewId />
+		<ViewsPanel
+			{api}
+			{editorReady}
+			{resolvedViews}
+			bind:editorActivity
+			bind:selection
+			bind:hoveredViewId
+		/>
 
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
@@ -450,7 +464,7 @@
 
 		<PluginsPanel manager={pluginManager} />
 
-    <!--
+		<!--
       <pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>
     -->
 	{/snippet}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
-import { resolve, resolveMany, flattenKitResults } from './resolve.js';
+import { resolve, resolveManySlowPath, flattenKitResults } from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
@@ -21,13 +21,37 @@ describe('resolve', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Design System'))!;
 
-		const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', 'Light or dark mode', 'categorical', ['light', 'dark']))!;
-		const densityAxis = (await ctx.api.createAxis(proj.id, 'density', 'Spacing density', 'categorical', ['compact', 'comfortable']))!;
+		const themeAxis = (await ctx.api.createAxis(
+			proj.id,
+			'theme',
+			'Light or dark mode',
+			'categorical',
+			['light', 'dark']
+		))!;
+		const densityAxis = (await ctx.api.createAxis(
+			proj.id,
+			'density',
+			'Spacing density',
+			'categorical',
+			['compact', 'comfortable']
+		))!;
 
-		const themeLight = (await ctx.api.createAxisValue(themeAxis.id, { type: 'literal', value: 'light' }))!;
-		const themeDark = (await ctx.api.createAxisValue(themeAxis.id, { type: 'literal', value: 'dark' }))!;
-		const densityCompact = (await ctx.api.createAxisValue(densityAxis.id, { type: 'literal', value: 'compact' }))!;
-		const densityComfortable = (await ctx.api.createAxisValue(densityAxis.id, { type: 'literal', value: 'comfortable' }))!;
+		const themeLight = (await ctx.api.createAxisValue(themeAxis.id, {
+			type: 'literal',
+			value: 'light'
+		}))!;
+		const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		}))!;
+		const densityCompact = (await ctx.api.createAxisValue(densityAxis.id, {
+			type: 'literal',
+			value: 'compact'
+		}))!;
+		const densityComfortable = (await ctx.api.createAxisValue(densityAxis.id, {
+			type: 'literal',
+			value: 'comfortable'
+		}))!;
 
 		const tokenBg = (await ctx.api.createToken(proj.id, 'colors.bg', s('#ffffff')))!;
 		const tokenPrimary = (await ctx.api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
@@ -67,11 +91,20 @@ describe('resolve', () => {
 		await ctx.api.createRenderEntry(compactSnippet.id, 'padding', '10px');
 
 		return {
-			proj, kit,
-			themeAxis, densityAxis,
-			themeLight, themeDark, densityCompact, densityComfortable,
-			tokenBg, tokenPrimary,
-			nullLayer, darkLayer, darkCompactLayer, compactLayer,
+			proj,
+			kit,
+			themeAxis,
+			densityAxis,
+			themeLight,
+			themeDark,
+			densityCompact,
+			densityComfortable,
+			tokenBg,
+			tokenPrimary,
+			nullLayer,
+			darkLayer,
+			darkCompactLayer,
+			compactLayer
 		};
 	}
 
@@ -91,7 +124,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null,
+			childViewIds: null
 		});
 		expect(result.get('color')).toEqual({
 			property: 'color',
@@ -104,7 +137,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null,
+			childViewIds: null
 		});
 		expect(result.get('padding')).toEqual({
 			property: 'padding',
@@ -117,7 +150,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null,
+			childViewIds: null
 		});
 	});
 
@@ -125,7 +158,7 @@ describe('resolve', () => {
 		const s = await seedButtonKit();
 
 		const result = await resolve(ctx.db, s.kit.id, {
-			[s.themeAxis.id]: { type: 'literal', value: 'dark' },
+			[s.themeAxis.id]: { type: 'literal', value: 'dark' }
 		});
 
 		// dark layer overrides background and color, padding stays from null
@@ -142,7 +175,7 @@ describe('resolve', () => {
 
 		const result = await resolve(ctx.db, s.kit.id, {
 			[s.themeAxis.id]: { type: 'literal', value: 'dark' },
-			[s.densityAxis.id]: { type: 'literal', value: 'compact' },
+			[s.densityAxis.id]: { type: 'literal', value: 'compact' }
 		});
 
 		// dark+compact has highest specificity
@@ -162,7 +195,7 @@ describe('resolve', () => {
 
 		// Set only density=compact — no theme layer matches
 		const result = await resolve(ctx.db, s.kit.id, {
-			[s.densityAxis.id]: { type: 'literal', value: 'compact' },
+			[s.densityAxis.id]: { type: 'literal', value: 'compact' }
 		});
 
 		// compact layer provides padding=10px, null layer provides the rest
@@ -180,7 +213,7 @@ describe('resolve', () => {
 		// theme=dark, density=compact: darkCompact (2 conditions) beats dark (1 cond) and compact (1 cond)
 		const result = await resolve(ctx.db, s.kit.id, {
 			[s.themeAxis.id]: { type: 'literal', value: 'dark' },
-			[s.densityAxis.id]: { type: 'literal', value: 'compact' },
+			[s.densityAxis.id]: { type: 'literal', value: 'compact' }
 		});
 
 		// padding comes from darkCompact (2 conditions), not compact (1 condition)
@@ -203,7 +236,7 @@ describe('resolve', () => {
 		// and over darkLayer (1 condition) on background and color.
 		const result = await resolve(ctx.db, s.kit.id, {
 			[s.themeAxis.id]: { type: 'literal', value: 'dark' },
-			[s.densityAxis.id]: { type: 'literal', value: 'compact' },
+			[s.densityAxis.id]: { type: 'literal', value: 'compact' }
 		});
 
 		expect(result.get('background')!.sourceLayerId).toBe(s.darkLayer.id);
@@ -235,8 +268,16 @@ describe('resolve', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte1024 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 1024 }))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte1024 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 1024
+		}))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -261,14 +302,14 @@ describe('resolve', () => {
 
 		// viewport = 500 → null layer
 		const resultNarrow = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'literal', value: '500' },
+			[vpAxis.id]: { type: 'literal', value: '500' }
 		});
 		expect(resultNarrow.get('columns')!.value).toBe('1');
 		expect(resultNarrow.get('sidebar')!.value).toBe('hidden');
 
 		// viewport = 900 → only >=768 matches
 		const resultMed = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'literal', value: '900' },
+			[vpAxis.id]: { type: 'literal', value: '900' }
 		});
 		expect(resultMed.get('columns')!.value).toBe('2');
 		expect(resultMed.get('sidebar')!.value).toBe('visible');
@@ -280,13 +321,13 @@ describe('resolve', () => {
 		// on 'columns' because it was created after and overwrites in order.
 		// 'sidebar' is uncontested — inherited from mediumLayer.
 		const resultWide = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'literal', value: '1200' },
+			[vpAxis.id]: { type: 'literal', value: '1200' }
 		});
 		expect(resultWide.get('sidebar')!.value).toBe('visible');
 	});
 });
 
-describe('resolveMany', () => {
+describe('resolveManySlowPath', () => {
 	let ctx: TestContext;
 
 	beforeEach(async () => {
@@ -302,7 +343,10 @@ describe('resolveMany', () => {
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Multi-Kit'))!;
 
 		const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', 'Light or dark'))!;
-		const themeDark = (await ctx.api.createAxisValue(themeAxis.id, { type: 'literal', value: 'dark' }))!;
+		const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		}))!;
 
 		// Layout kit (lower priority) — provides structure
 		const layoutKit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
@@ -334,14 +378,20 @@ describe('resolveMany', () => {
 
 		// View with both kits: Layout at priority 1000, Button at priority 2000 (higher)
 		const view = (await ctx.api.createViewInProject(proj.id, 'Dark Page'))!;
-		await ctx.api.attachKitToComposition(layoutKit.id, view.id);        // priority 1000
-		await ctx.api.attachKitToComposition(buttonKit.id, view.id);        // priority 2000
-		await ctx.api.setAxisArg(view.id, layoutKit.id, themeAxis.id, { type: 'literal', value: 'dark' });
-		await ctx.api.setAxisArg(view.id, buttonKit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+		await ctx.api.attachKitToComposition(layoutKit.id, view.id); // priority 1000
+		await ctx.api.attachKitToComposition(buttonKit.id, view.id); // priority 2000
+		await ctx.api.setAxisArg(view.id, layoutKit.id, themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		});
+		await ctx.api.setAxisArg(view.id, buttonKit.id, themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		});
 
-		const kits = await resolveMany(ctx.db, view.id);
+		const kits = await resolveManySlowPath(ctx.db, view.id);
 
-		console.log('\n=== resolveMany output ===');
+		console.log('\n=== resolveManySlowPath output ===');
 		for (const kit of kits) {
 			console.log(`\nKit: ${kit.kitName} (id: ${kit.kitId})`);
 			for (const [prop, resolved] of kit.properties) {
@@ -396,7 +446,11 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -412,7 +466,7 @@ describe('range overlap matching', () => {
 
 		// Unconstrained range — should match >=768
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: null, max: null },
+			[vpAxis.id]: { type: 'range', min: null, max: null }
 		});
 		expect(result.get('columns')!.value).toBe('2');
 	});
@@ -421,7 +475,11 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -437,7 +495,7 @@ describe('range overlap matching', () => {
 
 		// [500, ∞) overlaps [768, ∞) → yes
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: 500, max: null },
+			[vpAxis.id]: { type: 'range', min: 500, max: null }
 		});
 		expect(result.get('columns')!.value).toBe('2');
 	});
@@ -446,7 +504,11 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -461,7 +523,7 @@ describe('range overlap matching', () => {
 		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
 
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: null, max: 600 },
+			[vpAxis.id]: { type: 'range', min: null, max: 600 }
 		});
 		expect(result.get('columns')!.value).toBe('1');
 	});
@@ -470,7 +532,11 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -485,7 +551,7 @@ describe('range overlap matching', () => {
 		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
 
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: 768, max: 900 },
+			[vpAxis.id]: { type: 'range', min: 768, max: 900 }
 		});
 		expect(result.get('columns')!.value).toBe('2');
 	});
@@ -494,7 +560,11 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: '>=', threshold: 768 }))!;
+		const vpGte768 = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: '>=',
+			threshold: 768
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -509,7 +579,7 @@ describe('range overlap matching', () => {
 		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
 
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: 500, max: 600 },
+			[vpAxis.id]: { type: 'range', min: 500, max: 600 }
 		});
 		expect(result.get('columns')!.value).toBe('1');
 	});
@@ -518,7 +588,12 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: 'between', threshold: 480, threshold_high: 1024 }))!;
+		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: 'between',
+			threshold: 480,
+			threshold_high: 1024
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -534,7 +609,7 @@ describe('range overlap matching', () => {
 
 		// [500, 900] overlaps [480, 1024] → yes
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: 500, max: 900 },
+			[vpAxis.id]: { type: 'range', min: 500, max: 900 }
 		});
 		expect(result.get('columns')!.value).toBe('2');
 	});
@@ -543,7 +618,12 @@ describe('range overlap matching', () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Range'))!;
 		const vpAxis = (await ctx.api.createAxis(proj.id, 'viewport', 'Viewport width'))!;
-		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, { type: 'range', operator: 'between', threshold: 480, threshold_high: 1024 }))!;
+		const vpBetween = (await ctx.api.createAxisValue(vpAxis.id, {
+			type: 'range',
+			operator: 'between',
+			threshold: 480,
+			threshold_high: 1024
+		}))!;
 
 		const kit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(kit.id, vpAxis.id);
@@ -558,7 +638,7 @@ describe('range overlap matching', () => {
 		await ctx.api.createRenderEntry(betweenSnippet.id, 'columns', '2');
 
 		const result = await resolve(ctx.db, kit.id, {
-			[vpAxis.id]: { type: 'range', min: 1200, max: null },
+			[vpAxis.id]: { type: 'range', min: 1200, max: null }
 		});
 		expect(result.get('columns')!.value).toBe('1');
 	});
@@ -578,7 +658,7 @@ describe('range overlap matching', () => {
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'color', null, tokenAccent.id);
 
-			const results = await resolveMany(ctx.db, view.id);
+			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
 			expect(flat.get('color')!.value).toBe('#3b82f6');
 			expect(flat.get('color')!.isToken).toBe(true);
@@ -593,7 +673,9 @@ describe('range overlap matching', () => {
 
 			// Update: we need to scope it to a specific kit
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
-			const kitScopedToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), { kitId: kit.id }))!;
+			const kitScopedToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), {
+				kitId: kit.id
+			}))!;
 
 			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
 			await ctx.api.attachKitToComposition(kit.id, view.id);
@@ -602,7 +684,7 @@ describe('range overlap matching', () => {
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'color', null, kitScopedToken.id);
 
-			const results = await resolveMany(ctx.db, view.id);
+			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
 			// Kit token #ef4444 should override project token #3b82f6
 			expect(flat.get('color')!.value).toBe('#ef4444');
@@ -615,18 +697,22 @@ describe('range overlap matching', () => {
 			const projToken = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6')))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
-			const kitToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), { kitId: kit.id }))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'accent', s('#ef4444'), {
+				kitId: kit.id
+			}))!;
 
 			const view = (await ctx.api.createViewInProject(proj.id, 'Override View'))!;
 			await ctx.api.attachKitToComposition(kit.id, view.id);
 
-			const viewToken = (await ctx.api.createToken(proj.id, 'accent', s('#10b981'), { viewId: view.id }))!;
+			const viewToken = (await ctx.api.createToken(proj.id, 'accent', s('#10b981'), {
+				viewId: view.id
+			}))!;
 
 			const layer = (await ctx.api.createLayer(kit.id))!;
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'color', null, viewToken.id);
 
-			const results = await resolveMany(ctx.db, view.id);
+			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
 			// View token #10b981 should win over both project #3b82f6 and kit #ef4444
 			expect(flat.get('color')!.value).toBe('#10b981');
@@ -634,7 +720,10 @@ describe('range overlap matching', () => {
 
 		it('view-list token on children: view-scoped override wins over kit-scoped token, ignoring specificity', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
-			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Children Token Override'))!;
+			const proj = (await ctx.api.createProjectInWorkspace(
+				ws.workspaceId,
+				'Children Token Override'
+			))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
 			const view = (await ctx.api.createViewInProject(proj.id, 'Parent View'))!;
@@ -643,8 +732,12 @@ describe('range overlap matching', () => {
 			const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
 			const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
 
-			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), { kitId: kit.id }))!;
-			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), { viewId: view.id }))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), {
+				kitId: kit.id
+			}))!;
+			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), {
+				viewId: view.id
+			}))!;
 
 			// Kit-scoped layer has 0 conditions (highest possible resolve-pass-1 specificity here);
 			// the view-scoped token must still win in pass 2 regardless.
@@ -652,7 +745,7 @@ describe('range overlap matching', () => {
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitToken.id);
 
-			const results = await resolveMany(ctx.db, view.id);
+			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
 			expect(flat.get('children')!.childViewIds).toEqual([childB.id]);
 			expect(viewToken.id).not.toBe(kitToken.id);

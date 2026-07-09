@@ -10,33 +10,33 @@ The `DB2026_06_07` schema supports the full concept model via a single V1 migrat
 
 ### [x] M1.1 — Expand `axes` table
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `uuid` PK | |
-| `project_id` | `uuid` FK → projects.id, RESTRICT | |
-| `name` | `text` | e.g. "Dark Mode", "Density" |
-| `description` | `text` | human-readable |
-| `kind` | `text` | `'categorical'`, `'range'`, `'discrete'` |
-| `hint` | `jsonb` | string array of suggested values |
-| `default_value` | `jsonb` | default axis arg value |
+| Column          | Type                              | Notes                                    |
+| --------------- | --------------------------------- | ---------------------------------------- |
+| `id`            | `uuid` PK                         |                                          |
+| `project_id`    | `uuid` FK → projects.id, RESTRICT |                                          |
+| `name`          | `text`                            | e.g. "Dark Mode", "Density"              |
+| `description`   | `text`                            | human-readable                           |
+| `kind`          | `text`                            | `'categorical'`, `'range'`, `'discrete'` |
+| `hint`          | `jsonb`                           | string array of suggested values         |
+| `default_value` | `jsonb`                           | default axis arg value                   |
 
 ### [x] M1.2 — Create `axis_values` table
 
 Replaces the planned `axis_variants` table. Values are stored as typed jsonb supporting three shapes: literal, range, discrete.
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `uuid` PK | |
-| `axis_id` | `uuid` FK → axes.id, CASCADE | |
-| `value` | `jsonb` | `{ type: 'literal' | 'range' | 'discrete', ... }` |
+| Column    | Type                         | Notes              |
+| --------- | ---------------------------- | ------------------ | ------- | ------------------ |
+| `id`      | `uuid` PK                    |                    |
+| `axis_id` | `uuid` FK → axes.id, CASCADE |                    |
+| `value`   | `jsonb`                      | `{ type: 'literal' | 'range' | 'discrete', ... }` |
 
 ### [x] M1.3 — Create `layers` table
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `uuid` PK | |
-| `kit_id` | `uuid` FK → kits.id, CASCADE | which Kit owns this layer |
-| `last_modified` | `timestamptz` | |
+| Column          | Type                         | Notes                     |
+| --------------- | ---------------------------- | ------------------------- |
+| `id`            | `uuid` PK                    |                           |
+| `kit_id`        | `uuid` FK → kits.id, CASCADE | which Kit owns this layer |
+| `last_modified` | `timestamptz`                |                           |
 
 No `style` column — properties live in `render_entries` via `render_snippets`.
 
@@ -44,9 +44,9 @@ No `style` column — properties live in `render_entries` via `render_snippets`.
 
 Replaces the planned `layer_axes` junction. Links layers to `axis_values` (not axis_variants).
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `layer_id` | `uuid` FK → layers.id, CASCADE | composite PK |
+| Column          | Type                                 | Notes        |
+| --------------- | ------------------------------------ | ------------ |
+| `layer_id`      | `uuid` FK → layers.id, CASCADE       | composite PK |
 | `axis_value_id` | `uuid` FK → axis_values.id, RESTRICT | composite PK |
 
 No axis values in the condition = null layer (always matches).
@@ -57,21 +57,21 @@ Render snippets point to layers (1:1 via unique constraint). Entries declare ind
 
 **render_snippets:**
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `uuid` PK | |
-| `layer_id` | `uuid` FK → layers.id, CASCADE, UNIQUE | one snippet per layer |
-| `last_modified` | `timestamptz` | |
+| Column          | Type                                   | Notes                 |
+| --------------- | -------------------------------------- | --------------------- |
+| `id`            | `uuid` PK                              |                       |
+| `layer_id`      | `uuid` FK → layers.id, CASCADE, UNIQUE | one snippet per layer |
+| `last_modified` | `timestamptz`                          |                       |
 
 **render_entries:**
 
-| Column | Type | Notes |
-|--------|------|-------|
-| `id` | `uuid` PK | |
-| `snippet_id` | `uuid` FK → render_snippets.id, CASCADE | |
-| `property` | `text` | e.g. "background", "padding" |
-| `value` | `text` | literal value (nullable) |
-| `token_id` | `uuid` FK → tokens.id, SET NULL | token reference (nullable) |
+| Column       | Type                                    | Notes                        |
+| ------------ | --------------------------------------- | ---------------------------- |
+| `id`         | `uuid` PK                               |                              |
+| `snippet_id` | `uuid` FK → render_snippets.id, CASCADE |                              |
+| `property`   | `text`                                  | e.g. "background", "padding" |
+| `value`      | `text`                                  | literal value (nullable)     |
+| `token_id`   | `uuid` FK → tokens.id, SET NULL         | token reference (nullable)   |
 
 Check constraint: `(value IS NOT NULL) != (token_id IS NOT NULL)`
 
@@ -339,9 +339,9 @@ Charter translates resolved kit data into a flat `UiNode[]` render tree. `on_res
 
 `kit10_log`, `kit10_kv_get`, `kit10_kv_set`, `kit10_get_resolution`, `kit10_write_render_entry_to_layer`, `kit10_resolve_view`.
 
-### [x] M9.5 — resolveManyViews
+### [x] M9.5 — resolveManyViews → batched fetch + row-level dedup
 
-4-round-trip resolution for all project views, replacing the per-view `resolveMany` O(views) approach. Fingerprint comparison (`kitFingerprint`) skips Svelte re-renders when resolved data didn't change.
+Originally 4-round-trip resolution for all project views, replacing the per-view `resolveMany` O(views) approach, with output fingerprint (`kitFingerprint`) dedup. Optimized: `resolveManyViews` now wraps `fetchResolutionRows` (single batched UNION ALL query, 1 IPC crossing) + `resolveViewsFromRows` (pure sync). Dedup moved from output fingerprint to input-row key (`rowsKey`) — immune to the field-omission class of bug the output fingerprint had (it silently dropped `children` view-list changes and `kitName` updates). `resolveMany` renamed to `resolveManySlowPath` to signal cost. `RESOLUTION_RELEVANT_TABLES` exported and tested against the live-query JOIN (`resolve-live-query.test.ts`) — caught and fixed a missing `kits` JOIN that caused stale `kitName` on kit rename. Parity verified: `batched-fetch.test.ts` asserts the batched path produces identical output to `resolveManySlowPath`.
 
 ### [x] M9.6 — Field editing
 
@@ -391,9 +391,9 @@ M4 panels can be migrated in parallel once their respective M2 + M3 deps are don
 
 ## Status Key
 
-| Symbol | Meaning |
-|--------|---------|
-| `[ ]` | Not started |
-| `[~]` | In progress |
-| `[x]` | Done |
-| `[-]` | Deferred / blocked |
+| Symbol | Meaning            |
+| ------ | ------------------ |
+| `[ ]`  | Not started        |
+| `[~]`  | In progress        |
+| `[x]`  | Done               |
+| `[-]`  | Deferred / blocked |

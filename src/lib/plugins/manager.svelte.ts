@@ -1,4 +1,8 @@
-import createPlugin, { type ExtismPluginOptions, type ManifestLike, type Plugin } from '@extism/extism';
+import createPlugin, {
+	type ExtismPluginOptions,
+	type ManifestLike,
+	type Plugin
+} from '@extism/extism';
 import type { Api, ResolvedKit } from 'manager';
 import type {
 	FieldCategory,
@@ -11,6 +15,7 @@ import type {
 	WriteRenderEntryInput,
 	WriteRenderEntryResult
 } from './types.js';
+import { mark, measure } from '../editor/profile.js';
 
 function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	if (!kits) return null;
@@ -227,6 +232,7 @@ export function createPluginManager(api: Api) {
 
 	async function runResolve(): Promise<void> {
 		if (!activePlugin) return;
+		mark('resolve:serialize:start');
 		const payload = JSON.stringify({
 			activeViewId: _viewId,
 			resolvedKits: serializeResolvedKits(_kits) ?? [],
@@ -235,8 +241,15 @@ export function createPluginManager(api: Api) {
 			selectedViewPrimary: _selPrimary,
 			selectedViewSecondary: _selSecondary
 		});
+		mark('resolve:serialize:end');
 
+		mark('resolve:plugin:start');
 		const result = await activePlugin.call('on_resolve', payload);
+		mark('resolve:plugin:end');
+
+		measure('resolve:serialize:start', 'resolve:serialize:end', 'serialize payload');
+		measure('resolve:plugin:start', 'resolve:plugin:end', 'plugin.call(on_resolve)');
+
 		if (result) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
@@ -347,12 +360,14 @@ export function createPluginManager(api: Api) {
 
 	function callUtilityPlugin(name: string, fn: string, payload: string): Promise<unknown> {
 		const prior = utilityQueues.get(name) ?? Promise.resolve();
-		const next = prior.catch(() => {}).then(async () => {
-			await ensureUtilityPluginLoaded(name);
-			const plugin = utilityPlugins.get(name);
-			if (!plugin) throw new Error(`utility plugin "${name}" failed to load`);
-			return plugin.call(fn, payload);
-		});
+		const next = prior
+			.catch(() => {})
+			.then(async () => {
+				await ensureUtilityPluginLoaded(name);
+				const plugin = utilityPlugins.get(name);
+				if (!plugin) throw new Error(`utility plugin "${name}" failed to load`);
+				return plugin.call(fn, payload);
+			});
 		utilityQueues.set(name, next);
 		return next;
 	}

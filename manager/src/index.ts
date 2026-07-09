@@ -81,11 +81,16 @@ export { registerBuiltinPlugins, type BuiltinPlugins } from './plugins-bootstrap
 export { type TokenValue, type TokenValueScalar, type TokenValueView } from './schema.js';
 export {
 	resolve,
-	resolveMany,
+	resolveManySlowPath,
 	resolveManyViews,
+	fetchResolutionRows,
+	resolveViewsFromRows,
+	rowsKey,
 	flattenKitResults,
 	matchesArg,
+	RESOLUTION_RELEVANT_TABLES,
 	type ResolvedProperty,
 	type ResolvedKit,
-	type ResolvedViewData
+	type ResolvedViewData,
+	type ResolutionRows
 } from './resolve/resolve.js';

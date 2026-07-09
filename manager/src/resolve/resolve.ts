@@ -1,5 +1,27 @@
 import type { SchemaDialect, TokenValue } from '../schema.js';
 import type { ArgValue } from '../schema.js';
+import { sql } from 'kysely';
+import { mark, measure } from './profile.js';
+
+// The complete set of tables `resolveManyViews` (and `resolve`/`resolveAll`) reads from.
+// The editor's live-query JOIN must cover every table here so a write to any of them
+// fires the re-resolve callback. Exported so a test can assert the JOIN's table set
+// equals this list -- turning "coverage by convention" into "coverage by assertion".
+// `tokens` is listed once but covers project/kit/view scopes (all token rows carry
+// project_id, so a single join on project_id sees every scope).
+export const RESOLUTION_RELEVANT_TABLES = [
+	'views',
+	'compositions',
+	'kits',
+	'axis_args',
+	'tokens',
+	'layers',
+	'layer_axis_values',
+	'axis_values',
+	'axes_consumed',
+	'render_snippets',
+	'render_entries'
+] as const;
 
 export interface ResolvedKit {
 	kitId: string;
@@ -10,7 +32,12 @@ export interface ResolvedKit {
 
 type AxisValueType =
 	| { type: 'literal'; value: string }
-	| { type: 'range'; operator: '>=' | '<=' | '>' | '<' | 'between'; threshold: number; threshold_high?: number }
+	| {
+			type: 'range';
+			operator: '>=' | '<=' | '>' | '<' | 'between';
+			threshold: number;
+			threshold_high?: number;
+	  }
 	| { type: 'discrete'; value: string };
 
 export interface ResolvedProperty {
@@ -74,11 +101,12 @@ export function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 			return arg.type === 'literal' && arg.value === condition.value;
 		case 'range': {
 			const condLo = condition.operator === '>' ? condition.threshold : condition.threshold;
-			const condHi = condition.operator === 'between'
-				? (condition.threshold_high ?? condition.threshold)
-				: condition.operator === '>=' || condition.operator === '>'
-					? Infinity
-					: condition.threshold;
+			const condHi =
+				condition.operator === 'between'
+					? (condition.threshold_high ?? condition.threshold)
+					: condition.operator === '>=' || condition.operator === '>'
+						? Infinity
+						: condition.threshold;
 			const condOpenLo = condition.operator === '>' || condition.operator === '<';
 			const condOpenHi = condition.operator === '<' || condition.operator === '>';
 
@@ -144,7 +172,7 @@ function compareSpecificity(a: number[], b: number[]): number {
 function matchLayers(
 	kitId: string,
 	layerDataMap: Map<string, LayerData>,
-	axisArgs: Record<string, ArgValue>,
+	axisArgs: Record<string, ArgValue>
 ): Map<string, ResolvedProperty> {
 	const matchingLayers: { data: LayerData; specificity: number[] }[] = [];
 	for (const [, data] of layerDataMap) {
@@ -166,9 +194,11 @@ function matchLayers(
 	for (const { data } of matchingLayers) {
 		for (const entry of data.entries) {
 			const resolvedValue = entry.tokenId
-				? (entry.tokenValue?.type === 'scalar' ? entry.tokenValue.value
-					: entry.tokenValue?.type === 'view' ? entry.tokenValue.view_id
-					: '')
+				? entry.tokenValue?.type === 'scalar'
+					? entry.tokenValue.value
+					: entry.tokenValue?.type === 'view'
+						? entry.tokenValue.view_id
+						: ''
 				: (entry.literalValue ?? '');
 			result.set(entry.property, {
 				property: entry.property,
@@ -182,9 +212,9 @@ function matchLayers(
 				keys: data.conditions.map((c) => c.axisId),
 				conditionValues: data.conditions.map((c) => ({
 					axisId: c.axisId,
-					value: formatAxisValue(c.axisValue),
+					value: formatAxisValue(c.axisValue)
 				})),
-				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null,
+				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null
 			});
 		}
 	}
@@ -203,13 +233,13 @@ async function fetchLayerData(db: SchemaDialect, layerIds: string[]) {
 			.innerJoin('axes_consumed', (join) =>
 				join
 					.onRef('axes_consumed.axis_id', '=', 'axis_values.axis_id')
-					.onRef('axes_consumed.kit_id', '=', 'layers.kit_id'),
+					.onRef('axes_consumed.kit_id', '=', 'layers.kit_id')
 			)
 			.select([
 				'layer_axis_values.layer_id',
 				'axis_values.value',
 				'axis_values.axis_id',
-				'axes_consumed.priority_index',
+				'axes_consumed.priority_index'
 			])
 			.execute(),
 
@@ -225,16 +255,16 @@ async function fetchLayerData(db: SchemaDialect, layerIds: string[]) {
 				'render_entries.value as literal_value',
 				'render_entries.token_id',
 				'tokens.alias as token_alias',
-				'tokens.value as token_value',
+				'tokens.value as token_value'
 			])
-			.execute(),
+			.execute()
 	]);
 }
 
 export async function resolve(
 	db: SchemaDialect,
 	kitId: string,
-	axisArgs: Record<string, ArgValue>,
+	axisArgs: Record<string, ArgValue>
 ): Promise<Map<string, ResolvedProperty>> {
 	const layers = await db
 		.selectFrom('layers')
@@ -258,7 +288,7 @@ export async function resolve(
 			data.conditions.push({
 				axisId: c.axis_id,
 				axisValue: c.value as any as AxisValueType,
-				priorityIndex: c.priority_index,
+				priorityIndex: c.priority_index
 			});
 		}
 	}
@@ -271,7 +301,7 @@ export async function resolve(
 				literalValue: e.literal_value,
 				tokenId: e.token_id,
 				tokenAlias: e.token_alias,
-				tokenValue: e.token_value,
+				tokenValue: e.token_value
 			});
 		}
 	}
@@ -283,7 +313,7 @@ export async function resolve(
 async function resolveAll(
 	db: SchemaDialect,
 	kitIds: string[],
-	argsByKit: Map<string, Record<string, ArgValue>>,
+	argsByKit: Map<string, Record<string, ArgValue>>
 ): Promise<Map<string, Map<string, ResolvedProperty>>> {
 	if (kitIds.length === 0) return new Map();
 
@@ -302,11 +332,13 @@ async function resolveAll(
 
 	const layerKitMap = new Map<string, string>(layers.map((l) => [l.id, l.kit_id]));
 	const kitLayerDataMaps = new Map<string, Map<string, LayerData>>(
-		kitIds.map((id) => [id, new Map()]),
+		kitIds.map((id) => [id, new Map()])
 	);
 
 	for (const layer of layers) {
-		kitLayerDataMaps.get(layer.kit_id)!.set(layer.id, { id: layer.id, conditions: [], entries: [] });
+		kitLayerDataMaps
+			.get(layer.kit_id)!
+			.set(layer.id, { id: layer.id, conditions: [], entries: [] });
 	}
 
 	for (const c of conditions) {
@@ -317,7 +349,7 @@ async function resolveAll(
 			data.conditions.push({
 				axisId: c.axis_id,
 				axisValue: c.value as any as AxisValueType,
-				priorityIndex: c.priority_index,
+				priorityIndex: c.priority_index
 			});
 		}
 	}
@@ -332,14 +364,17 @@ async function resolveAll(
 				literalValue: e.literal_value,
 				tokenId: e.token_id,
 				tokenAlias: e.token_alias,
-				tokenValue: e.token_value,
+				tokenValue: e.token_value
 			});
 		}
 	}
 
 	const results = new Map<string, Map<string, ResolvedProperty>>();
 	for (const kitId of kitIds) {
-		results.set(kitId, matchLayers(kitId, kitLayerDataMaps.get(kitId)!, argsByKit.get(kitId) ?? {}));
+		results.set(
+			kitId,
+			matchLayers(kitId, kitLayerDataMaps.get(kitId)!, argsByKit.get(kitId) ?? {})
+		);
 	}
 	return results;
 }
@@ -359,7 +394,7 @@ async function gatherScopedTokens(
 	projectId: string | undefined,
 	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
 	kitIds: string[],
-	viewId: string,
+	viewId: string
 ): Promise<ScopedTokenMaps> {
 	const scalarMap = new Map<string, string>();
 	const viewListMap = new Map<string, string[]>();
@@ -378,19 +413,21 @@ async function gatherScopedTokens(
 
 		kitIds.length > 0
 			? db
-				.selectFrom('tokens')
-				.where('tokens.kit_id', 'in', kitIds)
-				.where('tokens.alias', 'is not', null)
-				.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
-				.execute()
-			: Promise.resolve([] as { alias: string | null; value: TokenValue | null; kit_id: string | null }[]),
+					.selectFrom('tokens')
+					.where('tokens.kit_id', 'in', kitIds)
+					.where('tokens.alias', 'is not', null)
+					.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
+					.execute()
+			: Promise.resolve(
+					[] as { alias: string | null; value: TokenValue | null; kit_id: string | null }[]
+				),
 
 		db
 			.selectFrom('tokens')
 			.where('tokens.view_id', '=', viewId)
 			.where('tokens.alias', 'is not', null)
 			.select(['tokens.alias', 'tokens.value'])
-			.execute(),
+			.execute()
 	]);
 
 	const apply = (alias: string | null, value: TokenValue | null) => {
@@ -417,7 +454,10 @@ async function gatherScopedTokens(
 	return { scalarMap, viewListMap };
 }
 
-function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMaps: ScopedTokenMaps): void {
+function substituteTokens(
+	properties: Map<string, ResolvedProperty>,
+	tokenMaps: ScopedTokenMaps
+): void {
 	for (const [, resolved] of properties) {
 		if (!resolved.isToken || !resolved.tokenAlias) continue;
 
@@ -432,16 +472,28 @@ function substituteTokens(properties: Map<string, ResolvedProperty>, tokenMaps: 
 	}
 }
 
-export async function resolveMany(
+/**
+ * Per-view resolution. SLOW PATH: ~3 round-trips per view. Do NOT use this inside the
+ * editor's live-query loop or any hot path -- use `fetchResolutionRows` + `resolveViewsFromRows`
+ * (or the `resolveManyViews` wrapper), which resolves all project views in a single batched
+ * fetch. This function exists for one-shot callers (tests, single-view export lookups) that
+ * genuinely want one view and can afford the per-view IPC cost.
+ */
+export async function resolveManySlowPath(
 	db: SchemaDialect,
-	viewId: string,
+	viewId: string
 ): Promise<ResolvedKit[]> {
 	const compositions = await db
 		.selectFrom('compositions')
 		.innerJoin('kits', 'kits.id', 'compositions.kit_id')
 		.where('compositions.view_id', '=', viewId)
 		.orderBy('compositions.priority_index', 'asc')
-		.select(['compositions.kit_id', 'compositions.priority_index', 'kits.name as kit_name', 'kits.project_id'])
+		.select([
+			'compositions.kit_id',
+			'compositions.priority_index',
+			'kits.name as kit_name',
+			'kits.project_id'
+		])
 		.execute();
 
 	const allKitIds = compositions.map((c) => c.kit_id);
@@ -454,7 +506,7 @@ export async function resolveMany(
 			.where('axis_args.view_id', '=', viewId)
 			.select(['axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
 			.execute(),
-		gatherScopedTokens(db, projectId, allKitIds, viewId),
+		gatherScopedTokens(db, projectId, allKitIds, viewId)
 	]);
 
 	const argsByKit = new Map<string, Record<string, ArgValue>>();
@@ -474,7 +526,7 @@ export async function resolveMany(
 			kitId: comp.kit_id,
 			kitName: comp.kit_name,
 			properties,
-			childViewIds: properties.get('children')?.childViewIds ?? [],
+			childViewIds: properties.get('children')?.childViewIds ?? []
 		});
 	}
 
@@ -498,98 +550,302 @@ export interface ResolvedViewData {
 	resolvedKits: ResolvedKit[];
 }
 
-// Resolves all views for a project in 4 round-trips instead of ~8 per view.
-// RT1: views. RT2: compositions + axis_args + project tokens + view tokens (parallel).
-// RT3: kit tokens + layers (parallel). RT4: layer conditions + entries (parallel).
-export async function resolveManyViews(
-	db: SchemaDialect,
-	projectId: string,
-): Promise<ResolvedViewData[]> {
-	const viewRows = await db
-		.selectFrom('views')
-		.selectAll()
-		.where('views.project_id', '=', projectId)
-		.execute();
-
-	if (viewRows.length === 0) return [];
-	const viewIds = viewRows.map((v) => v.id);
-
-	const [compositions, axisArgsRows, projectTokens, viewTokenRows] = await Promise.all([
-		db
-			.selectFrom('compositions')
-			.innerJoin('kits', 'kits.id', 'compositions.kit_id')
-			.where('compositions.view_id', 'in', viewIds)
-			.orderBy('compositions.priority_index', 'asc')
-			.select([
-				'compositions.view_id',
-				'compositions.kit_id',
-				'compositions.priority_index',
-				'kits.name as kit_name',
-			])
-			.execute(),
-
-		db
-			.selectFrom('axis_args')
-			.where('axis_args.view_id', 'in', viewIds)
-			.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
-			.execute(),
-
-		db
-			.selectFrom('tokens')
-			.where('tokens.project_id', '=', projectId)
-			.where('tokens.kit_id', 'is', null)
-			.where('tokens.view_id', 'is', null)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value'])
-			.execute(),
-
-		db
-			.selectFrom('tokens')
-			.where('tokens.view_id', 'in', viewIds)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.view_id', 'tokens.alias', 'tokens.value'])
-			.execute(),
+// A stable string derived from every column of every rowset in ResolutionRows.
+// Used for input-level dedup: if two fetches produce the same key, `resolveViewsFromRows`
+// (a pure function) is guaranteed to produce identical output, so the editor can skip
+// the resolve + serialize + plugin call entirely. Unlike an output fingerprint, this
+// cannot omit a field -- it serializes the raw rows, so any column change (including
+// ones no output fingerprint enumerated) is detected.
+//
+// Row order sensitivity: rowsets without an explicit ORDER BY could in principle return
+// in different order across fetches of identical data, producing a different key and a
+// false-positive re-resolve. That's safe (just a redundant resolve, no worse than today's
+// behavior of always re-resolving) and PGlite returns stable order in practice. Sorting
+// each rowset would make the key fully order-independent at the cost of extra work per
+// fetch; deferred until profiling shows false positives are common.
+export function rowsKey(rows: ResolutionRows): string {
+	return JSON.stringify([
+		rows.viewRows,
+		rows.compositions,
+		rows.axisArgsRows,
+		rows.projectTokens,
+		rows.viewTokenRows,
+		rows.kitTokenRows,
+		rows.layers,
+		rows.conditions,
+		rows.entries
 	]);
+}
 
-	const allKitIds = [...new Set(compositions.map((c) => c.kit_id))];
+// The raw rowsets `resolveViewsFromRows` consumes. Every table in
+// RESOLUTION_RELEVANT_TABLES is represented here -- a row-level dedup that compares
+// these rowsets (or a key derived from all of them) is therefore immune to the
+// field-omission class of bug an output fingerprint has: if any column of any row
+// changes, the dedup sees it, regardless of which ResolvedProperty fields some
+// downstream fingerprint happened to enumerate.
+export interface ResolutionRows {
+	viewRows: ViewRow[];
+	compositions: CompositionRow[];
+	axisArgsRows: AxisArgRow[];
+	projectTokens: ProjectTokenRow[];
+	viewTokenRows: ViewTokenRow[];
+	kitTokenRows: KitTokenRow[];
+	layers: LayerRow[];
+	conditions: ConditionRow[];
+	entries: EntryRow[];
+}
+
+interface ViewRow {
+	id: string;
+	name: string;
+	hints: unknown;
+}
+interface CompositionRow {
+	view_id: string;
+	kit_id: string;
+	priority_index: number;
+	kit_name: string;
+}
+interface AxisArgRow {
+	view_id: string;
+	kit_id: string;
+	axis_id: string;
+	value: unknown;
+}
+interface ProjectTokenRow {
+	alias: string | null;
+	value: TokenValue | null;
+}
+interface ViewTokenRow {
+	view_id: string | null;
+	alias: string | null;
+	value: TokenValue | null;
+}
+interface KitTokenRow {
+	alias: string | null;
+	value: TokenValue | null;
+	kit_id: string | null;
+}
+interface LayerRow {
+	id: string;
+	kit_id: string;
+}
+interface ConditionRow {
+	layer_id: string;
+	value: unknown;
+	axis_id: string;
+	priority_index: number;
+}
+interface EntryRow {
+	layer_id: string;
+	property: string;
+	literal_value: string | null;
+	token_id: string | null;
+	token_alias: string | null;
+	token_value: TokenValue | null;
+}
+
+// Fetches every rowset resolution needs in a SINGLE IPC crossing into the PGlite
+// worker. One UNION ALL query returns all 9 rowsets tagged, replacing the 4 sequential
+// await groups (RT1→RT2→RT3→RT4) the original resolveManyViews used. Each subquery
+// derives its WHERE filter from ${projectId} via joins/subqueries, so no intermediate
+// round-trip is needed to learn viewIds / allKitIds / layerIds.
+//
+// Row shapes: `to_jsonb(table)` subqueries (views, axis_args, layers) return every
+// column of the row -- extra columns are ignored by resolveViewsFromRows. The joined
+// rowsets (compositions, tokens, conditions, entries) use jsonb_build_object to emit
+// exactly the fields the resolver reads, matching the ResolutionRows interfaces.
+//
+// The empty-view and no-kit short-circuits the 4-await version had are handled
+// naturally: if there are no views, every subquery returns 0 rows (they all join/subquery
+// on views); if there are no compositions, kit_tokens/layers/conditions/entries return
+// 0 rows while project/view tokens still return -- resolveViewsFromRows handles both.
+export async function fetchResolutionRows(
+	db: SchemaDialect,
+	projectId: string
+): Promise<ResolutionRows> {
+	mark('resolve:fetch:start');
+	const result = await sql`
+		SELECT 'views' AS tag, to_jsonb(v) AS data
+		FROM views v WHERE v.project_id = ${projectId}
+		UNION ALL
+		SELECT 'compositions' AS tag, jsonb_build_object(
+			'view_id', c.view_id, 'kit_id', c.kit_id,
+			'priority_index', c.priority_index, 'kit_name', k.name
+		) AS data
+		FROM compositions c
+		JOIN views v ON v.id = c.view_id
+		JOIN kits k ON k.id = c.kit_id
+		WHERE v.project_id = ${projectId}
+		UNION ALL
+		SELECT 'axis_args' AS tag, to_jsonb(aa) AS data
+		FROM axis_args aa
+		JOIN views v ON v.id = aa.view_id
+		WHERE v.project_id = ${projectId}
+		UNION ALL
+		SELECT 'project_tokens' AS tag, jsonb_build_object('alias', t.alias, 'value', t.value) AS data
+		FROM tokens t
+		WHERE t.project_id = ${projectId}
+			AND t.kit_id IS NULL
+			AND t.view_id IS NULL
+			AND t.alias IS NOT NULL
+		UNION ALL
+		SELECT 'view_tokens' AS tag, jsonb_build_object(
+			'view_id', t.view_id, 'alias', t.alias, 'value', t.value
+		) AS data
+		FROM tokens t
+		WHERE t.view_id IN (SELECT id FROM views WHERE project_id = ${projectId})
+			AND t.alias IS NOT NULL
+		UNION ALL
+		SELECT 'kit_tokens' AS tag, jsonb_build_object(
+			'alias', t.alias, 'value', t.value, 'kit_id', t.kit_id
+		) AS data
+		FROM tokens t
+		WHERE t.kit_id IN (
+			SELECT c.kit_id FROM compositions c
+			JOIN views v ON v.id = c.view_id
+			WHERE v.project_id = ${projectId}
+		) AND t.alias IS NOT NULL
+		UNION ALL
+		SELECT 'layers' AS tag, to_jsonb(l) AS data
+		FROM layers l
+		WHERE l.kit_id IN (
+			SELECT c.kit_id FROM compositions c
+			JOIN views v ON v.id = c.view_id
+			WHERE v.project_id = ${projectId}
+		)
+		UNION ALL
+		SELECT 'conditions' AS tag, jsonb_build_object(
+			'layer_id', lav.layer_id, 'value', axv.value,
+			'axis_id', axv.axis_id, 'priority_index', ac.priority_index
+		) AS data
+		FROM layers l
+		JOIN layer_axis_values lav ON lav.layer_id = l.id
+		JOIN axis_values axv ON axv.id = lav.axis_value_id
+		JOIN axes_consumed ac ON ac.axis_id = axv.axis_id AND ac.kit_id = l.kit_id
+		WHERE l.kit_id IN (
+			SELECT c.kit_id FROM compositions c
+			JOIN views v ON v.id = c.view_id
+			WHERE v.project_id = ${projectId}
+		)
+		UNION ALL
+		SELECT 'entries' AS tag, jsonb_build_object(
+			'layer_id', l.id, 'property', re.property, 'literal_value', re.value,
+			'token_id', re.token_id, 'token_alias', t.alias, 'token_value', t.value
+		) AS data
+		FROM render_entries re
+		JOIN render_snippets rs ON rs.id = re.snippet_id
+		JOIN layers l ON l.id = rs.layer_id
+		LEFT JOIN tokens t ON t.id = re.token_id
+		WHERE l.kit_id IN (
+			SELECT c.kit_id FROM compositions c
+			JOIN views v ON v.id = c.view_id
+			WHERE v.project_id = ${projectId}
+		)
+	`.execute(db);
+	mark('resolve:fetch:end');
+	measure('resolve:fetch:start', 'resolve:fetch:end', 'fetch (single crossing)');
+
+	const grouped: {
+		views: ViewRow[];
+		compositions: CompositionRow[];
+		axis_args: AxisArgRow[];
+		project_tokens: ProjectTokenRow[];
+		view_tokens: ViewTokenRow[];
+		kit_tokens: KitTokenRow[];
+		layers: LayerRow[];
+		conditions: ConditionRow[];
+		entries: EntryRow[];
+	} = {
+		views: [],
+		compositions: [],
+		axis_args: [],
+		project_tokens: [],
+		view_tokens: [],
+		kit_tokens: [],
+		layers: [],
+		conditions: [],
+		entries: []
+	};
+
+	for (const row of result.rows as { tag: string; data: any }[]) {
+		switch (row.tag) {
+			case 'views':
+				grouped.views.push(row.data as ViewRow);
+				break;
+			case 'compositions':
+				grouped.compositions.push(row.data as CompositionRow);
+				break;
+			case 'axis_args':
+				grouped.axis_args.push(row.data as AxisArgRow);
+				break;
+			case 'project_tokens':
+				grouped.project_tokens.push(row.data as ProjectTokenRow);
+				break;
+			case 'view_tokens':
+				grouped.view_tokens.push(row.data as ViewTokenRow);
+				break;
+			case 'kit_tokens':
+				grouped.kit_tokens.push(row.data as KitTokenRow);
+				break;
+			case 'layers':
+				grouped.layers.push(row.data as LayerRow);
+				break;
+			case 'conditions':
+				grouped.conditions.push(row.data as ConditionRow);
+				break;
+			case 'entries':
+				grouped.entries.push(row.data as EntryRow);
+				break;
+		}
+	}
+
+	// Compositions must be ordered by priority_index (the resolver builds compsByView in
+	// array order, and kit priority determines which kit wins contested properties).
+	// UNION ALL doesn't preserve per-branch ORDER BY, so sort here.
+	grouped.compositions.sort((a, b) => a.priority_index - b.priority_index);
+
+	return {
+		viewRows: grouped.views,
+		compositions: grouped.compositions,
+		axisArgsRows: grouped.axis_args,
+		projectTokens: grouped.project_tokens,
+		viewTokenRows: grouped.view_tokens,
+		kitTokenRows: grouped.kit_tokens,
+		layers: grouped.layers,
+		conditions: grouped.conditions,
+		entries: grouped.entries
+	};
+}
+
+// Pure in-memory resolution: a function of the fetched rows only. No db, no await.
+// Split out from the fetch so the editor can dedup on the rows (input) before paying
+// for the resolve + serialize + plugin call (output) when nothing actually changed.
+export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
+	if (rows.viewRows.length === 0) return [];
+
+	const allKitIds = [...new Set(rows.compositions.map((c) => c.kit_id))];
 
 	if (allKitIds.length === 0) {
-		return viewRows.map((v) => ({
+		return rows.viewRows.map((v) => ({
 			viewId: v.id,
 			viewName: v.name,
-			hints: ((v as any).hints ?? null) as Record<string, unknown> | null,
-			resolvedKits: [],
+			hints: (v.hints ?? null) as Record<string, unknown> | null,
+			resolvedKits: []
 		}));
 	}
 
-	const [kitTokenRows, layers] = await Promise.all([
-		db
-			.selectFrom('tokens')
-			.where('tokens.kit_id', 'in', allKitIds)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
-			.execute(),
-
-		db
-			.selectFrom('layers')
-			.where('layers.kit_id', 'in', allKitIds)
-			.select(['layers.id', 'layers.kit_id'])
-			.execute(),
-	]);
-
-	const [conditions, entries] = layers.length > 0
-		? await fetchLayerData(db, layers.map((l) => l.id))
-		: [[], []];
-
 	// Build per-kit LayerData maps
-	const layerKitMap = new Map<string, string>(layers.map((l) => [l.id, l.kit_id]));
+	const layerKitMap = new Map<string, string>(rows.layers.map((l) => [l.id, l.kit_id]));
 	const kitLayerDataMaps = new Map<string, Map<string, LayerData>>(
-		allKitIds.map((id) => [id, new Map()]),
+		allKitIds.map((id) => [id, new Map()])
 	);
-	for (const layer of layers) {
-		kitLayerDataMaps.get(layer.kit_id)!.set(layer.id, { id: layer.id, conditions: [], entries: [] });
+	for (const layer of rows.layers) {
+		kitLayerDataMaps
+			.get(layer.kit_id)!
+			.set(layer.id, { id: layer.id, conditions: [], entries: [] });
 	}
-	for (const c of conditions) {
+	for (const c of rows.conditions) {
 		const kitId = layerKitMap.get(c.layer_id);
 		if (!kitId) continue;
 		const data = kitLayerDataMaps.get(kitId)?.get(c.layer_id);
@@ -597,11 +853,11 @@ export async function resolveManyViews(
 			data.conditions.push({
 				axisId: c.axis_id,
 				axisValue: c.value as any as AxisValueType,
-				priorityIndex: c.priority_index,
+				priorityIndex: c.priority_index
 			});
 		}
 	}
-	for (const e of entries) {
+	for (const e of rows.entries) {
 		const kitId = layerKitMap.get(e.layer_id);
 		if (!kitId) continue;
 		const data = kitLayerDataMaps.get(kitId)?.get(e.layer_id);
@@ -611,7 +867,7 @@ export async function resolveManyViews(
 				literalValue: e.literal_value,
 				tokenId: e.token_id,
 				tokenAlias: e.token_alias,
-				tokenValue: e.token_value,
+				tokenValue: e.token_value
 			});
 		}
 	}
@@ -619,39 +875,40 @@ export async function resolveManyViews(
 	// Build token maps
 	const baseTokenMap = new Map<string, string>();
 	const baseViewListMap = new Map<string, string[]>();
-	for (const t of projectTokens) {
+	for (const t of rows.projectTokens) {
 		if (!t.alias || !t.value) continue;
 		if (t.value.type === 'scalar') baseTokenMap.set(t.alias, t.value.value);
 		else if (t.value.type === 'view-list') baseViewListMap.set(t.alias, t.value.view_ids);
 	}
-	const tokensByKit = new Map<string, typeof kitTokenRows>();
-	for (const t of kitTokenRows) {
+	const tokensByKit = new Map<string, KitTokenRow[]>();
+	for (const t of rows.kitTokenRows) {
 		if (!t.kit_id) continue;
 		if (!tokensByKit.has(t.kit_id)) tokensByKit.set(t.kit_id, []);
 		tokensByKit.get(t.kit_id)!.push(t);
 	}
-	const tokensByView = new Map<string, typeof viewTokenRows>();
-	for (const t of viewTokenRows) {
+	const tokensByView = new Map<string, ViewTokenRow[]>();
+	for (const t of rows.viewTokenRows) {
 		if (!t.view_id) continue;
 		if (!tokensByView.has(t.view_id)) tokensByView.set(t.view_id, []);
 		tokensByView.get(t.view_id)!.push(t);
 	}
 
-	const compsByView = new Map<string, typeof compositions>();
-	for (const c of compositions) {
+	const compsByView = new Map<string, CompositionRow[]>();
+	for (const c of rows.compositions) {
 		if (!compsByView.has(c.view_id)) compsByView.set(c.view_id, []);
 		compsByView.get(c.view_id)!.push(c);
 	}
 
 	const argsByViewKit = new Map<string, Record<string, ArgValue>>();
-	for (const arg of axisArgsRows) {
+	for (const arg of rows.axisArgsRows) {
 		if (!arg.value) continue;
 		const key = `${arg.view_id}::${arg.kit_id}`;
 		if (!argsByViewKit.has(key)) argsByViewKit.set(key, {});
 		argsByViewKit.get(key)![arg.axis_id] = arg.value as ArgValue;
 	}
 
-	return viewRows.map((v) => {
+	mark('resolve:match:start');
+	const result: ResolvedViewData[] = rows.viewRows.map((v) => {
 		const comps = compsByView.get(v.id) ?? [];
 
 		// Token resolution order: project → kit (in composition order) → view
@@ -675,22 +932,38 @@ export async function resolveManyViews(
 			const properties = matchLayers(
 				comp.kit_id,
 				kitLayerDataMaps.get(comp.kit_id) ?? new Map(),
-				args,
+				args
 			);
 			substituteTokens(properties, { scalarMap: tokenMap, viewListMap: viewListTokenMap });
 			return {
 				kitId: comp.kit_id,
 				kitName: comp.kit_name,
 				properties,
-				childViewIds: properties.get('children')?.childViewIds ?? [],
+				childViewIds: properties.get('children')?.childViewIds ?? []
 			};
 		});
 
 		return {
 			viewId: v.id,
 			viewName: v.name,
-			hints: ((v as any).hints ?? null) as Record<string, unknown> | null,
-			resolvedKits,
+			hints: (v.hints ?? null) as Record<string, unknown> | null,
+			resolvedKits
 		};
 	});
+	mark('resolve:match:end');
+	measure('resolve:match:start', 'resolve:match:end', 'match+assemble (pure)');
+
+	return result;
+}
+
+// Convenience wrapper: fetch + resolve in one call. The editor's live-query loop uses
+// fetchResolutionRows + resolveViewsFromRows separately so it can dedup on the rows
+// before resolving. This wrapper exists for callers that don't need the dedup
+// (tests, single-shot resolve, future export plugins).
+export async function resolveManyViews(
+	db: SchemaDialect,
+	projectId: string
+): Promise<ResolvedViewData[]> {
+	const rows = await fetchResolutionRows(db, projectId);
+	return resolveViewsFromRows(rows);
 }
