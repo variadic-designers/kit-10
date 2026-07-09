@@ -192,6 +192,14 @@ function matchLayers(
 
 	const result = new Map<string, ResolvedProperty>();
 	for (const { data } of matchingLayers) {
+		// A layer's conditions arrive in whatever order the DB returned them (no ORDER BY
+		// on the conditions fetch, and UNION ALL wouldn't preserve one anyway). Sort by
+		// axisId so `keys`/`conditionValues` are deterministic -- otherwise identical DB
+		// state resolves to different-ordered arrays run to run, which made the batched-vs-
+		// slow parity test flaky. Order is display/grouping-only; specificity sorts
+		// priorities internally, so this is safe. (The raw conditions-row order feeding
+		// `rowsKey` upstream is a separate, deliberately-deferred concern -- see rowsKey.)
+		const conds = [...data.conditions].sort((a, b) => a.axisId.localeCompare(b.axisId));
 		for (const entry of data.entries) {
 			const resolvedValue = entry.tokenId
 				? entry.tokenValue?.type === 'scalar'
@@ -208,9 +216,9 @@ function matchLayers(
 				isToken: !!entry.tokenId,
 				tokenAlias: entry.tokenAlias,
 				tokenId: entry.tokenId ?? null,
-				conditionCount: data.conditions.length,
-				keys: data.conditions.map((c) => c.axisId),
-				conditionValues: data.conditions.map((c) => ({
+				conditionCount: conds.length,
+				keys: conds.map((c) => c.axisId),
+				conditionValues: conds.map((c) => ({
 					axisId: c.axisId,
 					value: formatAxisValue(c.axisValue)
 				})),
