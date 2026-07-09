@@ -33,6 +33,11 @@ export function activeDrag(): DragPayload | null {
 const pointer = { x: 0, y: 0 };
 let ghost: HTMLElement | null = null;
 let sourceNode: HTMLElement | null = null;
+// Setting `body { cursor: grabbing }` isn't enough: any element with its own `cursor` (e.g. another
+// draggable header with `cursor: pointer`) wins on hover and the cursor flickers back to normal
+// mid-drag. A document-wide `!important` override, injected only while a drag is in flight, forces
+// grabbing over every element the pointer crosses.
+let cursorLock: HTMLStyleElement | null = null;
 
 type ZoneConfig = {
 	accepts: DragKind[];
@@ -103,7 +108,9 @@ function beginDrag(payload: DragPayload, preview: string, node: HTMLElement) {
 	sourceNode = node;
 	node.classList.add('dnd-dragging');
 	document.body.style.userSelect = 'none';
-	document.body.style.cursor = 'grabbing';
+	cursorLock = document.createElement('style');
+	cursorLock.textContent = '*{cursor:grabbing !important;}';
+	document.head.appendChild(cursorLock);
 
 	ghost = document.createElement('div');
 	ghost.textContent = preview;
@@ -163,7 +170,8 @@ function endDrag() {
 	sourceNode = null;
 	active = null;
 	document.body.style.userSelect = '';
-	document.body.style.cursor = '';
+	cursorLock?.remove();
+	cursorLock = null;
 	window.removeEventListener('pointermove', onDragMove, true);
 	window.removeEventListener('pointerup', onDragUp, true);
 	window.removeEventListener('pointercancel', endDrag, true);
