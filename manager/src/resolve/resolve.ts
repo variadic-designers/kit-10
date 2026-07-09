@@ -647,9 +647,10 @@ interface EntryRow {
 
 // Fetches every rowset resolution needs in a SINGLE IPC crossing into the PGlite
 // worker. One UNION ALL query returns all 9 rowsets tagged, replacing the 4 sequential
-// await groups (RT1→RT2→RT3→RT4) the original resolveManyViews used. Each subquery
-// derives its WHERE filter from ${projectId} via joins/subqueries, so no intermediate
-// round-trip is needed to learn viewIds / allKitIds / layerIds.
+// await groups (RT1→RT2→RT3→RT4) the original resolveManyViews used. Two CTEs
+// (project_view_ids, project_kit_ids) compute the viewIds/kitIds filters once and every
+// branch references them, so no intermediate round-trip is needed to learn them and the
+// dependency-derivation isn't copy-pasted per branch.
 //
 // Row shapes: `to_jsonb(table)` subqueries (views, axis_args, layers) return every
 // column of the row -- extra columns are ignored by resolveViewsFromRows. The joined
@@ -665,23 +666,34 @@ export async function fetchResolutionRows(
 	projectId: string
 ): Promise<ResolutionRows> {
 	mark('resolve:fetch:start');
+	// Two CTEs hoist the WHERE filters every branch needs -- the project's view ids, and
+	// the kit ids composed into any of those views -- so each branch references them by
+	// name instead of repeating the `compositions JOIN views WHERE project_id` subquery
+	// (which appeared 4× before). `${projectId}` is now bound twice (the view-id CTE and
+	// the project-tokens branch) instead of seven times.
 	const result = await sql`
+		WITH project_view_ids AS (
+			SELECT id FROM views WHERE project_id = ${projectId}
+		),
+		project_kit_ids AS (
+			SELECT DISTINCT c.kit_id
+			FROM compositions c
+			WHERE c.view_id IN (SELECT id FROM project_view_ids)
+		)
 		SELECT 'views' AS tag, to_jsonb(v) AS data
-		FROM views v WHERE v.project_id = ${projectId}
+		FROM views v WHERE v.id IN (SELECT id FROM project_view_ids)
 		UNION ALL
 		SELECT 'compositions' AS tag, jsonb_build_object(
 			'view_id', c.view_id, 'kit_id', c.kit_id,
 			'priority_index', c.priority_index, 'kit_name', k.name
 		) AS data
 		FROM compositions c
-		JOIN views v ON v.id = c.view_id
 		JOIN kits k ON k.id = c.kit_id
-		WHERE v.project_id = ${projectId}
+		WHERE c.view_id IN (SELECT id FROM project_view_ids)
 		UNION ALL
 		SELECT 'axis_args' AS tag, to_jsonb(aa) AS data
 		FROM axis_args aa
-		JOIN views v ON v.id = aa.view_id
-		WHERE v.project_id = ${projectId}
+		WHERE aa.view_id IN (SELECT id FROM project_view_ids)
 		UNION ALL
 		SELECT 'project_tokens' AS tag, jsonb_build_object('alias', t.alias, 'value', t.value) AS data
 		FROM tokens t
@@ -694,26 +706,19 @@ export async function fetchResolutionRows(
 			'view_id', t.view_id, 'alias', t.alias, 'value', t.value
 		) AS data
 		FROM tokens t
-		WHERE t.view_id IN (SELECT id FROM views WHERE project_id = ${projectId})
+		WHERE t.view_id IN (SELECT id FROM project_view_ids)
 			AND t.alias IS NOT NULL
 		UNION ALL
 		SELECT 'kit_tokens' AS tag, jsonb_build_object(
 			'alias', t.alias, 'value', t.value, 'kit_id', t.kit_id
 		) AS data
 		FROM tokens t
-		WHERE t.kit_id IN (
-			SELECT c.kit_id FROM compositions c
-			JOIN views v ON v.id = c.view_id
-			WHERE v.project_id = ${projectId}
-		) AND t.alias IS NOT NULL
+		WHERE t.kit_id IN (SELECT kit_id FROM project_kit_ids)
+			AND t.alias IS NOT NULL
 		UNION ALL
 		SELECT 'layers' AS tag, to_jsonb(l) AS data
 		FROM layers l
-		WHERE l.kit_id IN (
-			SELECT c.kit_id FROM compositions c
-			JOIN views v ON v.id = c.view_id
-			WHERE v.project_id = ${projectId}
-		)
+		WHERE l.kit_id IN (SELECT kit_id FROM project_kit_ids)
 		UNION ALL
 		SELECT 'conditions' AS tag, jsonb_build_object(
 			'layer_id', lav.layer_id, 'value', axv.value,
@@ -723,11 +728,7 @@ export async function fetchResolutionRows(
 		JOIN layer_axis_values lav ON lav.layer_id = l.id
 		JOIN axis_values axv ON axv.id = lav.axis_value_id
 		JOIN axes_consumed ac ON ac.axis_id = axv.axis_id AND ac.kit_id = l.kit_id
-		WHERE l.kit_id IN (
-			SELECT c.kit_id FROM compositions c
-			JOIN views v ON v.id = c.view_id
-			WHERE v.project_id = ${projectId}
-		)
+		WHERE l.kit_id IN (SELECT kit_id FROM project_kit_ids)
 		UNION ALL
 		SELECT 'entries' AS tag, jsonb_build_object(
 			'layer_id', l.id, 'property', re.property, 'literal_value', re.value,
@@ -737,67 +738,28 @@ export async function fetchResolutionRows(
 		JOIN render_snippets rs ON rs.id = re.snippet_id
 		JOIN layers l ON l.id = rs.layer_id
 		LEFT JOIN tokens t ON t.id = re.token_id
-		WHERE l.kit_id IN (
-			SELECT c.kit_id FROM compositions c
-			JOIN views v ON v.id = c.view_id
-			WHERE v.project_id = ${projectId}
-		)
+		WHERE l.kit_id IN (SELECT kit_id FROM project_kit_ids)
 	`.execute(db);
 	mark('resolve:fetch:end');
 	measure('resolve:fetch:start', 'resolve:fetch:end', 'fetch (single crossing)');
 
-	const grouped: {
-		views: ViewRow[];
-		compositions: CompositionRow[];
-		axis_args: AxisArgRow[];
-		project_tokens: ProjectTokenRow[];
-		view_tokens: ViewTokenRow[];
-		kit_tokens: KitTokenRow[];
-		layers: LayerRow[];
-		conditions: ConditionRow[];
-		entries: EntryRow[];
-	} = {
-		views: [],
-		compositions: [],
-		axis_args: [],
-		project_tokens: [],
-		view_tokens: [],
-		kit_tokens: [],
-		layers: [],
-		conditions: [],
-		entries: []
+	// Bucket the tagged rows. The tag is exactly the bucket key, so a direct index
+	// replaces the former per-tag switch. The jsonb payload's shape is asserted by the
+	// `${tag}Row` interfaces (the array element types below), guarded by the batched-fetch
+	// parity test rather than the compiler -- the same trust boundary the switch had.
+	const grouped = {
+		views: [] as ViewRow[],
+		compositions: [] as CompositionRow[],
+		axis_args: [] as AxisArgRow[],
+		project_tokens: [] as ProjectTokenRow[],
+		view_tokens: [] as ViewTokenRow[],
+		kit_tokens: [] as KitTokenRow[],
+		layers: [] as LayerRow[],
+		conditions: [] as ConditionRow[],
+		entries: [] as EntryRow[]
 	};
-
-	for (const row of result.rows as { tag: string; data: any }[]) {
-		switch (row.tag) {
-			case 'views':
-				grouped.views.push(row.data as ViewRow);
-				break;
-			case 'compositions':
-				grouped.compositions.push(row.data as CompositionRow);
-				break;
-			case 'axis_args':
-				grouped.axis_args.push(row.data as AxisArgRow);
-				break;
-			case 'project_tokens':
-				grouped.project_tokens.push(row.data as ProjectTokenRow);
-				break;
-			case 'view_tokens':
-				grouped.view_tokens.push(row.data as ViewTokenRow);
-				break;
-			case 'kit_tokens':
-				grouped.kit_tokens.push(row.data as KitTokenRow);
-				break;
-			case 'layers':
-				grouped.layers.push(row.data as LayerRow);
-				break;
-			case 'conditions':
-				grouped.conditions.push(row.data as ConditionRow);
-				break;
-			case 'entries':
-				grouped.entries.push(row.data as EntryRow);
-				break;
-		}
+	for (const row of result.rows as { tag: keyof typeof grouped; data: unknown }[]) {
+		(grouped[row.tag] as unknown[] | undefined)?.push(row.data);
 	}
 
 	// Compositions must be ordered by priority_index (the resolver builds compsByView in

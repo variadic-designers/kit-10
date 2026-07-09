@@ -75,7 +75,7 @@ KIT•10 is a design-system editor that models components as **kits** (style sys
 
 **Specificity:** `[conditionCount, priority1, priority2, ...]` sorted descending. Higher specificity always wins.
 
-**`fetchResolutionRows` — single batched query:** one UNION ALL query returns all 9 rowsets tagged (`views`, `compositions`, `kits`-joined `kit_name`, `axis_args`, project/kit/view `tokens`, `layers`, `conditions`, `entries`). Each subquery derives its WHERE filter from `projectId` via joins/subqueries, so no intermediate round-trip is needed to learn `viewIds` / `allKitIds` / `layerIds`. Replaces the original 4-sequential-await layout (RT1→RT2→RT3→RT4). Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY).
+**`fetchResolutionRows` — single batched query:** one UNION ALL query returns all 9 rowsets tagged (`views`, `compositions`, `kits`-joined `kit_name`, `axis_args`, project/kit/view `tokens`, `layers`, `conditions`, `entries`). Two leading CTEs — `project_view_ids` (the project's views) and `project_kit_ids` (kits composed into any of them) — compute the `viewIds`/`allKitIds` filters once; every branch references them by name instead of repeating the `compositions JOIN views WHERE project_id` subquery, so `projectId` is bound twice (the view-id CTE + the project-tokens branch) rather than per-branch, and no intermediate round-trip is needed to learn the filters. Replaces the original 4-sequential-await layout (RT1→RT2→RT3→RT4). Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY).
 
 ---
 
