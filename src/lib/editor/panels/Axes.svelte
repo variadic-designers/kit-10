@@ -13,7 +13,7 @@
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
 	import { shapeIcon } from './layer-color.ts';
-	import { draggable, dropZone } from '../dnd.svelte.ts';
+	import { dropZone } from '../dnd.svelte.ts';
 
 	type AxesPanel = {
 		api: Api;
@@ -298,28 +298,18 @@
 						}
 					}}
 				>
-				<!-- Dedicated drag handle. The Axis header is a <details><summary>, which owns the
-				     click-to-expand gesture -- making the whole row the drag source made "grab to
-				     reorder" and "click to expand" the same target, so a reorder attempt just toggled
-				     the panel. The grip sits in its own left gutter and is the only draggable element. -->
-				<div
-					class="axis-row__grip"
-					title="Drag to reorder"
-					aria-label="Reorder axis"
-					use:draggable={{
-						preview: axisData.axisName ?? 'Axis',
-						payload: () =>
-							editorActivity.activeKitId
-								? { kind: 'axis', axisId: axisData.axisId, kitId: editorActivity.activeKitId }
-								: null
-					}}
-				>
-					<i class="fa-solid fa-grip-vertical"></i>
-				</div>
+				<!-- The Axis header (its <summary>) is the drag source -- Axis.svelte wires the
+				     draggable action onto its own summary; we just hand it the payload + preview,
+				     which need the kit context this panel has. The row itself is the drop target. -->
 				<Axis
 					axisId={axisData.axisId}
 					axisName={axisData.axisName ?? axisData.axisId}
 					axisDescription={axisData.axisKind ?? undefined}
+					dragPreview={axisData.axisName ?? 'Axis'}
+					dragPayload={() =>
+						editorActivity.activeKitId
+							? { kind: 'axis', axisId: axisData.axisId, kitId: editorActivity.activeKitId }
+							: null}
 					{kind}
 					values={toValueOptions(values)}
 					{currentArg}
@@ -351,11 +341,10 @@
 <style lang="scss">
 	@use '_index' as *;
 
-	// Drag-to-reorder wrapper around each Axis. The Axis is pushed right to open a left gutter for
-	// the grip handle; a live insertion line marks the edge the dragged axis will land against.
+	// Drop target for axis reorder. The drag *source* is each Axis's own header (see Axis.svelte);
+	// this wrapper just shows a live insertion line on the edge the dragged axis will land against.
 	.axis-row {
 		position: relative;
-		padding-left: 16px;
 
 		// The dnd-* classes are applied at runtime by the dnd controller, not present in this
 		// component's markup, so they must be :global() -- otherwise Svelte's scoped-CSS pass prunes
@@ -364,7 +353,7 @@
 		&:global(.dnd-insert-after)::after {
 			content: '';
 			position: absolute;
-			left: 16px;
+			left: 0;
 			right: 0;
 			height: 2px;
 			background: var(--color-primary);
@@ -377,35 +366,6 @@
 		}
 		&:global(.dnd-insert-after)::after {
 			bottom: -1px;
-		}
-
-		// The grip is the sole drag source (see the markup comment). It lives in the gutter opened
-		// by padding-left, aligned to the summary bar at the top of the row, so it never overlaps
-		// the axis name or the collapse chevron.
-		&__grip {
-			position: absolute;
-			left: 0;
-			top: 0;
-			width: 16px;
-			height: 1.9rem;
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			cursor: grab;
-			color: var(--color-text-muted);
-			opacity: 0.35;
-			font-size: $x-font-size-xs;
-			z-index: 1;
-
-			&:hover {
-				opacity: 1;
-				color: var(--color-primary);
-			}
-
-			&:global(.dnd-dragging) {
-				cursor: grabbing;
-				opacity: 1;
-			}
 		}
 	}
 

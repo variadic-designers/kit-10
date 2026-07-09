@@ -196,6 +196,11 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 	let startX = 0;
 	let startY = 0;
 	let armed = false;
+	// True once the current gesture crossed the threshold into a real drag. Used to swallow the
+	// trailing `click` the browser still synthesizes on pointerup -- otherwise dragging an element
+	// that also handles clicks (e.g. a <summary> that toggles its <details>) would fire that action
+	// as an accidental side effect of the drag. Reset at the start of every gesture (onDown).
+	let dragged = false;
 
 	function disarm() {
 		armed = false;
@@ -209,10 +214,19 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 		const p = o.payload();
 		disarm();
 		if (!p) return;
+		dragged = true;
 		pointer.x = e.clientX;
 		pointer.y = e.clientY;
 		beginDrag(p, o.preview ?? p.kind, node);
 		e.preventDefault();
+	}
+
+	function onClickCapture(e: MouseEvent) {
+		if (dragged) {
+			e.preventDefault();
+			e.stopPropagation();
+			dragged = false;
+		}
 	}
 
 	function onArmUp() {
@@ -220,6 +234,7 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 	}
 
 	function onDown(e: PointerEvent) {
+		dragged = false;
 		if (e.button !== 0 || o.disabled) return;
 		if (!o.payload()) return;
 		startX = e.clientX;
@@ -231,6 +246,7 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 
 	node.style.touchAction = 'none';
 	node.addEventListener('pointerdown', onDown);
+	node.addEventListener('click', onClickCapture, true);
 
 	return {
 		update(next: PayloadGetter | DraggableOptions) {
@@ -239,6 +255,7 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 		destroy() {
 			disarm();
 			node.removeEventListener('pointerdown', onDown);
+			node.removeEventListener('click', onClickCapture, true);
 		}
 	};
 }

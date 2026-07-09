@@ -1,4 +1,6 @@
 <script lang="ts" module>
+	import type { DragPayload } from '../dnd.svelte.ts';
+
 	export type AxisMode = 'categorical' | 'range' | 'discrete';
 
 	export type AxisArgValue =
@@ -26,6 +28,12 @@
 		>;
 		axisNameById?: Record<string, string>;
 		disabled?: boolean;
+		// Drag-to-reorder: the whole header (<summary>) is the drag source. Payload/preview are
+		// owned by the parent (Axes.svelte) since they need the kit context; Axis just wires the
+		// action onto its own summary. A trailing-click guard in the action keeps a drag from
+		// toggling the <details> open/closed.
+		dragPayload?: () => DragPayload | null;
+		dragPreview?: string;
 		onArgChange: (arg: AxisArgValue | null) => void;
 	};
 </script>
@@ -33,6 +41,7 @@
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
+	import { draggable } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 
 	let {
@@ -48,6 +57,8 @@
 		valueLayerCells = {},
 		axisNameById = {},
 		disabled = false,
+		dragPayload,
+		dragPreview,
 		onArgChange
 	}: AxisProps = $props();
 
@@ -182,7 +193,13 @@
 </script>
 
 <details class="axis">
-	<summary title={axisDescription} class="axis__name" use:contextMenu={axisContextMenu}>
+	<summary
+		title={axisDescription}
+		class="axis__name"
+		class:axis__name--draggable={dragPayload}
+		use:contextMenu={axisContextMenu}
+		use:draggable={{ payload: dragPayload ?? (() => null), preview: dragPreview }}
+	>
 		<h3>{axisName}</h3>
 		<div class="axis__name__value" class:axis__name__value--unset={!isSet}>
 			{displayValue}
@@ -288,6 +305,17 @@
 			font-size: $x-font-size-xs;
 			gap: $x-space-sm;
 			color: var(--color-pure-alt);
+
+			// The header is the drag source for reordering. `grab` signals that; a click still
+			// toggles the panel (the drag threshold + trailing-click guard keep the two apart).
+			// dnd-dragging is applied at runtime by the dnd controller, hence :global().
+			&--draggable {
+				cursor: grab;
+			}
+			&:global(.dnd-dragging) {
+				cursor: grabbing;
+				opacity: 0.5;
+			}
 
 			h3 {
 				grid-area: 1 / 1 / 1 / 2;
