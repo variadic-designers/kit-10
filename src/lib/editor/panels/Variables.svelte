@@ -661,9 +661,9 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		padding-inline: calc($x-space-xs / 2);
-		// Drag the token name onto a Render-panel field to bind that field to this token.
-		cursor: grab;
 
+		// Draggable (onto a Render field), but hover keeps the normal cursor -- only an in-flight
+		// drag reads as grabbing.
 		&.dnd-dragging {
 			opacity: 0.4;
 			cursor: grabbing;

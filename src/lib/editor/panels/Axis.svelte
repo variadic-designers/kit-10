@@ -196,7 +196,6 @@
 	<summary
 		title={axisDescription}
 		class="axis__name"
-		class:axis__name--draggable={dragPayload}
 		use:contextMenu={axisContextMenu}
 		use:draggable={{ payload: dragPayload ?? (() => null), preview: dragPreview }}
 	>
@@ -306,12 +305,9 @@
 			gap: $x-space-sm;
 			color: var(--color-pure-alt);
 
-			// The header is the drag source for reordering. `grab` signals that; a click still
-			// toggles the panel (the drag threshold + trailing-click guard keep the two apart).
-			// dnd-dragging is applied at runtime by the dnd controller, hence :global().
-			&--draggable {
-				cursor: grab;
-			}
+			// The header is the drag source, but hover keeps the normal (pointer) cursor -- a click
+			// still toggles the panel, so grab-on-hover would mislabel it. Only while an actual drag
+			// is in flight does it read as grabbing. dnd-dragging is applied at runtime, hence :global().
 			&:global(.dnd-dragging) {
 				cursor: grabbing;
 				opacity: 0.5;
