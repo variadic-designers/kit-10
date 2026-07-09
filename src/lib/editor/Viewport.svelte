@@ -149,12 +149,23 @@
 	// origin (Views panel vs. a canvas click), rather than only for panel-originated selection,
 	// because that distinction doesn't need to exist here: ensure_index_visible is itself a
 	// no-op when the node's already on-screen (see its own doc comment in taf_can_do), which a
-	// canvas click's target always is. Re-reads nodeViewIds too so this stays correct if the
-	// resolve pipeline updates the index map slightly after the selection itself changes.
+	// canvas click's target always is.
+	//
+	// Guards against re-centering on non-selection updates: nodeViewIds is tracked as an effect
+	// dependency (it's a $state read), but changes to it from hover highlighting (which triggers
+	// on_selection_change -> build_viewport -> new node_view_ids) should NOT re-pan to the
+	// selected view -- that fights the user's manual pan. By tracking which viewId we last panned
+	// to (lastPanSelection), and skipping when the selected view hasn't actually changed, hover
+	// updates still fire the effect (necessary to re-read nodeViewIds if a DB-write shifted
+	// indices) but produce no re-center overshoot.
+	let lastPanSelection: string | null = null;
+
 	$effect(() => {
 		const viewId = selection.selectedViewPrimary;
-		const ids = nodeViewIds;
 		if (!initialized || !vellum || !hasData || !viewId) return;
+		if (viewId === lastPanSelection) return;
+		lastPanSelection = viewId;
+		const ids = nodeViewIds;
 		const index = ids.indexOf(viewId);
 		if (index === -1) return;
 		if (vellum.ensure_index_visible(index)) requestRender();
