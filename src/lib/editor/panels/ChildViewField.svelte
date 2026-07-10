@@ -116,42 +116,34 @@
 	}
 
 	async function toggleChild(candidateViewId: string) {
-		if (!onFieldUpdate) {
-			console.log(`Update ${key}: toggle ${candidateViewId} on layer ${sourceLayerId} (no callback)`);
-			return;
-		}
-		if (!sourceLayerId) {
-			console.warn(`Cannot update ${key}: no source layer`);
-			return;
-		}
-
 		const next = childViewIds.includes(candidateViewId)
 			? childViewIds.filter((id) => id !== candidateViewId)
 			: [...childViewIds, candidateViewId];
 
-		if (tokenId) {
-			// Already backed by a per-view token -- update its value in place, the render entry's
-			// token_id doesn't need to change.
-			await api?.updateTokenValue(tokenId, { type: 'view-list', view_ids: next });
-			return;
-		}
-
 		if (!api || !projectId || !viewId) {
 			// No project/view context to scope a token to (e.g. a design-time preview harness) --
 			// fall back to a literal value rather than failing silently.
-			onFieldUpdate({ layerId: sourceLayerId, property: key, value: JSON.stringify(next) });
+			if (onFieldUpdate && sourceLayerId) {
+				onFieldUpdate({ layerId: sourceLayerId, property: key, value: JSON.stringify(next) });
+			}
 			return;
 		}
 
-		const token = await api.createToken(
-			projectId,
-			key,
-			{ type: 'view-list', view_ids: next },
-			{ viewId }
-		);
-		if (!token) return;
+		// Write this view's own scoped token (find-or-create). A View token overrides the kit's
+		// same-named `children` token during resolution (CONCEPTS.md §Tokens) -- the canonical
+		// per-view override. Do NOT write through `tokenId`: that's the *declaring* entry's token,
+		// which for a kit-declared property is a shared Kit-scoped base, not this view's override.
+		const { id, created } = await api.upsertViewToken(projectId, viewId, key, {
+			type: 'view-list',
+			view_ids: next
+		});
 
-		onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: token.id });
+		// A token-backed declaring entry (tokenId set) is already overridden by the alias above.
+		// Only if nothing token-declares this property AND we just minted the token do we point a
+		// render entry at it, so the property exists to resolve (also converts a literal to a token).
+		if (created && tokenId == null && sourceLayerId && onFieldUpdate) {
+			onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: id });
+		}
 	}
 </script>
 

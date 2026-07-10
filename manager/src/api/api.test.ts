@@ -456,6 +456,43 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(after).toHaveLength(0);
 	});
 
+	it('upsertViewToken creates then updates one view-scoped token for an alias', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'a'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'b'))!;
+
+		// First call creates the token, scoped to the view.
+		const first = await ctx.api.upsertViewToken(proj.id, view.id, 'children', {
+			type: 'view-list',
+			view_ids: [childA.id]
+		});
+		expect(first.created).toBe(true);
+
+		const afterCreate = await ctx.api.getTokensByViewId(view.id).execute();
+		expect(afterCreate).toHaveLength(1);
+		expect(afterCreate[0]!.tokenId).toBe(first.id);
+		expect(afterCreate[0]!.tokenViewId).toBe(view.id);
+		expect(afterCreate[0]!.tokenValue).toEqual({ type: 'view-list', view_ids: [childA.id] });
+
+		// Second call updates the same token in place -- no duplicate row for the alias.
+		const second = await ctx.api.upsertViewToken(proj.id, view.id, 'children', {
+			type: 'view-list',
+			view_ids: [childA.id, childB.id]
+		});
+		expect(second.created).toBe(false);
+		expect(second.id).toBe(first.id);
+
+		const afterUpdate = await ctx.api.getTokensByViewId(view.id).execute();
+		expect(afterUpdate).toHaveLength(1);
+		expect(afterUpdate[0]!.tokenValue).toEqual({
+			type: 'view-list',
+			view_ids: [childA.id, childB.id]
+		});
+	});
+
 	// ---- Export ----
 
 	it('exports project with all related data', async () => {

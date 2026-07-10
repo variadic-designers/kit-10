@@ -110,6 +110,20 @@ export interface QueryToken {
 		| undefined
 	>;
 	updateTokenValue: (tokenId: string, value: TokenValue) => Promise<void>;
+	/**
+	 * Set the value of the View-scoped token named `alias`, creating it if this view has none yet.
+	 * A View token overrides a same-named Kit/Project token during resolution (CONCEPTS.md §Tokens),
+	 * so this is the canonical write path for a per-view override (e.g. a view's `children` list) --
+	 * never write through the resolved property's `tokenId`, which is the *declaring* entry's token
+	 * (often a shared Kit-scoped base) rather than this view's own override. `created` is true when a
+	 * new token was inserted, so the caller can attach a render entry iff nothing declares `alias`.
+	 */
+	upsertViewToken: (
+		projectId: string,
+		viewId: string,
+		alias: string,
+		value: TokenValue
+	) => Promise<{ id: string; created: boolean }>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
 	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<
@@ -1033,6 +1047,44 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	updateTokenValue: async (tokenId: string, value: TokenValue) => {
 		await db.updateTable('tokens').set({ value } as any).where('tokens.id', '=', tokenId).execute();
+	},
+
+	upsertViewToken: async (
+		projectId: string,
+		viewId: string,
+		alias: string,
+		value: TokenValue
+	) => {
+		// find-then-write in one transaction so two rapid upserts can't each miss and insert a
+		// duplicate view token for the same alias.
+		return await db.transaction().execute(async (trx) => {
+			const existing = await trx
+				.selectFrom('tokens')
+				.where('tokens.view_id', '=', viewId)
+				.where('tokens.alias', '=', alias)
+				.select('tokens.id as id')
+				.executeTakeFirst();
+			if (existing) {
+				await trx
+					.updateTable('tokens')
+					.set({ value } as any)
+					.where('tokens.id', '=', existing.id)
+					.execute();
+				return { id: existing.id, created: false };
+			}
+			const inserted = await trx
+				.insertInto('tokens')
+				.values({
+					project_id: projectId,
+					alias,
+					value: value as any,
+					kit_id: null,
+					view_id: viewId
+				})
+				.returning('id')
+				.executeTakeFirstOrThrow();
+			return { id: inserted.id, created: true };
+		});
 	},
 
 	updateTokenAlias: async (tokenId: string, alias: string) => {
