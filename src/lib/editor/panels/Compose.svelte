@@ -19,6 +19,20 @@
 		selection = $bindable()
 	}: ComposePanelProps = $props();
 
+	// Attach a kit to the active view, then eagerly instantiate the kit's default composition as
+	// this view's own cloned per-instance copies (clone-per-view) -- so composing a kit that ships
+	// default children gives this instance unique children, not shared template references.
+	async function attachKit(kitId: string) {
+		const viewId = editorActivity.activeViewId;
+		if (!viewId) return;
+		const kc = await api.attachKitToComposition(kitId, viewId);
+		if (!kc) {
+			console.error(`Failed to attach kit ${kitId}`);
+			return;
+		}
+		await api.instantiateKitDefaults(viewId);
+	}
+
 	const composeContextMenuContent: ContextMenuContentGenerator = $derived(() => {
 		return [
 			{
@@ -29,18 +43,7 @@
 					if (editorActivity.activeViewId && editorActivity.activeProjectId) {
 						console.log('About to create kit');
 						api.createKitInProject(editorActivity.activeProjectId, 'Cool Kit').then((k) => {
-							if (k && editorActivity.activeViewId) {
-								console.log(`About to attach kit ${k.id}`);
-								api.attachKitToComposition(k.id, editorActivity.activeViewId).then((kc) => {
-									if (kc) {
-										console.log(
-											`Succeeded. Attached kit#${k.id} to view#${editorActivity.activeViewId}`
-										);
-									} else {
-										console.error(`Failed to attach kit ${k.id}`);
-									}
-								});
-							}
+							if (k) attachKit(k.id);
 						});
 					}
 				}
@@ -54,19 +57,7 @@
 					name: k.kitName,
 					displayText: k.kitName,
 					icon: 'fa-solid fa-puzzle-piece',
-					onClick: () => {
-						if (editorActivity.activeViewId) {
-							api.attachKitToComposition(k.kitId, editorActivity.activeViewId).then((kc) => {
-								if (kc) {
-									console.log(
-										`Succeeded. Attached kit#${k.kitId} to view#${editorActivity.activeViewId}`
-									);
-								} else {
-									console.error(`Failed to attach kit ${k.kitId}`);
-								}
-							});
-						}
-					}
+					onClick: () => attachKit(k.kitId)
 				};
 			})
 		];

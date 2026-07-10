@@ -124,6 +124,23 @@ export interface QueryToken {
 		alias: string,
 		value: TokenValue
 	) => Promise<{ id: string; created: boolean }>;
+	/**
+	 * Deep-clone a view's subtree: the view + its compositions, axis args, and view-scoped tokens,
+	 * recursively cloning the views referenced by its `view-list` token aliased `compositionKey` so
+	 * every clone owns unique child views (never a shared reference). Returns the new root view's id.
+	 * Pure DB op -- the clone is materialized as rows; resolution then renders it normally (never
+	 * runs inside resolve.ts).
+	 */
+	cloneViewSubtree: (viewId: string, compositionKey: string) => Promise<string | null>;
+	/**
+	 * Eager clone-per-view: instantiate a view's kit-default composition. For every kit-scope
+	 * `view-list` token on a kit the view composes (a composition default, keyed by its own alias),
+	 * deep-clone the referenced template subtree into fresh per-instance views and write them as
+	 * this view's OWN same-aliased view-scope token -- so the instance owns unique children rather
+	 * than sharing the kit's template refs. Name-neutral (no hardcoded field). Idempotent: skips any
+	 * alias the view already overrides; highest-priority composed kit wins per alias.
+	 */
+	instantiateKitDefaults: (viewId: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
 	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<
@@ -524,6 +541,163 @@ export interface Api
 		QueryRenderSnippet,
 		QueryRenderEntry,
 		QueryPlugin {}
+
+// Deep-clone a view subtree: the view row + its compositions, axis args, and view-scoped tokens.
+// Recurses through the view's own view-list token aliased `compositionKey`, cloning each referenced
+// child so every clone owns unique children (never a shared reference). `seen` is a DFS path guard:
+// a view already on the current ancestry path is a cycle -> stop (a diamond reached via a different
+// path is still cloned, since it's popped on exit). Other view-list tokens (non-composition) are
+// copied by value -- those are references, not owned structure.
+async function cloneViewSubtreeImpl(
+	db: SchemaDialect,
+	viewId: string,
+	compositionKey: string,
+	seen: Set<string>
+): Promise<string | null> {
+	if (seen.has(viewId)) return null;
+	seen.add(viewId);
+	try {
+		const src = await db
+			.selectFrom('views')
+			.where('id', '=', viewId)
+			.select(['name', 'project_id', 'hints'])
+			.executeTakeFirst();
+		if (!src) return null;
+
+		const clone = await db
+			.insertInto('views')
+			.values({
+				name: src.name,
+				project_id: src.project_id,
+				lock: false,
+				hide: false,
+				hints: (src.hints ?? {}) as any
+			} as any)
+			.returning('id')
+			.executeTakeFirstOrThrow();
+		const cloneId = clone.id;
+
+		const comps = await db
+			.selectFrom('compositions')
+			.where('view_id', '=', viewId)
+			.select(['kit_id', 'priority_index'])
+			.execute();
+		for (const c of comps) {
+			await db
+				.insertInto('compositions')
+				.values({ view_id: cloneId, kit_id: c.kit_id, priority_index: c.priority_index })
+				.onConflict((oc) => oc.columns(['view_id', 'kit_id']).doNothing())
+				.execute();
+		}
+
+		const args = await db
+			.selectFrom('axis_args')
+			.where('view_id', '=', viewId)
+			.select(['kit_id', 'axis_id', 'value'])
+			.execute();
+		for (const a of args) {
+			await db
+				.insertInto('axis_args')
+				.values({ view_id: cloneId, kit_id: a.kit_id, axis_id: a.axis_id, value: a.value } as any)
+				.execute();
+		}
+
+		const tokens = await db
+			.selectFrom('tokens')
+			.where('view_id', '=', viewId)
+			.select(['alias', 'value', 'hints'])
+			.execute();
+		for (const t of tokens) {
+			let value = t.value as TokenValue | null;
+			if (value && value.type === 'view-list' && t.alias === compositionKey) {
+				const clonedIds: string[] = [];
+				for (const childId of value.view_ids) {
+					const cid = await cloneViewSubtreeImpl(db, childId, compositionKey, seen);
+					if (cid) clonedIds.push(cid);
+				}
+				value = { type: 'view-list', view_ids: clonedIds };
+			}
+			await db
+				.insertInto('tokens')
+				.values({
+					project_id: src.project_id,
+					alias: t.alias,
+					value: value as any,
+					hints: (t.hints ?? null) as any,
+					kit_id: null,
+					view_id: cloneId
+				} as any)
+				.execute();
+		}
+		return cloneId;
+	} finally {
+		seen.delete(viewId);
+	}
+}
+
+async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Promise<void> {
+	const view = await db
+		.selectFrom('views')
+		.where('id', '=', viewId)
+		.select('project_id')
+		.executeTakeFirst();
+	if (!view) return;
+
+	// Every kit-scope `view-list` token is a composition default (a view-list value is a
+	// composition edge). Collect them by alias across the view's kits, highest-priority kit winning
+	// per alias -- name-neutral: whatever the kit aliases its default, we clone it into a same-named
+	// view token. (Which of these actually renders nested is the plugin's render-time call.)
+	const comps = await db
+		.selectFrom('compositions')
+		.where('view_id', '=', viewId)
+		.select('kit_id')
+		.orderBy('priority_index', 'desc')
+		.execute();
+	const defaultsByAlias = new Map<string, string[]>();
+	for (const c of comps) {
+		const toks = await db
+			.selectFrom('tokens')
+			.where('kit_id', '=', c.kit_id)
+			.select(['alias', 'value'])
+			.execute();
+		for (const t of toks) {
+			const v = t.value as TokenValue | null;
+			if (t.alias && v?.type === 'view-list' && !defaultsByAlias.has(t.alias)) {
+				defaultsByAlias.set(t.alias, v.view_ids);
+			}
+		}
+	}
+
+	for (const [alias, template] of defaultsByAlias) {
+		if (template.length === 0) continue;
+		// Skip if this view already owns an override for the alias (idempotent).
+		const own = await db
+			.selectFrom('tokens')
+			.where('view_id', '=', viewId)
+			.where('alias', '=', alias)
+			.select('id')
+			.executeTakeFirst();
+		if (own) continue;
+
+		const seen = new Set<string>();
+		const clonedIds: string[] = [];
+		for (const tid of template) {
+			const cid = await cloneViewSubtreeImpl(db, tid, alias, seen);
+			if (cid) clonedIds.push(cid);
+		}
+		await db
+			.insertInto('tokens')
+			.values({
+				project_id: view.project_id,
+				alias,
+				value: { type: 'view-list', view_ids: clonedIds } as any,
+				hints: null,
+				kit_id: null,
+				view_id: viewId
+			} as any)
+			.execute();
+	}
+}
 
 export const queryBuilder = (db: SchemaDialect): Api => ({
 	createWorkspace: async (name: string) => {
@@ -1086,6 +1260,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			return { id: inserted.id, created: true };
 		});
 	},
+
+	cloneViewSubtree: async (viewId: string, compositionKey: string) =>
+		cloneViewSubtreeImpl(db, viewId, compositionKey, new Set()),
+
+	instantiateKitDefaults: async (viewId: string) => instantiateKitDefaultsImpl(db, viewId),
 
 	updateTokenAlias: async (tokenId: string, alias: string) => {
 		await db.updateTable('tokens').set({ alias }).where('tokens.id', '=', tokenId).execute();

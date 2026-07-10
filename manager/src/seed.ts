@@ -432,6 +432,16 @@ export async function seedDemoProject(
 	// Every button view gets a freshly-created, dedicated label view (never a shared reference --
 	// a view is referenced as a child at most once, ever; see CLAUDE.md).
 
+	// buttonKit's DEFAULT children (a clone-per-view template): a Kit-scope `children` view-list
+	// token naming the template subtree (here the unclaimed `Label: Default`). It has NO render
+	// entry, so it never resolves into a shared child on its own -- it's read directly by
+	// `api.instantiateKitDefaults` when a view composes buttonKit, which deep-clones the template
+	// into that view's OWN per-instance children. So composing buttonKit onto a fresh view auto-
+	// populates a unique cloned label, while `Label: Default` stays the editable top-level master.
+	await api.createToken(proj.id, 'children', { type: 'view-list', view_ids: [labelDefaultView.id] }, {
+		kitId: buttonKit.id
+	});
+
 	// --- Views ---
 
 	// View: Light Default

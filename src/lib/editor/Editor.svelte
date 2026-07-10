@@ -252,13 +252,18 @@
 	// kind, not a hardcoded name): the Views panel nests off these. The resolver stays name-neutral
 	// -- it only knows a property resolved to a view-list; the plugin decides which of its fields
 	// means "compose these as children" via `inputType: 'children'`, the same field-kind indirection
-	// suggestion-providers.ts uses for fonts. Empty until the plugin has declared its categories.
-	const viewCompositionKeys = $derived(
-		(pluginManager?.fieldCategories ?? [])
+	// suggestion-providers.ts uses for fonts. `fieldCategories` is per-active-view (box vs text), so
+	// we ACCUMULATE the keys -- once `children` is seen (any box view), it stays known even while a
+	// text/no-kit view is active, so selecting one never flattens the whole Views tree.
+	let viewCompositionKeys = $state<string[]>([]);
+	$effect(() => {
+		const found = (pluginManager?.fieldCategories ?? [])
 			.flatMap((c) => c.fields)
 			.filter((f) => f.inputType === 'children')
-			.map((f) => f.key)
-	);
+			.map((f) => f.key);
+		const merged = [...new Set([...viewCompositionKeys, ...found])];
+		if (merged.length !== viewCompositionKeys.length) viewCompositionKeys = merged;
+	});
 
 	onMount(async () => {
 		await initializeEditorState().then(async (e) => {

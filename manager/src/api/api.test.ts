@@ -493,6 +493,69 @@ it('creates, updates, and deletes render entries', async () => {
 		});
 	});
 
+	const vl = (view_ids: string[]): TokenValue => ({ type: 'view-list', view_ids });
+
+	it('instantiateKitDefaults clones the kit template into unique per-view children (recursively)', async () => {
+		const wsId = (await ctx.api.getAllWorkspaces().execute())[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const card = (await ctx.api.createKitInProject(proj.id, 'Card'))!;
+
+		// Template subtree: Header (composes Card) -> its own child Icon (a view-scope children token).
+		const icon = (await ctx.api.createViewInProject(proj.id, 'Icon'))!;
+		const header = (await ctx.api.createViewInProject(proj.id, 'Header'))!;
+		await ctx.api.attachKitToComposition(card.id, header.id);
+		await ctx.api.upsertViewToken(proj.id, header.id, 'children', vl([icon.id]));
+
+		// Kit default: Card's kit-scope children token names the template (Header).
+		await ctx.api.createToken(proj.id, 'children', vl([header.id]), { kitId: card.id });
+
+		// Two instances composing Card.
+		const v1 = (await ctx.api.createViewInProject(proj.id, 'V1'))!;
+		const v2 = (await ctx.api.createViewInProject(proj.id, 'V2'))!;
+		await ctx.api.attachKitToComposition(card.id, v1.id);
+		await ctx.api.attachKitToComposition(card.id, v2.id);
+
+		await ctx.api.instantiateKitDefaults(v1.id);
+		await ctx.api.instantiateKitDefaults(v2.id);
+
+		const childrenOf = async (viewId: string) => {
+			const toks = await ctx.api.getTokensByViewId(viewId).execute();
+			const t = toks.find((x) => x.tokenAlias === 'children');
+			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
+		};
+
+		const v1kids = await childrenOf(v1.id);
+		const v2kids = await childrenOf(v2.id);
+
+		// Each instance got exactly one child, and it is a CLONE -- not the template Header, and not
+		// the other instance's child (uniqueness: no shared reference).
+		expect(v1kids).toHaveLength(1);
+		expect(v2kids).toHaveLength(1);
+		expect(v1kids[0]).not.toBe(header.id);
+		expect(v2kids[0]).not.toBe(header.id);
+		expect(v1kids[0]).not.toBe(v2kids[0]);
+
+		// The clones are real views composing Card (compositions cloned too).
+		for (const id of [v1kids[0]!, v2kids[0]!]) {
+			const comps = await ctx.api.getKitCompositionByViewId(id).execute();
+			expect(comps.map((c) => c.kitId)).toContain(card.id);
+		}
+
+		// Recursion: each cloned Header owns its OWN cloned Icon, distinct from the template Icon and
+		// from each other.
+		const v1grandkids = await childrenOf(v1kids[0]!);
+		const v2grandkids = await childrenOf(v2kids[0]!);
+		expect(v1grandkids).toHaveLength(1);
+		expect(v2grandkids).toHaveLength(1);
+		expect(v1grandkids[0]).not.toBe(icon.id);
+		expect(v2grandkids[0]).not.toBe(icon.id);
+		expect(v1grandkids[0]).not.toBe(v2grandkids[0]);
+
+		// Idempotent: a second call is a no-op (the view already has its own token).
+		await ctx.api.instantiateKitDefaults(v1.id);
+		expect(await childrenOf(v1.id)).toEqual(v1kids);
+	});
+
 	// ---- Export ----
 
 	it('exports project with all related data', async () => {
