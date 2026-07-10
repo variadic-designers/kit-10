@@ -257,6 +257,25 @@ struct OnResolveResult {
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
+    // The property keys Charter treats as view-composition fields (its fields whose inputType is
+    // the composition kind). VIEW-INDEPENDENT -- unlike `categories` (which reflects the active
+    // view's primitive), this is the full, stable set across every primitive, so the editor can
+    // nest the Views tree by field-kind no matter which view happens to be active. Charter owns
+    // the "children means nest" opinion here; the resolver never does.
+    composition_field_keys: Vec<String>,
+}
+
+// Charter's composition fields, across all primitives -- the fields it declares with the
+// composition inputType. The editor reads these (view-independently) to know which resolved
+// properties' view_refs to nest in the Views tree.
+fn composition_field_keys() -> Vec<String> {
+    box_categories()
+        .into_iter()
+        .chain(text_categories())
+        .flat_map(|c| c.fields)
+        .filter(|f| f.input_type.as_deref() == Some("children"))
+        .map(|f| f.key)
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1139,6 +1158,7 @@ pub fn on_resolve(input: String) -> FnResult<String> {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
+        composition_field_keys: composition_field_keys(),
     };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -1447,12 +1467,22 @@ mod selection_and_hover_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            composition_field_keys: vec![],
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"viewport_data\""), "json was: {json}");
         assert!(json.contains("\"node_view_ids\""), "json was: {json}");
+        assert!(json.contains("\"composition_field_keys\""), "json was: {json}");
         assert!(!json.contains("\"viewportData\""), "json was: {json}");
         assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
+        assert!(!json.contains("\"compositionFieldKeys\""), "json was: {json}");
+    }
+
+    #[test]
+    fn composition_field_keys_is_children_and_view_independent() {
+        // Charter's only composition field is `children` (on Box). The set is stable regardless of
+        // the active view's primitive -- that's what lets the editor nest by field-kind always.
+        assert_eq!(composition_field_keys(), vec!["children".to_string()]);
     }
 
     #[test]

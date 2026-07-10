@@ -372,9 +372,10 @@ export async function seedDemoProject(
 	// Label views. Forced to the text primitive explicitly (cheap insurance -- they'd
 	// auto-detect as text anyway, given only paint properties). Whether a view renders as its
 	// own top-level frame or only as someone's child is derived by Charter from the composition
-	// graph now, not declared here: labelDefaultView is excluded because btnNull's children
-	// references it below; the rest aren't referenced by anything yet, so they render as their
-	// own top-level frames until something actually composes them, same as any unclaimed view.
+	// graph, not declared here: a label referenced by some button's children nests under it; the
+	// rest stay top-level until something composes them (`labelDefaultView` becomes buttonKit's
+	// clone-per-view template master below; `labelPrimaryView`/`labelSecondaryView` stay unclaimed
+	// library content).
 	const textPrimitiveHint = { charter: { primitive: 'text' } };
 
 	const labelDefaultView = (await api.createViewInProject(proj.id, 'Label: Default', textPrimitiveHint))!;
@@ -699,6 +700,27 @@ export async function seedDemoProject(
 		{ type: 'view-list', view_ids: [labelTertiaryView.id] },
 		{ viewId: lightDenseTertiaryClickView.id }
 	);
+
+	// View: Button (cloned default) -- demonstrates clone-per-view end-to-end. Unlike every button
+	// above (which hand-wires its own dedicated label token), this one is composed from buttonKit
+	// alone and then `instantiateKitDefaults` deep-clones buttonKit's default child (`Label:
+	// Default`) into a UNIQUE per-instance label -- exactly the path the editor's Compose panel
+	// runs. `Label: Default` itself stays the top-level editable master; this view nests its own
+	// distinct clone.
+	const clonedDefaultButtonView = (await api.createViewInProject(proj.id, 'Button (cloned default)', {
+		charter: { primitive: 'box' },
+		vellum: { position: [2000, 400] }
+	}))!;
+	await api.attachKitToComposition(buttonKit.id, clonedDefaultButtonView.id);
+	await api.setAxisArg(clonedDefaultButtonView.id, buttonKit.id, themeAxis.id, {
+		type: 'literal',
+		value: 'light'
+	});
+	await api.setAxisArg(clonedDefaultButtonView.id, buttonKit.id, densityAxis.id, {
+		type: 'literal',
+		value: 'compact'
+	});
+	await api.instantiateKitDefaults(clonedDefaultButtonView.id);
 
 	console.log('Demo project seeded: KIT\u202210 Demo');
 }

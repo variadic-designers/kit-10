@@ -116,6 +116,9 @@ export interface OnResolveResult {
 	// structural grid scaffolding nodes that don't belong to any view. Used to resolve a
 	// viewport click-to-select hit-test index (from vellum.get_selection) back to a view id.
 	node_view_ids: string[];
+	// Property keys the plugin declares as view-composition fields, view-independent (across all
+	// primitives) -- the editor nests the Views tree off these regardless of the active view.
+	composition_field_keys?: string[];
 }
 
 export interface PluginMeta {

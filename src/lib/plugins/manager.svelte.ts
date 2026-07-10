@@ -42,6 +42,10 @@ function serializeResolvedViews(views: ResolvedView[] | null) {
 export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
+	// Plugin-declared view-composition field keys, view-independent (see OnResolveResult). Unlike
+	// fieldCategories (active view's primitive), this is stable -- the Views tree nests off it no
+	// matter which view is active.
+	let compositionFieldKeys = $state<string[]>([]);
 	let viewportData = $state<string>('[]');
 	// Parallel to viewportData (same length/order) -- see OnResolveResult.node_view_ids.
 	let nodeViewIds = $state<string[]>([]);
@@ -255,6 +259,7 @@ export function createPluginManager(api: Api) {
 		if (result) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
+			if (parsed.composition_field_keys) compositionFieldKeys = parsed.composition_field_keys;
 			if (parsed.viewport_data) {
 				viewportData = JSON.stringify(parsed.viewport_data);
 				nodeViewIds = parsed.node_view_ids ?? [];
@@ -457,6 +462,9 @@ export function createPluginManager(api: Api) {
 		},
 		get fieldCategories() {
 			return fieldCategories;
+		},
+		get compositionFieldKeys() {
+			return compositionFieldKeys;
 		},
 		get viewportData() {
 			return viewportData;
