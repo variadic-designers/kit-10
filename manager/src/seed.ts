@@ -722,5 +722,109 @@ export async function seedDemoProject(
 	});
 	await api.instantiateKitDefaults(clonedDefaultButtonView.id);
 
+	// ==========================================================================================
+	// Landing page -- a real webpage built entirely from nested Views, showcasing the composition
+	// system end to end: Box containers laid out with flex, Text primitives for content, and
+	// children (view-list) tokens wiring the tree together. Built bottom-up (leaves first) since a
+	// parent's children token must reference views that already exist.
+	// ==========================================================================================
+
+	// A Box layout kit: all its properties baked on the null layer (unconditional).
+	async function boxKit(name: string, props: Record<string, string>) {
+		const kit = (await api.createKitInProject(proj.id, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
+		return kit;
+	}
+
+	// A Text style kit: baked font/paint style + a token-backed `content` entry, so every view
+	// composing it supplies its OWN text via a View-scope `content` token (which overrides the kit
+	// default by alias). One style kit, many distinct-text views.
+	async function textKit(name: string, style: Record<string, string>) {
+		const kit = (await api.createKitInProject(proj.id, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		await api.createRenderEntry(snip.id, 'font-family', 'Inter');
+		for (const [k, v] of Object.entries(style)) await api.createRenderEntry(snip.id, k, v);
+		const contentTok = (await api.createToken(proj.id, 'content', s(''), { kitId: kit.id }))!;
+		await api.createRenderEntry(snip.id, 'content', null, contentTok.id);
+		return kit;
+	}
+
+	async function textView(name: string, kit: { id: string }, content: string): Promise<string> {
+		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'text' } }))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		await api.createToken(proj.id, 'content', s(content), { viewId: v.id });
+		return v.id;
+	}
+
+	async function boxView(
+		name: string,
+		kit: { id: string },
+		childIds: string[],
+		hints: Record<string, unknown> = { charter: { primitive: 'box' } }
+	): Promise<string> {
+		const v = (await api.createViewInProject(proj.id, name, hints))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		if (childIds.length)
+			await api.createToken(
+				proj.id,
+				'children',
+				{ type: 'view-list', view_ids: childIds },
+				{ viewId: v.id }
+			);
+		return v.id;
+	}
+
+	// --- Style kits ---
+	const h1Kit = await textKit('Heading', { 'font-size': '40px', 'font-weight': '700', color: '#0f172a' });
+	const h2Kit = await textKit('Subheading', { 'font-size': '19px', 'font-weight': '700', color: '#0f172a' });
+	const bodyKit = await textKit('Body', { 'font-size': '15px', 'font-weight': '400', color: '#64748b' });
+	const ctaLabelKit = await textKit('CTA Label', { 'font-size': '15px', 'font-weight': '600', color: '#ffffff' });
+	const footerTextKit = await textKit('Footer Text', { 'font-size': '13px', 'font-weight': '400', color: '#cbd5e1' });
+
+	// --- Layout kits ---
+	const pageKit = await boxKit('Page', { 'flex-direction': 'column', background: '#ffffff', width: '900px', gap: '0px', padding: '0px' });
+	const navKit = await boxKit('Nav', { 'flex-direction': 'row', 'justify-content': 'space-between', 'align-items': 'center', padding: '20px', gap: '16px', background: '#ffffff' });
+	const heroKit = await boxKit('Hero', { 'flex-direction': 'column', 'align-items': 'center', gap: '18px', padding: '64px', background: '#f8fafc' });
+	const featuresKit = await boxKit('Features', { 'flex-direction': 'row', 'justify-content': 'center', gap: '24px', padding: '48px', background: '#ffffff' });
+	const cardKit = await boxKit('Card', { 'flex-direction': 'column', gap: '8px', padding: '24px', background: '#ffffff', border: '#e2e8f0', 'border-radius': '12px', width: '230px' });
+	const footerKit = await boxKit('Footer', { 'flex-direction': 'row', 'justify-content': 'center', padding: '28px', background: '#0f172a' });
+	const ctaKit = await boxKit('CTA', { 'flex-direction': 'row', 'align-items': 'center', 'justify-content': 'center', padding: '13px', background: '#3b82f6', 'border-radius': '8px' });
+
+	// --- Leaf text views ---
+	const logo = await textView('Logo', h2Kit, 'KIT\u202210');
+	const navCtaLabel = await textView('Nav CTA Label', ctaLabelKit, 'Sign in');
+	const heroHeading = await textView('Hero Heading', h1Kit, 'Design the system, not the screenshots');
+	const heroSubtitle = await textView('Hero Subtitle', bodyKit, 'Model UI as axes, kits, and views \u2014 and resolve every variant at once.');
+	const heroCtaLabel = await textView('Hero CTA Label', ctaLabelKit, 'Get started');
+	const c1t = await textView('Card 1 Title', h2Kit, 'Axes');
+	const c1b = await textView('Card 1 Body', bodyKit, 'Define the dimensions your UI varies across \u2014 theme, density, state.');
+	const c2t = await textView('Card 2 Title', h2Kit, 'Kits');
+	const c2b = await textView('Card 2 Body', bodyKit, 'Bundle opinionated rules per concern, then compose them into any view.');
+	const c3t = await textView('Card 3 Title', h2Kit, 'Views');
+	const c3b = await textView('Card 3 Body', bodyKit, 'Nest views into views. Kits ship defaults; each instance clones its own.');
+	const footerText = await textView('Footer Text', footerTextKit, '\u00a9 2026 KIT\u202210 \u2014 composable design, resolved.');
+
+	// --- CTAs (box + label) ---
+	const navCta = await boxView('Nav CTA', ctaKit, [navCtaLabel]);
+	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
+
+	// --- Cards ---
+	const card1 = await boxView('Card: Axes', cardKit, [c1t, c1b]);
+	const card2 = await boxView('Card: Kits', cardKit, [c2t, c2b]);
+	const card3 = await boxView('Card: Views', cardKit, [c3t, c3b]);
+
+	// --- Sections ---
+	const nav = await boxView('Nav Bar', navKit, [logo, navCta]);
+	const hero = await boxView('Hero Section', heroKit, [heroHeading, heroSubtitle, heroCta]);
+	const features = await boxView('Features', featuresKit, [card1, card2, card3]);
+	const footer = await boxView('Footer', footerKit, [footerText]);
+
+	// --- Page root (positioned off to the left of the component gallery) ---
+	await boxView('Landing Page', pageKit, [nav, hero, features, footer], {
+		charter: { primitive: 'box' },
+		vellum: { position: [-1100, 0] }
+	});
+
 	console.log('Demo project seeded: KIT\u202210 Demo');
 }
