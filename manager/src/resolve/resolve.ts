@@ -27,7 +27,6 @@ export interface ResolvedKit {
 	kitId: string;
 	kitName: string;
 	properties: Map<string, ResolvedProperty>;
-	childViewIds: string[];
 }
 
 type AxisValueType =
@@ -58,7 +57,12 @@ export interface ResolvedProperty {
 	// Same conditions as `keys`, but with the actual matched value per axis (e.g. theme: "dark"),
 	// for display — "Theme + Density" tells you which axes combine, this tells you which value.
 	conditionValues: { axisId: string; value: string }[];
-	childViewIds: string[] | null;
+	// View ids this property's value references, when the value is a `view-list` -- otherwise null.
+	// Purely a function of the value TYPE (a native token-value kind), NOT the property name: the
+	// resolver assigns no meaning to any particular name like "children". A consumer that wants to
+	// treat some property as nested composition (Charter's `children`, the editor's Views tree)
+	// identifies it by its own field-kind convention, not here.
+	viewRefs: string[] | null;
 }
 
 function formatAxisValue(v: AxisValueType): string {
@@ -142,17 +146,6 @@ export function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 	}
 }
 
-function tryParseChildViewIds(value: string): string[] | null {
-	if (!value) return null;
-	try {
-		const parsed = JSON.parse(value);
-		if (Array.isArray(parsed) && parsed.every((v) => typeof v === 'string')) return parsed;
-	} catch {
-		// not a valid JSON array
-	}
-	return null;
-}
-
 function computeSpecificity(conditions: LayerCondition[]): number[] {
 	const count = conditions.length;
 	const priorities = conditions.map((c) => c.priorityIndex).sort((a, b) => b - a);
@@ -201,11 +194,12 @@ function matchLayers(
 		// `rowsKey` upstream is a separate, deliberately-deferred concern -- see rowsKey.)
 		const conds = [...data.conditions].sort((a, b) => a.axisId.localeCompare(b.axisId));
 		for (const entry of data.entries) {
-			const resolvedValue = entry.tokenId
-				? entry.tokenValue?.type === 'scalar'
-					? entry.tokenValue.value
-					: entry.tokenValue?.type === 'view'
-						? entry.tokenValue.view_id
+			const tv = entry.tokenId ? entry.tokenValue : null;
+			const resolvedValue = tv
+				? tv.type === 'scalar'
+					? tv.value
+					: tv.type === 'view'
+						? tv.view_id
 						: ''
 				: (entry.literalValue ?? '');
 			result.set(entry.property, {
@@ -222,7 +216,9 @@ function matchLayers(
 					axisId: c.axisId,
 					value: formatAxisValue(c.axisValue)
 				})),
-				childViewIds: entry.property === 'children' ? tryParseChildViewIds(resolvedValue) : null
+				// Type-driven, not name-driven: a `view-list` token value carries view refs. (A
+				// later view-scope token of the same alias overrides these in substituteTokens.)
+				viewRefs: tv?.type === 'view-list' ? tv.view_ids : null
 			});
 		}
 	}
@@ -392,8 +388,7 @@ export interface ScopedTokenMaps {
 	scalarMap: Map<string, string>;
 	// alias -> list of view ids, same scope-precedence rule. Separate map rather than widening
 	// scalarMap's value type -- keeps the existing scalar substitution path completely untouched,
-	// and a property only ever wants one or the other (children wants view-list, everything else
-	// wants scalar), never both.
+	// and a property only ever wants one or the other (a view-list vs a scalar), never both.
 	viewListMap: Map<string, string[]>;
 }
 
@@ -403,11 +398,11 @@ async function gatherScopedTokens(
 	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
 	kitIds: string[],
 	viewId: string
-): Promise<ScopedTokenMaps> {
+): Promise<ScopedTokenMaps & { viewTokens: { alias: string | null; value: TokenValue | null }[] }> {
 	const scalarMap = new Map<string, string>();
 	const viewListMap = new Map<string, string[]>();
 
-	if (!projectId) return { scalarMap, viewListMap };
+	if (!projectId) return { scalarMap, viewListMap, viewTokens: [] };
 
 	const [projectTokens, kitTokenRows, viewTokens] = await Promise.all([
 		db
@@ -459,7 +454,7 @@ async function gatherScopedTokens(
 
 	for (const t of viewTokens) apply(t.alias, t.value);
 
-	return { scalarMap, viewListMap };
+	return { scalarMap, viewListMap, viewTokens };
 }
 
 function substituteTokens(
@@ -469,14 +464,51 @@ function substituteTokens(
 	for (const [, resolved] of properties) {
 		if (!resolved.isToken || !resolved.tokenAlias) continue;
 
-		if (resolved.property === 'children') {
-			const viewIds = tokenMaps.viewListMap.get(resolved.tokenAlias);
-			if (viewIds !== undefined) resolved.childViewIds = viewIds;
+		// Which kind of value a given alias holds is decided by the token's own value type (i.e.
+		// which map it landed in), not by the property's name. A view-list alias sets viewRefs; a
+		// scalar alias sets the string value. No property name is special.
+		const viewIds = tokenMaps.viewListMap.get(resolved.tokenAlias);
+		if (viewIds !== undefined) {
+			resolved.viewRefs = viewIds;
 			continue;
 		}
 
 		const scalarValue = tokenMaps.scalarMap.get(resolved.tokenAlias);
 		if (scalarValue !== undefined) resolved.value = scalarValue;
+	}
+}
+
+/**
+ * Self-declaring view-scope references: a view's OWN view-list token materializes a property of
+ * the same name (= its alias) carrying its view refs, even when no kit layer declares that
+ * property. This lets a per-view composition override (e.g. a view's `children`) exist with no
+ * render entry anchored on a shared kit layer -- which would otherwise force the property onto
+ * every view composing the kit. Only the view's own tokens self-declare; kit/project-scope tokens
+ * do not. Name-neutral by construction: whatever the token is aliased, that's the property name;
+ * the resolver reads no meaning into it.
+ */
+function applySelfDeclaredViewRefs(
+	resolvedKits: ResolvedKit[],
+	viewTokens: { alias: string | null; value: TokenValue | null }[]
+): void {
+	const target = resolvedKits[resolvedKits.length - 1];
+	if (!target) return;
+	for (const t of viewTokens) {
+		if (!t.alias || t.value?.type !== 'view-list') continue;
+		if (resolvedKits.some((k) => k.properties.has(t.alias!))) continue; // a layer already declares it
+		target.properties.set(t.alias, {
+			property: t.alias,
+			value: '',
+			sourceLayerId: '',
+			kitId: target.kitId,
+			isToken: true,
+			tokenAlias: t.alias,
+			tokenId: null,
+			conditionCount: 0,
+			keys: [],
+			conditionValues: [],
+			viewRefs: t.value.view_ids
+		});
 	}
 }
 
@@ -533,10 +565,10 @@ export async function resolveManySlowPath(
 		results.push({
 			kitId: comp.kit_id,
 			kitName: comp.kit_name,
-			properties,
-			childViewIds: properties.get('children')?.childViewIds ?? []
+			properties
 		});
 	}
+	applySelfDeclaredViewRefs(results, tokenMap.viewTokens);
 
 	return results;
 }
@@ -912,43 +944,11 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 			return {
 				kitId: comp.kit_id,
 				kitName: comp.kit_name,
-				properties,
-				childViewIds: properties.get('children')?.childViewIds ?? []
+				properties
 			};
 		});
 
-		// Self-declaring view-scope children: a view's OWN `children` view-list token defines that
-		// view's children even when no kit layer declares the property -- so per-instance children
-		// never need an entry anchored on a shared kit layer (which would force the children slot
-		// onto every view composing that kit). Only the *view's own* token self-declares here;
-		// kit/project-scope children tokens do not, so a kit default can't force children onto every
-		// instance. When a kit layer DOES declare `children`, substituteTokens above already applied
-		// the view token's value by alias (view-scope wins) -- so we only fill the no-entry gap. A
-		// view-scope children token is conventionally aliased `children`, matching the property name
-		// the editor writes and the resolver already special-cases.
-		if (!resolvedKits.some((k) => k.properties.has('children'))) {
-			const viewChildren = (tokensByView.get(v.id) ?? []).find(
-				(t) => t.alias === 'children' && t.value?.type === 'view-list'
-			);
-			const target = resolvedKits[resolvedKits.length - 1];
-			if (viewChildren?.value?.type === 'view-list' && target) {
-				const ids = viewChildren.value.view_ids;
-				target.properties.set('children', {
-					property: 'children',
-					value: JSON.stringify(ids),
-					sourceLayerId: '',
-					kitId: target.kitId,
-					isToken: true,
-					tokenAlias: 'children',
-					tokenId: null,
-					conditionCount: 0,
-					keys: [],
-					conditionValues: [],
-					childViewIds: ids
-				});
-				target.childViewIds = ids;
-			}
-		}
+		applySelfDeclaredViewRefs(resolvedKits, tokensByView.get(v.id) ?? []);
 
 		return {
 			viewId: v.id,

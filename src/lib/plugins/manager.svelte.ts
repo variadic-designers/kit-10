@@ -22,8 +22,10 @@ function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	return kits.map((k) => ({
 		kitId: k.kitId,
 		kitName: k.kitName,
-		properties: Object.fromEntries(k.properties),
-		childViewIds: k.childViewIds
+		// Each property carries its own `viewRefs` (view-list values). There's no kit-level child
+		// list anymore -- a consumer that treats some property as nested composition (Charter's
+		// `children`) reads that property's viewRefs itself.
+		properties: Object.fromEntries(k.properties)
 	}));
 }
 

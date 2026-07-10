@@ -129,7 +129,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null
+			viewRefs: null
 		});
 		expect(result.get('color')).toEqual({
 			property: 'color',
@@ -142,7 +142,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null
+			viewRefs: null
 		});
 		expect(result.get('padding')).toEqual({
 			property: 'padding',
@@ -155,7 +155,7 @@ describe('resolve', () => {
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			childViewIds: null
+			viewRefs: null
 		});
 	});
 
@@ -752,7 +752,7 @@ describe('range overlap matching', () => {
 
 			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
-			expect(flat.get('children')!.childViewIds).toEqual([childB.id]);
+			expect(flat.get('children')!.viewRefs).toEqual([childB.id]);
 			expect(viewToken.id).not.toBe(kitToken.id);
 		});
 
@@ -765,15 +765,16 @@ describe('range overlap matching', () => {
 			await ctx.api.attachKitToComposition(kit.id, parent.id);
 			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
 
-			// A view-scope `children` view-list token, and NOTHING else -- no render entry declares
-			// `children` on any layer. The view token alone must produce the children.
-			await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([child.id]));
+			// A view-scope view-list token, and NOTHING else -- no render entry declares this
+			// property on any layer. The view token alone must produce a property carrying its refs.
+			// Name-neutral: use an arbitrary alias, not "children", to prove the resolver reads no
+			// meaning into the name (the composition opinion lives in the plugin/editor, not here).
+			await ctx.api.upsertViewToken(proj.id, parent.id, 'slots', vl([child.id]));
 
 			const views = await resolveManyViews(ctx.db, proj.id);
 			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
 			const flat = flattenKitResults(resolvedParent.resolvedKits);
-			expect(flat.get('children')?.childViewIds).toEqual([child.id]);
-			expect(resolvedParent.resolvedKits.flatMap((k) => k.childViewIds)).toEqual([child.id]);
+			expect(flat.get('slots')?.viewRefs).toEqual([child.id]);
 		});
 
 		it('a kit-scope `children` token does NOT self-declare (no forcing children onto every view)', async () => {
@@ -785,14 +786,16 @@ describe('range overlap matching', () => {
 			await ctx.api.attachKitToComposition(kit.id, parent.id);
 			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
 
-			// A kit-scope `children` token with no render entry must NOT materialize children --
+			// A kit-scope view-list token with no render entry must NOT materialize a property --
 			// only a view's own token self-declares. Otherwise every view composing the kit would be
-			// forced to show the child.
-			await ctx.api.createToken(proj.id, 'children', vl([child.id]), { kitId: kit.id });
+			// forced to carry it.
+			await ctx.api.createToken(proj.id, 'slots', vl([child.id]), { kitId: kit.id });
 
 			const views = await resolveManyViews(ctx.db, proj.id);
 			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
-			expect(resolvedParent.resolvedKits.flatMap((k) => k.childViewIds)).toEqual([]);
+			expect(resolvedParent.resolvedKits.flatMap((k) => [...k.properties.keys()])).not.toContain(
+				'slots'
+			);
 		});
 	});
 });

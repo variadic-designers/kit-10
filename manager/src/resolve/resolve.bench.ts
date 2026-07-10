@@ -297,7 +297,7 @@ function comparable(views: ResolvedViewData[]): string {
 				kits: v.resolvedKits.map((k) => ({
 					kitId: k.kitId,
 					kitName: k.kitName,
-					childViewIds: [...k.childViewIds].sort(),
+					viewRefs: [...(k.properties.get('children')?.viewRefs ?? [])].sort(),
 					properties: Object.fromEntries(
 						[...k.properties.entries()]
 							.sort(([a], [b]) => a.localeCompare(b))

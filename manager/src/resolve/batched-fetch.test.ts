@@ -17,7 +17,8 @@ function toComparable(kits: ResolvedKit[]): unknown {
 	return kits.map((k) => ({
 		kitId: k.kitId,
 		kitName: k.kitName,
-		childViewIds: [...k.childViewIds].sort(),
+		// `properties` now carries each property's `viewRefs` (view-list values), so comparing the
+		// full property map already covers what the old kit-level `childViewIds` did.
 		properties: Object.fromEntries(
 			[...k.properties.entries()].sort(([a], [b]) => a.localeCompare(b))
 		)

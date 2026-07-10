@@ -124,6 +124,7 @@
 		> | null
 	);
 
+
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
 		const editor = editorLoading;
@@ -246,6 +247,18 @@
 	import type { ExtismPluginOptions } from '@extism/extism';
 
 	let pluginManager = $state<PluginManager | null>(null);
+
+	// Which resolved-property keys the active plugin declares as view-composition fields (a field
+	// kind, not a hardcoded name): the Views panel nests off these. The resolver stays name-neutral
+	// -- it only knows a property resolved to a view-list; the plugin decides which of its fields
+	// means "compose these as children" via `inputType: 'children'`, the same field-kind indirection
+	// suggestion-providers.ts uses for fonts. Empty until the plugin has declared its categories.
+	const viewCompositionKeys = $derived(
+		(pluginManager?.fieldCategories ?? [])
+			.flatMap((c) => c.fields)
+			.filter((f) => f.inputType === 'children')
+			.map((f) => f.key)
+	);
 
 	onMount(async () => {
 		await initializeEditorState().then(async (e) => {
@@ -428,6 +441,7 @@
 			{api}
 			{editorReady}
 			{resolvedViews}
+			{viewCompositionKeys}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

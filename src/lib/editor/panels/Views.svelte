@@ -15,6 +15,9 @@
 		api: Api;
 		hoveredViewId?: string | null;
 		resolvedViews?: ResolvedView[];
+		// Resolved-property keys the active plugin declares as view-composition fields (inputType
+		// 'children'). The tree nests off these -- never a hardcoded property name. See Editor.svelte.
+		viewCompositionKeys?: string[];
 	};
 
 	let {
@@ -25,7 +28,8 @@
 		editorReady,
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
-		resolvedViews = []
+		resolvedViews = [],
+		viewCompositionKeys = []
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
@@ -149,7 +153,11 @@
 		for (const view of resolvedViews) {
 			const ids = new Set<string>();
 			for (const kit of view.resolvedKits) {
-				for (const id of kit.childViewIds ?? []) ids.add(id);
+				// Nest off the plugin-declared composition fields' resolved view refs -- not a
+				// property literally named "children" (the resolver is name-neutral now).
+				for (const key of viewCompositionKeys) {
+					for (const id of (kit as any).properties?.get?.(key)?.viewRefs ?? []) ids.add(id);
+				}
 			}
 			map.set(view.viewId, [...ids]);
 		}
@@ -194,17 +202,18 @@
 		return childrenByViewId.get(viewId) ?? [];
 	}
 
-	// The resolved `children` property of a view, if any kit declares one. Carries the render
-	// entry's `sourceLayerId` and `tokenAlias`. NOTE: `tokenId` here is the *entry's* token, which
-	// for a kit-declared children property is the kit-scoped base token (a shared fallback, e.g.
-	// seed's empty `childrenBaseToken`) -- NOT the view's actual child list. A view's real children
-	// live in a View-scoped `view-list` token that overrides the base *by alias* during resolution
-	// (see setViewChildren). So never write through this `tokenId` to change one view's children.
+	// The resolved composition property of a view (the plugin's view-composition field), if any kit
+	// declares one, carrying its `tokenAlias`. NOTE: never write through the resolved `tokenId` to
+	// change one view's children -- that's the *entry's* token (a shared kit-scoped base for a
+	// kit-declared property); a view's real child list lives in a View-scoped token that overrides
+	// by alias / self-declares (see setViewChildren). `compositionKey` is the plugin-declared field
+	// key, so this never hardcodes a name like "children".
+	const compositionKey = $derived(viewCompositionKeys[0] ?? 'children');
 	function childrenPropOf(viewId: string) {
 		const v = resolvedViews.find((x) => x.viewId === viewId);
 		if (!v) return undefined;
 		for (const kit of v.resolvedKits) {
-			const p = (kit as any).properties?.get?.('children');
+			const p = (kit as any).properties?.get?.(compositionKey);
 			if (p) return p as { sourceLayerId: string; tokenId: string | null; tokenAlias: string | null };
 		}
 		return undefined;
@@ -235,7 +244,7 @@
 		if (!projectId) return;
 
 		const prop = childrenPropOf(parentViewId);
-		const alias = prop?.tokenAlias ?? 'children';
+		const alias = prop?.tokenAlias ?? compositionKey;
 
 		// Write the view's own scoped token (find-or-create). A view-scope `children` token is
 		// self-declaring in resolution -- it defines this view's children on its own, with no entry

@@ -194,7 +194,7 @@
 										{...track(field.key)}
 										displayText={field.displayText ?? field.key}
 										key={field.key}
-										childViewIds={resolvedMap.get(field.key)?.childViewIds ?? []}
+										childViewIds={resolvedMap.get(field.key)?.viewRefs ?? []}
 										{candidateViews}
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}

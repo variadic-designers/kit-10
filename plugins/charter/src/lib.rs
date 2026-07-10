@@ -11,8 +11,11 @@ struct ResolvedProperty {
     is_token: bool,
     token_alias: Option<String>,
     condition_count: u32,
+    // View ids this property's value references (set by the resolver for any `view-list` value,
+    // name-neutrally). Charter treats its OWN `children` field's view_refs as nested children --
+    // that opinion lives here, in the plugin, not in the resolver.
     #[serde(default)]
-    child_view_ids: Option<Vec<String>>,
+    view_refs: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,8 +24,6 @@ struct ResolvedKit {
     kit_id: String,
     kit_name: String,
     properties: std::collections::HashMap<String, ResolvedProperty>,
-    #[serde(default)]
-    child_view_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -381,13 +382,24 @@ fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, Resolve
     merged
 }
 
+// Charter's composition opinion: its own `children` field, when it resolved to a `view-list`
+// value, names the views to nest. The resolver stays name-neutral (it only knows the property
+// carries view_refs); "children means nest these" is decided here, in the plugin.
+const CHILDREN_FIELD: &str = "children";
+
 fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut ids = Vec::new();
     for kit in kits {
-        for id in &kit.child_view_ids {
-            if seen.insert(id.clone()) {
-                ids.push(id.clone());
+        if let Some(refs) = kit
+            .properties
+            .get(CHILDREN_FIELD)
+            .and_then(|p| p.view_refs.as_ref())
+        {
+            for id in refs {
+                if seen.insert(id.clone()) {
+                    ids.push(id.clone());
+                }
             }
         }
     }
@@ -1253,11 +1265,10 @@ mod position_wire_tests {
                         is_token: false,
                         token_alias: None,
                         condition_count: 0,
-                        child_view_ids: None,
+                        view_refs: None,
                     });
                     m
                 },
-                child_view_ids: vec![],
             }],
         };
 
@@ -1297,8 +1308,16 @@ mod selection_and_hover_tests {
             is_token: false,
             token_alias: None,
             condition_count: 0,
-            child_view_ids: None,
+            view_refs: None,
         }
+    }
+
+    // A `children` property whose view-list value names the child views (mirrors what the resolver
+    // produces; Charter reads its own `children` field's view_refs to nest).
+    fn children_prop(ids: Vec<String>) -> ResolvedProperty {
+        let mut p = box_prop("children", "");
+        p.view_refs = Some(ids);
+        p
     }
 
     fn box_view(view_id: &str, child_view_ids: Vec<String>) -> ViewMeta {
@@ -1312,9 +1331,11 @@ mod selection_and_hover_tests {
                 properties: {
                     let mut m = std::collections::HashMap::new();
                     m.insert("width".to_string(), box_prop("width", "100px"));
+                    if !child_view_ids.is_empty() {
+                        m.insert("children".to_string(), children_prop(child_view_ids));
+                    }
                     m
                 },
-                child_view_ids,
             }],
         }
     }
@@ -1333,7 +1354,6 @@ mod selection_and_hover_tests {
                     m.insert("color".to_string(), box_prop("color", "#111111"));
                     m
                 },
-                child_view_ids: vec![],
             }],
         }
     }
@@ -1459,14 +1479,20 @@ mod children_containment_tests {
             is_token: false,
             token_alias: None,
             condition_count: 0,
-            child_view_ids: None,
+            view_refs: None,
         }
     }
 
-    // A "child" fixture here needs no self-declaration at all -- being listed in the parent's
-    // child_view_ids is what excludes it from the top-level grid now (see build_viewport's
-    // `referenced` set), so node_view_ids.contains(...) being true only ever means recursion
-    // actually worked, not that the top-level grid happened to render it too.
+    // A `children` property whose view-list value names the child views (Charter reads its own
+    // `children` field's view_refs to nest). A "child" fixture being listed here is what excludes
+    // it from the top-level grid (build_viewport's `referenced` set), so node_view_ids.contains(...)
+    // being true only ever means recursion actually worked.
+    fn children_prop(ids: Vec<String>) -> ResolvedProperty {
+        let mut p = prop("children", "");
+        p.view_refs = Some(ids);
+        p
+    }
+
     fn box_view(view_id: &str, child_view_ids: Vec<String>) -> ViewMeta {
         ViewMeta {
             view_id: view_id.to_string(),
@@ -1478,9 +1504,11 @@ mod children_containment_tests {
                 properties: {
                     let mut m = std::collections::HashMap::new();
                     m.insert("width".to_string(), prop("width", "100px"));
+                    if !child_view_ids.is_empty() {
+                        m.insert("children".to_string(), children_prop(child_view_ids));
+                    }
                     m
                 },
-                child_view_ids,
             }],
         }
     }
@@ -1497,9 +1525,11 @@ mod children_containment_tests {
                     let mut m = std::collections::HashMap::new();
                     m.insert("font-size".to_string(), prop("font-size", "14px"));
                     m.insert("color".to_string(), prop("color", "#111111"));
+                    if !child_view_ids.is_empty() {
+                        m.insert("children".to_string(), children_prop(child_view_ids));
+                    }
                     m
                 },
-                child_view_ids,
             }],
         }
     }
@@ -1629,7 +1659,7 @@ mod text_paint_properties_tests {
             is_token: false,
             token_alias: None,
             condition_count: 0,
-            child_view_ids: None,
+            view_refs: None,
         }
     }
 
