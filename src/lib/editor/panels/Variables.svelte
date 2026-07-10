@@ -49,7 +49,7 @@
 	import Panel from '../Panel.svelte';
 	import { type Api, type EditorState, type TokenValue } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
-	import { tokenIcon, isColorValue, tokenStr, formatViewArray } from './token-utils.ts';
+	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
 	import { draggable } from '../dnd.svelte.ts';
 
 	type TokenRow = {
@@ -108,16 +108,6 @@
 	const viewNameById = $derived(
 		new Map(activeViewQuery.rows.map((v) => [v.viewId, v.viewName] as const))
 	);
-
-	// A view-list token's value has no meaningful plain-text form (tokenStr returns null for it)
-	// -- render it as the literal array of view names it represents instead, same as
-	// ChildViewField's own value box, rather than an opaque alias pill with invisible contents.
-	function tokenValueDisplay(token: TokenRow): string {
-		if (token.tokenValue?.type === 'view-list') {
-			return formatViewArray(token.tokenValue.view_ids.map((id) => viewNameById.get(id) ?? '?'));
-		}
-		return tokenStr(token.tokenValue) ?? '+';
-	}
 
 	function toggleNewTokenViewId(viewId: string) {
 		newTokenViewIds = newTokenViewIds.includes(viewId)
@@ -252,6 +242,7 @@
 			>
 				<div
 					class="token {scopeClass}"
+					class:token--view-list={token.tokenValue?.type === 'view-list'}
 					style="--color-icon: {tokenStr(token.tokenValue) ?? 'transparent'}"
 					use:contextMenu={tokenContextMenu(token.tokenId)}
 				>
@@ -318,9 +309,21 @@
 							}}
 						/>
 					{:else if token.tokenValue?.type === 'view-list'}
-						<span class="token__value token__value--readonly" title="Edit via the field's picker in the Render panel">
-							{tokenValueDisplay(token)}
-						</span>
+						<!-- Read-only mirror of the same view set the Render panel's Content.Children field
+						     edits and the Views panel nests (one source of truth -- see the children
+						     invariant). One row per referenced view instead of a compact bracketed line. -->
+						<div class="token__view-list-display" title="Edit via the field's picker in the Render panel">
+							{#if token.tokenValue.view_ids.length === 0}
+								<span class="token__view-list-empty">empty</span>
+							{:else}
+								{#each token.tokenValue.view_ids as vid (vid)}
+									<span class="token__view-list-item">
+										<i class="fa-regular fa-window-maximize"></i>
+										<span class="token__view-list-name">{viewNameById.get(vid) ?? '?'}</span>
+									</span>
+								{/each}
+							{/if}
+						</div>
 					{:else}
 						<button
 							class="token__value"
@@ -635,6 +638,55 @@
 		&:hover {
 			color: var(--color-primary);
 		}
+
+		// A view-list token can't fit its rows on the single value line, so let it wrap: the
+		// name/track stay on the first line, the referenced-view rows drop to a full-width block
+		// below (see token__view-list-display).
+		&--view-list {
+			flex-wrap: wrap;
+			align-items: center;
+		}
+	}
+
+	.token__view-list-display {
+		flex: 1 0 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: calc($x-space-xs / 2) 0 calc($x-space-xs / 2) $x-space-md;
+		cursor: default;
+	}
+
+	.token__view-list-item {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		min-width: 0;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		border-radius: 1px;
+		background: var(--color-panel-header-fill);
+		font-size: $x-font-size-sm;
+
+		i {
+			flex: 0 0 auto;
+			font-size: $x-font-size-xs;
+			opacity: 0.6;
+		}
+	}
+
+	.token__view-list-name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.token__view-list-empty {
+		flex: 1 0 100%;
+		padding: calc($x-space-xs / 2) 0 calc($x-space-xs / 2) $x-space-md;
+		font-size: $x-font-size-xs;
+		color: var(--color-text-muted);
+		font-style: italic;
 	}
 
 	.token__icon {

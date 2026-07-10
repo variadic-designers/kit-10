@@ -21,11 +21,3 @@ export function isColorValue(v: TokenValue | null | undefined): boolean {
 	if (!str) return false;
 	return str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl');
 }
-
-// Renders a list of view names as literal array syntax -- used anywhere a view-list token's
-// value is shown (ChildViewField's value box, Variables panel's View Tokens rows), so a list of
-// view refs reads as the array it actually is instead of a vague "N views" count or an opaque
-// token-pill with no visible contents.
-export function formatViewArray(names: string[]): string {
-	return `[${names.join(', ')}]`;
-}
