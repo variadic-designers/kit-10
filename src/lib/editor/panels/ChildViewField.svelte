@@ -136,21 +136,11 @@
 			return;
 		}
 
-		// Write this view's own scoped token (find-or-create). A View token overrides the kit's
-		// same-named `children` token during resolution (CONCEPTS.md §Tokens) -- the canonical
-		// per-view override. Do NOT write through `tokenId`: that's the *declaring* entry's token,
-		// which for a kit-declared property is a shared Kit-scoped base, not this view's override.
-		const { id, created } = await api.upsertViewToken(projectId, viewId, key, {
-			type: 'view-list',
-			view_ids: next
-		});
-
-		// A token-backed declaring entry (tokenId set) is already overridden by the alias above.
-		// Only if nothing token-declares this property AND we just minted the token do we point a
-		// render entry at it, so the property exists to resolve (also converts a literal to a token).
-		if (created && tokenId == null && sourceLayerId && onFieldUpdate) {
-			onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: id });
-		}
+		// Write this view's own scoped `children` token (find-or-create). A view-scope children
+		// token is self-declaring in resolution -- it defines this view's children on its own, with
+		// no render entry anchored on a shared kit layer (see resolve.ts). So there's nothing else
+		// to wire: no null-layer fallback, no onFieldUpdate.
+		await api.upsertViewToken(projectId, viewId, key, { type: 'view-list', view_ids: next });
 	}
 </script>
 

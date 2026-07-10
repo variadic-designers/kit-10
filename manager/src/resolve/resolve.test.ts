@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
-import { resolve, resolveManySlowPath, flattenKitResults } from './resolve.js';
+import {
+	resolve,
+	resolveManySlowPath,
+	resolveManyViews,
+	flattenKitResults
+} from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
@@ -749,6 +754,45 @@ describe('range overlap matching', () => {
 			const flat = flattenKitResults(results);
 			expect(flat.get('children')!.childViewIds).toEqual([childB.id]);
 			expect(viewToken.id).not.toBe(kitToken.id);
+		});
+
+		it('self-declaring view-scope children: a view-scope `children` token defines children with no render entry', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Self-declaring'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+
+			// A view-scope `children` view-list token, and NOTHING else -- no render entry declares
+			// `children` on any layer. The view token alone must produce the children.
+			await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([child.id]));
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
+			const flat = flattenKitResults(resolvedParent.resolvedKits);
+			expect(flat.get('children')?.childViewIds).toEqual([child.id]);
+			expect(resolvedParent.resolvedKits.flatMap((k) => k.childViewIds)).toEqual([child.id]);
+		});
+
+		it('a kit-scope `children` token does NOT self-declare (no forcing children onto every view)', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'No kit self-declare'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+
+			// A kit-scope `children` token with no render entry must NOT materialize children --
+			// only a view's own token self-declares. Otherwise every view composing the kit would be
+			// forced to show the child.
+			await ctx.api.createToken(proj.id, 'children', vl([child.id]), { kitId: kit.id });
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
+			expect(resolvedParent.resolvedKits.flatMap((k) => k.childViewIds)).toEqual([]);
 		});
 	});
 });

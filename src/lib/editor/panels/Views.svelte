@@ -5,7 +5,7 @@
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
 	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
-	import type { ResolvedView, FieldUpdate } from '$lib/plugins/types.js';
+	import type { ResolvedView } from '$lib/plugins/types.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -15,7 +15,6 @@
 		api: Api;
 		hoveredViewId?: string | null;
 		resolvedViews?: ResolvedView[];
-		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
 	let {
@@ -26,8 +25,7 @@
 		editorReady,
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
-		resolvedViews = [],
-		onFieldUpdate
+		resolvedViews = []
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
@@ -239,26 +237,15 @@
 		const prop = childrenPropOf(parentViewId);
 		const alias = prop?.tokenAlias ?? 'children';
 
-		// Write the view's own scoped token (find-or-create), which overrides the kit's `children`
-		// entry by alias -- same helper ChildViewField uses.
-		const { id, created } = await api.upsertViewToken(projectId, parentViewId, alias, {
+		// Write the view's own scoped token (find-or-create). A view-scope `children` token is
+		// self-declaring in resolution -- it defines this view's children on its own, with no entry
+		// anchored on a shared kit layer (see resolve.ts). When a kit layer already declares
+		// children (prop set, e.g. a conditional kit default), the same view token overrides it by
+		// alias. Either way, upserting the view token is the whole write -- no null-layer fallback.
+		await api.upsertViewToken(projectId, parentViewId, alias, {
 			type: 'view-list',
 			view_ids: viewIds
 		});
-
-		// A token-backed declaring entry (prop.tokenId set -- the normal case, e.g. the kit's base
-		// `children` token) is already overridden by the alias above, so no render entry is needed.
-		// Only when nothing token-declares children AND we just minted the token do we point a fresh
-		// entry on the kit's null layer at it, so the property exists to resolve.
-		if (!created || prop?.tokenId) return;
-
-		let layerId = prop?.sourceLayerId ?? null;
-		if (!layerId) {
-			const comp = await api.getKitCompositionByViewId(parentViewId).execute();
-			const kitId = comp[0]?.kitId;
-			if (kitId) layerId = (await api.getNullLayerId(kitId)) ?? null;
-		}
-		if (layerId && onFieldUpdate) onFieldUpdate({ layerId, property: alias, tokenId: id });
 	}
 
 	// Move `dragged` relative to `target`: `into` nests it under target; `before`/`after` make it a

@@ -917,6 +917,39 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 			};
 		});
 
+		// Self-declaring view-scope children: a view's OWN `children` view-list token defines that
+		// view's children even when no kit layer declares the property -- so per-instance children
+		// never need an entry anchored on a shared kit layer (which would force the children slot
+		// onto every view composing that kit). Only the *view's own* token self-declares here;
+		// kit/project-scope children tokens do not, so a kit default can't force children onto every
+		// instance. When a kit layer DOES declare `children`, substituteTokens above already applied
+		// the view token's value by alias (view-scope wins) -- so we only fill the no-entry gap. A
+		// view-scope children token is conventionally aliased `children`, matching the property name
+		// the editor writes and the resolver already special-cases.
+		if (!resolvedKits.some((k) => k.properties.has('children'))) {
+			const viewChildren = (tokensByView.get(v.id) ?? []).find(
+				(t) => t.alias === 'children' && t.value?.type === 'view-list'
+			);
+			const target = resolvedKits[resolvedKits.length - 1];
+			if (viewChildren?.value?.type === 'view-list' && target) {
+				const ids = viewChildren.value.view_ids;
+				target.properties.set('children', {
+					property: 'children',
+					value: JSON.stringify(ids),
+					sourceLayerId: '',
+					kitId: target.kitId,
+					isToken: true,
+					tokenAlias: 'children',
+					tokenId: null,
+					conditionCount: 0,
+					keys: [],
+					conditionValues: [],
+					childViewIds: ids
+				});
+				target.childViewIds = ids;
+			}
+		}
+
 		return {
 			viewId: v.id,
 			viewName: v.name,

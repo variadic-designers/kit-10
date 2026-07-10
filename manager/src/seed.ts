@@ -411,8 +411,8 @@ export async function seedDemoProject(
 	// Three more emphasis=primary label views, one dedicated to each of the three primary-emphasis
 	// button variants below -- NOT a shared reference to labelPrimaryView, even though all four
 	// resolve identical "Submit" content via the same lblPrimary layer. Reusing labelPrimaryView
-	// as more than one button's child would violate the one-reference rule (see the childrenBaseToken
-	// comment below); labelPrimaryView itself stays unclaimed library content.
+	// as more than one button's child would violate the one-reference rule (see the self-declaring
+	// children comment below); labelPrimaryView itself stays unclaimed library content.
 	const labelLightDefaultView = (await api.createViewInProject(proj.id, 'Label: Light Default', textPrimitiveHint))!;
 	await api.attachKitToComposition(labelKit.id, labelLightDefaultView.id);
 	await api.setAxisArg(labelLightDefaultView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
@@ -425,23 +425,12 @@ export async function seedDemoProject(
 	await api.attachKitToComposition(labelKit.id, labelPrimaryHoverView.id);
 	await api.setAxisArg(labelPrimaryHoverView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
 
-	// The null layer's children is token-backed, not a literal -- a literal here would mean
-	// EVERY view composing buttonKit resolves the exact same view_ids unconditionally (the null
-	// layer applies regardless of axis args), so whatever view that literal named would end up
-	// genuinely rendered once per button view: not N different labels, one view referenced N
-	// times, all correctly highlighting together on hover since they really are the same view
-	// (see CLAUDE.md: views are unique, reference-based, not instanced). A view is referenced as
-	// a child at most once, ever -- no exceptions, not even for two views that would otherwise
-	// resolve identical content -- so the kit-scoped token here is a genuinely empty fallback
-	// (never actually reached; every button view below gets its own view-scoped override token
-	// with a freshly-created, dedicated label view), not a shared default to fall back to.
-	const childrenBaseToken = (await api.createToken(
-		proj.id,
-		'children',
-		{ type: 'view-list', view_ids: [] },
-		{ kitId: buttonKit.id }
-	))!;
-	await api.createRenderEntry(btnNullSnip.id, 'children', null, childrenBaseToken.id);
+	// buttonKit declares NO `children` render entry -- deliberately. A view's children are
+	// self-declaring: each button view below carries its own View-scoped `children` view-list token
+	// that materializes that view's children directly (see resolve.ts), so there's no shared
+	// kit/null-layer children anchor to force a children slot onto every view composing buttonKit.
+	// Every button view gets a freshly-created, dedicated label view (never a shared reference --
+	// a view is referenced as a child at most once, ever; see CLAUDE.md).
 
 	// --- Views ---
 
