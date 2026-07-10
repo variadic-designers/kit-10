@@ -18,6 +18,9 @@
 		// Resolved-property keys the active plugin declares as view-composition fields (inputType
 		// 'children'). The tree nests off these -- never a hardcoded property name. See Editor.svelte.
 		viewCompositionKeys?: string[];
+		// Per view_id, the icon the active plugin wants that view shown with (view's primitive is the
+		// plugin's call, not the editor's). Missing entry -> editor fallback. See Editor.svelte.
+		viewIcons?: Record<string, string>;
 	};
 
 	let {
@@ -29,7 +32,8 @@
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
 		resolvedViews = [],
-		viewCompositionKeys = []
+		viewCompositionKeys = [],
+		viewIcons = {}
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
@@ -366,7 +370,9 @@
 				{@const lockFontAwesomeChar = view['lock'] ? 'lock' : 'lock-open'}
         -->
 
-	{@const viewIcon = v.viewLocked ? 'fa-solid fa-lock' : 'fa-regular fa-window-maximize'}
+	{@const viewIcon = v.viewLocked
+		? 'fa-solid fa-lock'
+		: (viewIcons[v.viewId] ?? 'fa-regular fa-window-maximize')}
 	{@const parentId = ancestors[ancestors.length - 1] ?? null}
 
 	<li
@@ -461,7 +467,7 @@
 		&:global(.dnd-insert-after)::after {
 			content: '';
 			position: absolute;
-			left: calc($x-space-sm + $x-space-lg * var(--level) * 0.45);
+			left: calc($x-space-sm + $x-space-lg * var(--level) * 0.38);
 			right: 0;
 			height: 2px;
 			background: var(--color-primary);
@@ -510,7 +516,7 @@
 	}
 
 	.view {
-		padding-left: calc($x-space-lg * (-0 + var(--level) * 0.45));
+		padding-left: calc($x-space-lg * (-0 + var(--level) * 0.38));
 		padding-block: calc($x-space-xs * 0.25);
 
 		color: var(--color-text);

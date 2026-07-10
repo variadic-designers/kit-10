@@ -257,6 +257,10 @@
 	// primitive and would empty out (flattening the tree) whenever a text/no-kit view is selected.
 	const viewCompositionKeys = $derived(pluginManager?.compositionFieldKeys ?? []);
 
+	// Per-view icon the active plugin wants each view shown with in the Views tree. The editor never
+	// decides a view's primitive/icon itself -- Charter owns that (same layer as detect_primitive).
+	const viewIcons = $derived(pluginManager?.viewIcons ?? {});
+
 	onMount(async () => {
 		await initializeEditorState().then(async (e) => {
 			if (e) {
@@ -439,6 +443,7 @@
 			{editorReady}
 			{resolvedViews}
 			{viewCompositionKeys}
+			{viewIcons}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

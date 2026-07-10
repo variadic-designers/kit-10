@@ -263,6 +263,22 @@ struct OnResolveResult {
     // nest the Views tree by field-kind no matter which view happens to be active. Charter owns
     // the "children means nest" opinion here; the resolver never does.
     composition_field_keys: Vec<String>,
+    // Per view_id, the icon Charter wants that view shown with in the editor's Views tree. Charter
+    // owns this the same way it owns primitive detection -- the editor stays agnostic: it never
+    // learns a view's primitive ("box"/"text"), it just renders whatever icon string the plugin
+    // hands back here. A view absent from the map (e.g. no resolved kits) falls back editor-side.
+    view_icons: std::collections::HashMap<String, String>,
+}
+
+// Charter's opinion on which icon represents a view of a given primitive in the editor's Views
+// tree, paired 1:1 with detect_primitive/primitive_for_view. Kept here (not in the editor) so the
+// "text looks like this, a box looks like that" decision lives with the same layer that decides
+// what a view's primitive even is.
+fn primitive_icon(primitive: &str) -> &'static str {
+    match primitive {
+        "text" => "fa-solid fa-italic",
+        _ => "fa-regular fa-window-maximize",
+    }
 }
 
 // Charter's composition fields, across all primitives -- the fields it declares with the
@@ -1154,11 +1170,17 @@ pub fn on_resolve(input: String) -> FnResult<String> {
     let _ = extism_pdk::var::set("last_resolve_input", input.as_str());
 
     let (viewport_data, node_view_ids) = build_viewport(&parsed);
+    let view_icons = parsed
+        .project_views
+        .iter()
+        .map(|v| (v.view_id.clone(), primitive_icon(&primitive_for_view(v)).to_string()))
+        .collect();
     let result = OnResolveResult {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
         composition_field_keys: composition_field_keys(),
+        view_icons,
     };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -1468,14 +1490,23 @@ mod selection_and_hover_tests {
             viewport_data: vec![],
             node_view_ids: vec![],
             composition_field_keys: vec![],
+            view_icons: std::collections::HashMap::new(),
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"viewport_data\""), "json was: {json}");
         assert!(json.contains("\"node_view_ids\""), "json was: {json}");
         assert!(json.contains("\"composition_field_keys\""), "json was: {json}");
+        assert!(json.contains("\"view_icons\""), "json was: {json}");
         assert!(!json.contains("\"viewportData\""), "json was: {json}");
         assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
         assert!(!json.contains("\"compositionFieldKeys\""), "json was: {json}");
+        assert!(!json.contains("\"viewIcons\""), "json was: {json}");
+    }
+
+    #[test]
+    fn primitive_icon_maps_text_to_italic_and_box_to_window() {
+        assert_eq!(primitive_icon("text"), "fa-solid fa-italic");
+        assert_eq!(primitive_icon("box"), "fa-regular fa-window-maximize");
     }
 
     #[test]

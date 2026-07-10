@@ -119,6 +119,9 @@ export interface OnResolveResult {
 	// Property keys the plugin declares as view-composition fields, view-independent (across all
 	// primitives) -- the editor nests the Views tree off these regardless of the active view.
 	composition_field_keys?: string[];
+	// Per view_id, the icon the plugin wants that view shown with in the Views tree. The editor
+	// stays agnostic about a view's primitive -- it just renders whatever string the plugin gives.
+	view_icons?: Record<string, string>;
 }
 
 export interface PluginMeta {
