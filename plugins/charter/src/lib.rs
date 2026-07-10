@@ -734,10 +734,12 @@ fn box_categories() -> Vec<FieldCategory> {
                 FieldDef::new("outline", None),
             ],
         },
+        // A Box's only "contents" are its child views -- it never renders inline text of its own
+        // (that's what a nested Text primitive is for), so there is deliberately no `content`
+        // field here, unlike text_categories.
         FieldCategory {
             name: "content".to_string(),
             fields: vec![
-                FieldDef::new("content", Some("Content")),
                 FieldDef::new("children", Some("Children")).with_input_type("children"),
             ],
         },
@@ -958,34 +960,24 @@ fn render_view_nodes(
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
 
+        // A Box is a pure container -- it never renders its own inline text. If a design wants
+        // text inside a box, it nests a Text primitive as one of the box's children. So there is
+        // no `content` fallback here (and no `content` field in box_categories): the box's only
+        // "contents" are its child views, recursed into below. A childless box just renders empty.
         let child_ids = collect_child_view_ids(kits);
-
-        if child_ids.is_empty() {
-            // Only add inline text when the kit explicitly defines content.
-            // Checking `color` alone would fire for any box kit that sets a text color
-            // (e.g. Button) and produce a spurious "Text" placeholder node.
-            // Left at its selected/hovered defaults (0/false) deliberately -- it's inline
-            // content belonging to the box above, not a separate selectable view; the box
-            // itself already carries the real selection/hover state.
-            if merged.contains_key("content") {
-                viewport.push(build_text_node(&merged, box_idx));
-                node_view_ids.push(view_id.to_string());
-            }
-        } else {
-            for child_view_id in &child_ids {
-                if let Some(child_view) = view_map.get(child_view_id) {
-                    render_view_nodes(
-                        &child_view.resolved_kits,
-                        &child_view.hints,
-                        child_view_id,
-                        ctx,
-                        Some(box_idx),
-                        viewport,
-                        node_view_ids,
-                        depth + 1,
-                        view_map,
-                    );
-                }
+        for child_view_id in &child_ids {
+            if let Some(child_view) = view_map.get(child_view_id) {
+                render_view_nodes(
+                    &child_view.resolved_kits,
+                    &child_view.hints,
+                    child_view_id,
+                    ctx,
+                    Some(box_idx),
+                    viewport,
+                    node_view_ids,
+                    depth + 1,
+                    view_map,
+                );
             }
         }
     }
@@ -1546,10 +1538,13 @@ mod children_containment_tests {
     }
 
     #[test]
-    fn box_categories_declares_a_content_field() {
+    fn box_categories_does_not_declare_a_content_field() {
+        // A Box is a pure container: it never renders inline text of its own (a design that wants
+        // text nests a Text primitive as a child), so `content` is a Text-only field. See the
+        // content-less recursion in render_view_nodes and text_categories_declares_a_content_field.
         let categories = box_categories();
         let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "content");
-        assert!(found, "box_categories() should declare a \"content\" field -- a Box's inline-text fallback (see render_view_nodes) reads the same property");
+        assert!(!found, "box_categories() must NOT declare a \"content\" field -- a Box has no inline text; nest a Text primitive instead");
     }
 
     #[test]
