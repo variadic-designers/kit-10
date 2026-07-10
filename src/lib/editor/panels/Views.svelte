@@ -4,7 +4,8 @@
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
-	import type { ResolvedView } from '$lib/plugins/types.js';
+	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
+	import type { ResolvedView, FieldUpdate } from '$lib/plugins/types.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -14,6 +15,7 @@
 		api: Api;
 		hoveredViewId?: string | null;
 		resolvedViews?: ResolvedView[];
+		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
 	let {
@@ -24,7 +26,8 @@
 		editorReady,
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
-		resolvedViews = []
+		resolvedViews = [],
+		onFieldUpdate
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
@@ -186,6 +189,132 @@
 
 	const rootViews = $derived(viewsQuery.rows.filter((v) => !referencedViewIds.has(v.viewId)));
 
+	// --- Drag-and-drop nesting/reordering ---------------------------------------------------------
+	// A view's ordered children (childrenByViewId preserves first-seen order across kits). Used both
+	// for rendering the tree and for computing insertion indices on drop.
+	function orderedChildren(viewId: string): string[] {
+		return childrenByViewId.get(viewId) ?? [];
+	}
+
+	// The resolved `children` property of a view, if any kit declares one. Carries the render
+	// entry's `sourceLayerId` and `tokenAlias`. NOTE: `tokenId` here is the *entry's* token, which
+	// for a kit-declared children property is the kit-scoped base token (a shared fallback, e.g.
+	// seed's empty `childrenBaseToken`) -- NOT the view's actual child list. A view's real children
+	// live in a View-scoped `view-list` token that overrides the base *by alias* during resolution
+	// (see setViewChildren). So never write through this `tokenId` to change one view's children.
+	function childrenPropOf(viewId: string) {
+		const v = resolvedViews.find((x) => x.viewId === viewId);
+		if (!v) return undefined;
+		for (const kit of v.resolvedKits) {
+			const p = (kit as any).properties?.get?.('children');
+			if (p) return p as { sourceLayerId: string; tokenId: string | null; tokenAlias: string | null };
+		}
+		return undefined;
+	}
+
+	// Guard against building a cycle: is `candidateId` anywhere inside `rootId`'s subtree?
+	function isDescendant(rootId: string, candidateId: string): boolean {
+		const stack = [...orderedChildren(rootId)];
+		const seen = new Set<string>();
+		while (stack.length) {
+			const id = stack.pop()!;
+			if (id === candidateId) return true;
+			if (seen.has(id)) continue;
+			seen.add(id);
+			stack.push(...orderedChildren(id));
+		}
+		return false;
+	}
+
+	// Persist a parent view's ordered child list. A view's children live in a View-scoped
+	// `view-list` token that overrides the kit's `children` entry *by alias* during resolution (the
+	// same model seed.ts + ChildViewField use) -- so the write target is that view token, NOT the
+	// resolved property's `tokenId` (which points at the kit-scoped base token, shared across every
+	// view composing the kit; writing it would move every view's children at once, or -- since the
+	// per-view token shadows it -- do nothing at all).
+	async function setViewChildren(parentViewId: string, viewIds: string[]) {
+		const projectId = editorActivity.activeProjectId;
+		if (!projectId) return;
+
+		const prop = childrenPropOf(parentViewId);
+		const alias = prop?.tokenAlias ?? 'children';
+
+		// Write the view's own scoped token (find-or-create), which overrides the kit's `children`
+		// entry by alias -- same helper ChildViewField uses.
+		const { id, created } = await api.upsertViewToken(projectId, parentViewId, alias, {
+			type: 'view-list',
+			view_ids: viewIds
+		});
+
+		// A token-backed declaring entry (prop.tokenId set -- the normal case, e.g. the kit's base
+		// `children` token) is already overridden by the alias above, so no render entry is needed.
+		// Only when nothing token-declares children AND we just minted the token do we point a fresh
+		// entry on the kit's null layer at it, so the property exists to resolve.
+		if (!created || prop?.tokenId) return;
+
+		let layerId = prop?.sourceLayerId ?? null;
+		if (!layerId) {
+			const comp = await api.getKitCompositionByViewId(parentViewId).execute();
+			const kitId = comp[0]?.kitId;
+			if (kitId) layerId = (await api.getNullLayerId(kitId)) ?? null;
+		}
+		if (layerId && onFieldUpdate) onFieldUpdate({ layerId, property: alias, tokenId: id });
+	}
+
+	// Move `dragged` relative to `target`: `into` nests it under target; `before`/`after` make it a
+	// sibling of target (same parent). Single-parent: it's removed from its old parent and added to
+	// the new one in one gesture. Dropping onto the root band (newParent null) just un-nests it --
+	// root ordering isn't persisted yet, so there's no index to set there.
+	async function handleViewDrop(
+		dragged: { viewId: string; parentViewId: string | null },
+		targetViewId: string,
+		targetParentId: string | null,
+		position: DropPosition
+	) {
+		const draggedId = dragged.viewId;
+		if (draggedId === targetViewId) return;
+		if (isDescendant(draggedId, targetViewId)) return; // can't move into own subtree
+
+		const oldParentId = dragged.parentViewId;
+		const newParentId = position === 'into' ? targetViewId : targetParentId;
+		if (newParentId === draggedId) return;
+
+		if (newParentId && newParentId === oldParentId) {
+			// Reorder within the same parent.
+			const list = orderedChildren(newParentId).filter((id) => id !== draggedId);
+			const at =
+				position === 'into'
+					? list.length
+					: (() => {
+							const ti = list.indexOf(targetViewId);
+							if (ti < 0) return list.length;
+							return position === 'after' ? ti + 1 : ti;
+						})();
+			list.splice(at, 0, draggedId);
+			await setViewChildren(newParentId, list);
+			return;
+		}
+
+		// Cross-parent (or to/from root). Detach from the old parent first.
+		if (oldParentId) {
+			await setViewChildren(
+				oldParentId,
+				orderedChildren(oldParentId).filter((id) => id !== draggedId)
+			);
+		}
+		if (newParentId) {
+			const list = orderedChildren(newParentId).filter((id) => id !== draggedId);
+			if (position === 'into') {
+				list.push(draggedId);
+			} else {
+				const ti = list.indexOf(targetViewId);
+				list.splice(ti < 0 ? list.length : position === 'after' ? ti + 1 : ti, 0, draggedId);
+			}
+			await setViewChildren(newParentId, list);
+		}
+		// newParentId === null: dropped at root -> detach only; it renders as a root automatically.
+	}
+
 	// Plain (non-$state) bookkeeping var -- tracks the last project this effect settled on, so
 	// it can tell "just switched projects / never selected anything yet" (auto-select rows[0])
 	// apart from "user deliberately deselected within the same project" (activeViewId === null,
@@ -242,11 +371,32 @@
         -->
 
 	{@const viewIcon = v.viewLocked ? 'fa-solid fa-lock' : 'fa-regular fa-window-maximize'}
+	{@const parentId = ancestors[ancestors.length - 1] ?? null}
 
 	<li
 		class="view-field"
+		style="--level: {level}"
 		class:selected={editorActivity.activeViewId === v.viewId}
 		class:hovered={hoveredViewId === v.viewId}
+		use:draggable={{
+			disabled: viewEditing[v.viewId] === true,
+			preview: v.viewName ?? 'View',
+			payload: () => ({
+				kind: 'view',
+				viewId: v.viewId,
+				viewName: v.viewName,
+				parentViewId: parentId
+			})
+		}}
+		use:dropZone={{
+			accepts: 'view',
+			mode: 'tree',
+			canDrop: (p) =>
+				p.kind === 'view' && p.viewId !== v.viewId && !isDescendant(p.viewId, v.viewId),
+			onDrop: (p, { position }) => {
+				if (p.kind === 'view') handleViewDrop(p, v.viewId, parentId, position);
+			}
+		}}
 	>
 		<button
 			style="--level: {level}"
@@ -300,6 +450,35 @@
 	.view-field {
 		display: flex;
 		padding-left: $x-space-sm;
+		position: relative;
+
+		// Drag-and-drop indicators (classes applied at runtime by the dnd controller, hence
+		// :global()). `into` = nest under this view (outline the whole row); before/after = drop as
+		// a sibling on that edge (an insertion line, indented to this row's depth so it reads as
+		// landing at the right level).
+		&:global(.dnd-over) {
+			outline: 1px solid var(--color-primary);
+			outline-offset: -1px;
+			background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
+		}
+		&:global(.dnd-insert-before)::before,
+		&:global(.dnd-insert-after)::after {
+			content: '';
+			position: absolute;
+			left: calc($x-space-sm + $x-space-lg * var(--level) * 0.45);
+			right: 0;
+			height: 2px;
+			background: var(--color-primary);
+			box-shadow: 0 0 0 1px var(--color-primary);
+			z-index: 3;
+			pointer-events: none;
+		}
+		&:global(.dnd-insert-before)::before {
+			top: -1px;
+		}
+		&:global(.dnd-insert-after)::after {
+			bottom: -1px;
+		}
 
 		&.selected {
 			background-color: var(--color-surface-alt);

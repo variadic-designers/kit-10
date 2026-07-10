@@ -293,8 +293,9 @@
 						accepts: 'axis',
 						mode: 'reorder',
 						canDrop: (p) => p.kind === 'axis' && p.axisId !== axisData.axisId,
-						onDrop: (p, { edge }) => {
-							if (p.kind === 'axis') handleAxisReorder(p.axisId, axisData.axisId, edge);
+						onDrop: (p, { position }) => {
+							if (p.kind === 'axis')
+								handleAxisReorder(p.axisId, axisData.axisId, position === 'after' ? 'after' : 'before');
 						}
 					}}
 				>

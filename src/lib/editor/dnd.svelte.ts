@@ -18,10 +18,13 @@
 
 export type DragPayload =
 	| { kind: 'axis'; axisId: string; kitId: string; label?: string }
-	| { kind: 'token'; tokenId: string; alias: string; valueType?: string };
+	| { kind: 'token'; tokenId: string; alias: string; valueType?: string }
+	| { kind: 'view'; viewId: string; viewName: string; parentViewId: string | null };
 
 export type DragKind = DragPayload['kind'];
-export type DropEdge = 'before' | 'after';
+// Where a drop lands relative to the hovered node. `reorder` zones only ever yield before/after;
+// `tree` zones add `into` (drop onto the middle of a row to nest under it, Figma-style).
+export type DropPosition = 'before' | 'after' | 'into';
 
 let active = $state<DragPayload | null>(null);
 /** The drag currently in flight, or null. Reactive -- reading it in a template/$derived tracks it. */
@@ -41,14 +44,14 @@ let cursorLock: HTMLStyleElement | null = null;
 
 type ZoneConfig = {
 	accepts: DragKind[];
-	mode: 'into' | 'reorder';
+	mode: 'into' | 'reorder' | 'tree';
 	canDrop?: (p: DragPayload) => boolean;
-	onDrop: (p: DragPayload, detail: { edge?: DropEdge }) => void;
+	onDrop: (p: DragPayload, detail: { position: DropPosition }) => void;
 };
 const zones = new Map<HTMLElement, ZoneConfig>();
 
 let hovered: HTMLElement | null = null;
-let hoveredEdge: DropEdge | null = null;
+let hoveredPosition: DropPosition | null = null;
 
 function zoneEligible(cfg: ZoneConfig, p: DragPayload): boolean {
 	return cfg.accepts.includes(p.kind) && (!cfg.canDrop || cfg.canDrop(p));
@@ -59,8 +62,14 @@ function clearHints() {
 		hovered.classList.remove('dnd-over', 'dnd-insert-before', 'dnd-insert-after');
 	}
 	hovered = null;
-	hoveredEdge = null;
+	hoveredPosition = null;
 }
+
+const POSITION_CLASS: Record<DropPosition, string> = {
+	before: 'dnd-insert-before',
+	after: 'dnd-insert-after',
+	into: 'dnd-over'
+};
 
 // Closest registered, eligible zone at the current pointer position (ghost is pointer-events:none,
 // so elementFromPoint sees through it to the real target underneath).
@@ -85,17 +94,25 @@ function updateHover() {
 		clearHints();
 		hovered = hit.node;
 	}
+	// Where in the node is the pointer? `into` covers the whole node; `reorder` splits at the
+	// midpoint into before/after; `tree` reserves the top/bottom bands for before/after sibling
+	// insertion and the middle for nesting `into` the row.
+	let position: DropPosition;
 	if (hit.cfg.mode === 'into') {
-		hit.node.classList.add('dnd-over');
-		return;
+		position = 'into';
+	} else {
+		const r = hit.node.getBoundingClientRect();
+		const rel = (pointer.y - r.top) / r.height;
+		if (hit.cfg.mode === 'tree') {
+			position = rel < 0.3 ? 'before' : rel > 0.7 ? 'after' : 'into';
+		} else {
+			position = rel < 0.5 ? 'before' : 'after';
+		}
 	}
-	// reorder: which half of the node is the pointer in?
-	const r = hit.node.getBoundingClientRect();
-	const edge: DropEdge = pointer.y < r.top + r.height / 2 ? 'before' : 'after';
-	if (edge !== hoveredEdge) {
-		hit.node.classList.remove('dnd-insert-before', 'dnd-insert-after');
-		hit.node.classList.add(edge === 'before' ? 'dnd-insert-before' : 'dnd-insert-after');
-		hoveredEdge = edge;
+	if (position !== hoveredPosition) {
+		hit.node.classList.remove('dnd-over', 'dnd-insert-before', 'dnd-insert-after');
+		hit.node.classList.add(POSITION_CLASS[position]);
+		hoveredPosition = position;
 	}
 }
 
@@ -152,10 +169,10 @@ function onDragUp(e: PointerEvent) {
 	pointer.y = e.clientY;
 	updateHover();
 	const hit = zoneAtPointer();
-	const edge = hoveredEdge ?? undefined;
+	const position = hoveredPosition ?? 'into';
 	const payload = active;
 	endDrag();
-	if (hit && payload) hit.cfg.onDrop(payload, { edge });
+	if (hit && payload) hit.cfg.onDrop(payload, { position });
 }
 
 function onDragKey(e: KeyboardEvent) {
@@ -273,11 +290,14 @@ export function draggable(node: HTMLElement, param: PayloadGetter | DraggableOpt
 export interface DropOptions {
 	/** Which drag kind(s) this zone accepts. */
 	accepts: DragKind | DragKind[];
-	onDrop: (payload: DragPayload, detail: { edge?: DropEdge }) => void;
+	onDrop: (payload: DragPayload, detail: { position: DropPosition }) => void;
 	/** Extra per-drag veto beyond `accepts`. */
 	canDrop?: (payload: DragPayload) => boolean;
-	/** `into` (default) highlights the whole node; `reorder` marks a before/after insertion edge. */
-	mode?: 'into' | 'reorder';
+	/**
+	 * `into` (default) highlights the whole node and always drops `into` it; `reorder` splits the
+	 * node at its midpoint into before/after; `tree` adds a middle `into` band for nesting.
+	 */
+	mode?: 'into' | 'reorder' | 'tree';
 }
 
 function toConfig(o: DropOptions): ZoneConfig {

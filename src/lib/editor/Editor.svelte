@@ -427,6 +427,7 @@
 			{api}
 			{editorReady}
 			{resolvedViews}
+			onFieldUpdate={pluginManager?.fieldUpdate}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId
