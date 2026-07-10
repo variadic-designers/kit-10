@@ -18,6 +18,8 @@ A View represents a UI at a given set of conditions.
 
 A View assembles multiple Kits and sets the axis values for each. Views are the top-level compositional unit - they define what is on screen by parameterizing the Kits they contain.
 
+A View can also **compose other Views as children** - nesting them to build a tree. This is expressed as a value that references views (a view-list), not a separate structural concept: whichever property a rendering plugin decides means "compose these" holds the child references. Views are unique and reference-based, so a child is the same view wherever it appears; when a Kit ships default children, each consuming View gets its own deep-cloned copy so instances stay independent (the component/instance model).
+
 ---
 
 ## Kits
@@ -88,6 +90,8 @@ Tokens are **scoped**:
 - **View tokens** are visible only within the View that defines them. Use them when the same token name needs a different value depending on which View is consuming it.
 
 More specific scope wins: a View token overrides a Kit token of the same name, which overrides a Project token.
+
+A token's value is usually a scalar, but it can also be a **view-list** - a reference to a set of Views. This is how composition is stored: a View's children are a view-list token, and a Kit's default children are a Kit-scope view-list token. The same scope-precedence rule applies, which is what lets one instance diverge its children (a View-scope override) from the Kit's default.
 
 Token references compete on specificity like any other value - a token reference on a higher-specificity Layer beats a literal on a lower one. After the winning value per property is determined, token references are substituted with their underlying values using the scoping rules above.
 

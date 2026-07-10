@@ -165,7 +165,7 @@ Pure function of DB state. Queries layers + conditions + entries, calculates spe
 Multi-kit resolution with kit precedence. Gathers axis args per kit, resolves each, then runs token substitution (Pass 2).
 
 - Input: `db, viewId`
-- Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties`, `childViewIds`
+- Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties` (each `ResolvedProperty` carries `viewRefs` for a `view-list` value — see M11)
 
 Supporting functions: `gatherScopedTokens()` (project > kit > view precedence), `substituteTokens()`, `flattenKitResults()`, `matchesArg()` (interval overlap semantics for ranges).
 
@@ -364,6 +364,44 @@ Vellum already exported a hit-test (`get_selection(x, y) -> Option<usize>`), but
 ### [x] M10.3 — Hover highlight border
 
 New `hovered: bool` wire field on every `UiNode` variant, independent from `selected` (a view can be hovered while a different view stays selected) — rendered as a separate, thinner overlay with no corner handles (handles are a selection-specific affordance). Charter's `on_selection_change` payload gained a `hovered_view_id`, patched into `last_resolve_input` and stamped the same way `selected` is, reusing the existing patch-and-rebuild-`build_viewport` pattern rather than a new plugin export. Hover state (`hoveredViewId`) is shared between the Views panel (row `mouseenter`/`mouseleave`) and the Viewport (`pointermove` + hit-test, throttled to one hit-test per animation frame), so hovering either one highlights the other.
+
+---
+
+## M11: Composition — children, name-neutral resolution, clone-per-view
+
+Turned view composition (which views nest inside which) into a first-class, plugin-agnostic system, and built the component/instance model on top. See CLAUDE.md's Common Pitfalls (children/composition bullets) for the load-bearing contracts.
+
+### [x] M11.1 — Pointer drag-and-drop view nesting
+
+`src/lib/editor/dnd.svelte.ts` gained a `tree` drop mode (before/after/`into` bands); each Views-panel row is a drag source + tree drop zone. `Views.svelte`'s `handleViewDrop`/`setViewChildren` reorder, nest, cross-parent-move, and un-nest, with a cycle guard.
+
+### [x] M11.2 — Correct per-view children write path
+
+`api.upsertViewToken(projectId, viewId, alias, value)` — find-or-create a View-scoped token in one transaction. A view's children (any per-view override) is written here, **never** through the resolved property's `tokenId` (that's the declaring entry's token, often a shared kit-scoped base). Shared by `ChildViewField.svelte` and the DnD path.
+
+### [x] M11.3 — Box is a pure container
+
+Charter's `box_categories()` declares no `content` field and `render_view_nodes` has no inline-text fallback — a Box never renders its own text; a design nests a Text primitive. `content` is Text-only.
+
+### [x] M11.4 — Name-neutral resolver
+
+The resolver no longer hardcodes `children` (a Charter field key — a boundary break). `ResolvedProperty.viewRefs` carries the referenced view ids for **any** `view-list`-typed value (gated on the value type, not a name); `ResolvedKit.childViewIds` and `tryParseChildViewIds` are gone. The "children means nest" opinion lives in the plugins: Charter reads its own `children` field's `viewRefs` (`collect_child_view_ids`) and reports `composition_field_keys` view-independently on `on_resolve`; the editor nests off `pluginManager.compositionFieldKeys` (`inputType: 'children'`).
+
+### [x] M11.5 — Self-declaring view-scope references
+
+`applySelfDeclaredViewRefs` (both resolve paths): a view's own `view-list` token materializes a property named after its alias, carrying `viewRefs`, even with no kit render entry — so a per-view composition override needs no shared kit-layer anchor. Only the view's own token self-declares; kit/project-scope does not.
+
+### [x] M11.6 — Clone-per-view (kit default children)
+
+The component/instance model. A kit ships defaults as a kit-scope `view-list` token (template subtree; no render entry). `api.instantiateKitDefaults(viewId)` fires eagerly on compose (`Compose.attachKit`) and, for every kit-scope view-list default, deep-clones the template via `api.cloneViewSubtree` (view + compositions + axis args + view-scope tokens, recursing same-aliased refs, DFS cycle guard) into fresh per-instance views written as the view's own token. Each instance owns unique children; template views stay top-level editable masters. Idempotent; a pure DB op, never in `resolve.ts`. Eager, so kit-default edits don't retro-propagate (a "push to instances" is future work). Seed: `Button` kit's default child is `Label: Default` + a `Button (cloned default)` demo view.
+
+### [x] M11.7 — Composition UI
+
+Row-based `Content.Children` (one row per view, `+` add, `×` remove) and `view-list` tokens shown as rows in the Variables panel; a child row click navigates to that view. All three (Render panel, Views tree, Variables) are read-only-or-editing views of the same resolved `viewRefs` — single source of truth.
+
+### [ ] M11.8 — Deferred
+
+Conditional (axis-varying) kit-default children; "push kit-default edits to existing instances"; template-view visibility/segregation from the top-level grid; parent → child axis-arg parameterization; a committed end-to-end (browser) test suite for the above.
 
 ---
 
