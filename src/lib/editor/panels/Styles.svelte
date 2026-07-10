@@ -16,6 +16,7 @@
 		activeProjectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		onSelectView?: (viewId: string) => void;
 	};
 
 	const {
@@ -25,7 +26,8 @@
 		fieldCategories,
 		activeProjectId,
 		onFieldUpdate,
-		callUtilityPlugin
+		callUtilityPlugin,
+		onSelectView
 	}: StylesPanel = $props();
 
 	// Candidates for the "children" field's view picker -- every other view in the project
@@ -200,6 +202,7 @@
 										projectId={activeProjectId}
 										viewId={selection.selectedViewPrimary}
 										{onFieldUpdate}
+										{onSelectView}
 									/>
 								{:else}
 									<StyleField

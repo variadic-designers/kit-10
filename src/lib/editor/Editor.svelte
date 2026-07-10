@@ -217,6 +217,7 @@
 	});
 
 	import ViewsPanel from './panels/Views.svelte';
+	import { selectView as selectViewShared } from './selection.js';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
 	import AxesPanel from './panels/Axes.svelte';
@@ -459,6 +460,7 @@
 			activeProjectId={editorActivity.activeProjectId}
 			onFieldUpdate={pluginManager?.fieldUpdate}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
+			onSelectView={(id) => selectViewShared(editorActivity, selection, id)}
 		/>
 
 		<TokensPanel {api} {editorReady} bind:editorActivity />

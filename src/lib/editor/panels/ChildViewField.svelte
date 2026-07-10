@@ -27,6 +27,8 @@
 		projectId?: string | null;
 		viewId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
+		/** Navigate the editor to (select) a child view when its row is clicked. */
+		onSelectView?: (viewId: string) => void;
 	};
 
 	let {
@@ -44,7 +46,8 @@
 		api,
 		projectId,
 		viewId,
-		onFieldUpdate
+		onFieldUpdate,
+		onSelectView
 	}: ChildViewFieldProps = $props();
 
 	function trackColor(axisIds: string[]): string {
@@ -181,10 +184,19 @@
 	<ul class="child-field__list">
 		{#each childRows as row (row.id)}
 			<li class="child-field__row">
-				<i class="fa-regular fa-window-maximize child-field__row-icon"></i>
-				<span class="child-field__row-name" class:child-field__row-name--missing={row.name === '?'}
-					>{row.name}</span
+				<button
+					type="button"
+					class="child-field__select"
+					title="Go to {row.name}"
+					disabled={!onSelectView || row.name === '?'}
+					onclick={() => onSelectView?.(row.id)}
 				>
+					<i class="fa-regular fa-window-maximize child-field__row-icon"></i>
+					<span
+						class="child-field__row-name"
+						class:child-field__row-name--missing={row.name === '?'}>{row.name}</span
+					>
+				</button>
 				<button
 					type="button"
 					class="child-field__remove"
@@ -306,14 +318,33 @@
 		&__row {
 			display: flex;
 			align-items: center;
-			gap: $x-space-xs;
-			padding: calc($x-space-xs / 2) $x-space-xs;
 			border-radius: 1px;
 			background: var(--color-panel-header-fill);
 			font-size: $x-font-size-sm;
 
 			&:hover {
 				background: var(--color-surface-alt);
+			}
+		}
+
+		// The name is a button that navigates the editor to that child view (onSelectView).
+		&__select {
+			display: flex;
+			align-items: center;
+			gap: $x-space-xs;
+			flex: 1;
+			min-width: 0;
+			padding: calc($x-space-xs / 2) $x-space-xs;
+			cursor: pointer;
+			text-align: left;
+			color: var(--color-text);
+
+			&:disabled {
+				cursor: default;
+			}
+
+			&:hover:not(:disabled) {
+				color: var(--color-primary);
 			}
 		}
 
