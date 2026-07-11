@@ -2048,4 +2048,75 @@ mod text_paint_properties_tests {
         };
         assert_eq!(text_data.font_weight, 400);
     }
+
+    #[test]
+    fn encode_viewport_data_binary_roundtrips_through_base64_and_rmp_serde() {
+        use super::{encode_viewport_data_binary, BoxData, UiBoxNode, UiNode};
+
+        let data = vec![UiNode::Box(UiBoxNode {
+            box_data: BoxData {
+                parent_id: None,
+                width: 0.0,
+                height: 0.0,
+                max_width: 0.0,
+                max_height: 0.0,
+                padding: [16.0; 4],
+                bg_color: [0.9, 0.9, 0.9, 1.0],
+                flex_direction: "Column".to_string(),
+                show_border: true,
+                border_color: [0.8, 0.8, 0.8, 1.0],
+                border_width: 1.0,
+                corner_radius: 8.0,
+                opacity: 1.0,
+                shadow: None,
+                extra: Default::default(),
+                selected: 0,
+                hovered: false,
+            },
+        })];
+
+        let b64 = encode_viewport_data_binary(&data).expect("encoding should succeed");
+        assert!(!b64.is_empty(), "base64 string should not be empty");
+
+        // Simulate the JS side: atob decode
+        let decoded_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64.as_bytes())
+                .expect("base64 decode should succeed");
+
+        // The decoded bytes should be valid rmp-serde data that Vellum's UiNode can deserialize.
+        // We can't import Vellum's UiNode here, so we just verify it deserializes as Charter's UiNode.
+        let back: Vec<UiNode> = rmp_serde::from_slice(&decoded_bytes)
+            .expect("rmp_serde should deserialize the decoded bytes");
+        assert_eq!(back.len(), 1);
+    }
+
+    #[test]
+    fn on_resolve_result_includes_viewport_data_binary() {
+        use super::{FieldCategory, OnResolveResult, OnSelectionChangeResult};
+
+        let result = OnResolveResult {
+            categories: vec![],
+            viewport_data: vec![],
+            node_view_ids: vec![],
+            composition_field_keys: vec![],
+            view_icons: std::collections::HashMap::new(),
+            viewport_data_binary: Some("AAAA".to_string()),
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            json.contains("\"viewport_data_binary\""),
+            "OnResolveResult JSON should include viewport_data_binary when Some, got: {json}"
+        );
+
+        // Also verify it's ABSENT when None.
+        let result2 = OnResolveResult {
+            viewport_data_binary: None,
+            ..result
+        };
+        let json2 = serde_json::to_string(&result2).unwrap();
+        assert!(
+            !json2.contains("viewport_data_binary"),
+            "OnResolveResult JSON should omit viewport_data_binary when None, got: {json2}"
+        );
+    }
 }

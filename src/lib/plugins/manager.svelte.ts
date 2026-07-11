@@ -272,7 +272,12 @@ export function createPluginManager(api: Api) {
 				const binaryStr = atob(parsed.viewport_data_binary);
 				const bytes = new Uint8Array(binaryStr.length);
 				for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+				console.log(
+					`[plugin] viewport_data_binary: ${bytes.length} bytes from ${binaryStr.length} base64 chars`
+				);
 				viewportDataBinary = bytes;
+				// TEMP: also set viewportData for fallback debugging
+				viewportData = JSON.stringify(parsed.viewport_data ?? []);
 				nodeViewIds = parsed.node_view_ids ?? [];
 			} else if (parsed.viewport_data) {
 				viewportData = JSON.stringify(parsed.viewport_data);

@@ -155,7 +155,11 @@
 		const d = dataBinary ?? data;
 		if (initialized && vellum && d) {
 			if (d instanceof Uint8Array) {
+				console.log(`[viewport] set_data_binary(${d.length} bytes)`);
 				vellum.set_data_binary(d);
+			} else if (d !== '[]') {
+				console.log(`[viewport] set_data(${d.length} chars)`);
+				vellum.set_data(d);
 			} else {
 				vellum.set_data(d);
 			}
