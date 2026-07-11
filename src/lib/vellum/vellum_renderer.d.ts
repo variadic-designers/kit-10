@@ -21,6 +21,8 @@ export function set_data(json: string): void;
 
 export function set_pan(dx: number, dy: number): void;
 
+export function set_pixel_snap(on: boolean): void;
+
 export function set_zoom(zoom: number): void;
 
 export function zoom_in(): void;
@@ -45,14 +47,15 @@ export interface InitOutput {
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly set_data: (a: number, b: number) => void;
     readonly set_pan: (a: number, b: number) => void;
+    readonly set_pixel_snap: (a: number) => void;
     readonly set_zoom: (a: number) => void;
     readonly zoom_in: () => void;
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7770: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7789: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6382: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_7791: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7810: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_6403: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

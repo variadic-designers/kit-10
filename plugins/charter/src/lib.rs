@@ -577,9 +577,12 @@ fn get_prop(
 
 // Fill/border/radius are paint properties, not structural ones -- plain text can legitimately
 // have a background, a border, and padding in real CSS (a highlighted/pill label, say), so both
-// build_box_node and build_text_node read them the same way. `default_bg` differs: a box with no
-// declared fill still reads as a visible neutral placeholder box in the editor; a text node with
-// no declared fill should stay fully transparent (it's not a container by default).
+// build_box_node and build_text_node read them the same way. Both also default to a fully
+// TRANSPARENT fill when no `background` is declared -- matching CSS (a `<div>` with no background
+// is transparent, not gray), so "no fill" reads as transparent for boxes and text alike. (A box
+// used to fall back to an opaque neutral-gray placeholder; that diverged from CSS and is gone. An
+// unstyled box now shows only its border, if any -- Vellum still draws the selection/hover overlay
+// so it stays selectable.)
 struct PaintProps {
     bg_color: [f32; 4],
     show_border: bool,
@@ -620,7 +623,7 @@ fn build_box_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
 ) -> UiNode {
-    let paint = extract_paint_props(props, [0.9, 0.9, 0.9, 1.0]);
+    let paint = extract_paint_props(props, [0.0; 4]);
     let width = parse_px(get_prop(props, "width").as_deref());
     let height = parse_px(get_prop(props, "height").as_deref());
 
@@ -689,8 +692,8 @@ fn build_text_node(
     let font_weight = parse_px(get_prop(props, "font-weight").as_deref()) as u16;
     let content = get_prop(props, "content").unwrap_or_else(|| "Text".to_string());
     let font_family = get_prop(props, "font-family").unwrap_or_else(|| "sans-serif".to_string());
-    // A text node with no declared fill stays fully transparent -- unlike a Box, it isn't a
-    // container by default, so there's no "neutral placeholder" to fall back to.
+    // A text node with no declared fill stays fully transparent -- same default as a Box now
+    // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, [0.0; 4]);
 
     UiNode::Text(UiTextNode {
@@ -1793,6 +1796,18 @@ mod text_paint_properties_tests {
         };
         assert_eq!(text_data.bg_color, [0.0; 4]);
         assert!(!text_data.show_border);
+    }
+
+    #[test]
+    fn build_box_node_with_no_fill_is_fully_transparent_not_a_gray_placeholder() {
+        // No `background` prop -> transparent, matching CSS (a <div> with no background is
+        // transparent). Boxes used to fall back to opaque neutral-gray; that's gone.
+        let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        let node = build_box_node(&props, None);
+        let UiNode::Box(UiBoxNode { box_data }) = node else {
+            panic!("expected a Box node");
+        };
+        assert_eq!(box_data.bg_color, [0.0; 4], "unstyled box must be transparent");
     }
 
     #[test]

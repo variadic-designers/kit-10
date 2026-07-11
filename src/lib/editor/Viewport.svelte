@@ -128,7 +128,21 @@
 			requestRender();
 		});
 		resizeObserver.observe(canvas);
+
+		window.addEventListener('keydown', onKeydown);
 	});
+
+	// Dev A/B toggle for Tier-1 pixel snapping (crisp snap-to-grid vs. the default smooth SDF-AA
+	// look). Shift+P flips it; must request a repaint here since set_pixel_snap only sets a flag
+	// the next frame reads (rendering is on-demand).
+	let pixelSnap = false;
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key === 'P' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			pixelSnap = !pixelSnap;
+			vellum?.set_pixel_snap(pixelSnap);
+			requestRender();
+		}
+	}
 
 	$effect(() => {
 		const t = $theme;
@@ -174,6 +188,8 @@
 	onDestroy(() => {
 		if (rafId) cancelAnimationFrame(rafId);
 		if (resizeObserver) resizeObserver.disconnect();
+		// onDestroy runs during SSR too (unlike onMount), where `window` is undefined.
+		if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
 	});
 
 	function onPointerDown(e: PointerEvent) {

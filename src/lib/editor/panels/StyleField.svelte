@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { contextMenu } from '$lib/components/contextMenu';
-	import { tokenIcon, isColorValue } from './token-utils.ts';
+	import { iconFromResolvedScalar, isColorScalar } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
 	import { dropZone } from '../dnd.svelte.ts';
@@ -337,8 +337,8 @@
 			{#if isToken}
 				<span class="token-pill" style="--color-icon: {value ?? 'transparent'}">
 					<i
-						class="fa-solid {tokenIcon(value)} token-pill__icon"
-						class:token-pill__icon--color={isColorValue(value)}
+						class="fa-solid {iconFromResolvedScalar(value)} token-pill__icon"
+						class:token-pill__icon--color={isColorScalar(value)}
 					></i>
 					{tokenAlias ?? 'token'}
 				</span>
