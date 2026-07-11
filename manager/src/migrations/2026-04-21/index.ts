@@ -93,6 +93,8 @@ export interface DB2026_04_21 {
 	tokens: TokensTable;
 
 	plugins: PluginsTable;
+
+	assets: AssetsTable;
 }
 
 // ------------------------------
@@ -228,6 +230,20 @@ export interface PluginsTable {
 	manifest: JSONColumnType<PluginManifest>;
 	options: JSONColumnType<Record<string, unknown>> | null;
 	content_hash: string | null;
+}
+
+// ------------------------------
+
+export interface AssetsTable {
+	id: Generated<string>;
+	project_id: string;
+	name: string;
+	mime_type: string;
+	checksum: string;
+	link: string;
+	width: number;
+	height: number;
+	created_at: Generated<Date>;
 }
 
 // ------------------------------
@@ -458,9 +474,27 @@ export async function up(dialect: DAny) {
 		)
 		.onDelete('set null')
 		.execute();
+
+	await dialect.schema
+		.createTable('assets')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('project_id', 'uuid', (col) =>
+			col.notNull().references('projects.id').onDelete('cascade')
+		)
+		.addColumn('name', 'text', (col) => col.notNull())
+		.addColumn('mime_type', 'text', (col) => col.notNull())
+		.addColumn('checksum', 'text', (col) => col.notNull())
+		.addColumn('link', 'text', (col) => col.notNull())
+		.addColumn('width', 'integer', (col) => col.notNull())
+		.addColumn('height', 'integer', (col) => col.notNull())
+		.addColumn('created_at', 'timestamptz', (col) => col.notNull().defaultTo(sql<Date>`now()`))
+		.addUniqueConstraint('unique_checksum_per_project', ['project_id', 'checksum'])
+		.execute();
 }
 
 export async function down(dialect: DAny) {
+	await dialect.schema.dropTable('assets').ifExists().cascade().execute();
 	await dialect.schema.dropTable('plugins').ifExists().cascade().execute();
 	await dialect.schema.dropTable('render_entries').ifExists().cascade().execute();
 	await dialect.schema.dropTable('layer_axis_values').ifExists().cascade().execute();

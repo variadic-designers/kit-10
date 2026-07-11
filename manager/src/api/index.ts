@@ -13,7 +13,10 @@ import { sql, type SelectQueryBuilder } from 'kysely';
 // blob rather than a real FK column -- the schema has no way to enforce or cascade it. Importing
 // a project must still remap it, or an imported view-type token would point at the *source*
 // project's view (or nothing, if that project no longer exists).
-function remapTokenValue(value: TokenValue | null, viewIdMap: Map<string, string>): TokenValue | null {
+function remapTokenValue(
+	value: TokenValue | null,
+	viewIdMap: Map<string, string>
+): TokenValue | null {
 	if (value && value.type === 'view') {
 		return { ...value, view_id: viewIdMap.get(value.view_id) ?? value.view_id };
 	}
@@ -467,9 +470,7 @@ export interface QueryBuilder {
 			author: string;
 		}
 	>;
-	getViewsByProjectId: (
-		projectId: string | null
-	) => SelectQueryBuilder<
+	getViewsByProjectId: (projectId: string | null) => SelectQueryBuilder<
 		Schema,
 		'views',
 		{
@@ -490,6 +491,20 @@ export interface QueryBuilder {
 	getKitsExceptFromViewId: (
 		viewId: string | null
 	) => SelectQueryBuilder<Schema, 'kits', { kitId: string; kitName: string }>;
+	getAssetsByProjectId: (projectId: string | null) => SelectQueryBuilder<
+		Schema,
+		'assets',
+		{
+			assetId: string;
+			assetName: string;
+			assetMimeType: string;
+			assetChecksum: string;
+			assetLink: string;
+			assetWidth: number;
+			assetHeight: number;
+			assetCreatedAt: Date;
+		}
+	>;
 }
 
 export interface PluginRow {
@@ -525,6 +540,35 @@ export interface QueryPlugin {
 	listPlugins: () => Promise<PluginRow[]>;
 }
 
+// ------------------------------
+
+export interface AssetRow {
+	id: string;
+	project_id: string;
+	name: string;
+	mime_type: string;
+	checksum: string;
+	link: string;
+	width: number;
+	height: number;
+	created_at: Date;
+}
+
+export interface QueryAsset {
+	// Upsert an asset by checksum — if the same file (same project_id + checksum) already
+	// exists, return it unchanged. Otherwise insert a new row.
+	upsertAsset: (input: {
+		projectId: string;
+		name: string;
+		mimeType: string;
+		checksum: string;
+		link: string;
+		width: number;
+		height: number;
+	}) => Promise<AssetRow>;
+	deleteAsset: (assetId: string) => Promise<void>;
+}
+
 export interface Api
 	extends
 		QueryBuilder,
@@ -540,7 +584,8 @@ export interface Api
 		QueryLayer,
 		QueryRenderSnippet,
 		QueryRenderEntry,
-		QueryPlugin {}
+		QueryPlugin,
+		QueryAsset {}
 
 // Deep-clone a view subtree: the view row + its compositions, axis args, and view-scoped tokens.
 // Recurses through the view's own view-list token aliased `compositionKey`, cloning each referenced
@@ -1220,15 +1265,14 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	updateTokenValue: async (tokenId: string, value: TokenValue) => {
-		await db.updateTable('tokens').set({ value } as any).where('tokens.id', '=', tokenId).execute();
+		await db
+			.updateTable('tokens')
+			.set({ value } as any)
+			.where('tokens.id', '=', tokenId)
+			.execute();
 	},
 
-	upsertViewToken: async (
-		projectId: string,
-		viewId: string,
-		alias: string,
-		value: TokenValue
-	) => {
+	upsertViewToken: async (projectId: string, viewId: string, alias: string, value: TokenValue) => {
 		// find-then-write in one transaction so two rapid upserts can't each miss and insert a
 		// duplicate view token for the same alias.
 		return await db.transaction().execute(async (trx) => {
@@ -1468,7 +1512,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db
 			.deleteFrom('render_entries')
 			.where('render_entries.property', '=', 'children')
-			.where('render_entries.snippet_id', 'in', snippets.map((s) => s.id))
+			.where(
+				'render_entries.snippet_id',
+				'in',
+				snippets.map((s) => s.id)
+			)
 			.execute();
 	},
 
@@ -1663,6 +1711,37 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.where('kits.project_id', '=', projectId)
 			.orderBy('kits.last_modified', 'desc')
 			.select(['kits.id as kitId', 'kits.name as kitName']);
+	},
+
+	getAssetsByProjectId: (projectId: string | null) => {
+		if (!projectId)
+			return db
+				.selectFrom('assets')
+				.where('assets.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'assets.id as assetId',
+					'assets.name as assetName',
+					'assets.mime_type as assetMimeType',
+					'assets.checksum as assetChecksum',
+					'assets.link as assetLink',
+					'assets.width as assetWidth',
+					'assets.height as assetHeight',
+					'assets.created_at as assetCreatedAt'
+				]);
+		return db
+			.selectFrom('assets')
+			.where('assets.project_id', '=', projectId)
+			.orderBy('assets.created_at', 'desc')
+			.select([
+				'assets.id as assetId',
+				'assets.name as assetName',
+				'assets.mime_type as assetMimeType',
+				'assets.checksum as assetChecksum',
+				'assets.link as assetLink',
+				'assets.width as assetWidth',
+				'assets.height as assetHeight',
+				'assets.created_at as assetCreatedAt'
+			]);
 	},
 
 	getTokensByProjectId: (projectId: string) => {
@@ -1915,5 +1994,33 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	listPlugins: async () => {
 		return await db.selectFrom('plugins').selectAll().execute();
+	},
+
+	upsertAsset: async (input) => {
+		const existing = await db
+			.selectFrom('assets')
+			.where('assets.project_id', '=', input.projectId)
+			.where('assets.checksum', '=', input.checksum)
+			.selectAll()
+			.executeTakeFirst();
+		if (existing) return existing;
+
+		return await db
+			.insertInto('assets')
+			.values({
+				project_id: input.projectId,
+				name: input.name,
+				mime_type: input.mimeType,
+				checksum: input.checksum,
+				link: input.link,
+				width: input.width,
+				height: input.height
+			})
+			.returningAll()
+			.executeTakeFirstOrThrow();
+	},
+
+	deleteAsset: async (assetId: string) => {
+		await db.deleteFrom('assets').where('assets.id', '=', assetId).execute();
 	}
 });

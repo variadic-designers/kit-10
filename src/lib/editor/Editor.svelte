@@ -224,6 +224,7 @@
 	import ProjectPanel from './panels/Project.svelte';
 	import ComposePanel from './panels/Compose.svelte';
 	import PluginsPanel from './panels/Plugins.svelte';
+	import AssetsPanel from './panels/Assets.svelte';
 
 	import Nav from './Nav.svelte';
 	import Viewport from './Viewport.svelte';
@@ -481,6 +482,8 @@
 		<TokensPanel {api} {editorReady} bind:editorActivity />
 
 		<PluginsPanel manager={pluginManager} />
+
+		<AssetsPanel {api} {editorReady} bind:editorActivity />
 
 		<!--
       <pre style="max-height: 20rem; overflow-y: auto;">{JSON.stringify(selection, null, 2)}</pre>

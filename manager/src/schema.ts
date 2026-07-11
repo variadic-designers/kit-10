@@ -78,13 +78,13 @@ export interface PluginManifest {
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
-// the DB2026_07_09 interface below is renamed for an actual schema change (not for every minor
+// the DB2026_07_11 interface below is renamed for an actual schema change (not for every minor
 // edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
-export const CURRENT_SCHEMA_VERSION = '2026-07-09';
+export const CURRENT_SCHEMA_VERSION = '2026-07-11';
 
 // --- Schema tables ---
 
-export interface DB2026_07_09 {
+export interface DB2026_07_11 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
@@ -105,6 +105,8 @@ export interface DB2026_07_09 {
 	tokens: TokensTable;
 
 	plugins: PluginsTable;
+
+	assets: AssetsTable;
 }
 
 export interface WorkspacesTable {
@@ -243,9 +245,23 @@ export interface PluginsTable {
 	content_hash: string | null;
 }
 
+// ------------------------------
+
+export interface AssetsTable {
+	id: Generated<string>;
+	project_id: string;
+	name: string;
+	mime_type: string;
+	checksum: string;
+	link: string;
+	width: number;
+	height: number;
+	created_at: Generated<Date>;
+}
+
 // Current version of db
-export type SchemaTS = Kysely<DB2026_07_09>;
-export type Schema = DB2026_07_09;
+export type SchemaTS = Kysely<DB2026_07_11>;
+export type Schema = DB2026_07_11;
 export type SchemaDialect = Kysely<Schema>;
 
 export type SchemaQueryBuilder<O, Tb extends keyof Schema = keyof Schema> = SelectQueryBuilder<

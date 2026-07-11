@@ -11,6 +11,8 @@ export function is_font_loaded(name: string): boolean;
 
 export function load_font(bytes: Uint8Array): string[];
 
+export function load_image(id: string, bytes: Uint8Array): void;
+
 export function render(): void;
 
 export function resize(width: number, height: number): void;
@@ -49,6 +51,7 @@ export interface InitOutput {
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly is_font_loaded: (a: number, b: number) => number;
     readonly load_font: (a: number, b: number, c: number) => void;
+    readonly load_image: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly render: () => void;
     readonly resize: (a: number, b: number) => void;
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
@@ -61,9 +64,9 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_8603: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_8622: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7215: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_8630: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8649: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7242: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

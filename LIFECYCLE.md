@@ -8,7 +8,7 @@ This document describes how the editor initializes from navigation through to an
 
 **Vellum** is the GPU renderer that powers the viewport. It is a Rust library compiled to WebAssembly and loaded dynamically at editor startup. It requires a WebGL context and a non-zero canvas size before it can initialize. Vellum does not produce a blank canvas - it waits for data before rendering anything.
 
-**PGlite** is the in-browser PostgreSQL instance that stores all project data. It runs in a Web Worker and persists to OPFS (Origin Private File System, a browser-native sandboxed storage API). In Firefox private mode, OPFS is unavailable and the worker falls back to in-memory storage.
+**PGlite** is the in-browser PostgreSQL instance that stores all project data. It runs in a Web Worker and persists to IndexedDB (`idb://kit10-editor` with `relaxedDurability: true`), surviving page reloads and working fully offline. In Firefox private mode, IndexedDB is unavailable and PGlite falls back to in-memory storage.
 
 ---
 
@@ -112,4 +112,4 @@ The Viewport's reactive effect on `data` fires:
 
 **Firefox compositor (Phase 3):** Firefox does not guarantee a non-zero layout size synchronously at mount. The canvas size guard exists specifically for this. Do not remove it without testing in Firefox.
 
-**Firefox private mode (Phase 2):** OPFS is unavailable in Firefox private browsing. The PGlite worker detects this and falls back to `memory://`. All editor functionality works, but data is not persisted beyond the session.
+**Firefox private mode (Phase 2):** IndexedDB is unavailable in Firefox private browsing. PGlite detects this and falls back to `memory://`. All editor functionality works, but data is not persisted beyond the session.

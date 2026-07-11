@@ -79,6 +79,7 @@
           pkgs.cargo-watch      # Auto-rebuild on file changes
 
           pkgs.claude-code
+          pkgs.opencode
         ];
       };
     });
