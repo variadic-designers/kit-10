@@ -200,6 +200,10 @@
 
 	function onPointerDown(e: PointerEvent) {
 		panning = true;
+		continuousMode = true;
+		// Kick off the continuous render loop immediately so the first pan delta doesn't wait
+		// for the next pointermove to schedule a rAF — the loop continues until pointer up.
+		requestRender();
 		lastX = e.clientX;
 		lastY = e.clientY;
 		downX = e.clientX;
@@ -214,7 +218,9 @@
 			lastX = e.clientX;
 			lastY = e.clientY;
 			vellum.set_pan(dx, dy);
-			requestRender();
+			// continuousMode keeps the rAF loop running — no need to call requestRender here, the
+			// loop handles it. The set_pan updates view_offset in-place and the in-flight rAF
+			// picks up the latest offset.
 			return;
 		}
 
@@ -231,6 +237,7 @@
 
 	function onPointerUp(e: PointerEvent) {
 		panning = false;
+		continuousMode = false;
 		canvas.releasePointerCapture(e.pointerId);
 
 		const movedDistance = Math.hypot(e.clientX - downX, e.clientY - downY);
@@ -273,6 +280,7 @@
 		onpointerdown={onPointerDown}
 		onpointermove={onPointerMove}
 		onpointerup={onPointerUp}
+		onpointercancel={onPointerUp}
 		onpointerleave={onPointerLeave}
 		onwheel={onWheel}
 	></canvas>
