@@ -7,10 +7,13 @@
 
 	type SuggestFieldProps = {
 		value?: string | null;
-		pluginName: string;
-		searchFn: string;
+		pluginName?: string;
+		searchFn?: string;
 		fetchFn?: string;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		// Alternative to plugin-based search: provide a local search function that returns
+		// results synchronously. Takes precedence over plugin/searchFn when set.
+		localSearch?: (query: string) => SuggestionEntry[];
 		// Optional: lets a caller with domain knowledge (e.g. StyleField knowing Vellum already
 		// has a given font loaded) skip a redundant fetchFn round-trip -- a real, measured cost
 		// (network fetch of a font file, ~200ms+ for one not already cached) when re-picking a
@@ -23,8 +26,16 @@
 		onPick?: (value: string, fetched?: Uint8Array) => void;
 	};
 
-	let { value, pluginName, searchFn, fetchFn, callUtilityPlugin, isLoaded, onPick }: SuggestFieldProps =
-		$props();
+	let {
+		value,
+		pluginName,
+		searchFn,
+		fetchFn,
+		callUtilityPlugin,
+		localSearch,
+		isLoaded,
+		onPick
+	}: SuggestFieldProps = $props();
 
 	let open = $state(false);
 	let query = $state('');
@@ -64,14 +75,19 @@
 	type CallOutput = { text(): string; bytes(): Uint8Array };
 
 	async function search(q: string) {
-		if (!callUtilityPlugin) return;
 		const gen = sessionGen;
 		loading = true;
 		error = null;
 		try {
-			const result = (await callUtilityPlugin(pluginName, searchFn, q)) as CallOutput | undefined;
-			if (gen !== sessionGen) return; // a newer open/search has since started -- discard
-			results = result ? (JSON.parse(result.text()) as SuggestionEntry[]) : [];
+			if (localSearch) {
+				results = localSearch(q);
+			} else if (callUtilityPlugin && pluginName && searchFn) {
+				const result = (await callUtilityPlugin(pluginName, searchFn, q)) as CallOutput | undefined;
+				if (gen !== sessionGen) return; // a newer open/search has since started -- discard
+				results = result ? (JSON.parse(result.text()) as SuggestionEntry[]) : [];
+			} else {
+				results = [];
+			}
 			highlighted = 0;
 		} catch (err) {
 			if (gen !== sessionGen) return;
@@ -111,7 +127,7 @@
 		error = null;
 		try {
 			let fetched: Uint8Array | undefined;
-			if (fetchFn && callUtilityPlugin && !isLoaded?.(entryValue)) {
+			if (fetchFn && callUtilityPlugin && pluginName && !isLoaded?.(entryValue)) {
 				const result = (await callUtilityPlugin(
 					pluginName,
 					fetchFn,
@@ -163,12 +179,7 @@
 />
 
 <div class="suggest-field">
-	<button
-		type="button"
-		class="suggest-field__trigger"
-		bind:this={triggerRef}
-		onclick={openPicker}
-	>
+	<button type="button" class="suggest-field__trigger" bind:this={triggerRef} onclick={openPicker}>
 		{value || 'Pick a value'}
 	</button>
 

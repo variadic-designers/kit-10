@@ -6,6 +6,7 @@
 	import SuggestField from '$lib/components/SuggestField.svelte';
 	import { dropZone } from '../dnd.svelte.ts';
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
+	import { assetRegister } from '../assetStore.ts';
 	import type { Api } from 'manager';
 	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
 
@@ -293,6 +294,21 @@
 				}
 			}}
 		/>
+	{:else if inputType === 'asset'}
+		<div class="option124__value">
+			<SuggestField
+				{value}
+				localSearch={(q) => {
+					const list = $assetRegister;
+					if (!q) return list.map((a) => ({ value: a.id, label: a.name }));
+					const lower = q.toLowerCase();
+					return list
+						.filter((a) => a.name.toLowerCase().includes(lower))
+						.map((a) => ({ value: a.id, label: a.name }));
+				}}
+				onPick={(picked, _fetched) => confirmSuggestionPick(picked)}
+			/>
+		</div>
 	{:else if suggestionsFrom && !isToken}
 		<div class="option124__value">
 			<SuggestField
@@ -362,10 +378,8 @@
 	.option124 {
 		display: flex;
 		justify-content: space-between;
-		align-items: center;
-		user-select: none;
-		display: flex;
 		align-items: stretch;
+		user-select: none;
 		font-weight: 600;
 		padding-inline: $x-space-sm;
 
@@ -379,9 +393,6 @@
 			font-size: $x-font-size-sm;
 		}
 
-		// A compatible token is being dragged over this row -- outline it as a live drop target.
-		// dnd-over is applied at runtime by the dnd controller, so it must be :global() or Svelte's
-		// scoped-CSS pass prunes it as unused.
 		&:global(.dnd-over) {
 			outline: 1px dashed var(--color-primary);
 			outline-offset: -1px;
@@ -445,11 +456,23 @@
 			border-radius: 1px;
 			color: var(--color-add-var-text);
 			font-size: $x-font-size-sm;
-			background:
-				radial-gradient(closest-side, var(--color-panel-header-fill) 90%, transparent 100%) 0 0/ 3px
-					3px,
-				var(--color-panel-header-border);
 			background: var(--color-panel-header-fill);
+
+			&--select,
+			&-select {
+				all: unset;
+				display: block;
+				width: 100%;
+				height: 100%;
+				cursor: pointer;
+				@include fonts-stack('Satoshi-Regular', sans);
+				font-size: $x-font-size-xs;
+
+				option {
+					color: var(--color-text);
+					background: var(--color-pure);
+				}
+			}
 
 			&:has(span.token-pill) {
 				background: var(--color-surface-alt);
@@ -497,20 +520,6 @@
 					color: var(--color-primary);
 				}
 			}
-		}
-
-		$border-rad: calc($x-space-xs / 2);
-
-		&--top > * {
-			border-radius: $border-rad $border-rad 0 0;
-		}
-		&--bottom > * {
-			border-radius: 0 0 $border-rad $border-rad;
-		}
-
-		&--top > *,
-		&--mid > * {
-			border-bottom: unset;
 		}
 	}
 </style>

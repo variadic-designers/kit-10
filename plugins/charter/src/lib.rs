@@ -263,6 +263,40 @@ struct UiTextNode {
 enum UiNode {
     Box(UiBoxNode),
     Text(UiTextNode),
+    Img(UiImgNode),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum ImageSource {
+    None,
+    Url(String),
+    Bytes(Vec<u8>),
+    Ref(String),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ImgData {
+    parent_id: Option<usize>,
+    width: f32,
+    height: f32,
+    source: ImageSource,
+    cover: bool,
+    #[serde(default = "default_object_position")]
+    object_position: [f32; 2],
+    #[serde(default)]
+    selected: u8,
+    #[serde(default)]
+    hovered: bool,
+}
+
+fn default_object_position() -> [f32; 2] {
+    [0.5, 0.5]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UiImgNode {
+    #[serde(rename = "Img")]
+    img_data: ImgData,
 }
 
 // No rename_all here -- viewport_data/node_view_ids are read as snake_case by
@@ -325,6 +359,7 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
 fn primitive_icon(primitive: &str) -> &'static str {
     match primitive {
         "text" => "fa-solid fa-italic",
+        "image" => "fa-regular fa-image",
         _ => "fa-regular fa-window-maximize",
     }
 }
@@ -788,7 +823,53 @@ fn build_text_node(
     })
 }
 
+fn build_img_node(
+    props: &std::collections::HashMap<String, ResolvedProperty>,
+    parent_id: Option<usize>,
+) -> UiNode {
+    let src = get_prop(props, "src").unwrap_or_default();
+    let fit = get_prop(props, "fit")
+        .as_deref()
+        .unwrap_or("cover")
+        .to_string();
+    let cover = fit == "cover";
+    let pos_str = get_prop(props, "object-position").unwrap_or_else(|| "0.5 0.5".to_string());
+    let pos: [f32; 2] = {
+        let parts: Vec<f32> = pos_str
+            .split_whitespace()
+            .filter_map(|s| s.parse::<f32>().ok())
+            .collect();
+        [
+            parts.first().copied().unwrap_or(0.5).clamp(0.0, 1.0),
+            parts.get(1).copied().unwrap_or(0.5).clamp(0.0, 1.0),
+        ]
+    };
+
+    UiNode::Img(UiImgNode {
+        img_data: ImgData {
+            parent_id,
+            width: parse_px(get_prop(props, "width").as_deref()),
+            height: parse_px(get_prop(props, "height").as_deref()),
+            source: if src.is_empty() {
+                ImageSource::None
+            } else {
+                ImageSource::Ref(src)
+            },
+            cover,
+            object_position: pos,
+            selected: 0,
+            hovered: false,
+        },
+    })
+}
+
 fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>) -> &'static str {
+    // An image view has a `src` property. Just having one doesn't preclude also having
+    // text props (a label over an image), but the `src` presence makes it an image primitive.
+    if props.contains_key("src") {
+        return "image";
+    }
+
     let has_text_props = props.contains_key("font-size")
         || props.contains_key("font-weight")
         || props.contains_key("text-align")
@@ -880,6 +961,30 @@ fn text_categories() -> Vec<FieldCategory> {
             fields: vec![
                 FieldDef::new("background", Some("Highlight")),
                 FieldDef::new("border", Some("Border")),
+                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("padding", Some("Padding")),
+            ],
+        },
+    ]
+}
+
+fn image_categories() -> Vec<FieldCategory> {
+    vec![
+        FieldCategory {
+            name: "image".to_string(),
+            fields: vec![
+                FieldDef::new("src", Some("Source")).with_input_type("asset"),
+                FieldDef::new("fit", Some("Fit")),
+                FieldDef::new("object-position", Some("Position")),
+            ],
+        },
+        FieldCategory {
+            name: "box".to_string(),
+            fields: vec![
+                FieldDef::new("width", None),
+                FieldDef::new("height", None),
+                FieldDef::new("background", Some("Fill")),
+                FieldDef::new("border", None),
                 FieldDef::new("border-radius", Some("Radius")),
                 FieldDef::new("padding", Some("Padding")),
             ],
@@ -1065,6 +1170,17 @@ fn render_view_nodes(
                 );
             }
         }
+    } else if primitive == "image" {
+        let mut node = build_img_node(&merged, content_parent);
+        if let UiNode::Img(UiImgNode { img_data }) = &mut node {
+            img_data.selected = selection;
+            img_data.hovered = hovered;
+        }
+        viewport.push(node);
+        node_view_ids.push(view_id.to_string());
+
+        // An image is a leaf — it has no children (no content tab, no children field).
+        // Any child views assigned to an image view are silently ignored.
     } else {
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent);
@@ -1240,6 +1356,8 @@ fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
         .unwrap_or_else(|| detect_primitive(&merged));
     if primitive == "text" {
         text_categories()
+    } else if primitive == "image" {
+        image_categories()
     } else {
         box_categories()
     }

@@ -378,53 +378,127 @@ export async function seedDemoProject(
 	// library content).
 	const textPrimitiveHint = { charter: { primitive: 'text' } };
 
-	const labelDefaultView = (await api.createViewInProject(proj.id, 'Label: Default', textPrimitiveHint))!;
+	const labelDefaultView = (await api.createViewInProject(
+		proj.id,
+		'Label: Default',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelDefaultView.id);
 
-	const labelPrimaryView = (await api.createViewInProject(proj.id, 'Label: Primary', textPrimitiveHint))!;
+	const labelPrimaryView = (await api.createViewInProject(
+		proj.id,
+		'Label: Primary',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelPrimaryView.id);
-	await api.setAxisArg(labelPrimaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+	await api.setAxisArg(labelPrimaryView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'primary'
+	});
 
-	const labelSecondaryView = (await api.createViewInProject(proj.id, 'Label: Secondary', textPrimitiveHint))!;
+	const labelSecondaryView = (await api.createViewInProject(
+		proj.id,
+		'Label: Secondary',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelSecondaryView.id);
-	await api.setAxisArg(labelSecondaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'secondary' });
+	await api.setAxisArg(labelSecondaryView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'secondary'
+	});
 
-	const labelTertiaryView = (await api.createViewInProject(proj.id, 'Label: Tertiary', textPrimitiveHint))!;
+	const labelTertiaryView = (await api.createViewInProject(
+		proj.id,
+		'Label: Tertiary',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelTertiaryView.id);
-	await api.setAxisArg(labelTertiaryView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'tertiary' });
+	await api.setAxisArg(labelTertiaryView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'tertiary'
+	});
 
-	const labelGhostView = (await api.createViewInProject(proj.id, 'Label: Ghost', textPrimitiveHint))!;
+	const labelGhostView = (await api.createViewInProject(
+		proj.id,
+		'Label: Ghost',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelGhostView.id);
-	await api.setAxisArg(labelGhostView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'ghost' });
+	await api.setAxisArg(labelGhostView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'ghost'
+	});
 
-	const labelPositiveView = (await api.createViewInProject(proj.id, 'Label: Positive', textPrimitiveHint))!;
+	const labelPositiveView = (await api.createViewInProject(
+		proj.id,
+		'Label: Positive',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelPositiveView.id);
-	await api.setAxisArg(labelPositiveView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'positive' });
+	await api.setAxisArg(labelPositiveView.id, labelKit.id, sentimentAxis.id, {
+		type: 'literal',
+		value: 'positive'
+	});
 
-	const labelDangerView = (await api.createViewInProject(proj.id, 'Label: Danger', textPrimitiveHint))!;
+	const labelDangerView = (await api.createViewInProject(
+		proj.id,
+		'Label: Danger',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelDangerView.id);
-	await api.setAxisArg(labelDangerView.id, labelKit.id, sentimentAxis.id, { type: 'literal', value: 'danger' });
+	await api.setAxisArg(labelDangerView.id, labelKit.id, sentimentAxis.id, {
+		type: 'literal',
+		value: 'danger'
+	});
 
-	const labelDisabledView = (await api.createViewInProject(proj.id, 'Label: Disabled', textPrimitiveHint))!;
+	const labelDisabledView = (await api.createViewInProject(
+		proj.id,
+		'Label: Disabled',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelDisabledView.id);
-	await api.setAxisArg(labelDisabledView.id, labelKit.id, stateAxis.id, { type: 'literal', value: 'disabled' });
+	await api.setAxisArg(labelDisabledView.id, labelKit.id, stateAxis.id, {
+		type: 'literal',
+		value: 'disabled'
+	});
 
 	// Three more emphasis=primary label views, one dedicated to each of the three primary-emphasis
 	// button variants below -- NOT a shared reference to labelPrimaryView, even though all four
 	// resolve identical "Submit" content via the same lblPrimary layer. Reusing labelPrimaryView
 	// as more than one button's child would violate the one-reference rule (see the self-declaring
 	// children comment below); labelPrimaryView itself stays unclaimed library content.
-	const labelLightDefaultView = (await api.createViewInProject(proj.id, 'Label: Light Default', textPrimitiveHint))!;
+	const labelLightDefaultView = (await api.createViewInProject(
+		proj.id,
+		'Label: Light Default',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelLightDefaultView.id);
-	await api.setAxisArg(labelLightDefaultView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+	await api.setAxisArg(labelLightDefaultView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'primary'
+	});
 
-	const labelDarkDefaultView = (await api.createViewInProject(proj.id, 'Label: Dark Default', textPrimitiveHint))!;
+	const labelDarkDefaultView = (await api.createViewInProject(
+		proj.id,
+		'Label: Dark Default',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelDarkDefaultView.id);
-	await api.setAxisArg(labelDarkDefaultView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+	await api.setAxisArg(labelDarkDefaultView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'primary'
+	});
 
-	const labelPrimaryHoverView = (await api.createViewInProject(proj.id, 'Label: Light Comfort Primary Hover', textPrimitiveHint))!;
+	const labelPrimaryHoverView = (await api.createViewInProject(
+		proj.id,
+		'Label: Light Comfort Primary Hover',
+		textPrimitiveHint
+	))!;
 	await api.attachKitToComposition(labelKit.id, labelPrimaryHoverView.id);
-	await api.setAxisArg(labelPrimaryHoverView.id, labelKit.id, emphasisAxis.id, { type: 'literal', value: 'primary' });
+	await api.setAxisArg(labelPrimaryHoverView.id, labelKit.id, emphasisAxis.id, {
+		type: 'literal',
+		value: 'primary'
+	});
 
 	// buttonKit declares NO `children` render entry -- deliberately. A view's children are
 	// self-declaring: each button view below carries its own View-scoped `children` view-list token
@@ -439,9 +513,14 @@ export async function seedDemoProject(
 	// `api.instantiateKitDefaults` when a view composes buttonKit, which deep-clones the template
 	// into that view's OWN per-instance children. So composing buttonKit onto a fresh view auto-
 	// populates a unique cloned label, while `Label: Default` stays the editable top-level master.
-	await api.createToken(proj.id, 'children', { type: 'view-list', view_ids: [labelDefaultView.id] }, {
-		kitId: buttonKit.id
-	});
+	await api.createToken(
+		proj.id,
+		'children',
+		{ type: 'view-list', view_ids: [labelDefaultView.id] },
+		{
+			kitId: buttonKit.id
+		}
+	);
 
 	// --- Views ---
 
@@ -707,10 +786,14 @@ export async function seedDemoProject(
 	// Default`) into a UNIQUE per-instance label -- exactly the path the editor's Compose panel
 	// runs. `Label: Default` itself stays the top-level editable master; this view nests its own
 	// distinct clone.
-	const clonedDefaultButtonView = (await api.createViewInProject(proj.id, 'Button (cloned default)', {
-		charter: { primitive: 'box' },
-		vellum: { position: [2000, 400] }
-	}))!;
+	const clonedDefaultButtonView = (await api.createViewInProject(
+		proj.id,
+		'Button (cloned default)',
+		{
+			charter: { primitive: 'box' },
+			vellum: { position: [2000, 400] }
+		}
+	))!;
 	await api.attachKitToComposition(buttonKit.id, clonedDefaultButtonView.id);
 	await api.setAxisArg(clonedDefaultButtonView.id, buttonKit.id, themeAxis.id, {
 		type: 'literal',
@@ -775,35 +858,147 @@ export async function seedDemoProject(
 		return v.id;
 	}
 
+	// An Image kit: declares an `src` render entry backed by a kit-scope token, so every view
+	// composing it supplies its own image source via a View-scope override. Same pattern as
+	// textKit's `content` token.
+	async function imageKit(name: string) {
+		const kit = (await api.createKitInProject(proj.id, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		const srcTok = (await api.createToken(proj.id, 'src', s(''), { kitId: kit.id }))!;
+		await api.createRenderEntry(snip.id, 'src', null, srcTok.id);
+		return kit;
+	}
+
+	async function imageView(name: string, kit: { id: string }): Promise<string> {
+		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'image' } }))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		return v.id;
+	}
+
 	// --- Style kits ---
-	const h1Kit = await textKit('Heading', { 'font-size': '40px', 'font-weight': '700', color: '#0f172a' });
-	const h2Kit = await textKit('Subheading', { 'font-size': '19px', 'font-weight': '700', color: '#0f172a' });
-	const bodyKit = await textKit('Body', { 'font-size': '15px', 'font-weight': '400', color: '#64748b' });
-	const ctaLabelKit = await textKit('CTA Label', { 'font-size': '15px', 'font-weight': '600', color: '#ffffff' });
-	const footerTextKit = await textKit('Footer Text', { 'font-size': '13px', 'font-weight': '400', color: '#cbd5e1' });
+	const h1Kit = await textKit('Heading', {
+		'font-size': '40px',
+		'font-weight': '700',
+		color: '#0f172a'
+	});
+	const h2Kit = await textKit('Subheading', {
+		'font-size': '19px',
+		'font-weight': '700',
+		color: '#0f172a'
+	});
+	const bodyKit = await textKit('Body', {
+		'font-size': '15px',
+		'font-weight': '400',
+		color: '#64748b'
+	});
+	const ctaLabelKit = await textKit('CTA Label', {
+		'font-size': '15px',
+		'font-weight': '600',
+		color: '#ffffff'
+	});
+	const footerTextKit = await textKit('Footer Text', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: '#cbd5e1'
+	});
 
 	// --- Layout kits ---
-	const pageKit = await boxKit('Page', { 'flex-direction': 'column', background: '#ffffff', width: '900px', gap: '0px', padding: '0px' });
-	const navKit = await boxKit('Nav', { 'flex-direction': 'row', 'justify-content': 'space-between', 'align-items': 'center', padding: '20px', gap: '16px', background: '#ffffff' });
-	const heroKit = await boxKit('Hero', { 'flex-direction': 'column', 'align-items': 'center', gap: '18px', padding: '64px', background: '#f8fafc' });
-	const featuresKit = await boxKit('Features', { 'flex-direction': 'row', 'justify-content': 'center', gap: '24px', padding: '48px', background: '#ffffff' });
-	const cardKit = await boxKit('Card', { 'flex-direction': 'column', gap: '8px', padding: '24px', background: '#ffffff', border: '#e2e8f0', 'border-radius': '12px', width: '230px' });
-	const footerKit = await boxKit('Footer', { 'flex-direction': 'row', 'justify-content': 'center', padding: '28px', background: '#0f172a' });
-	const ctaKit = await boxKit('CTA', { 'flex-direction': 'row', 'align-items': 'center', 'justify-content': 'center', padding: '13px', background: '#3b82f6', 'border-radius': '8px' });
+	const pageKit = await boxKit('Page', {
+		'flex-direction': 'column',
+		background: '#ffffff',
+		width: '900px',
+		gap: '0px',
+		padding: '0px'
+	});
+	const navKit = await boxKit('Nav', {
+		'flex-direction': 'row',
+		'justify-content': 'space-between',
+		'align-items': 'center',
+		padding: '20px',
+		gap: '16px',
+		background: '#ffffff'
+	});
+	const heroKit = await boxKit('Hero', {
+		'flex-direction': 'row',
+		'align-items': 'center',
+		gap: '18px',
+		padding: '64px',
+		background: '#f8fafc'
+	});
+	const featuresKit = await boxKit('Features', {
+		'flex-direction': 'row',
+		'justify-content': 'center',
+		gap: '24px',
+		padding: '48px',
+		background: '#ffffff'
+	});
+	const cardKit = await boxKit('Card', {
+		'flex-direction': 'column',
+		gap: '8px',
+		padding: '24px',
+		background: '#ffffff',
+		border: '#e2e8f0',
+		'border-radius': '12px',
+		width: '230px'
+	});
+	const footerKit = await boxKit('Footer', {
+		'flex-direction': 'row',
+		'justify-content': 'center',
+		padding: '28px',
+		background: '#0f172a'
+	});
+	const ctaKit = await boxKit('CTA', {
+		'flex-direction': 'row',
+		'align-items': 'center',
+		'justify-content': 'center',
+		padding: '13px',
+		background: '#3b82f6',
+		'border-radius': '8px'
+	});
+	const heroContentKit = await boxKit('Hero Content', {
+		'flex-direction': 'column',
+		'align-items': 'center',
+		gap: '18px'
+	});
+	const srcImageKit = await imageKit('Image Source');
 
 	// --- Leaf text views ---
 	const logo = await textView('Logo', h2Kit, 'KIT\u202210');
 	const navCtaLabel = await textView('Nav CTA Label', ctaLabelKit, 'Sign in');
-	const heroHeading = await textView('Hero Heading', h1Kit, 'Design the system, not the screenshots');
-	const heroSubtitle = await textView('Hero Subtitle', bodyKit, 'Model UI as axes, kits, and views \u2014 and resolve every variant at once.');
+	const heroHeading = await textView(
+		'Hero Heading',
+		h1Kit,
+		'Design the system, not the screenshots'
+	);
+	const heroSubtitle = await textView(
+		'Hero Subtitle',
+		bodyKit,
+		'Model UI as axes, kits, and views \u2014 and resolve every variant at once.'
+	);
 	const heroCtaLabel = await textView('Hero CTA Label', ctaLabelKit, 'Get started');
 	const c1t = await textView('Card 1 Title', h2Kit, 'Axes');
-	const c1b = await textView('Card 1 Body', bodyKit, 'Define the dimensions your UI varies across \u2014 theme, density, state.');
+	const c1b = await textView(
+		'Card 1 Body',
+		bodyKit,
+		'Define the dimensions your UI varies across \u2014 theme, density, state.'
+	);
 	const c2t = await textView('Card 2 Title', h2Kit, 'Kits');
-	const c2b = await textView('Card 2 Body', bodyKit, 'Bundle opinionated rules per concern, then compose them into any view.');
+	const c2b = await textView(
+		'Card 2 Body',
+		bodyKit,
+		'Bundle opinionated rules per concern, then compose them into any view.'
+	);
 	const c3t = await textView('Card 3 Title', h2Kit, 'Views');
-	const c3b = await textView('Card 3 Body', bodyKit, 'Nest views into views. Kits ship defaults; each instance clones its own.');
-	const footerText = await textView('Footer Text', footerTextKit, '\u00a9 2026 KIT\u202210 \u2014 composable design, resolved.');
+	const c3b = await textView(
+		'Card 3 Body',
+		bodyKit,
+		'Nest views into views. Kits ship defaults; each instance clones its own.'
+	);
+	const footerText = await textView(
+		'Footer Text',
+		footerTextKit,
+		'\u00a9 2026 KIT\u202210 \u2014 composable design, resolved.'
+	);
 
 	// --- CTAs (box + label) ---
 	const navCta = await boxView('Nav CTA', ctaKit, [navCtaLabel]);
@@ -816,7 +1011,13 @@ export async function seedDemoProject(
 
 	// --- Sections ---
 	const nav = await boxView('Nav Bar', navKit, [logo, navCta]);
-	const hero = await boxView('Hero Section', heroKit, [heroHeading, heroSubtitle, heroCta]);
+	const heroContent = await boxView('Hero Content', heroContentKit, [
+		heroHeading,
+		heroSubtitle,
+		heroCta
+	]);
+	const heroImg = await imageView('Hero Image', srcImageKit);
+	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
 	const features = await boxView('Features', featuresKit, [card1, card2, card3]);
 	const footer = await boxView('Footer', footerKit, [footerText]);
 

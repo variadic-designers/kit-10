@@ -4,6 +4,7 @@
 	import Panel from '../Panel.svelte';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { importAssetFile, removeAsset } from '../assetStore.ts';
+	import { assetRegister } from '../assetStore.ts';
 	import { assetBytes } from '../asset-bytes.ts';
 	import type { EditorState } from 'manager';
 	import type { Api } from 'manager';
@@ -20,6 +21,33 @@
 
 	const assetsQuery = liveQuery((api, activity) => {
 		return api.getAssetsByProjectId(activity.activeProjectId);
+	});
+
+	// Sync live query results into the shared assetRegister store so other components
+	// (StyleField's asset picker) can access the asset list without their own query.
+	$effect(() => {
+		const rows = assetsQuery.rows as {
+			assetId: string;
+			assetName: string;
+			assetMimeType: string;
+			assetChecksum: string;
+			assetLink: string;
+			assetWidth: number;
+			assetHeight: number;
+			assetCreatedAt: Date;
+		}[];
+		const records = rows.map((r) => ({
+			id: r.assetId,
+			name: r.assetName,
+			mimeType: r.assetMimeType,
+			checksum: r.assetChecksum,
+			link: r.assetLink,
+			width: r.assetWidth,
+			height: r.assetHeight,
+			createdAt: r.assetCreatedAt
+		}));
+		console.log('[Assets] live query synced', records.length, 'assets');
+		assetRegister.set(records);
 	});
 
 	let pendingFiles = $state<string[]>([]);

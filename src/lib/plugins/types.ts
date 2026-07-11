@@ -1,6 +1,7 @@
 import type { ResolvedKit } from 'manager';
 
-export type InputType = 'color' | 'text' | 'number' | 'select' | 'slider' | 'font' | 'children';
+export type InputType =
+	'color' | 'text' | 'number' | 'select' | 'slider' | 'font' | 'children' | 'asset';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -46,7 +47,7 @@ export interface WriteRenderEntryResult {
 
 export type FlexDir = 'Row' | 'Column' | 'RowReverse' | 'ColumnReverse';
 export type FontStyle = 'Normal' | 'Italic' | 'Oblique';
-export type ImageSource = 'None' | { Url: string } | { Bytes: number[] };
+export type ImageSource = 'None' | { Url: string } | { Bytes: number[] } | { Ref: string };
 
 export interface BoxShadow {
 	offset_x: number;
@@ -104,6 +105,7 @@ export interface UiImgNode {
 		height: number;
 		source: ImageSource;
 		cover: boolean;
+		object_position: [number, number];
 	};
 }
 
