@@ -310,10 +310,16 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
     if data.is_empty() {
         return None;
     }
-    let bytes = rmp_serde::to_vec(data).ok()?;
+    use serde::Serialize;
+    let mut buf = Vec::new();
+    // rmp_serde serializes structs as arrays by default, but Vellum's deserializer
+    // expects maps (struct-variant format). with_struct_map() fixes this — see
+    // CLAUDE.md's "bincode was unmaintained" and the rmp_serde replace note.
+    let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
+    data.serialize(&mut ser).ok()?;
     Some(base64::Engine::encode(
         &base64::engine::general_purpose::STANDARD,
-        &bytes,
+        &buf,
     ))
 }
 fn primitive_icon(primitive: &str) -> &'static str {
