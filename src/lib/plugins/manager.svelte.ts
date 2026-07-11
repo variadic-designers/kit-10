@@ -280,7 +280,6 @@ export function createPluginManager(api: Api) {
 				nodeViewIds = parsed.node_view_ids ?? [];
 			}
 		}
-		}
 	}
 
 	function makeSelectionChangeRunner(capturedGen: number): () => Promise<void> {
