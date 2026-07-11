@@ -359,7 +359,7 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
 fn primitive_icon(primitive: &str) -> &'static str {
     match primitive {
         "text" => "fa-solid fa-italic",
-        "image" => "fa-regular fa-image",
+        "image" => "fa-solid fa-image",
         _ => "fa-regular fa-window-maximize",
     }
 }
