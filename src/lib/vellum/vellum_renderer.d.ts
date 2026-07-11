@@ -19,6 +19,13 @@ export function set_colors(grid_r: number, grid_g: number, grid_b: number, grid_
 
 export function set_data(json: string): void;
 
+/**
+ * Binary-path equivalent of `set_data` — deserializes a MessagePack-encoded `Vec<UiNode>` instead of
+ * JSON. ~4× faster than serde_json for the same data, and avoids the 47ms parse wall at 10k views.
+ * Kept as a separate export so the JS side can choose which to call based on what Charter emitted.
+ */
+export function set_data_binary(bytes: Uint8Array): void;
+
 export function set_pan(dx: number, dy: number): void;
 
 export function set_pixel_snap(on: boolean): void;
@@ -46,6 +53,7 @@ export interface InitOutput {
     readonly resize: (a: number, b: number) => void;
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly set_data: (a: number, b: number) => void;
+    readonly set_data_binary: (a: number, b: number) => void;
     readonly set_pan: (a: number, b: number) => void;
     readonly set_pixel_snap: (a: number) => void;
     readonly set_zoom: (a: number) => void;
@@ -53,9 +61,9 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_7812: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7831: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_6424: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_8603: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8622: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7215: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

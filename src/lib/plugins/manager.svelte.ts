@@ -50,6 +50,10 @@ export function createPluginManager(api: Api) {
 	// editor stays agnostic about a view's primitive; it just renders whatever icon the plugin gives.
 	let viewIcons = $state<Record<string, string>>({});
 	let viewportData = $state<string>('[]');
+	// MessagePack-binary path: when Charter emits viewport_data_binary, this is the
+	// base64-decoded bytes ready for vellum.set_data_binary(). Avoids the 47ms JSON
+	// parse wall on Vellum's side by skipping serde_json entirely.
+	let viewportDataBinary = $state<Uint8Array | null>(null);
 	// Parallel to viewportData (same length/order) -- see OnResolveResult.node_view_ids.
 	let nodeViewIds = $state<string[]>([]);
 	let context: PluginContext = { resolvedKits: null };
@@ -264,8 +268,15 @@ export function createPluginManager(api: Api) {
 			fieldCategories = parsed.categories ?? [];
 			if (parsed.composition_field_keys) compositionFieldKeys = parsed.composition_field_keys;
 			if (parsed.view_icons) viewIcons = parsed.view_icons;
-			if (parsed.viewport_data) {
+			if (parsed.viewport_data_binary) {
+				const binaryStr = atob(parsed.viewport_data_binary);
+				const bytes = new Uint8Array(binaryStr.length);
+				for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+				viewportDataBinary = bytes;
+				nodeViewIds = parsed.node_view_ids ?? [];
+			} else if (parsed.viewport_data) {
 				viewportData = JSON.stringify(parsed.viewport_data);
+				viewportDataBinary = null;
 				nodeViewIds = parsed.node_view_ids ?? [];
 			}
 		}
@@ -289,9 +300,17 @@ export function createPluginManager(api: Api) {
 				const parsed = JSON.parse(result.text()) as {
 					viewport_data?: UiNode[];
 					node_view_ids?: string[];
+					viewport_data_binary?: string;
 				};
-				if (parsed.viewport_data?.length) {
+				if (parsed.viewport_data_binary) {
+					const binaryStr = atob(parsed.viewport_data_binary);
+					const bytes = new Uint8Array(binaryStr.length);
+					for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+					viewportDataBinary = bytes;
+					nodeViewIds = parsed.node_view_ids ?? [];
+				} else if (parsed.viewport_data?.length) {
 					viewportData = JSON.stringify(parsed.viewport_data);
+					viewportDataBinary = null;
 					nodeViewIds = parsed.node_view_ids ?? [];
 				}
 			}
@@ -458,6 +477,7 @@ export function createPluginManager(api: Api) {
 		fieldCategories = [];
 		viewIcons = {};
 		viewportData = '[]';
+		viewportDataBinary = null;
 		nodeViewIds = [];
 	}
 
@@ -476,6 +496,9 @@ export function createPluginManager(api: Api) {
 		},
 		get viewportData() {
 			return viewportData;
+		},
+		get viewportDataBinary() {
+			return viewportDataBinary;
 		},
 		get nodeViewIds() {
 			return nodeViewIds;

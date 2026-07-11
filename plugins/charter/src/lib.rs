@@ -95,7 +95,9 @@ enum GridLine {
 }
 
 impl Default for GridLine {
-    fn default() -> Self { GridLine::Auto }
+    fn default() -> Self {
+        GridLine::Auto
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -130,7 +132,9 @@ enum FlexWrapValue {
 }
 
 impl Default for FlexWrapValue {
-    fn default() -> Self { FlexWrapValue::NoWrap }
+    fn default() -> Self {
+        FlexWrapValue::NoWrap
+    }
 }
 
 // Mirrors vellum's api.rs — serde output must match exactly.
@@ -141,26 +145,43 @@ enum NodePosition {
 }
 
 impl Default for NodePosition {
-    fn default() -> Self { NodePosition::Relative }
+    fn default() -> Self {
+        NodePosition::Relative
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BoxExtra {
-    #[serde(default)] gap: f32,
-    #[serde(default)] align_items: Option<AlignValue>,
-    #[serde(default)] justify_content: Option<JustifyValue>,
-    #[serde(default)] flex_wrap: FlexWrapValue,
-    #[serde(default)] flex_grow: f32,
-    #[serde(default)] flex_shrink: Option<f32>,
-    #[serde(default)] align_self: Option<AlignValue>,
-    #[serde(default)] margin: f32,
-    #[serde(default)] position: NodePosition,
-    #[serde(default)] grid_template_columns: Vec<TrackSize>,
-    #[serde(default)] grid_template_rows: Vec<TrackSize>,
-    #[serde(default)] grid_auto_rows: Vec<TrackSize>,
-    #[serde(default)] grid_auto_columns: Vec<TrackSize>,
-    #[serde(default)] grid_column: (GridLine, GridLine),
-    #[serde(default)] grid_row: (GridLine, GridLine),
+    #[serde(default)]
+    gap: f32,
+    #[serde(default)]
+    align_items: Option<AlignValue>,
+    #[serde(default)]
+    justify_content: Option<JustifyValue>,
+    #[serde(default)]
+    flex_wrap: FlexWrapValue,
+    #[serde(default)]
+    flex_grow: f32,
+    #[serde(default)]
+    flex_shrink: Option<f32>,
+    #[serde(default)]
+    align_self: Option<AlignValue>,
+    #[serde(default)]
+    margin: f32,
+    #[serde(default)]
+    position: NodePosition,
+    #[serde(default)]
+    grid_template_columns: Vec<TrackSize>,
+    #[serde(default)]
+    grid_template_rows: Vec<TrackSize>,
+    #[serde(default)]
+    grid_auto_rows: Vec<TrackSize>,
+    #[serde(default)]
+    grid_auto_columns: Vec<TrackSize>,
+    #[serde(default)]
+    grid_column: (GridLine, GridLine),
+    #[serde(default)]
+    grid_row: (GridLine, GridLine),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,12 +289,33 @@ struct OnResolveResult {
     // learns a view's primitive ("box"/"text"), it just renders whatever icon string the plugin
     // hands back here. A view absent from the map (e.g. no resolved kits) falls back editor-side.
     view_icons: std::collections::HashMap<String, String>,
+    // MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. Present when the
+    // viewport data is non-empty. The JS side decodes this and calls `vellum.set_data_binary()`
+    // instead of JSON-stringifying viewport_data and calling `vellum.set_data()`. This avoids
+    // the ~47ms JSON parse wall at 10k views on Vellum's side, plus the redundant
+    // JSON.stringify on the JS side.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    viewport_data_binary: Option<String>,
 }
 
-// Charter's opinion on which icon represents a view of a given primitive in the editor's Views
-// tree, paired 1:1 with detect_primitive/primitive_for_view. Kept here (not in the editor) so the
-// "text looks like this, a box looks like that" decision lives with the same layer that decides
-// what a view's primitive even is.
+// No rename_all here -- same reasoning as OnResolveResult above.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct OnSelectionChangeResult {
+    viewport_data: Vec<UiNode>,
+    node_view_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    viewport_data_binary: Option<String>,
+}
+fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
+    if data.is_empty() {
+        return None;
+    }
+    let bytes = rmp_serde::to_vec(data).ok()?;
+    Some(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        &bytes,
+    ))
+}
 fn primitive_icon(primitive: &str) -> &'static str {
     match primitive {
         "text" => "fa-solid fa-italic",
@@ -393,13 +435,6 @@ struct OnSelectionChangeInput {
     hovered_view_id: Option<String>,
 }
 
-// No rename_all here -- same reasoning as OnResolveResult above.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct OnSelectionChangeResult {
-    viewport_data: Vec<UiNode>,
-    node_view_ids: Vec<String>,
-}
-
 #[host_fn]
 extern "ExtismHost" {
     pub fn kit10_write_render_entry_to_layer(
@@ -494,9 +529,15 @@ fn parse_px(s: Option<&str>) -> f32 {
 
 fn parse_track(s: &str) -> TrackSize {
     let s = s.trim();
-    if s == "auto" { return TrackSize::Auto; }
-    if s == "min-content" { return TrackSize::MinContent; }
-    if s == "max-content" { return TrackSize::MaxContent; }
+    if s == "auto" {
+        return TrackSize::Auto;
+    }
+    if s == "min-content" {
+        return TrackSize::MinContent;
+    }
+    if s == "max-content" {
+        return TrackSize::MaxContent;
+    }
     if let Some(n) = s.strip_suffix("fr") {
         return TrackSize::Fr(n.trim().parse().unwrap_or(1.0));
     }
@@ -515,7 +556,9 @@ fn parse_track_list(s: &str) -> Vec<TrackSize> {
 
 fn parse_grid_line(s: &str) -> GridLine {
     let s = s.trim();
-    if s == "auto" || s.is_empty() { return GridLine::Auto; }
+    if s == "auto" || s.is_empty() {
+        return GridLine::Auto;
+    }
     if let Some(rest) = s.strip_prefix("span") {
         return GridLine::Span(rest.trim().parse().unwrap_or(1));
     }
@@ -534,37 +577,37 @@ fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
 
 fn parse_align(s: Option<&str>) -> Option<AlignValue> {
     match s? {
-        "start"      => Some(AlignValue::Start),
-        "end"        => Some(AlignValue::End),
+        "start" => Some(AlignValue::Start),
+        "end" => Some(AlignValue::End),
         "flex-start" => Some(AlignValue::FlexStart),
-        "flex-end"   => Some(AlignValue::FlexEnd),
-        "center"     => Some(AlignValue::Center),
-        "baseline"   => Some(AlignValue::Baseline),
-        "stretch"    => Some(AlignValue::Stretch),
-        _            => None,
+        "flex-end" => Some(AlignValue::FlexEnd),
+        "center" => Some(AlignValue::Center),
+        "baseline" => Some(AlignValue::Baseline),
+        "stretch" => Some(AlignValue::Stretch),
+        _ => None,
     }
 }
 
 fn parse_justify(s: Option<&str>) -> Option<JustifyValue> {
     match s? {
-        "start"         => Some(JustifyValue::Start),
-        "end"           => Some(JustifyValue::End),
-        "flex-start"    => Some(JustifyValue::FlexStart),
-        "flex-end"      => Some(JustifyValue::FlexEnd),
-        "center"        => Some(JustifyValue::Center),
-        "stretch"       => Some(JustifyValue::Stretch),
+        "start" => Some(JustifyValue::Start),
+        "end" => Some(JustifyValue::End),
+        "flex-start" => Some(JustifyValue::FlexStart),
+        "flex-end" => Some(JustifyValue::FlexEnd),
+        "center" => Some(JustifyValue::Center),
+        "stretch" => Some(JustifyValue::Stretch),
         "space-between" => Some(JustifyValue::SpaceBetween),
-        "space-evenly"  => Some(JustifyValue::SpaceEvenly),
-        "space-around"  => Some(JustifyValue::SpaceAround),
-        _               => None,
+        "space-evenly" => Some(JustifyValue::SpaceEvenly),
+        "space-around" => Some(JustifyValue::SpaceAround),
+        _ => None,
     }
 }
 
 fn parse_wrap(s: Option<&str>) -> FlexWrapValue {
     match s {
-        Some("wrap")         => FlexWrapValue::Wrap,
+        Some("wrap") => FlexWrapValue::Wrap,
         Some("wrap-reverse") => FlexWrapValue::WrapReverse,
-        _                    => FlexWrapValue::NoWrap,
+        _ => FlexWrapValue::NoWrap,
     }
 }
 
@@ -604,9 +647,17 @@ fn extract_paint_props(
     let has_border = !border.is_empty() && border != "none";
 
     PaintProps {
-        bg_color: if !bg.is_empty() { parse_color(&bg) } else { default_bg },
+        bg_color: if !bg.is_empty() {
+            parse_color(&bg)
+        } else {
+            default_bg
+        },
         show_border: has_border,
-        border_color: if has_border { parse_color(&border) } else { [0.0; 4] },
+        border_color: if has_border {
+            parse_color(&border)
+        } else {
+            [0.0; 4]
+        },
         border_width: if border_width > 0.0 {
             border_width
         } else if has_border {
@@ -628,11 +679,12 @@ fn build_box_node(
     let height = parse_px(get_prop(props, "height").as_deref());
 
     let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
-        "row"            => "Row",
-        "row-reverse"    => "RowReverse",
+        "row" => "Row",
+        "row-reverse" => "RowReverse",
         "column-reverse" => "ColumnReverse",
-        _                => "Column",
-    }.to_string();
+        _ => "Column",
+    }
+    .to_string();
 
     let extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
@@ -640,24 +692,30 @@ fn build_box_node(
         justify_content: parse_justify(get_prop(props, "justify-content").as_deref()),
         flex_wrap: parse_wrap(get_prop(props, "flex-wrap").as_deref()),
         flex_grow: get_prop(props, "flex-grow")
-            .map(|s| parse_px(Some(&s))).unwrap_or(0.0),
-        flex_shrink: get_prop(props, "flex-shrink")
-            .map(|s| parse_px(Some(&s))),
+            .map(|s| parse_px(Some(&s)))
+            .unwrap_or(0.0),
+        flex_shrink: get_prop(props, "flex-shrink").map(|s| parse_px(Some(&s))),
         align_self: parse_align(get_prop(props, "align-self").as_deref()),
         margin: parse_px(get_prop(props, "margin").as_deref()),
         position: NodePosition::default(),
         grid_template_columns: get_prop(props, "grid-template-columns")
-            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+            .map(|s| parse_track_list(&s))
+            .unwrap_or_default(),
         grid_template_rows: get_prop(props, "grid-template-rows")
-            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+            .map(|s| parse_track_list(&s))
+            .unwrap_or_default(),
         grid_auto_rows: get_prop(props, "grid-auto-rows")
-            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+            .map(|s| parse_track_list(&s))
+            .unwrap_or_default(),
         grid_auto_columns: get_prop(props, "grid-auto-columns")
-            .map(|s| parse_track_list(&s)).unwrap_or_default(),
+            .map(|s| parse_track_list(&s))
+            .unwrap_or_default(),
         grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s)).unwrap_or_default(),
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
         grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s)).unwrap_or_default(),
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
     };
 
     UiNode::Box(UiBoxNode {
@@ -789,9 +847,7 @@ fn box_categories() -> Vec<FieldCategory> {
         // field here, unlike text_categories.
         FieldCategory {
             name: "content".to_string(),
-            fields: vec![
-                FieldDef::new("children", Some("Children")).with_input_type("children"),
-            ],
+            fields: vec![FieldDef::new("children", Some("Children")).with_input_type("children")],
         },
     ]
 }
@@ -825,11 +881,7 @@ fn text_categories() -> Vec<FieldCategory> {
     ]
 }
 
-fn transparent_box(
-    parent_id: Option<usize>,
-    flex_direction: &str,
-    padding: [f32; 4],
-) -> UiNode {
+fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32; 4]) -> UiNode {
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id,
@@ -873,7 +925,10 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
             opacity: 1.0,
             shadow: None,
             extra: BoxExtra {
-                position: NodePosition::Absolute { x: pos[0], y: pos[1] },
+                position: NodePosition::Absolute {
+                    x: pos[0],
+                    y: pos[1],
+                },
                 ..BoxExtra::default()
             },
             selected: 0,
@@ -898,7 +953,13 @@ fn compute_selection(view_id: &str, ctx: &SelectionCtx) -> u8 {
     let is_active = ctx.active_view_id == Some(view_id);
     let is_primary = ctx.selected_view_primary == Some(view_id);
     let is_secondary = ctx.selected_view_secondary.iter().any(|id| id == view_id);
-    if is_active || is_primary { 2 } else if is_secondary { 1 } else { 0 }
+    if is_active || is_primary {
+        2
+    } else if is_secondary {
+        1
+    } else {
+        0
+    }
 }
 
 fn compute_hovered(view_id: &str, ctx: &SelectionCtx) -> bool {
@@ -1055,7 +1116,8 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
         hovered_view_id: parsed.hovered_view_id.as_deref(),
     };
 
-    let view_map: std::collections::HashMap<String, &ViewMeta> = parsed.project_views
+    let view_map: std::collections::HashMap<String, &ViewMeta> = parsed
+        .project_views
         .iter()
         .map(|v| (v.view_id.clone(), v))
         .collect();
@@ -1066,12 +1128,14 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
     // here it's run across the whole project) into one set, so a referenced view is
     // automatically excluded from the top-level grid no matter which view claims it, with no
     // separate flag to keep in sync by hand.
-    let referenced: std::collections::HashSet<String> = parsed.project_views
+    let referenced: std::collections::HashSet<String> = parsed
+        .project_views
         .iter()
         .flat_map(|v| collect_child_view_ids(&v.resolved_kits))
         .collect();
 
-    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, Option<[f32; 2]>)> = parsed.project_views
+    let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, Option<[f32; 2]>)> = parsed
+        .project_views
         .iter()
         .filter_map(|view| {
             if referenced.contains(&view.view_id) {
@@ -1081,7 +1145,9 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
             if kits.is_empty() {
                 return None;
             }
-            let vellum_hints: VellumHints = view.hints.get("vellum")
+            let vellum_hints: VellumHints = view
+                .hints
+                .get("vellum")
                 .and_then(|v| serde_json::from_value(v.clone()).ok())
                 .unwrap_or_default();
             Some((view, kits, vellum_hints.position))
@@ -1098,8 +1164,15 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
         viewport_data.push(absolute_box("Column", pos.unwrap()));
         node_view_ids.push(String::new());
         render_view_nodes(
-            kits, &view.hints, &view.view_id, &ctx,
-            Some(cell_idx), &mut viewport_data, &mut node_view_ids, 0, &view_map,
+            kits,
+            &view.hints,
+            &view.view_id,
+            &ctx,
+            Some(cell_idx),
+            &mut viewport_data,
+            &mut node_view_ids,
+            0,
+            &view_map,
         );
     }
 
@@ -1120,7 +1193,11 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
 
             for (view, kits, _) in row {
                 let cell_idx = viewport_data.len();
-                viewport_data.push(transparent_box(Some(row_idx), "Column", [0.0, GAP, 0.0, 0.0]));
+                viewport_data.push(transparent_box(
+                    Some(row_idx),
+                    "Column",
+                    [0.0, GAP, 0.0, 0.0],
+                ));
                 node_view_ids.push(String::new());
 
                 render_view_nodes(
@@ -1176,14 +1253,21 @@ pub fn on_resolve(input: String) -> FnResult<String> {
     let view_icons = parsed
         .project_views
         .iter()
-        .map(|v| (v.view_id.clone(), primitive_icon(&primitive_for_view(v)).to_string()))
+        .map(|v| {
+            (
+                v.view_id.clone(),
+                primitive_icon(&primitive_for_view(v)).to_string(),
+            )
+        })
         .collect();
+    let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
     let result = OnResolveResult {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
         composition_field_keys: composition_field_keys(),
         view_icons,
+        viewport_data_binary,
     };
 
     Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -1203,6 +1287,7 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
         return Ok(serde_json::to_string(&OnSelectionChangeResult {
             viewport_data: vec![],
             node_view_ids: vec![],
+            viewport_data_binary: None,
         })?);
     }
 
@@ -1216,7 +1301,12 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
     parsed.hovered_view_id = selection.hovered_view_id;
 
     let (viewport_data, node_view_ids) = build_viewport(&parsed);
-    Ok(serde_json::to_string(&OnSelectionChangeResult { viewport_data, node_view_ids })?)
+    let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
+    Ok(serde_json::to_string(&OnSelectionChangeResult {
+        viewport_data,
+        node_view_ids,
+        viewport_data_binary,
+    })?)
 }
 
 #[plugin_fn]
@@ -1241,8 +1331,10 @@ mod field_update_tests {
 
     #[test]
     fn deserializes_camel_case_from_js() {
-        let json = r##"{"layerId":"layer-123","property":"color","value":"#ff0000","tokenId":null}"##;
-        let update: FieldUpdate = serde_json::from_str(json).expect("should deserialize camelCase JSON sent by StyleField.svelte");
+        let json =
+            r##"{"layerId":"layer-123","property":"color","value":"#ff0000","tokenId":null}"##;
+        let update: FieldUpdate = serde_json::from_str(json)
+            .expect("should deserialize camelCase JSON sent by StyleField.svelte");
         assert_eq!(update.layer_id, "layer-123");
         assert_eq!(update.property, "color");
         assert_eq!(update.value.as_deref(), Some("#ff0000"));
@@ -1264,8 +1356,16 @@ mod selection_change_input_wire_tests {
         let input: OnSelectionChangeInput = serde_json::from_str(json)
             .expect("should deserialize camelCase JSON sent by manager.svelte.ts");
         assert_eq!(input.primary.as_deref(), Some("v1"));
-        assert_eq!(input.active_view_id.as_deref(), Some("v1"), "activeViewId must not silently become None");
-        assert_eq!(input.hovered_view_id.as_deref(), Some("v2"), "hoveredViewId must not silently become None");
+        assert_eq!(
+            input.active_view_id.as_deref(),
+            Some("v1"),
+            "activeViewId must not silently become None"
+        );
+        assert_eq!(
+            input.hovered_view_id.as_deref(),
+            Some("v2"),
+            "hoveredViewId must not silently become None"
+        );
     }
 
     #[test]
@@ -1282,16 +1382,26 @@ mod position_wire_tests {
 
     #[test]
     fn absolute_position_serializes_as_expected() {
-        let extra = BoxExtra { position: NodePosition::Absolute { x: 500.0, y: 400.0 }, ..BoxExtra::default() };
+        let extra = BoxExtra {
+            position: NodePosition::Absolute { x: 500.0, y: 400.0 },
+            ..BoxExtra::default()
+        };
         let json = serde_json::to_string(&extra).unwrap();
         println!("BoxExtra JSON: {}", json);
-        assert!(json.contains(r#""position":{"Absolute":{"x":500.0,"y":400.0}}"#), "json was: {}", json);
+        assert!(
+            json.contains(r#""position":{"Absolute":{"x":500.0,"y":400.0}}"#),
+            "json was: {}",
+            json
+        );
     }
 
     #[test]
     fn build_viewport_places_positioned_view_as_independent_root() {
         let mut hints = std::collections::HashMap::new();
-        hints.insert("vellum".to_string(), serde_json::json!({ "position": [500.0, 400.0] }));
+        hints.insert(
+            "vellum".to_string(),
+            serde_json::json!({ "position": [500.0, 400.0] }),
+        );
 
         let view = ViewMeta {
             view_id: "v1".to_string(),
@@ -1302,16 +1412,19 @@ mod position_wire_tests {
                 kit_name: "Kit".to_string(),
                 properties: {
                     let mut m = std::collections::HashMap::new();
-                    m.insert("background".to_string(), ResolvedProperty {
-                        property: "background".to_string(),
-                        value: "#ff0000".to_string(),
-                        source_layer_id: "l1".to_string(),
-                        kit_id: "k1".to_string(),
-                        is_token: false,
-                        token_alias: None,
-                        condition_count: 0,
-                        view_refs: None,
-                    });
+                    m.insert(
+                        "background".to_string(),
+                        ResolvedProperty {
+                            property: "background".to_string(),
+                            value: "#ff0000".to_string(),
+                            source_layer_id: "l1".to_string(),
+                            kit_id: "k1".to_string(),
+                            is_token: false,
+                            token_alias: None,
+                            condition_count: 0,
+                            view_refs: None,
+                        },
+                    );
                     m
                 },
             }],
@@ -1328,12 +1441,26 @@ mod position_wire_tests {
         };
 
         let (viewport, node_view_ids) = build_viewport(&input);
-        println!("viewport JSON: {}", serde_json::to_string_pretty(&viewport).unwrap());
-        assert_eq!(viewport.len(), 2, "expected the positioned root cell + its one content box");
-        assert_eq!(node_view_ids, vec![String::new(), "v1".to_string()], "root cell is structural (\"\"), content box belongs to v1");
+        println!(
+            "viewport JSON: {}",
+            serde_json::to_string_pretty(&viewport).unwrap()
+        );
+        assert_eq!(
+            viewport.len(),
+            2,
+            "expected the positioned root cell + its one content box"
+        );
+        assert_eq!(
+            node_view_ids,
+            vec![String::new(), "v1".to_string()],
+            "root cell is structural (\"\"), content box belongs to v1"
+        );
         if let UiNode::Box(UiBoxNode { box_data }) = &viewport[0] {
             assert_eq!(box_data.parent_id, None);
-            assert_eq!(box_data.extra.position, NodePosition::Absolute { x: 500.0, y: 400.0 });
+            assert_eq!(
+                box_data.extra.position,
+                NodePosition::Absolute { x: 500.0, y: 400.0 }
+            );
         } else {
             panic!("expected a Box node");
         }
@@ -1403,7 +1530,11 @@ mod selection_and_hover_tests {
         }
     }
 
-    fn input(project_views: Vec<ViewMeta>, primary: Option<&str>, hovered: Option<&str>) -> OnResolveInput {
+    fn input(
+        project_views: Vec<ViewMeta>,
+        primary: Option<&str>,
+        hovered: Option<&str>,
+    ) -> OnResolveInput {
         OnResolveInput {
             active_view_id: None,
             resolved_kits: vec![],
@@ -1420,11 +1551,17 @@ mod selection_and_hover_tests {
         let input = input(vec![text_view("t1")], Some("t1"), None);
         let (viewport, node_view_ids) = build_viewport(&input);
 
-        let text_idx = node_view_ids.iter().position(|id| id == "t1").expect("t1 node present");
+        let text_idx = node_view_ids
+            .iter()
+            .position(|id| id == "t1")
+            .expect("t1 node present");
         let UiNode::Text(UiTextNode { text_data }) = &viewport[text_idx] else {
             panic!("expected a Text node for a text-primitive view");
         };
-        assert_eq!(text_data.selected, 2, "selected view's Text primitive must be marked selected");
+        assert_eq!(
+            text_data.selected, 2,
+            "selected view's Text primitive must be marked selected"
+        );
     }
 
     #[test]
@@ -1434,11 +1571,27 @@ mod selection_and_hover_tests {
         let input = input(vec![parent, child], Some("child"), None);
         let (viewport, node_view_ids) = build_viewport(&input);
 
-        let parent_idx = node_view_ids.iter().position(|id| id == "parent").expect("parent node present");
-        let child_idx = node_view_ids.iter().position(|id| id == "child").expect("child node present");
+        let parent_idx = node_view_ids
+            .iter()
+            .position(|id| id == "parent")
+            .expect("parent node present");
+        let child_idx = node_view_ids
+            .iter()
+            .position(|id| id == "child")
+            .expect("child node present");
 
-        let UiNode::Box(UiBoxNode { box_data: parent_data }) = &viewport[parent_idx] else { panic!("expected Box") };
-        let UiNode::Box(UiBoxNode { box_data: child_data }) = &viewport[child_idx] else { panic!("expected Box") };
+        let UiNode::Box(UiBoxNode {
+            box_data: parent_data,
+        }) = &viewport[parent_idx]
+        else {
+            panic!("expected Box")
+        };
+        let UiNode::Box(UiBoxNode {
+            box_data: child_data,
+        }) = &viewport[child_idx]
+        else {
+            panic!("expected Box")
+        };
         assert_eq!(parent_data.selected, 0, "parent itself isn't selected");
         assert_eq!(child_data.selected, 2, "nested referenced-as-child view that IS the active selection must show selected, not a hardcoded 0");
     }
@@ -1453,12 +1606,25 @@ mod selection_and_hover_tests {
         let parent_idx = node_view_ids.iter().position(|id| id == "parent").unwrap();
         let child_idx = node_view_ids.iter().position(|id| id == "child").unwrap();
 
-        let UiNode::Box(UiBoxNode { box_data: parent_data }) = &viewport[parent_idx] else { panic!("expected Box") };
-        let UiNode::Box(UiBoxNode { box_data: child_data }) = &viewport[child_idx] else { panic!("expected Box") };
+        let UiNode::Box(UiBoxNode {
+            box_data: parent_data,
+        }) = &viewport[parent_idx]
+        else {
+            panic!("expected Box")
+        };
+        let UiNode::Box(UiBoxNode {
+            box_data: child_data,
+        }) = &viewport[child_idx]
+        else {
+            panic!("expected Box")
+        };
         assert_eq!(parent_data.selected, 2, "parent is selected");
         assert!(!parent_data.hovered, "parent is not hovered");
         assert_eq!(child_data.selected, 0, "child is not selected");
-        assert!(child_data.hovered, "child is hovered, independently of parent's selection");
+        assert!(
+            child_data.hovered,
+            "child is hovered, independently of parent's selection"
+        );
     }
 
     #[test]
@@ -1476,7 +1642,10 @@ mod selection_and_hover_tests {
     fn structural_grid_scaffolding_has_empty_view_id() {
         let input = input(vec![box_view("v1", vec![])], None, None);
         let (_viewport, node_view_ids) = build_viewport(&input);
-        assert!(node_view_ids.contains(&String::new()), "root/row/cell wrapper boxes should be tagged as belonging to no view");
+        assert!(
+            node_view_ids.contains(&String::new()),
+            "root/row/cell wrapper boxes should be tagged as belonging to no view"
+        );
     }
 
     // Regression test: OnResolveResult/OnSelectionChangeResult must serialize their fields as
@@ -1494,15 +1663,22 @@ mod selection_and_hover_tests {
             node_view_ids: vec![],
             composition_field_keys: vec![],
             view_icons: std::collections::HashMap::new(),
+            viewport_data_binary: None,
         };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"viewport_data\""), "json was: {json}");
         assert!(json.contains("\"node_view_ids\""), "json was: {json}");
-        assert!(json.contains("\"composition_field_keys\""), "json was: {json}");
+        assert!(
+            json.contains("\"composition_field_keys\""),
+            "json was: {json}"
+        );
         assert!(json.contains("\"view_icons\""), "json was: {json}");
         assert!(!json.contains("\"viewportData\""), "json was: {json}");
         assert!(!json.contains("\"nodeViewIds\""), "json was: {json}");
-        assert!(!json.contains("\"compositionFieldKeys\""), "json was: {json}");
+        assert!(
+            !json.contains("\"compositionFieldKeys\""),
+            "json was: {json}"
+        );
         assert!(!json.contains("\"viewIcons\""), "json was: {json}");
     }
 
@@ -1521,7 +1697,11 @@ mod selection_and_hover_tests {
 
     #[test]
     fn on_selection_change_result_serializes_snake_case_keys() {
-        let result = OnSelectionChangeResult { viewport_data: vec![], node_view_ids: vec![] };
+        let result = OnSelectionChangeResult {
+            viewport_data: vec![],
+            node_view_ids: vec![],
+            viewport_data_binary: None,
+        };
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"viewport_data\""), "json was: {json}");
         assert!(json.contains("\"node_view_ids\""), "json was: {json}");
@@ -1613,21 +1793,33 @@ mod children_containment_tests {
     #[test]
     fn box_categories_declares_a_children_field() {
         let categories = box_categories();
-        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "children");
-        assert!(found, "box_categories() should declare a \"children\" field");
+        let found = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .any(|f| f.key == "children");
+        assert!(
+            found,
+            "box_categories() should declare a \"children\" field"
+        );
     }
 
     #[test]
     fn text_categories_does_not_declare_a_children_field() {
         let categories = text_categories();
-        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "children");
+        let found = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .any(|f| f.key == "children");
         assert!(!found, "text_categories() should not declare \"children\" -- children are only ever authored on a Box");
     }
 
     #[test]
     fn text_categories_declares_a_content_field() {
         let categories = text_categories();
-        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "content");
+        let found = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .any(|f| f.key == "content");
         assert!(found, "text_categories() should declare a \"content\" field -- a Text node's own string is otherwise only ever settable via seed data");
     }
 
@@ -1637,7 +1829,10 @@ mod children_containment_tests {
         // text nests a Text primitive as a child), so `content` is a Text-only field. See the
         // content-less recursion in render_view_nodes and text_categories_declares_a_content_field.
         let categories = box_categories();
-        let found = categories.iter().flat_map(|c| &c.fields).any(|f| f.key == "content");
+        let found = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .any(|f| f.key == "content");
         assert!(!found, "box_categories() must NOT declare a \"content\" field -- a Box has no inline text; nest a Text primitive instead");
     }
 
@@ -1648,7 +1843,10 @@ mod children_containment_tests {
         let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
-        assert!(child_idx.is_some(), "a Box parent's Text child should be rendered");
+        assert!(
+            child_idx.is_some(),
+            "a Box parent's Text child should be rendered"
+        );
         assert!(matches!(viewport[child_idx.unwrap()], UiNode::Text(_)));
     }
 
@@ -1659,7 +1857,10 @@ mod children_containment_tests {
         let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
-        assert!(child_idx.is_some(), "a Text parent's Text child should be rendered");
+        assert!(
+            child_idx.is_some(),
+            "a Text parent's Text child should be rendered"
+        );
         assert!(matches!(viewport[child_idx.unwrap()], UiNode::Text(_)));
     }
 
@@ -1682,7 +1883,10 @@ mod children_containment_tests {
         let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
-        assert!(child_idx.is_some(), "a Box parent's Box child should still be rendered (unchanged existing behavior)");
+        assert!(
+            child_idx.is_some(),
+            "a Box parent's Box child should still be rendered (unchanged existing behavior)"
+        );
         assert!(matches!(viewport[child_idx.unwrap()], UiNode::Box(_)));
     }
 
@@ -1751,7 +1955,14 @@ mod text_paint_properties_tests {
         props.insert("font-size".to_string(), prop("14px"));
         props.insert("color".to_string(), prop("#111111"));
 
-        for key in ["width", "height", "display", "flex-direction", "gap", "grid-template-columns"] {
+        for key in [
+            "width",
+            "height",
+            "display",
+            "flex-direction",
+            "gap",
+            "grid-template-columns",
+        ] {
             let mut with_structural = props.clone();
             with_structural.insert(key.to_string(), prop("1px"));
             assert_eq!(
@@ -1807,7 +2018,10 @@ mod text_paint_properties_tests {
         let UiNode::Box(UiBoxNode { box_data }) = node else {
             panic!("expected a Box node");
         };
-        assert_eq!(box_data.bg_color, [0.0; 4], "unstyled box must be transparent");
+        assert_eq!(
+            box_data.bg_color, [0.0; 4],
+            "unstyled box must be transparent"
+        );
     }
 
     #[test]

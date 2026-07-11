@@ -124,7 +124,6 @@
 		> | null
 	);
 
-
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
 		const editor = editorLoading;
@@ -457,6 +456,7 @@
 	{#snippet dash(editorReady)}
 		<Viewport
 			data={pluginManager?.viewportData ?? '[]'}
+			dataBinary={pluginManager?.viewportDataBinary ?? null}
 			nodeViewIds={pluginManager?.nodeViewIds ?? []}
 			bind:editorActivity
 			bind:selection

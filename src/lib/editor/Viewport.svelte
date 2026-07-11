@@ -9,12 +9,14 @@
 
 	let {
 		data = '[]',
+		dataBinary = null,
 		nodeViewIds = [],
 		editorActivity = $bindable(),
 		selection = $bindable(),
 		hoveredViewId = $bindable(null)
 	}: {
 		data?: string;
+		dataBinary?: Uint8Array | null;
 		nodeViewIds?: string[];
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
@@ -150,9 +152,13 @@
 	});
 
 	$effect(() => {
-		const d = data;
+		const d = dataBinary ?? data;
 		if (initialized && vellum && d) {
-			vellum.set_data(d);
+			if (d instanceof Uint8Array) {
+				vellum.set_data_binary(d);
+			} else {
+				vellum.set_data(d);
+			}
 			hasData = true;
 			requestRender();
 		}

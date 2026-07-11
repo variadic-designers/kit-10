@@ -122,6 +122,10 @@ export interface OnResolveResult {
 	// Per view_id, the icon the plugin wants that view shown with in the Views tree. The editor
 	// stays agnostic about a view's primitive -- it just renders whatever string the plugin gives.
 	view_icons?: Record<string, string>;
+	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
+	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified
+	// viewport_data path — avoids the ~47ms JSON parse wall at 10k views.
+	viewport_data_binary?: string;
 }
 
 export interface PluginMeta {
