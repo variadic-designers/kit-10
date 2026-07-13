@@ -392,27 +392,28 @@
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">
 	{#snippet content()}
-		<!-- <pre>{JSON.stringify(viewsQuery, null, 2)}</pre> -->
 		<ul class="views">
 			{#if viewsQuery.rows}
 				{#each rootViews as v (v.viewId)}
 					{@const item = manifestById.get(v.viewId)}
-					{@render kitter(v, item, 0, [])}
+					{@render kitter(v, item, [])}
 				{/each}
 			{/if}
 		</ul>
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v: any, item: PanelItem | undefined, level: number, ancestors: string[])}
+{#snippet kitter(v: any, item: PanelItem | undefined, ancestors: string[])}
 	{@const viewIcon = v.viewLocked
 		? 'fa-solid fa-lock'
 		: ((v.hints?.view_icon as string | undefined) ?? 'fa-regular fa-window-maximize')}
 	{@const parentId = ancestors[ancestors.length - 1] ?? null}
+	{@const visibleChildren = childIds(v.viewId).filter(
+		(id) => id !== v.viewId && !ancestors.includes(id) && resolvedViewIdSet.has(id)
+	)}
 
 	<li
 		class="view-field"
-		style="--level: {level}"
 		class:selected={editorActivity.activeViewId === v.viewId}
 		class:hovered={hoveredViewId === v.viewId}
 		use:draggable={{
@@ -436,7 +437,6 @@
 		}}
 	>
 		<button
-			style="--level: {level}"
 			class="view"
 			use:contextMenu={menuFor(v.viewId)}
 			aria-label={v.viewName}
@@ -460,20 +460,19 @@
 				</Renameable>
 			</div>
 		</button>
-	</li>
 
-	<!-- Views are unique, reference-based, not instanced -- the composition graph is a DAG, not
-	     strictly a tree, so a child is rendered under every parent that currently references it.
-	     The `!ancestors.includes(id)` filter is a cycle guard, not a "already shown" dedupe: if a
-	     chain of children ever loops back to a view already open in this exact render path (A's
-	     children include B, B's include A), that branch just stops instead of recursing forever. -->
-	{#each childIds(v.viewId).filter((id) => id !== v.viewId && !ancestors.includes(id) && resolvedViewIdSet.has(id)) as childId (childId)}
-		{@const childRow = rowsByViewId.get(childId)}
-		{@const childItem = manifestById.get(childId)}
-		{#if childRow}
-			{@render kitter(childRow, childItem, level + 1, [...ancestors, v.viewId])}
+		{#if visibleChildren.length}
+			<ul class="view__children">
+				{#each visibleChildren as childId (childId)}
+					{@const childRow = rowsByViewId.get(childId)}
+					{@const childItem = manifestById.get(childId)}
+					{#if childRow}
+						{@render kitter(childRow, childItem, [...ancestors, v.viewId])}
+					{/if}
+				{/each}
+			</ul>
 		{/if}
-	{/each}
+	</li>
 {/snippet}
 
 <style lang="scss">
@@ -485,15 +484,74 @@
 		scrollbar-width: thin;
 	}
 
+	// Each nesting level is a real <ul class="view__children"> inside its parent <li>, so the
+	// browser's own DOM tree *is* the view tree — indentation, guide lines, and `:last-child`
+	// all fall out of CSS with zero per-row JS. This replaces the old flat-with-`--level`-index
+	// layout where every row was a sibling and "last direct child of parent X" required JS to
+	// re-derive what the DOM already knew.
+	.view__children {
+		list-style: none;
+		margin: 0;
+		padding-left: $x-space-sm; // one indent step per nesting level — structural, not computed
+
+		> .view-field {
+			position: relative;
+
+			// Vertical guide line: drops from the parent's bottom down through every direct
+			// child at this level. Drawn on each child's ::before so the line is continuous
+			// across siblings — every child contributes a segment from its top to its bottom.
+			&::before {
+				content: '';
+				position: absolute;
+				left: calc($x-space-sm * -0.5); // align with the parent row's icon center
+				top: 0;
+				bottom: 0;
+				border-left: 1px solid var(--color-text-muted);
+				pointer-events: none;
+			}
+
+			// Horizontal stub from the vertical line to this row's label.
+			&::after {
+				content: '';
+				position: absolute;
+				left: calc($x-space-sm * -0.5);
+				top: 50%;
+				width: calc($x-space-sm * 0.5);
+				border-top: 1px solid var(--color-text-muted);
+				pointer-events: none;
+			}
+
+			// The curve: on the LAST direct child, the vertical line stops at this row's
+			// midline (where the horizontal stub meets it) and rounds into the stub via
+			// border-bottom-left-radius. `:last-child` is the browser's own "last direct
+			// child" — no JS re-derivation, no drift when ordering changes. The non-last
+			// siblings keep the full-height vertical line (their ::before), so the line
+			// runs continuously from parent's bottom to the last child's midline.
+			&:last-child::before {
+				bottom: auto;
+				height: 50%;
+				border-bottom: 1px solid var(--color-text-muted);
+				border-bottom-left-radius: $x-space-sm * 0.5;
+			}
+			// The last child's ::before already draws the curve (vertical + bottom + radius);
+			// its ::after horizontal stub is redundant with the bottom segment of the curve,
+			// so suppress it to avoid a double line.
+			&:last-child::after {
+				display: none;
+			}
+		}
+	}
+
 	.view-field {
 		display: flex;
-		padding-left: $x-space-sm;
 		position: relative;
 
 		// Drag-and-drop indicators (classes applied at runtime by the dnd controller, hence
-		// :global()). `into` = nest under this view (outline the whole row); before/after = drop as
-		// a sibling on that edge (an insertion line, indented to this row's depth so it reads as
-		// landing at the right level).
+		// :global()). `into` = nest under this view (outline the whole row); before/after = drop
+		// as a sibling on that edge (an insertion line). With nested <ul>, `left: 0` lands at
+		// the right depth automatically — each <ul> is already indented by its own padding, so
+		// the insertion line aligns with the drop target's actual nesting level without any
+		// `--level` arithmetic.
 		&:global(.dnd-over) {
 			outline: 1px solid var(--color-primary);
 			outline-offset: -1px;
@@ -503,9 +561,18 @@
 		&:global(.dnd-insert-after)::after {
 			content: '';
 			position: absolute;
-			left: calc($x-space-sm + $x-space-lg * var(--level) * 0.38);
+			left: 0;
 			right: 0;
+			// Reset guide-line properties that could conflict when the DnD class overrides the
+			// guide line's ::before/::after on the same element. The guide line sets bottom/height/
+			// border-bottom-left-radius/border-left/border-top; the DnD indicator needs a clean
+			// horizontal bar, so explicitly neutralize those.
+			top: auto;
+			bottom: auto;
 			height: 2px;
+			width: auto;
+			border: none;
+			border-radius: 0;
 			background: var(--color-primary);
 			box-shadow: 0 0 0 1px var(--color-primary);
 			z-index: 3;
@@ -547,12 +614,11 @@
 		background: inherit;
 		color: var(--color-text-muted);
 		border: unset;
-		// border-right: 1px solid var(--color-text-muted);
 		padding-right: calc($x-space-xs / 1);
 	}
 
 	.view {
-		padding-left: calc($x-space-lg * (-0 + var(--level) * 0.38));
+		padding-left: $x-space-xs;
 		padding-block: calc($x-space-xs * 0.25);
 
 		color: var(--color-text);
