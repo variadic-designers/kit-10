@@ -532,7 +532,11 @@
 	//   Trunk -- every direct child EXCEPT the last paints a full-node-height segment (top -> bottom
 	//   of its whole subtree). The segments stack into one continuous line that runs cleanly down
 	//   the left of any grandchildren sitting between two direct children.
-	.view__children > .view-node:not(:last-child)::before {
+	// ::after, not ::before, on purpose: it's the LAST generated child of .view-node, so it paints
+	// after the sibling .view-field (and the nested <ul>) in tree order and lands on top of the
+	// row's full-width background with no z-index needed. A ::before here would paint first and get
+	// covered by that background.
+	.view__children > .view-node:not(:last-child)::after {
 		content: '';
 		position: absolute;
 		@include guide-column;
@@ -560,6 +564,8 @@
 		border-bottom: 0.6px solid var(--color-text-muted);
 		border-bottom-left-radius: $x-space-xs;
 		pointer-events: none;
+		// No z-index needed: this ::before is on .view-field itself, so it paints after that
+		// element's own background (element bg first, then its positioned pseudo-children).
 	}
 
 	// When a parent row is selected, promote its subtree's guide line to primary.
@@ -569,7 +575,7 @@
 	// inner selectors mirror the trunk/curve rules above; `border-color` covers both the trunk's
 	// border-left and the curve's border-left + border-bottom in one line.
 	.view-field.selected + .view__children {
-		> .view-node:not(:last-child)::before,
+		> .view-node:not(:last-child)::after,
 		> .view-node:last-child > .view-field::before {
 			border-color: var(--color-primary);
 		}
