@@ -115,6 +115,7 @@
 			// pushing the others off-screen. Collapse still animates this down to 0 (below).
 			max-height: 35vh;
 			overflow-y: auto;
+			scrollbar-width: thin;
 			transition: max-height 200ms ease-out;
 
 			@include layout-respond('lg') {
@@ -123,7 +124,6 @@
 
 			@include layout-respond-max('lg') {
 				font-size: $x-font-size-xs;
-				scrollbar-width: none;
 			}
 		}
 	}
