@@ -9,6 +9,7 @@ import type {
 	FieldUpdate,
 	LoadedPlugin,
 	OnResolveResult,
+	PanelManifest,
 	PluginContext,
 	ResolvedView,
 	UiNode,
@@ -42,13 +43,12 @@ function serializeResolvedViews(views: ResolvedView[] | null) {
 export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
-	// Plugin-declared view-composition field keys, view-independent (see OnResolveResult). Unlike
-	// fieldCategories (active view's primitive), this is stable -- the Views tree nests off it no
-	// matter which view is active.
-	let compositionFieldKeys = $state<string[]>([]);
-	// Plugin-declared per-view icons (view_id -> icon class), see OnResolveResult.view_icons. The
-	// editor stays agnostic about a view's primitive; it just renders whatever icon the plugin gives.
-	let viewIcons = $state<Record<string, string>>({});
+	// Panel manifests published by plugins via `kit10_panel_publish`. Replaces the old
+	// `compositionFieldKeys` / `viewIcons` flat state (Charter now bundles topology + icon +
+	// write-alias into one PanelManifest per panel-id, so the editor's panel can render purely
+	// off this map instead of re-deriving topology client-side). Keyed by panel_id ("views"
+	// today; additive for future plugin-driven panels — see CLAUDE.md's panel-manifest section).
+	let panelManifests = $state<Map<string, PanelManifest>>(new Map());
 	let viewportData = $state<string>('[]');
 	// MessagePack-binary path: when Charter emits viewport_data_binary, this is the
 	// base64-decoded bytes ready for vellum.set_data_binary(). Avoids the 47ms JSON
@@ -238,6 +238,19 @@ export function createPluginManager(api: Api) {
 					const rawJson = cp.read(inputOffs).text();
 					viewportData = rawJson;
 					return cp.store(JSON.stringify(true));
+				},
+
+				// Plugin publishes a panel manifest. The manifest lands in the `panelManifests` $state
+				// map keyed by `panel_id`, so any editor panel that derives off `pluginManager.panelManifest(id)`
+				// re-renders the moment a plugin (e.g. Charter, from inside `on_resolve`) writes a new
+				// manifest. Decoupled from `OnResolveResult`'s return shape on purpose: see CLAUDE.md's
+				// panel-manifest section — a future plugin refreshing its own panel doesn't need a full
+				// resolve cycle, and `OnResolveResult` stays focused on viewport data + categories.
+				kit10_panel_publish(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const input = JSON.parse(rawJson) as { panel_id: string; manifest: PanelManifest };
+					panelManifests = new Map(panelManifests).set(input.panel_id, input.manifest);
+					return cp.store(JSON.stringify(true));
 				}
 			}
 		};
@@ -266,8 +279,6 @@ export function createPluginManager(api: Api) {
 		if (result) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
-			if (parsed.composition_field_keys) compositionFieldKeys = parsed.composition_field_keys;
-			if (parsed.view_icons) viewIcons = parsed.view_icons;
 			if (parsed.viewport_data_binary) {
 				const binaryStr = atob(parsed.viewport_data_binary);
 				const bytes = new Uint8Array(binaryStr.length);
@@ -279,6 +290,11 @@ export function createPluginManager(api: Api) {
 				viewportDataBinary = null;
 				nodeViewIds = parsed.node_view_ids ?? [];
 			}
+			// Panel manifests are NOT read here — they're published via the `kit10_panel_publish`
+			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
+			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
+			// and the host fn's writes both happen before any panel subtends. Decoupled on
+			// purpose: see CLAUDE.md — "Charter owns panel manifests."
 		}
 	}
 
@@ -475,7 +491,7 @@ export function createPluginManager(api: Api) {
 			activePlugin = null;
 		}
 		fieldCategories = [];
-		viewIcons = {};
+		panelManifests = new Map();
 		viewportData = '[]';
 		viewportDataBinary = null;
 		nodeViewIds = [];
@@ -488,11 +504,14 @@ export function createPluginManager(api: Api) {
 		get fieldCategories() {
 			return fieldCategories;
 		},
-		get compositionFieldKeys() {
-			return compositionFieldKeys;
-		},
-		get viewIcons() {
-			return viewIcons;
+		// Look up a published panel manifest by id. Returns undefined when the plugin hasn't
+		// published one yet (e.g. before the first resolve fires). Panels derive off this —
+		// Svelte 5 reactivity fires when the underlying `panelManifests` $state is reassigned
+		// (the kit10_panel_publish host fn always writes a new Map instance, never mutates in
+		// place, so the assignment triggers subscribers).
+		panelManifest: (panelId: string) => panelManifests.get(panelId),
+		get panelManifests() {
+			return panelManifests;
 		},
 		get viewportData() {
 			return viewportData;

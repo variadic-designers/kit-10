@@ -376,7 +376,7 @@ export async function seedDemoProject(
 	// rest stay top-level until something composes them (`labelDefaultView` becomes buttonKit's
 	// clone-per-view template master below; `labelPrimaryView`/`labelSecondaryView` stay unclaimed
 	// library content).
-	const textPrimitiveHint = { charter: { primitive: 'text' } };
+	const textPrimitiveHint = { charter: { primitive: 'text' }, view_icon: 'fa-solid fa-italic' };
 
 	const labelDefaultView = (await api.createViewInProject(
 		proj.id,
@@ -527,6 +527,7 @@ export async function seedDemoProject(
 	// View: Light Default
 	const lightDefaultView = (await api.createViewInProject(proj.id, 'Light Default', {
 		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 		vellum: { position: [0, 0] }
 	}))!;
 	await api.attachKitToComposition(buttonKit.id, lightDefaultView.id);
@@ -560,6 +561,7 @@ export async function seedDemoProject(
 	// View: Dark Default
 	const darkDefaultView = (await api.createViewInProject(proj.id, 'Dark Default', {
 		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 		vellum: { position: [500, 0] }
 	}))!;
 	await api.attachKitToComposition(buttonKit.id, darkDefaultView.id);
@@ -596,6 +598,7 @@ export async function seedDemoProject(
 		'Light Comfort Primary Hover',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1000, 0] }
 		}
 	))!;
@@ -633,6 +636,7 @@ export async function seedDemoProject(
 		'Dark Comfort Danger Click',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [0, 400] }
 		}
 	))!;
@@ -672,6 +676,7 @@ export async function seedDemoProject(
 		'Light Compact Ghost Disabled',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [500, 400] }
 		}
 	))!;
@@ -710,6 +715,7 @@ export async function seedDemoProject(
 		'Dark Compact Positive',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1000, 400] }
 		}
 	))!;
@@ -748,6 +754,7 @@ export async function seedDemoProject(
 		'Light Comfort Tertiary Click',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1500, 400] }
 		}
 	))!;
@@ -791,6 +798,7 @@ export async function seedDemoProject(
 		'Button (cloned default)',
 		{
 			charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [2000, 400] }
 		}
 	))!;
@@ -834,7 +842,7 @@ export async function seedDemoProject(
 	}
 
 	async function textView(name: string, kit: { id: string }, content: string): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'text' } }))!;
+		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'text' }, view_icon: 'fa-solid fa-italic' }))!;
 		await api.attachKitToComposition(kit.id, v.id);
 		await api.createToken(proj.id, 'content', s(content), { viewId: v.id });
 		return v.id;
@@ -844,7 +852,7 @@ export async function seedDemoProject(
 		name: string,
 		kit: { id: string },
 		childIds: string[],
-		hints: Record<string, unknown> = { charter: { primitive: 'box' } }
+		hints: Record<string, unknown> = { charter: { primitive: 'box' }, view_icon: 'fa-regular fa-window-maximize' }
 	): Promise<string> {
 		const v = (await api.createViewInProject(proj.id, name, hints))!;
 		await api.attachKitToComposition(kit.id, v.id);
@@ -870,7 +878,7 @@ export async function seedDemoProject(
 	}
 
 	async function imageView(name: string, kit: { id: string }): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'image' } }))!;
+		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'image' }, view_icon: 'fa-solid fa-image' }))!;
 		await api.attachKitToComposition(kit.id, v.id);
 		return v.id;
 	}
@@ -1024,6 +1032,7 @@ export async function seedDemoProject(
 	// --- Page root (positioned off to the left of the component gallery) ---
 	await boxView('Landing Page', pageKit, [nav, hero, features, footer], {
 		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
 		vellum: { position: [-1100, 0] }
 	});
 

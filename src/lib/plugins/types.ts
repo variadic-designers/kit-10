@@ -118,16 +118,52 @@ export interface OnResolveResult {
 	// structural grid scaffolding nodes that don't belong to any view. Used to resolve a
 	// viewport click-to-select hit-test index (from vellum.get_selection) back to a view id.
 	node_view_ids: string[];
-	// Property keys the plugin declares as view-composition fields, view-independent (across all
-	// primitives) -- the editor nests the Views tree off these regardless of the active view.
-	composition_field_keys?: string[];
-	// Per view_id, the icon the plugin wants that view shown with in the Views tree. The editor
-	// stays agnostic about a view's primitive -- it just renders whatever string the plugin gives.
-	view_icons?: Record<string, string>;
 	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
 	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified
 	// viewport_data path — avoids the ~47ms JSON parse wall at 10k views.
 	viewport_data_binary?: string;
+}
+
+// Panel manifest published by a plugin via `kit10_panel_publish`. The editor's panels are
+// generic renderers over this shape — topology lives plugin-side, live metadata (view names,
+// locked) stays in the editor's own DB query and is joined against `id` at render time. Wire
+// keys are snake_case (plugin-authored output, see CLAUDE.md's camelCase pitfall).
+export interface PanelOp {
+	name: string;
+	label: string;
+	icon: string;
+	// Op-specific payload. Today only `add-child` uses it to carry which primitive to create
+	// ("box"|"text"|"image"); other ops leave it null.
+	kind: string | null;
+}
+
+export interface PanelItem {
+	id: string;
+	// Token alias to upsert when DnD writes this item's children list. null when this item's
+	// primitive has no `children` field (e.g. Text/Image) — panel hides the DnD-nest affordance.
+	write_alias: string | null;
+	// Ops the plugin declares available on this item — drives the editor's right-click context
+	// menu. Each op is self-describing: `name` is the dispatch key, `label`/`icon` are what to
+	// render. Editor switches on `name` to execute (rename/delete/clone/lock/hide/add-child).
+	ops: PanelOp[];
+}
+
+export interface PanelManifest {
+	panel_id: string;
+	// The resolved-property keys Charter treats as view-composition fields (its fields whose
+	// inputType is the composition kind). Charter's whole opinion on nesting: "this field's
+	// `viewRefs` are the children." The host walks `resolvedViews` for these keys to build the
+	// DAG client-side — root detection, ordering, cycle guarding are generic graph math, not
+	// plugin-owned, so they don't ride the manifest.
+	composition_field_keys: string[];
+	// One entry per opaque id (one per project view today). The panel indexes by `id` and
+	// applies per-view plugin-opinionated facts (write_alias + ops) as it renders the
+	// host-computed DAG topology.
+	items: PanelItem[];
+	// Ops declared for the panel's header affordance (e.g. the "+" menu in the Views panel
+	// header). Same shape as per-item `ops`; the editor renders the header menu straight off
+	// this list.
+	header_ops: PanelOp[];
 }
 
 export interface PluginMeta {

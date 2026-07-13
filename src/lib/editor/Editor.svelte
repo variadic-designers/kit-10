@@ -248,18 +248,14 @@
 
 	let pluginManager = $state<PluginManager | null>(null);
 
-	// Which resolved-property keys the active plugin declares as view-composition fields (a field
-	// kind, not a hardcoded name): the Views panel nests off these. The resolver stays name-neutral
-	// -- it only knows a property resolved to a view-list; the plugin decides which of its fields
-	// means "compose these as children". Charter reports these VIEW-INDEPENDENTLY
-	// (`compositionFieldKeys`, across all primitives), so the tree nests correctly no matter which
-	// view is active -- as opposed to `fieldCategories`, which only reflects the active view's
-	// primitive and would empty out (flattening the tree) whenever a text/no-kit view is selected.
-	const viewCompositionKeys = $derived(pluginManager?.compositionFieldKeys ?? []);
-
-	// Per-view icon the active plugin wants each view shown with in the Views tree. The editor never
-	// decides a view's primitive/icon itself -- Charter owns that (same layer as detect_primitive).
-	const viewIcons = $derived(pluginManager?.viewIcons ?? {});
+	// Panel manifests published by the active plugin via `kit10_panel_publish`. Today only Charter
+	// publishes one, keyed "views": it carries the Views panel's full tree topology (parent/child
+	// ids, root set, per-view icon, write-alias for DnD) bundled into one PanelManifest. The editor
+	// reads `pluginManager.panelManifest('views')` and renders a tree from that -- instead of the
+	// old pairing of `compositionFieldKeys` + `viewIcons` + client-side DAG re-derivation. See
+	// CLAUDE.md's panel-manifest section: Charter owns panel contents, the editor's panels are
+	// generic renderers over the manifest shape.
+	const viewsPanelManifest = $derived(pluginManager?.panelManifest('views'));
 
 	onMount(async () => {
 		await initializeEditorState().then(async (e) => {
@@ -442,8 +438,7 @@
 			{api}
 			{editorReady}
 			{resolvedViews}
-			{viewCompositionKeys}
-			{viewIcons}
+			{viewsPanelManifest}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

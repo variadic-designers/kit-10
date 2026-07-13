@@ -5,7 +5,8 @@
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
 	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
-	import type { ResolvedView } from '$lib/plugins/types.js';
+	import type { PanelManifest, PanelItem, PanelOp, ResolvedView } from '$lib/plugins/types.js';
+	import type { MenuItem } from '$lib/components/contextMenuStore.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -14,131 +15,181 @@
 		editorActivity: EditorActivity;
 		api: Api;
 		hoveredViewId?: string | null;
+		// The full resolve array — the host walks this for composition-field view_refs to build
+		// the Views DAG itself. Generic graph math (root detection, ordering, cycle guard);
+		// routing it through the plugin manifest (Phase 1's `child_ids`/`is_root`) just wrapped a
+		// universal computation across the WASM boundary for nothing. The manifest carries only
+		// the plugin's opinionated facts per view (write_alias + ops) + the composition field key
+		// list (Charter's single nesting opinion: "this field's view_refs nest").
 		resolvedViews?: ResolvedView[];
-		// Resolved-property keys the active plugin declares as view-composition fields (inputType
-		// 'children'). The tree nests off these -- never a hardcoded property name. See Editor.svelte.
-		viewCompositionKeys?: string[];
-		// Per view_id, the icon the active plugin wants that view shown with (view's primitive is the
-		// plugin's call, not the editor's). Missing entry -> editor fallback. See Editor.svelte.
-		viewIcons?: Record<string, string>;
+		// The Views panel manifest published by the active plugin via `kit10_panel_publish`
+		// (Charter today). Carries composition_field_keys + per-view write_alias + per-view ops +
+		// header_ops — everything the tree needs to render menus and dispatch DnD writes without
+		// the editor re-deriving which field is the composition one. undefined until the first
+		// `on_resolve` lands; the panel renders empty in that window.
+		viewsPanelManifest?: PanelManifest;
 	};
 
 	let {
 		selection = $bindable(),
-
-		// new API
 		api,
 		editorReady,
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
 		resolvedViews = [],
-		viewCompositionKeys = [],
-		viewIcons = {}
+		viewsPanelManifest
 	}: ViewsPanel = $props();
 
 	export const selectView = (id: string, _name: string) => {
 		selectViewShared(editorActivity, selection, id);
 	};
 
-	let kitsContextMenu: ContextMenuContentGenerator = () => [
-		{
-			name: 'add',
-			displayText: 'Box',
-			icon: 'fa-regular fa-window-maximize',
-			onClick: () => {
-				if (!editorActivity.activeProjectId) {
-					console.log('No active Project');
-					return;
-				}
-
-				api.createViewInProject(editorActivity.activeProjectId, 'Idk').then((p) => {
-					if (p) {
-						selectView(p.id, p.name);
-					}
-				});
-			}
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'Text',
-			icon: 'fa-solid fa-italic',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Image',
-			icon: 'fa-solid fa-image',
-			onClick: () => console.log('Add')
-		},
-		{
-			name: 'add',
-			displayText: 'Shape',
-			icon: 'fa-solid fa-star',
-			onClick: () => console.log('Add')
-		},
-		'hr',
-		{
-			name: 'add',
-			displayText: 'Screen',
-			icon: 'fa-solid fa-display',
-			onClick: () => console.log('Add')
-		}
-	];
-
 	let viewEditing: Record<string, boolean> = $state({});
 
-	let menu = (viewId: string): ContextMenuContentGenerator => {
-		return () => [
-			{
-				name: 'add',
-				displayText: 'Mark as Export',
-				icon: 'fa-solid fa-file-export',
-				onClick: () => console.log('Add')
-			},
-			'hr',
-			{
-				name: 'add',
-				displayText: 'Rename',
-				icon: 'fa-solid fa-i-cursor',
-				onClick: () => {
-					viewEditing[viewId] = true;
-				}
-			},
-			{
-				name: 'add',
-				displayText: 'Deselect',
-				icon: 'fa-solid fa-minus',
-				onClick: () => {
-					deselectView(editorActivity, selection);
-				}
-			},
-			'hr',
-			{
-				name: 'add',
-				displayText: 'New View',
-				icon: 'fa-solid fa-diamond',
-				onClick: () => {}
-			},
+	// Op dispatch — the manifest declares which ops exist + their label/icon; the editor switches
+	// on `op.name` to actually execute. Adding a new op name requires editor support here, but the
+	// plugin still owns *availability* (which items get which ops in their context menu) — the
+	// editor never decides "Box should be deletable" on its own, the manifest's `ops` list does.
+	// `kind` is the op-specific payload (today only `add-child` uses it: "box"|"text"|"image").
+	// `item` carries the parent's `write_alias` (used by `add-child` to attach the new view) and
+	// the row's `viewLocked`/`viewHidden` for `lock`/`hide` toggles.
+	async function dispatchOp(op: PanelOp, viewId: string, item: PanelItem | undefined) {
+		const projectId = editorActivity.activeProjectId;
+		if (!projectId) return;
+		const row = rowsByViewId.get(viewId);
 
-			{
-				name: 'trash',
-				displayText: 'Clone View',
-				icon: 'fa-solid fa-clone',
-				onClick: () => {}
-			},
-			'hr',
-			{
-				name: 'trash',
-				displayText: 'Delete View',
-				icon: 'fa-solid fa-trash-can',
-				onClick: () => {
-					api.deleteView(viewId).then((v) => {
-						console.log(`Deleted view#${viewId}`);
-					});
-				}
+		switch (op.name) {
+			case 'rename':
+				viewEditing[viewId] = true;
+				return;
+			case 'deselect':
+				deselectView(editorActivity, selection);
+				return;
+			case 'delete':
+				await api.deleteView(viewId);
+				return;
+			case 'clone': {
+				const alias = item?.write_alias ?? 'children';
+				const newId = await api.cloneViewSubtree(viewId, alias);
+				if (newId) selectView(newId, '');
+				return;
 			}
-		];
+			case 'lock':
+				if (row) await api.toggleViewLock(viewId, !row.viewLocked);
+				return;
+			case 'hide':
+				if (row) await api.toggleViewHide(viewId, !row.viewHidden);
+				return;
+			case 'add-child': {
+				const kind = op.kind ?? 'box';
+				const created = await api.createViewInProject(projectId, `New ${kind}`);
+				if (!created) return;
+				// Primitive is a Charter hint, not a column — set it on `hints.charter.primitive`
+				// only for non-box kinds (Box is the default detection path). The editor merges
+				// sub-objects itself (see QueryView.updateViewHints in manager), so pass a full
+				// `{ charter: { primitive } }` object — not just `{ charter: { primitive: kind } }`
+				// (which would wipe any other charter hints). In practice a freshly-created view has
+				// no hints yet, so the merge is a clean write. Skipping it for `box` keeps the
+				// common path minimal.
+				if (kind !== 'box') {
+					await api.updateViewHints(created.id, { charter: { primitive: kind } });
+				}
+				if (viewId) {
+					const alias = item?.write_alias ?? 'children';
+					const current = childIds(viewId);
+					await setViewChildren(viewId, [...current, created.id]);
+				}
+				selectView(created.id, created.name);
+				return;
+			}
+		}
+	}
+
+	// Build a context menu (the shared `MenuItem` shape) from a list of manifest ops, splitting
+	// op-name groups with `'hr'` separators so the menu reads as grouped (container ops first,
+	// then common ops — same visual order as the original hardcoded menu). `add-child` ops with
+	// different `kind`s collapse into a single "Add Child" submenu entry, mirroring the original
+	// pre-Phase-1 "Box/Text/Image" trio.
+	function buildMenuFromOps(ops: PanelOp[], dispatch: (op: PanelOp) => void): (MenuItem | 'hr')[] {
+		const items: (MenuItem | 'hr')[] = [];
+		let lastName: string | null = null;
+		const addChildOps = ops.filter((o) => o.name === 'add-child');
+
+		for (const op of ops) {
+			if (lastName !== null && lastName !== op.name) items.push('hr');
+			lastName = op.name;
+
+			// Collapse `add-child` (box/text/image) into a submenu on the first encounter; skip
+			// subsequent ones since they're already inside the submenu.
+			if (op.name === 'add-child' && items.some((m) => m !== 'hr' && m.name === 'add-child')) {
+				continue;
+			}
+			if (op.name === 'add-child') {
+				items.push({
+					name: 'add-child',
+					displayText: 'Add Child',
+					icon: 'fa-solid fa-plus',
+					submenu: addChildOps.map((c) => ({
+						name: `add-child-${c.kind}`,
+						displayText: c.label,
+						icon: c.icon,
+						onClick: () => dispatch(c)
+					}))
+				});
+				continue;
+			}
+
+			items.push({
+				name: op.name,
+				displayText: op.label,
+				icon: op.icon,
+				onClick: () => dispatch(op)
+			});
+		}
+		return items;
+	}
+
+	// Per-item context menu — built from the item's declared ops. The plugin owns what's on the
+	// menu (Charter's `common_item_ops`/`container_item_ops`), the editor only renders + dispatches.
+	function menuFor(viewId: string): ContextMenuContentGenerator {
+		return () => {
+			const item = manifestById.get(viewId);
+			if (!item) return [];
+			// `lock`/`hide` op labels override the generic plugin-supplied ones with the actual
+			// next-state of the toggle ("Lock" when currently unlocked, "Unlock" when locked) —
+			// live DB state the manifest doesn't carry. Pure presentation; `name` stays the same
+			// so dispatch routing is unaffected.
+			const row = rowsByViewId.get(viewId);
+			const ops = item.ops.map((op) => {
+				if (op.name === 'lock' && row) {
+					return { ...op, label: row.viewLocked ? 'Unlock' : 'Lock' };
+				}
+				if (op.name === 'hide' && row) {
+					return { ...op, label: row.viewHidden ? 'Show' : 'Hide' };
+				}
+				return op;
+			});
+			return buildMenuFromOps(ops, (op) => dispatchOp(op, viewId, item));
+		};
+	}
+
+	// Panel-header context menu — built from the manifest's `header_ops` (today: the "create a
+	// top-level Box/Text/Image" trio). Same builder, just no parent view to attach to.
+	let kitsContextMenu: ContextMenuContentGenerator = () => {
+		const ops = viewsPanelManifest?.header_ops ?? [];
+		return buildMenuFromOps(ops, async (op) => {
+			const projectId = editorActivity.activeProjectId;
+			if (!projectId) return;
+			if (op.name === 'add-child') {
+				const kind = op.kind ?? 'box';
+				const created = await api.createViewInProject(projectId, `New ${kind}`);
+				if (!created) return;
+				if (kind !== 'box') {
+					await api.updateViewHints(created.id, { charter: { primitive: kind } });
+				}
+				selectView(created.id, created.name);
+			}
+		});
 	};
 
 	import type { Api, EditorState } from 'manager';
@@ -148,18 +199,36 @@
 		return api.getViewsByProjectId(activity.activeProjectId);
 	});
 
-	// A view's own child references, unioned across its resolved kits -- the same computation
-	// Charter's collect_child_view_ids does per-view, done here client-side so this panel can
-	// nest views the same way build_viewport does (see CLAUDE.md: a view is never "top-level" or
-	// "child" by declaration, only by whether some other view's box currently lists it).
+	const rowsByViewId = $derived(new Map(viewsQuery.rows.map((v) => [v.viewId, v] as const)));
+
+	// Index PanelManifest.items by id — used for per-view `write_alias` + `ops` lookups, not
+	// topology (that's host-computed below off `resolvedViews` + `composition_field_keys`).
+	const manifestById = $derived.by(() => {
+		const map = new Map<string, PanelItem>();
+		if (viewsPanelManifest) {
+			for (const item of viewsPanelManifest.items) map.set(item.id, item);
+		}
+		return map;
+	});
+
+	// The composition field keys Charter declares — its single nesting opinion: "this resolved
+	// property name's `viewRefs` nest as children." Everything else in nesting (root detection,
+	// ordering, cycle guarding) is generic graph math the host does itself, using this list as
+	// the only plugin-injected input. Reads off the manifest instead of a separate
+	// `OnResolveResult.composition_field_keys` field (Phase 1 dropped that, Phase 3 restores it
+	// housed in the manifest, since the manifest is the panel channel).
+	const compositionKeys = $derived(viewsPanelManifest?.composition_field_keys ?? []);
+
+	// A view's own child references, unioned across its resolved kits — the same computation
+	// Charter's `collect_child_view_ids` does per-view, done here client-side so the panel can
+	// nest views the same way `build_viewport` does. Generic graph math over already-resolved
+	// data; not Charter-specific (the plugin's only injection is `compositionKeys`).
 	const childrenByViewId = $derived.by(() => {
 		const map = new Map<string, string[]>();
 		for (const view of resolvedViews) {
 			const ids = new Set<string>();
 			for (const kit of view.resolvedKits) {
-				// Nest off the plugin-declared composition fields' resolved view refs -- not a
-				// property literally named "children" (the resolver is name-neutral now).
-				for (const key of viewCompositionKeys) {
+				for (const key of compositionKeys) {
 					for (const id of (kit as any).properties?.get?.(key)?.viewRefs ?? []) ids.add(id);
 				}
 			}
@@ -168,11 +237,10 @@
 		return map;
 	});
 
-	// Project-wide union of every view referenced as somebody's child -- mirrors build_viewport's
-	// own `referenced` set. A view NOT in this set is a root (rendered at the top level); a view
-	// that IS gets nested under whichever parent(s) reference it instead. Views are unique rows
-	// referenced by id, not instanced (see CLAUDE.md) -- a view referenced by more than one
-	// parent is a real DAG, not a tree, so it's rendered once per parent that claims it.
+	// Project-wide union of every view referenced as somebody's child — mirrors build_viewport's
+	// own `referenced` set. A view NOT in this set is a root; a view in it gets nested under
+	// whichever parent(s) reference it. Views are unique rows referenced by id, not instanced —
+	// a view referenced by more than one parent is a real DAG, rendered once per parent.
 	const referencedViewIds = $derived.by(() => {
 		const set = new Set<string>();
 		for (const ids of childrenByViewId.values()) {
@@ -181,80 +249,49 @@
 		return set;
 	});
 
-	const rowsByViewId = $derived(new Map(viewsQuery.rows.map((v) => [v.viewId, v] as const)));
-
-	// viewsQuery (a plain `views` table select) settles well before resolvedViews (the full
-	// resolve pipeline -- layers, axis args, tokens) does, so rendering the tree the instant
-	// viewsQuery lands would show every view flatly at the root for one frame, then reflow into
-	// the real nesting once resolvedViews (and therefore referencedViewIds) catches up -- the
-	// exact flat-then-nested flash this guards against. Same single-reveal principle
-	// Viewport.svelte's hasData gate already uses: wait until every current view id has a
-	// resolvedViews entry, then reveal the correctly-nested tree in one clean render instead of
-	// reflowing visibly. An empty project (no views at all) counts as trivially hydrated so the
-	// empty state still renders immediately rather than hanging.
-	const resolvedViewIdSet = $derived(new Set(resolvedViews.map((v) => v.viewId)));
-	const viewsHydrated = $derived(
-		viewsQuery.rows.length === 0 || viewsQuery.rows.every((v) => resolvedViewIdSet.has(v.viewId))
+	const rootViews = $derived(
+		viewsQuery.rows.filter(
+			(v) => resolvedViewIdSet.has(v.viewId) && !referencedViewIds.has(v.viewId)
+		)
 	);
 
-	const rootViews = $derived(viewsQuery.rows.filter((v) => !referencedViewIds.has(v.viewId)));
-
-	// --- Drag-and-drop nesting/reordering ---------------------------------------------------------
-	// A view's ordered children (childrenByViewId preserves first-seen order across kits). Used both
-	// for rendering the tree and for computing insertion indices on drop.
-	function orderedChildren(viewId: string): string[] {
+	// A view's ordered children, read off the host-computed DAG.
+	function childIds(viewId: string): string[] {
 		return childrenByViewId.get(viewId) ?? [];
 	}
 
-	// The resolved composition property of a view (the plugin's view-composition field), if any kit
-	// declares one, carrying its `tokenAlias`. NOTE: never write through the resolved `tokenId` to
-	// change one view's children -- that's the *entry's* token (a shared kit-scoped base for a
-	// kit-declared property); a view's real child list lives in a View-scoped token that overrides
-	// by alias / self-declares (see setViewChildren). `compositionKey` is the plugin-declared field
-	// key, so this never hardcodes a name like "children".
-	const compositionKey = $derived(viewCompositionKeys[0] ?? 'children');
-	function childrenPropOf(viewId: string) {
-		const v = resolvedViews.find((x) => x.viewId === viewId);
-		if (!v) return undefined;
-		for (const kit of v.resolvedKits) {
-			const p = (kit as any).properties?.get?.(compositionKey);
-			if (p) return p as { sourceLayerId: string; tokenId: string | null; tokenAlias: string | null };
-		}
-		return undefined;
-	}
-
-	// Guard against building a cycle: is `candidateId` anywhere inside `rootId`'s subtree?
+	// Cycle guard for DnD: is `candidateId` anywhere inside `rootId`'s subtree? Walks the manifest's
+	// topology — no resolved-kits reading, no composition-key lookup. This is the only place the
+	// panel still traverses the DAG itself (necessary: a cycle check has to walk the candidate's
+	// subtree, which is intrinsically a traversal, not a single lookup).
 	function isDescendant(rootId: string, candidateId: string): boolean {
-		const stack = [...orderedChildren(rootId)];
+		const stack = [...childIds(rootId)];
 		const seen = new Set<string>();
 		while (stack.length) {
 			const id = stack.pop()!;
 			if (id === candidateId) return true;
 			if (seen.has(id)) continue;
 			seen.add(id);
-			stack.push(...orderedChildren(id));
+			stack.push(...childIds(id));
 		}
 		return false;
 	}
 
-	// Persist a parent view's ordered child list. A view's children live in a View-scoped
-	// `view-list` token that overrides the kit's `children` entry *by alias* during resolution (the
-	// same model seed.ts + ChildViewField use) -- so the write target is that view token, NOT the
-	// resolved property's `tokenId` (which points at the kit-scoped base token, shared across every
-	// view composing the kit; writing it would move every view's children at once, or -- since the
-	// per-view token shadows it -- do nothing at all).
+	// Persist a parent view's ordered child list. The plugin's manifest carries, per item, the
+	// `write_alias` to upsert when that item's children list changes — that's the token alias the
+	// view's own View-scoped `view-list` token lives under (overriding any kit-declared `children`
+	// by alias during resolution; self-declares when no kit declares one — see CLAUDE.md). The
+	// panel never reads resolved kits to find the alias anymore; the plugin owns it.
 	async function setViewChildren(parentViewId: string, viewIds: string[]) {
 		const projectId = editorActivity.activeProjectId;
 		if (!projectId) return;
 
-		const prop = childrenPropOf(parentViewId);
-		const alias = prop?.tokenAlias ?? compositionKey;
+		const item = manifestById.get(parentViewId);
+		// `write_alias` is null when this view's primitive has no children field (Text/Image) —
+		// drops onto such a view are rejected by `canDrop` before they reach here, but guard
+		// anyway so a stale manifest can't crash a write.
+		const alias = item?.write_alias ?? 'children';
 
-		// Write the view's own scoped token (find-or-create). A view-scope `children` token is
-		// self-declaring in resolution -- it defines this view's children on its own, with no entry
-		// anchored on a shared kit layer (see resolve.ts). When a kit layer already declares
-		// children (prop set, e.g. a conditional kit default), the same view token overrides it by
-		// alias. Either way, upserting the view token is the whole write -- no null-layer fallback.
 		await api.upsertViewToken(projectId, parentViewId, alias, {
 			type: 'view-list',
 			view_ids: viewIds
@@ -263,8 +300,7 @@
 
 	// Move `dragged` relative to `target`: `into` nests it under target; `before`/`after` make it a
 	// sibling of target (same parent). Single-parent: it's removed from its old parent and added to
-	// the new one in one gesture. Dropping onto the root band (newParent null) just un-nests it --
-	// root ordering isn't persisted yet, so there's no index to set there.
+	// the new one in one gesture. Dropping onto the root band (newParent null) just un-nests it.
 	async function handleViewDrop(
 		dragged: { viewId: string; parentViewId: string | null },
 		targetViewId: string,
@@ -280,30 +316,29 @@
 		if (newParentId === draggedId) return;
 
 		if (newParentId && newParentId === oldParentId) {
-			// Reorder within the same parent.
-			const list = orderedChildren(newParentId).filter((id) => id !== draggedId);
+			const list = childIds(newParentId).filter((id) => id !== draggedId);
+			const ti = list.indexOf(targetViewId);
 			const at =
 				position === 'into'
 					? list.length
-					: (() => {
-							const ti = list.indexOf(targetViewId);
-							if (ti < 0) return list.length;
-							return position === 'after' ? ti + 1 : ti;
-						})();
+					: position === 'after'
+						? ti + 1
+						: ti < 0
+							? list.length
+							: ti;
 			list.splice(at, 0, draggedId);
 			await setViewChildren(newParentId, list);
 			return;
 		}
 
-		// Cross-parent (or to/from root). Detach from the old parent first.
 		if (oldParentId) {
 			await setViewChildren(
 				oldParentId,
-				orderedChildren(oldParentId).filter((id) => id !== draggedId)
+				childIds(oldParentId).filter((id) => id !== draggedId)
 			);
 		}
 		if (newParentId) {
-			const list = orderedChildren(newParentId).filter((id) => id !== draggedId);
+			const list = childIds(newParentId).filter((id) => id !== draggedId);
 			if (position === 'into') {
 				list.push(draggedId);
 			} else {
@@ -312,14 +347,23 @@
 			}
 			await setViewChildren(newParentId, list);
 		}
-		// newParentId === null: dropped at root -> detach only; it renders as a root automatically.
+		// newParentId === null: dropped at root -> detach only; it renders as a root automatically
+		// (its `is_root` flag recomputes in Charter's next manifest publish, after the DB write
+		// fires the resolve loop — no client-side root-list bookkeeping).
 	}
 
-	// Plain (non-$state) bookkeeping var -- tracks the last project this effect settled on, so
-	// it can tell "just switched projects / never selected anything yet" (auto-select rows[0])
-	// apart from "user deliberately deselected within the same project" (activeViewId === null,
-	// leave it alone). Without this distinction, deselectView setting activeViewId to null would
-	// immediately trigger this effect (it reads activeViewId) and snap the selection right back.
+	// Per-row hydration gate. Each view row renders only when its id is in `resolvedViews` —
+	// i.e. the resolve pipeline has caught up to the live DB query for *that* row. A
+	// freshly-added child view (id in viewsQuery but not yet in resolvedViews) is filtered out
+	// for one tick, then appears already nested when its resolve lands. The previous design gated
+	// the entire tree on "every row hydrated" — one unresolved row hid the whole `<ul>`, causing
+	// the Big Flicker on add-child / project switch. Per-row gating hides only the row that's
+	// actually unsettled; existing rows keep rendering uninterrupted. Also filters roots the
+	// same way in `rootViews` above, so the new view never flashes at the root while resolve is
+	// catching up to know its parent's `children` now lists it.
+	const resolvedViewIdSet = $derived(new Set(resolvedViews.map((v) => v.viewId)));
+
+	// Plain (non-$state) bookkeeping var — see comment below.
 	let lastProjectId: string | null = null;
 
 	$effect(() => {
@@ -340,9 +384,6 @@
 		const currentId = editorActivity.activeViewId;
 		const currentIsValid = currentId !== null && rows.some((v) => v.viewId === currentId);
 
-		// Auto-select a fallback view on a genuine project switch, or when the current id points
-		// at a view that no longer exists (e.g. it was deleted). Don't auto-select when the id is
-		// null within the same project -- that's an explicit deselect, not a stale reference.
 		if (!currentIsValid && (projectChanged || currentId !== null)) {
 			editorActivity.activeViewId = rows[0]?.viewId ?? null;
 		}
@@ -353,26 +394,20 @@
 	{#snippet content()}
 		<!-- <pre>{JSON.stringify(viewsQuery, null, 2)}</pre> -->
 		<ul class="views">
-			{#if viewsQuery.rows && viewsHydrated}
+			{#if viewsQuery.rows}
 				{#each rootViews as v (v.viewId)}
-					{@render kitter(v, 0, [])}
+					{@const item = manifestById.get(v.viewId)}
+					{@render kitter(v, item, 0, [])}
 				{/each}
 			{/if}
 		</ul>
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v: any, level: number, ancestors: string[])}
-	<!--
-				{@const hideVerb = view['hide'] ? 'Show' : 'Hide'}
-				{@const hideFontAwesomeType = view['selected'] ? 'solid' : 'regular'}
-				{@const hideFontAwesomeChar = view['hide'] ? 'eye-slash' : 'eye'}
-				{@const lockFontAwesomeChar = view['lock'] ? 'lock' : 'lock-open'}
-        -->
-
+{#snippet kitter(v: any, item: PanelItem | undefined, level: number, ancestors: string[])}
 	{@const viewIcon = v.viewLocked
 		? 'fa-solid fa-lock'
-		: (viewIcons[v.viewId] ?? 'fa-regular fa-window-maximize')}
+		: ((v.hints?.view_icon as string | undefined) ?? 'fa-regular fa-window-maximize')}
 	{@const parentId = ancestors[ancestors.length - 1] ?? null}
 
 	<li
@@ -403,7 +438,7 @@
 		<button
 			style="--level: {level}"
 			class="view"
-			use:contextMenu={menu(v.viewId)}
+			use:contextMenu={menuFor(v.viewId)}
 			aria-label={v.viewName}
 			onclick={() => selectView(v.viewId, v.viewName)}
 			onmouseenter={() => (hoveredViewId = v.viewId)}
@@ -432,10 +467,11 @@
 	     The `!ancestors.includes(id)` filter is a cycle guard, not a "already shown" dedupe: if a
 	     chain of children ever loops back to a view already open in this exact render path (A's
 	     children include B, B's include A), that branch just stops instead of recursing forever. -->
-	{#each (childrenByViewId.get(v.viewId) ?? []).filter((id) => id !== v.viewId && !ancestors.includes(id)) as childId (childId)}
+	{#each childIds(v.viewId).filter((id) => id !== v.viewId && !ancestors.includes(id) && resolvedViewIdSet.has(id)) as childId (childId)}
 		{@const childRow = rowsByViewId.get(childId)}
+		{@const childItem = manifestById.get(childId)}
 		{#if childRow}
-			{@render kitter(childRow, level + 1, [...ancestors, v.viewId])}
+			{@render kitter(childRow, childItem, level + 1, [...ancestors, v.viewId])}
 		{/if}
 	{/each}
 {/snippet}
