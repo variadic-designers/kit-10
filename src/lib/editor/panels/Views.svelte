@@ -480,6 +480,9 @@
 
 	.views {
 		@include layout-flex-column();
+		list-style: none;
+		margin: 0;
+		padding: 0;
 		overflow-x: auto;
 		scrollbar-width: thin;
 	}
@@ -545,6 +548,7 @@
 	.view-field {
 		display: flex;
 		position: relative;
+		list-style: none;
 
 		// Drag-and-drop indicators (classes applied at runtime by the dnd controller, hence
 		// :global()). `into` = nest under this view (outline the whole row); before/after = drop
