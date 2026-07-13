@@ -1,120 +1,109 @@
 <script lang="ts">
-	import { type ResolvedKit, type ResolvedProperty } from 'manager';
+	import { type CascadeKit } from 'manager';
 	import { layerDotColor, shapeIcon } from './layer-color.ts';
 
 	interface LayersPanel {
-		// The active view's resolved kits (same shape the Styles panel receives). Each carries its
-		// properties' winning provenance (sourceLayerId, conditionCount, keys, conditionValues).
-		resolvedKits: ResolvedKit[] | null;
+		// Full resolution cascade for the active view: each kit's matched-layer stack, most-specific
+		// first. Unlike the winner-only resolved properties, this keeps overridden entries so we can
+		// strike them through.
+		cascades: CascadeKit[];
 	}
 
-	let { resolvedKits }: LayersPanel = $props();
+	let { cascades }: LayersPanel = $props();
 
-	// A "rule block": one source layer (a distinct condition-set) and the properties whose WINNING
-	// value came from it. This is the computed/cascade view built from resolved output — it shows
-	// which rule won each property, grouped and tiered by specificity. Showing the *overridden*
-	// (struck-through) entries of a rule needs the raw layer entries, not just the resolved winners;
-	// that's the next iteration (a manager query for all matched layers). For now every property
-	// appears once, under the rule that actually produced its value.
-	type RuleBlock = {
+	// Per kit, mark each entry as winning or overridden. Layers arrive most-specific first, so the
+	// FIRST layer to set a property is its winner; the same property lower in the stack is beaten.
+	type DisplayEntry = {
+		property: string;
+		value: string;
+		isToken: boolean;
+		tokenAlias: string | null;
+		overridden: boolean;
+	};
+	type DisplayLayer = {
 		layerId: string;
 		conditionCount: number;
 		keys: string[];
 		conditionValues: { axisId: string; value: string }[];
-		props: { property: string; value: string; isToken: boolean; tokenAlias: string | null }[];
+		entries: DisplayEntry[];
 	};
+	type DisplayKit = { kitId: string; kitName: string; icon: string; layers: DisplayLayer[] };
 
-	type KitSection = {
-		kitId: string;
-		kitName: string;
-		icon: string;
-		blocks: RuleBlock[];
-	};
+	const sections = $derived.by<DisplayKit[]>(() =>
+		cascades.map((kit, kitIndex) => {
+			const won = new Set<string>();
+			const layers: DisplayLayer[] = kit.layers.map((layer) => {
+				const entries = [...layer.entries]
+					.sort((a, b) => a.property.localeCompare(b.property))
+					.map((e) => {
+						const overridden = won.has(e.property);
+						return {
+							property: e.property,
+							value: e.value,
+							isToken: e.isToken,
+							tokenAlias: e.tokenAlias,
+							overridden
+						};
+					});
+				// Mark these properties claimed only AFTER building this layer's entries, so the
+				// first (most-specific) setter is the winner and equal-property entries below it lose.
+				for (const e of layer.entries) won.add(e.property);
+				return {
+					layerId: layer.layerId,
+					conditionCount: layer.conditionCount,
+					keys: layer.keys,
+					conditionValues: layer.conditionValues,
+					entries
+				};
+			});
+			return { kitId: kit.kitId, kitName: kit.kitName, icon: shapeIcon(kitIndex), layers };
+		})
+	);
 
-	const sections = $derived.by<KitSection[]>(() => {
-		if (!resolvedKits) return [];
-		return resolvedKits.map((kit, kitIndex) => {
-			const byLayer = new Map<string, RuleBlock>();
-			for (const prop of kit.properties.values()) {
-				let block = byLayer.get(prop.sourceLayerId);
-				if (!block) {
-					block = {
-						layerId: prop.sourceLayerId,
-						conditionCount: prop.conditionCount,
-						keys: prop.keys,
-						conditionValues: prop.conditionValues,
-						props: []
-					};
-					byLayer.set(prop.sourceLayerId, block);
-				}
-				block.props.push({
-					property: prop.property,
-					value: prop.value,
-					isToken: prop.isToken,
-					tokenAlias: prop.tokenAlias
-				});
-			}
-			// Most-specific first (top of the stack): higher condition count wins; ties ordered by
-			// key-set for stability. Property lists sorted by name so the block reads predictably.
-			const blocks = [...byLayer.values()].sort(
-				(a, b) =>
-					b.conditionCount - a.conditionCount || a.keys.join('|').localeCompare(b.keys.join('|'))
-			);
-			for (const b of blocks) b.props.sort((x, y) => x.property.localeCompare(y.property));
-			return {
-				kitId: kit.kitId,
-				kitName: kit.kitName,
-				icon: shapeIcon(kitIndex),
-				blocks
-			};
-		});
-	});
-
-	const hasContent = $derived(sections.some((s) => s.blocks.length > 0));
+	const hasContent = $derived(sections.some((s) => s.layers.length > 0));
 </script>
 
 <section class="layers">
 	<header class="layers__header">
-		<h2 title="Resolution inspector — the rules that produced the active view's resolved values, stacked by specificity">
+		<h2 title="Resolution inspector — the matched rules for the active view, stacked most-specific first; struck-through values were overridden by a higher rule">
 			Layers
 		</h2>
 	</header>
 
 	<div class="layers__body">
 		{#if !hasContent}
-			<p class="layers__empty">No resolved rules for the current selection.</p>
+			<p class="layers__empty">No matched rules for the current selection.</p>
 		{:else}
 			{#each sections as section (section.kitId)}
-				{#if section.blocks.length > 0}
+				{#if section.layers.length > 0}
 					<div class="kit">
 						<div class="kit__name">
 							<i class="fa-solid {section.icon}"></i>
 							<span>{section.kitName}</span>
 						</div>
 
-						<!-- Stacked most-specific first. Each block is one condition-set (a "rule"). -->
-						{#each section.blocks as block (block.layerId)}
-							<div class="rule" style:--rule-color={layerDotColor(block.keys, true)}>
+						{#each section.layers as layer (layer.layerId)}
+							<div class="rule" style:--rule-color={layerDotColor(layer.keys, true)}>
 								<div class="rule__conds">
-									<span class="rule__tier" title="{block.conditionCount} condition(s)">
-										{#if block.conditionCount === 0}
+									<span class="rule__tier" title="{layer.conditionCount} condition(s)">
+										{#if layer.conditionCount === 0}
 											<i class="fa-regular fa-circle"></i>
 										{:else}
-											{#each Array(block.conditionCount) as _}<i class="fa-solid fa-circle"></i>{/each}
+											{#each Array(layer.conditionCount) as _}<i class="fa-solid fa-circle"></i>{/each}
 										{/if}
 									</span>
-									{#if block.conditionValues.length === 0}
+									{#if layer.conditionValues.length === 0}
 										<span class="chip chip--base">base</span>
 									{:else}
-										{#each block.conditionValues as cv (cv.axisId + cv.value)}
+										{#each layer.conditionValues as cv (cv.axisId + cv.value)}
 											<span class="chip">{cv.value}</span>
 										{/each}
 									{/if}
 								</div>
 
 								<dl class="rule__props">
-									{#each block.props as p (p.property)}
-										<div class="prop">
+									{#each layer.entries as p (p.property)}
+										<div class="prop" class:prop--overridden={p.overridden}>
 											<dt title={p.property}>{p.property}</dt>
 											<dd title={p.value}>
 												{#if p.isToken && p.tokenAlias}<i class="fa-solid fa-link prop__token" title="token: {p.tokenAlias}"></i>{/if}
@@ -259,6 +248,17 @@
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
+		}
+
+		// Overridden by a higher-specificity rule: struck through and dimmed, but still visible so
+		// the cascade chain reads top-to-bottom.
+		&--overridden {
+			dt,
+			dd {
+				color: var(--color-text-muted);
+				text-decoration: line-through;
+				opacity: 0.7;
+			}
 		}
 	}
 

@@ -216,6 +216,29 @@
 		};
 	});
 
+	// Full resolution cascade (matched-layer stack, most-specific first) for the active view --
+	// feeds the Layers inspector's override chains. SLOW PATH: a per-view fetch, deliberately
+	// outside the render live-query loop above. Re-runs when the active view changes OR when
+	// resolvedViews changes (an edit re-resolved), so the inspector tracks live edits. The cleanup
+	// flag gives latest-wins: a superseded run's async result is dropped, never overwriting fresh.
+	let cascades = $state<CascadeKit[]>([]);
+	$effect(() => {
+		const viewId = editorActivity.activeViewId;
+		const editor = editorLoading;
+		void resolvedViews; // dependency: refetch the cascade after any re-resolve
+		if (!viewId || !editor) {
+			cascades = [];
+			return;
+		}
+		let cancelled = false;
+		resolveViewCascade(editor.dialect, viewId).then((result) => {
+			if (!cancelled) cascades = result;
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
+
 	import ViewsPanel from './panels/Views.svelte';
 	import { selectView as selectViewShared } from './selection.js';
 	import { keybinds, matchKey, isTextEntryTarget } from './keybinds.js';
@@ -234,7 +257,9 @@
 	import {
 		fetchResolutionRows,
 		resolveViewsFromRows as resolveViewsFromRowsManager,
-		rowsKey
+		resolveViewCascade,
+		rowsKey,
+		type CascadeKit
 	} from 'manager';
 	import { mark, measure } from './profile.js';
 	import { RESOLVE_LIVE_QUERY_SQL } from './resolve-live-query.js';
@@ -691,7 +716,7 @@
 	{/snippet}
 
 	{#snippet console(editorReady)}
-		<LayersPanel {resolvedKits} />
+		<LayersPanel {cascades} />
 	{/snippet}
 
 	{#snippet dash(editorReady)}

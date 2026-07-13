@@ -65,6 +65,41 @@ export interface ResolvedProperty {
 	viewRefs: string[] | null;
 }
 
+// --- Cascade (resolution inspector) types ---------------------------------------------------
+// The winner-only ResolvedProperty above can't show *overrides* (it keeps only the top entry per
+// property). The cascade keeps the full ordered stack of matched layers so a UI can strike through
+// the entries a higher-specificity layer beat. This is a SLOW PATH (per-view, on demand) -- it is
+// NOT used by the editor's live-query resolve loop.
+export interface CascadeEntry {
+	property: string;
+	// Entry-local declared value: a literal, or the entry's own token value/id. Deliberately does
+	// NOT apply the scope-based alias override (substituteTokens) the winner path does -- that
+	// narrower-scope override is a separate concept that belongs to the planned view-override band,
+	// not to illustrating the kit-layer stack. In the common (no alias override) case it matches.
+	value: string;
+	isToken: boolean;
+	tokenAlias: string | null;
+	tokenId: string | null;
+}
+
+export interface CascadeLayer {
+	layerId: string;
+	conditionCount: number;
+	// Axis-id set + matched values, same shape/semantics as ResolvedProperty.keys/conditionValues,
+	// so the UI colors a layer with the exact same hash hue as the Axes dots and StyleField track.
+	keys: string[];
+	conditionValues: { axisId: string; value: string }[];
+	entries: CascadeEntry[];
+}
+
+export interface CascadeKit {
+	kitId: string;
+	kitName: string;
+	// Ordered MOST-SPECIFIC FIRST (top of the stack). The first layer to set a property is its
+	// winner; the same property in any later layer is overridden.
+	layers: CascadeLayer[];
+}
+
 function formatAxisValue(v: AxisValueType): string {
 	switch (v.type) {
 		case 'literal':
@@ -313,27 +348,15 @@ export async function resolve(
 	return matchLayers(kitId, layerDataMap, axisArgs);
 }
 
-// Resolves all kits in one pass: 3 queries total instead of 3 per kit.
-async function resolveAll(
-	db: SchemaDialect,
+// Build per-kit { layerId -> LayerData } maps from the flat conditions/entries rowsets returned
+// by fetchLayerData. Shared by resolveAll (winner-only) and resolveAllCascade (full stack) so the
+// two can never disagree on how a layer's conditions/entries are assembled.
+function buildKitLayerDataMaps(
 	kitIds: string[],
-	argsByKit: Map<string, Record<string, ArgValue>>
-): Promise<Map<string, Map<string, ResolvedProperty>>> {
-	if (kitIds.length === 0) return new Map();
-
-	const layers = await db
-		.selectFrom('layers')
-		.where('layers.kit_id', 'in', kitIds)
-		.select(['layers.id', 'layers.kit_id'])
-		.execute();
-
-	if (layers.length === 0) {
-		return new Map(kitIds.map((id) => [id, new Map()]));
-	}
-
-	const allLayerIds = layers.map((l) => l.id);
-	const [conditions, entries] = await fetchLayerData(db, allLayerIds);
-
+	layers: { id: string; kit_id: string }[],
+	conditions: Awaited<ReturnType<typeof fetchLayerData>>[0],
+	entries: Awaited<ReturnType<typeof fetchLayerData>>[1]
+): Map<string, Map<string, LayerData>> {
 	const layerKitMap = new Map<string, string>(layers.map((l) => [l.id, l.kit_id]));
 	const kitLayerDataMaps = new Map<string, Map<string, LayerData>>(
 		kitIds.map((id) => [id, new Map()])
@@ -372,6 +395,32 @@ async function resolveAll(
 			});
 		}
 	}
+
+	return kitLayerDataMaps;
+}
+
+// Resolves all kits in one pass: 3 queries total instead of 3 per kit.
+async function resolveAll(
+	db: SchemaDialect,
+	kitIds: string[],
+	argsByKit: Map<string, Record<string, ArgValue>>
+): Promise<Map<string, Map<string, ResolvedProperty>>> {
+	if (kitIds.length === 0) return new Map();
+
+	const layers = await db
+		.selectFrom('layers')
+		.where('layers.kit_id', 'in', kitIds)
+		.select(['layers.id', 'layers.kit_id'])
+		.execute();
+
+	if (layers.length === 0) {
+		return new Map(kitIds.map((id) => [id, new Map()]));
+	}
+
+	const allLayerIds = layers.map((l) => l.id);
+	const [conditions, entries] = await fetchLayerData(db, allLayerIds);
+
+	const kitLayerDataMaps = buildKitLayerDataMaps(kitIds, layers, conditions, entries);
 
 	const results = new Map<string, Map<string, ResolvedProperty>>();
 	for (const kitId of kitIds) {
@@ -571,6 +620,119 @@ export async function resolveManySlowPath(
 	applySelfDeclaredViewRefs(results, tokenMap.viewTokens);
 
 	return results;
+}
+
+// Pure: mirror of matchLayers, but keeps the FULL ordered stack of matched layers (each with all
+// its entries) instead of collapsing to a winner-per-property map. Ordered most-specific first.
+function matchLayersCascade(
+	layerDataMap: Map<string, LayerData>,
+	axisArgs: Record<string, ArgValue>
+): CascadeLayer[] {
+	const matching: { data: LayerData; specificity: number[] }[] = [];
+	for (const [, data] of layerDataMap) {
+		const allMatch = data.conditions.every((c) => {
+			const arg = axisArgs[c.axisId];
+			if (!arg) return false;
+			return matchesArg(c.axisValue, arg);
+		});
+		if (allMatch) matching.push({ data, specificity: computeSpecificity(data.conditions) });
+	}
+
+	// Descending: most-specific first (opposite of matchLayers, which sorts ascending so later
+	// entries overwrite earlier in a Map). Here order IS the output, top of the stack leading.
+	matching.sort((a, b) => compareSpecificity(b.specificity, a.specificity));
+
+	return matching.map(({ data }) => {
+		// Same deterministic axisId sort as matchLayers, for stable display order.
+		const conds = [...data.conditions].sort((a, b) => a.axisId.localeCompare(b.axisId));
+		return {
+			layerId: data.id,
+			conditionCount: conds.length,
+			keys: conds.map((c) => c.axisId),
+			conditionValues: conds.map((c) => ({ axisId: c.axisId, value: formatAxisValue(c.axisValue) })),
+			entries: data.entries.map((entry) => {
+				const tv = entry.tokenId ? entry.tokenValue : null;
+				const value = tv
+					? tv.type === 'scalar'
+						? tv.value
+						: tv.type === 'view'
+							? tv.view_id
+							: '' // view-list has no scalar display
+					: (entry.literalValue ?? '');
+				return {
+					property: entry.property,
+					value,
+					isToken: !!entry.tokenId,
+					tokenAlias: entry.tokenAlias,
+					tokenId: entry.tokenId ?? null
+				};
+			})
+		};
+	});
+}
+
+// Cascade counterpart of resolveAll: full matched-layer stack per kit (most-specific first).
+async function resolveAllCascade(
+	db: SchemaDialect,
+	kitIds: string[],
+	argsByKit: Map<string, Record<string, ArgValue>>
+): Promise<Map<string, CascadeLayer[]>> {
+	if (kitIds.length === 0) return new Map();
+
+	const layers = await db
+		.selectFrom('layers')
+		.where('layers.kit_id', 'in', kitIds)
+		.select(['layers.id', 'layers.kit_id'])
+		.execute();
+
+	if (layers.length === 0) return new Map(kitIds.map((id) => [id, []]));
+
+	const [conditions, entries] = await fetchLayerData(db, layers.map((l) => l.id));
+	const kitLayerDataMaps = buildKitLayerDataMaps(kitIds, layers, conditions, entries);
+
+	const results = new Map<string, CascadeLayer[]>();
+	for (const kitId of kitIds) {
+		results.set(kitId, matchLayersCascade(kitLayerDataMaps.get(kitId)!, argsByKit.get(kitId) ?? {}));
+	}
+	return results;
+}
+
+// SLOW PATH (per-view, on demand -- NOT the live-query loop). Returns the full resolution cascade
+// for one view: every composed kit with its matched-layer stack, most-specific first. Feeds the
+// Layers inspector so it can render override chains (struck-through beaten entries). Parallel to
+// resolveManySlowPath but skips token scope/substitution -- see CascadeEntry.value's note.
+export async function resolveViewCascade(db: SchemaDialect, viewId: string): Promise<CascadeKit[]> {
+	const compositions = await db
+		.selectFrom('compositions')
+		.innerJoin('kits', 'kits.id', 'compositions.kit_id')
+		.where('compositions.view_id', '=', viewId)
+		.orderBy('compositions.priority_index', 'asc')
+		.select(['compositions.kit_id', 'kits.name as kit_name'])
+		.execute();
+
+	const allKitIds = compositions.map((c) => c.kit_id);
+	if (allKitIds.length === 0) return [];
+
+	const axisArgsRows = await db
+		.selectFrom('axis_args')
+		.where('axis_args.view_id', '=', viewId)
+		.select(['axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+		.execute();
+
+	const argsByKit = new Map<string, Record<string, ArgValue>>();
+	for (const arg of axisArgsRows) {
+		if (!arg.value) continue;
+		if (!argsByKit.has(arg.kit_id)) argsByKit.set(arg.kit_id, {});
+		argsByKit.get(arg.kit_id)![arg.axis_id] = arg.value as ArgValue;
+	}
+
+	const cascadeByKit = await resolveAllCascade(db, allKitIds, argsByKit);
+
+	return compositions.map((comp) => ({
+		kitId: comp.kit_id,
+		kitName: comp.kit_name,
+		layers: cascadeByKit.get(comp.kit_id) ?? []
+	}));
 }
 
 export function flattenKitResults(kits: ResolvedKit[]): Map<string, ResolvedProperty> {

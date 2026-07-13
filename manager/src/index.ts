@@ -84,6 +84,7 @@ export {
 	resolve,
 	resolveManySlowPath,
 	resolveManyViews,
+	resolveViewCascade,
 	fetchResolutionRows,
 	resolveViewsFromRows,
 	rowsKey,
@@ -93,5 +94,8 @@ export {
 	type ResolvedProperty,
 	type ResolvedKit,
 	type ResolvedViewData,
-	type ResolutionRows
+	type ResolutionRows,
+	type CascadeEntry,
+	type CascadeLayer,
+	type CascadeKit
 } from './resolve/resolve.js';
