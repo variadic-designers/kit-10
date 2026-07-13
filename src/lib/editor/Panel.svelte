@@ -111,7 +111,10 @@
 		}
 
 		&__content {
-			max-height: 100rem;
+			// Cap any single panel at 35vh; taller content scrolls inside the panel instead of
+			// pushing the others off-screen. Collapse still animates this down to 0 (below).
+			max-height: 35vh;
+			overflow-y: auto;
 			transition: max-height 200ms ease-out;
 
 			@include layout-respond('lg') {
