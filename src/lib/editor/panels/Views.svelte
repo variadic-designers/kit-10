@@ -392,82 +392,98 @@
 
 <Panel contextMenuContent={kitsContextMenu} name="Views" tooltip="Kit Views">
 	{#snippet content()}
+		<!-- <pre>{JSON.stringify(viewsQuery, null, 2)}</pre> -->
 		<ul class="views">
 			{#if viewsQuery.rows}
 				{#each rootViews as v (v.viewId)}
 					{@const item = manifestById.get(v.viewId)}
-					{@render kitter(v, item, [])}
+					{@render kitter(v, item, 0, [])}
 				{/each}
 			{/if}
 		</ul>
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v: any, item: PanelItem | undefined, ancestors: string[])}
+{#snippet kitter(v: any, item: PanelItem | undefined, level: number, ancestors: string[])}
 	{@const viewIcon = v.viewLocked
 		? 'fa-solid fa-lock'
 		: ((v.hints?.view_icon as string | undefined) ?? 'fa-regular fa-window-maximize')}
 	{@const parentId = ancestors[ancestors.length - 1] ?? null}
-	{@const visibleChildren = childIds(v.viewId).filter(
+	{@const kidIds = childIds(v.viewId).filter(
 		(id) => id !== v.viewId && !ancestors.includes(id) && resolvedViewIdSet.has(id)
 	)}
 
-	<li
-		class="view-field"
-		class:selected={editorActivity.activeViewId === v.viewId}
-		class:hovered={hoveredViewId === v.viewId}
-		use:draggable={{
-			disabled: viewEditing[v.viewId] === true,
-			preview: v.viewName ?? 'View',
-			payload: () => ({
-				kind: 'view',
-				viewId: v.viewId,
-				viewName: v.viewName,
-				parentViewId: parentId
-			})
-		}}
-		use:dropZone={{
-			accepts: 'view',
-			mode: 'tree',
-			canDrop: (p) =>
-				p.kind === 'view' && p.viewId !== v.viewId && !isDescendant(p.viewId, v.viewId),
-			onDrop: (p, { position }) => {
-				if (p.kind === 'view') handleViewDrop(p, v.viewId, parentId, position);
-			}
-		}}
-	>
-		<button
-			class="view"
-			use:contextMenu={menuFor(v.viewId)}
-			aria-label={v.viewName}
-			onclick={() => selectView(v.viewId, v.viewName)}
-			onmouseenter={() => (hoveredViewId = v.viewId)}
-			onmouseleave={() => {
-				if (hoveredViewId === v.viewId) hoveredViewId = null;
+	<!-- Node = one view: a fixed-height row (`.view-field`) stacked ABOVE an optional children
+	     <ul>, so a parent sits directly on top of its subtree, never beside it. --level rides the
+	     node, so the row's button padding and the guide line both read the same nesting depth. -->
+	<li class="view-node" style="--level: {level}">
+		<!-- Row only. Selection, hover, drag payload and drop zone all live here, NOT on the
+		     children container -- otherwise "insert after" would target the bottom of the entire
+		     subtree instead of this single row. -->
+		<div
+			class="view-field"
+			class:selected={editorActivity.activeViewId === v.viewId}
+			class:hovered={hoveredViewId === v.viewId}
+			use:draggable={{
+				disabled: viewEditing[v.viewId] === true,
+				preview: v.viewName ?? 'View',
+				payload: () => ({
+					kind: 'view',
+					viewId: v.viewId,
+					viewName: v.viewName,
+					parentViewId: parentId
+				})
+			}}
+			use:dropZone={{
+				accepts: 'view',
+				mode: 'tree',
+				canDrop: (p) =>
+					p.kind === 'view' && p.viewId !== v.viewId && !isDescendant(p.viewId, v.viewId),
+				onDrop: (p, { position }) => {
+					if (p.kind === 'view') handleViewDrop(p, v.viewId, parentId, position);
+				}
 			}}
 		>
-			<i class="view__icon {viewIcon}"></i>
-			<div class="view__name">
-				<Renameable
-					editing={viewEditing[v.viewId] === true}
-					value={v.viewName ?? ''}
-					onCommit={(name) => {
-						api.renameView(v.viewId, name);
-						viewEditing[v.viewId] = false;
-					}}
-				>
-					{v.viewName ?? 'Literally Nothing'}
-				</Renameable>
-			</div>
-		</button>
+			<button
+				class="view"
+				use:contextMenu={menuFor(v.viewId)}
+				aria-label={v.viewName}
+				onclick={() => selectView(v.viewId, v.viewName)}
+				onmouseenter={() => (hoveredViewId = v.viewId)}
+				onmouseleave={() => {
+					if (hoveredViewId === v.viewId) hoveredViewId = null;
+				}}
+			>
+				<i class="view__icon {viewIcon}"></i>
+				<div class="view__name">
+					<Renameable
+						editing={viewEditing[v.viewId] === true}
+						value={v.viewName ?? ''}
+						onCommit={(name) => {
+							api.renameView(v.viewId, name);
+							viewEditing[v.viewId] = false;
+						}}
+					>
+						{v.viewName ?? 'Literally Nothing'}
+					</Renameable>
+				</div>
+			</button>
+		</div>
 
-		{#if visibleChildren.length}
+		<!-- Children as a real nested <ul>, SIBLING of the row (not inside it), so the DOM tree IS
+		     the view tree and the browser's own :last-child drives the guide line -- no per-row JS
+		     to find the "last direct child". Indentation still comes from the button's --level
+		     padding, so rows land exactly where the flat layout put them; the <ul> adds structure,
+		     not offset. Views are reference-based (DAG, not strict tree): a child renders under
+		     every parent referencing it, and `!ancestors.includes(id)` (in kidIds) is a cycle
+		     guard, not a dedupe -- a chain looping back to an ancestor stops instead of recursing. -->
+		{#if kidIds.length}
 			<ul class="view__children">
-				{#each visibleChildren as childId (childId)}
+				{#each kidIds as childId (childId)}
 					{@const childRow = rowsByViewId.get(childId)}
 					{@const childItem = manifestById.get(childId)}
 					{#if childRow}
-						{@render kitter(childRow, childItem, [...ancestors, v.viewId])}
+						{@render kitter(childRow, childItem, level + 1, [...ancestors, v.viewId])}
 					{/if}
 				{/each}
 			</ul>
@@ -480,82 +496,80 @@
 
 	.views {
 		@include layout-flex-column();
-		list-style: none;
-		margin: 0;
-		padding: 0;
 		overflow-x: auto;
 		scrollbar-width: thin;
 	}
 
-	// Each nesting level is a real <ul class="view__children"> inside its parent <li>, so the
-	// browser's own DOM tree *is* the view tree — indentation, guide lines, and `:last-child`
-	// all fall out of CSS with zero per-row JS. This replaces the old flat-with-`--level`-index
-	// layout where every row was a sibling and "last direct child of parent X" required JS to
-	// re-derive what the DOM already knew.
+	// Parent icon column: a child's own content indent (button padding for its --level) minus one
+	// level step lands exactly on the parent icon's LEFT edge, so the line hugs the left of the
+	// icon. Shared by the trunk and the curve so they line up exactly. Add a small `+ $x-font-size-md
+	// * k` term here to shift it rightward onto the icon if you ever want it centred instead.
+	@mixin guide-column {
+		left: calc($x-space-sm + $x-space-lg * var(--level) * 0.35 - $x-space-md * 0.35);
+	}
+
+	// Each nesting level is a real <ul>, a SIBLING of its parent's row, so the DOM tree is the view
+	// tree. Zero padding/margin: indentation stays on the button's --level, so rows land exactly
+	// where the flat layout put them -- this <ul> adds structure, not geometry.
 	.view__children {
+		@include layout-flex-column();
 		list-style: none;
 		margin: 0;
-		padding-left: $x-space-sm; // one indent step per nesting level — structural, not computed
+		padding: 0;
+	}
 
-		> .view-field {
-			position: relative;
+	// One tree node: a row stacked directly above its (optional) children <ul>.
+	.view-node {
+		position: relative;
+		list-style: none;
+	}
 
-			// Vertical guide line: drops from the parent's bottom down through every direct
-			// child at this level. Drawn on each child's ::before so the line is continuous
-			// across siblings — every child contributes a segment from its top to its bottom.
-			&::before {
-				content: '';
-				position: absolute;
-				left: calc($x-space-sm * -0.5); // align with the parent row's icon center
-				top: 0;
-				bottom: 0;
-				border-left: 1px solid var(--color-text-muted);
-				pointer-events: none;
-			}
-
-			// Horizontal stub from the vertical line to this row's label.
-			&::after {
-				content: '';
-				position: absolute;
-				left: calc($x-space-sm * -0.5);
-				top: 50%;
-				width: calc($x-space-sm * 0.5);
-				border-top: 1px solid var(--color-text-muted);
-				pointer-events: none;
-			}
-
-			// The curve: on the LAST direct child, the vertical line stops at this row's
-			// midline (where the horizontal stub meets it) and rounds into the stub via
-			// border-bottom-left-radius. `:last-child` is the browser's own "last direct
-			// child" — no JS re-derivation, no drift when ordering changes. The non-last
-			// siblings keep the full-height vertical line (their ::before), so the line
-			// runs continuously from parent's bottom to the last child's midline.
-			&:last-child::before {
-				bottom: auto;
-				height: 50%;
-				border-bottom: 1px solid var(--color-text-muted);
-				border-bottom-left-radius: $x-space-sm * 0.5;
-			}
-			// The last child's ::before already draws the curve (vertical + bottom + radius);
-			// its ::after horizontal stub is redundant with the bottom segment of the curve,
-			// so suppress it to avoid a double line.
-			&:last-child::after {
-				display: none;
-			}
-		}
+	// Guide line. A single vertical rule sits in the PARENT's icon column and drops from just below
+	// the parent row down to its LAST direct child's midline, curving right into it. Intermediate
+	// children get no horizontal tick -- deliberately quiet. Built from two pieces so it survives
+	// variable row heights (wrapping names) and nested subtrees between siblings:
+	//
+	//   Trunk -- every direct child EXCEPT the last paints a full-node-height segment (top -> bottom
+	//   of its whole subtree). The segments stack into one continuous line that runs cleanly down
+	//   the left of any grandchildren sitting between two direct children.
+	.view__children > .view-node:not(:last-child)::before {
+		content: '';
+		position: absolute;
+		@include guide-column;
+		top: 0;
+		bottom: 0;
+		border-left: 1px solid var(--color-text-muted);
+		pointer-events: none;
+	}
+	//   Curve -- the LAST direct child paints from its node top down to its own ROW midline (50% of
+	//   the row, NOT the node, so it lands on the row even when the name wraps or the last child has
+	//   its own subtree below), then bends right into the row. `:last-child` is the browser telling
+	//   us the last direct child for free. Drawn on `.view-field` (position: relative). The
+	//   `:not(dnd-*)` guard drops it mid-drag so the DnD insert bar isn't overridden into a stubby
+	//   curved box on that one row.
+	.view__children
+		> .view-node:last-child
+		> .view-field:not(:global(.dnd-insert-before)):not(:global(.dnd-insert-after))::before {
+		content: '';
+		position: absolute;
+		@include guide-column;
+		top: 0;
+		height: 50%;
+		width: calc($x-space-lg * 0.16);
+		border-left: 0.6px solid var(--color-text-muted);
+		border-bottom: 0.6px solid var(--color-text-muted);
+		border-bottom-left-radius: $x-space-xs;
+		pointer-events: none;
 	}
 
 	.view-field {
 		display: flex;
 		position: relative;
-		list-style: none;
 
 		// Drag-and-drop indicators (classes applied at runtime by the dnd controller, hence
-		// :global()). `into` = nest under this view (outline the whole row); before/after = drop
-		// as a sibling on that edge (an insertion line). With nested <ul>, `left: 0` lands at
-		// the right depth automatically — each <ul> is already indented by its own padding, so
-		// the insertion line aligns with the drop target's actual nesting level without any
-		// `--level` arithmetic.
+		// :global()). `into` = nest under this view (outline the whole row); before/after = drop as
+		// a sibling on that edge (an insertion line, indented to this row's depth so it reads as
+		// landing at the right level).
 		&:global(.dnd-over) {
 			outline: 1px solid var(--color-primary);
 			outline-offset: -1px;
@@ -565,16 +579,14 @@
 		&:global(.dnd-insert-after)::after {
 			content: '';
 			position: absolute;
-			left: 0;
+			left: calc($x-space-sm + $x-space-lg * var(--level) * 0.45);
 			right: 0;
-			// Reset guide-line properties that could conflict when the DnD class overrides the
-			// guide line's ::before/::after on the same element. The guide line sets bottom/height/
-			// border-bottom-left-radius/border-left/border-top; the DnD indicator needs a clean
-			// horizontal bar, so explicitly neutralize those.
+			// Neutralize the guide-line ::before (border/curve/width) so the DnD indicator is a
+			// clean horizontal bar, not the guide line. Harmless on ::after (no guide there).
 			top: auto;
 			bottom: auto;
-			height: 2px;
 			width: auto;
+			height: 2px;
 			border: none;
 			border-radius: 0;
 			background: var(--color-primary);
@@ -609,8 +621,8 @@
 		// Viewport hovering the same view in the canvas) -- subtler than .selected since it's a
 		// lighter-weight affordance, not a competing one.
 		&.hovered:not(.selected) {
-			background-color: var(--color-surface-alt);
-			opacity: 0.7;
+			// background-color: var(--color-surface-alt);
+      color: var(--color-primary);
 		}
 	}
 
@@ -618,11 +630,16 @@
 		background: inherit;
 		color: var(--color-text-muted);
 		border: unset;
+		// border-right: 1px solid var(--color-text-muted);
 		padding-right: calc($x-space-xs / 1);
 	}
 
 	.view {
-		padding-left: $x-space-xs;
+		// $x-space-sm here is the constant left gutter that used to live on `.view-field`; folding
+		// it into the button (which already carries the per-level indent) keeps the row itself at
+		// zero offset, so `.view-field` backgrounds still bleed full-width and nested rows don't
+		// stack up a gutter per level.
+		padding-left: calc($x-space-sm + $x-space-lg * var(--level) * 0.38);
 		padding-block: calc($x-space-xs * 0.25);
 
 		color: var(--color-text);
@@ -642,10 +659,10 @@
 		}
 
 		&__name {
-			@include fonts-stack('Satoshi-Light', sans);
+			@include fonts-stack('Satoshi-Regular', sans);
 			padding-left: $x-space-xs;
 			font-weight: 600;
-			letter-spacing: 1px;
+			letter-spacing: 0px;
 			color: var(--color-text);
 		}
 
