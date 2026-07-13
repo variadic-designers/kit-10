@@ -93,7 +93,7 @@
 			text: '#3f3a3a',
 			text-muted: '#606a78',
 			surface: '#FFF',
-			surface-alt: '#e8f2fb',
+			surface-alt: 'rgba(232, 242, 251, 0.6)',
 
 			add-var-bg: '#f5f5f5',
 			add-var-border: 1px solid #dedede,
@@ -115,7 +115,7 @@
 			pure-alt: '#FFF',
 			bg: '#121212',
 			surface: '#1f1f1f',
-			surface-alt: '#2f2f2f',
+			surface-alt: 'rgba(47,47,47,0.5)',
 			text: '#dcdcdc',
 
 			add-var-bg: '#111',

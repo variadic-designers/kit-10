@@ -612,7 +612,7 @@
 			&:hover {
 				.view__icon,
 				.view__name {
-					color: var(--color-primary-hover);
+					// color: var(--color-primary-hover);
 				}
 			}
 		}
