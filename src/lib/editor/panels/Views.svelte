@@ -66,7 +66,7 @@
 				deselectView(editorActivity, selection);
 				return;
 			case 'delete':
-				await api.deleteView(viewId);
+				await api.deleteViews(collectSubtree(viewId));
 				return;
 			case 'clone': {
 				const alias = item?.write_alias ?? 'children';
@@ -275,6 +275,23 @@
 			stack.push(...childIds(id));
 		}
 		return false;
+	}
+
+	// `rootId` + every view it owns, via the same manifest DAG. Deleting only `rootId` would orphan
+	// its children -- with nothing referencing them, `build_viewport` promotes them to top-level and
+	// they float in the viewport. `seen` dedupes diamonds and guards cycles.
+	function collectSubtree(rootId: string): string[] {
+		const out: string[] = [];
+		const seen = new Set<string>();
+		const stack = [rootId];
+		while (stack.length) {
+			const id = stack.pop()!;
+			if (seen.has(id)) continue;
+			seen.add(id);
+			out.push(id);
+			stack.push(...childIds(id));
+		}
+		return out;
 	}
 
 	// Persist a parent view's ordered child list. The plugin's manifest carries, per item, the

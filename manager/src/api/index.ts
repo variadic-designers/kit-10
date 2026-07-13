@@ -415,6 +415,11 @@ export interface QueryAction {
 		| undefined
 	>;
 	deleteView: (viewId: string) => Promise<void>;
+	// Name-neutral bulk delete. The editor computes the subtree to remove from the manifest-driven
+	// DAG it already holds (composition is Charter's opinion, surfaced via composition_field_keys),
+	// so the manager never re-walks a composition token or hardcodes "children" here. Each row's
+	// onDelete('cascade') still cleans its own compositions/axis_args/view-scope tokens.
+	deleteViews: (viewIds: string[]) => Promise<void>;
 	createKitInProject: (
 		projectId: string,
 		name: string
@@ -1181,6 +1186,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteView: async (viewId: string) => {
 		await db.deleteFrom('views').where('views.id', '=', viewId).execute();
+	},
+
+	deleteViews: async (viewIds: string[]) => {
+		if (!viewIds.length) return;
+		await db.deleteFrom('views').where('views.id', 'in', viewIds).execute();
 	},
 
 	renameView: async (viewId: string, newName: string) => {
