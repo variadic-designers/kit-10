@@ -562,6 +562,19 @@
 		pointer-events: none;
 	}
 
+	// When a parent row is selected, promote its subtree's guide line to primary.
+	// `.view-field.selected` is the immediate previous sibling of the children <ul>, so
+	// `+ .view__children` reaches exactly this parent's own guide lines (trunk + curve) and not
+	// grandchildren's (their <ul> is nested deeper, never adjacent to the selected row). The two
+	// inner selectors mirror the trunk/curve rules above; `border-color` covers both the trunk's
+	// border-left and the curve's border-left + border-bottom in one line.
+	.view-field.selected + .view__children {
+		> .view-node:not(:last-child)::before,
+		> .view-node:last-child > .view-field::before {
+			border-color: var(--color-primary);
+		}
+	}
+
 	.view-field {
 		display: flex;
 		position: relative;
