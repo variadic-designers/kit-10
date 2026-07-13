@@ -11,12 +11,30 @@ ships opinionated defaults (transparent stacks, sensible spacing) — the Januar
 icons. It sits at the **opposite pole from Webflow**: maximal abstraction over CSS,
 not maximal exposure of it.
 
+## Tech stack
+
+- **Editor:** a **React**/TypeScript web app; the properties panel and layer tree are
+  React DOM like the rest.
+- **Canvas → code:** every element on the canvas **generates React behind the
+  scenes** (props, state, handlers). Layout is Framer's own engine expressed through
+  the Stack/Grid abstraction rather than raw CSS classes.
+- **Animation/runtime:** **framer-motion / Motion**. Code components are real React
+  components dropped onto the canvas.
+- **Output:** optimized **React components**, not hand-written HTML — which is why
+  the surface controls can afford to hide CSS entirely (there's a compiler between
+  the panel and the markup).
+
+The React-all-the-way-down pipeline is what *lets* Framer be the most abstracted of
+the four: the outcome-named controls compile down, so they never have to expose the
+CSS underneath.
+
 ## Accessibility
 
-- **Canvas-centric web app.** Framer's editor is a heavy canvas-style application;
-  the properties panel controls are small icon toggles and tooltip-gated glyphs,
-  with the same keyboard/touch-invisible, learn-by-hover problem as the others. No
-  meaningful respect for OS dynamic-type/zoom.
+- **React DOM chrome, poor hygiene.** Unlike Figma, Framer's editor (and its canvas
+  content) is React, so its panel isn't architecturally locked out of accessibility —
+  but the controls are small icon toggles and tooltip-gated glyphs, with the same
+  keyboard/touch-invisible, learn-by-hover problem as the others, and no meaningful
+  respect for OS dynamic-type/zoom.
 - **Icon-only alignment/distribution.** Direction, distribution, and alignment read
   as compact glyph rows; targets are small and below the WCAG 2.2 24×24 minimum.
 - **Contrast.** The neutral/dark chrome uses low-contrast gray icons that, by

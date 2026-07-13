@@ -7,12 +7,27 @@ W/H, on-canvas pink drag handles for spacing/padding, and an **advanced popover
 behind a "…" icon** (spacing mode, strokes-in-layout, canvas stacking, text
 baseline, negative spacing).
 
+## Tech stack
+
+- **Canvas:** a C++ 2D renderer compiled to **WebAssembly** (Emscripten), painting to
+  a `<canvas>` via **WebGL**, upgraded to **WebGPU** in 2023 (compute shaders, WGSL,
+  MSAA). This is the "game engine, not a web app" core.
+- **UI chrome / panels:** **TypeScript + React**, real DOM — the properties inspector
+  is *not* canvas-drawn. A bindings layer bridges the C++/WASM engine and the JS UI.
+- **Backend:** Rust multiplayer servers over WebSockets; plugins run in a Realms
+  sandbox on the main thread.
+
+This split matters for the critique below: the panel *is* accessible-capable DOM;
+the *design* is the part with no accessible object model.
+
 ## Accessibility
 
-- **Root cause: it's a custom-rendered UI, not native DOM widgets.** The editor is
-  effectively a canvas app, so most of the properties panel has weak/absent
-  screen-reader semantics, focus order, and tab navigation. This is the dominant
-  a11y failure — everything below compounds it.
+- **Root cause: the design has no accessible object model.** Because the artboard is
+  a WASM/WebGPU canvas, objects, layers, and selection aren't exposed to assistive
+  tech at all — you can't tab the layer tree or hear what's selected. The properties
+  panel, by contrast, *is* React DOM and is fixable in principle; its failures below
+  are a11y *hygiene*, not architecture. The dominant, architectural failure is the
+  un-navigable canvas model.
 - **Target size.** The 3×3 alignment grid crams 9 hit targets into roughly one
   control's footprint; individual cells are well under WCAG 2.2's 24×24 CSS-px
   minimum (let alone the 44px recommendation). Hostile to motor-impaired and
@@ -59,8 +74,9 @@ baseline, negative spacing).
 ## Bottom line
 
 It optimizes for a dense expert panel at the cost of learnability and inclusion:
-meaning is deferred to hover, controls are overloaded by mode, and the whole thing
-sits on a non-semantic canvas that screen readers and keyboards can't traverse.
+meaning is deferred to hover, controls are overloaded by mode, and the design model
+sits on a non-semantic WASM/WebGPU canvas that AT can't traverse — while the React
+panel around it never got the a11y hygiene its DOM foundation would have allowed.
 
 Relevant to KIT•10: our Axes/Render panels already lean on color-coded dots + shape
 as a *dual* channel (hue + kit icon) and visible labels — that's the right instinct.

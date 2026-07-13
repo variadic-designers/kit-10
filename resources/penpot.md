@@ -10,6 +10,19 @@ Spacing supports click-drag with Shift (opposite sides) / Alt (all sides).
 Crucially, the whole editor is **web-native (DOM/SVG)**, not a canvas app, and the
 Inspect tab emits real production CSS.
 
+## Tech stack
+
+- **Frontend:** **ClojureScript + React**, compiled via shadow-cljs; state through
+  Potok (Redux-like) + Okulary (reactive derived state); **SCSS** styling.
+- **Rendering:** historically **SVG in the DOM** ("what you design is what ships" —
+  SVG/CSS/HTML), now augmented by a **Rust `render-wasm`** module for near-native
+  canvas rendering performance.
+- **Backend:** **Clojure/JVM**, **PostgreSQL** for persistence. Fully open source.
+
+The all-DOM/React frontend is why its accessibility ceiling is high even though the
+current polish is low — and the open source + Rust-wasm direction mirrors KIT•10's
+own PGlite + Rust/WASM shape more than any other tool here.
+
 ## Accessibility
 
 - **Better baseline than Figma, by architecture — but under-exploited.** Because

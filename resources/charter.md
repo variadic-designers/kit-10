@@ -20,6 +20,24 @@ Charter's mandate (VISION 1st Principle: *opinionated translation, not raw CSS
 pass-through*) puts it firmly on the **Framer end** — but it has to fix the two
 things Framer gets wrong, and it inherits one problem *none* of them share.
 
+## KIT•10's stack (for context)
+
+- **UI:** Svelte 5 (`src/lib/editor/`) — panels, reactivity, live-query loop. Real DOM.
+- **Manager:** TypeScript library (`manager/src/`) — DB access (Kysely + PgliteDialect),
+  kit resolution, migrations/seed.
+- **Store:** **PGlite** — in-browser PostgreSQL in a Web Worker + IndexedDB, with live
+  queries. The design *model* is relational data, not a canvas scene.
+- **Charter:** Rust → **WASM** via an Extism sandbox (`plugins/charter/`); resolved
+  data → flat `UiNode[]`.
+- **Vellum:** Rust → **WASM** GPU renderer (`src/lib/vellum/`, wgpu/WebGPU); `UiNode[]`
+  → pixels.
+
+Read against the four: KIT•10 is closest to **Penpot** in shape (open-ish, DOM
+frontend, Rust/WASM rendering, PostgreSQL) and closest to **Framer** in philosophy
+(opinionated abstraction, compiler in the middle). The Charter→Vellum boundary is
+KIT•10's analogue of Framer's canvas→React compiler — and it's where the opinion
+lives.
+
 ## What to steal, what to reject
 
 **From Framer — steal the philosophy.** Name fields for *intent/outcome*, not for
@@ -60,14 +78,32 @@ anti-patterns to never reproduce:
 
 ## The accessibility fork Charter must not miss
 
-Every one of these tools has the same accessibility failure: small, icon-only,
-tooltip-gated controls, often on a non-semantic canvas. KIT•10 has a structural
-advantage and must not squander it: **the viewport is a canvas (Vellum), but the
-editing controls are real Svelte DOM.** That split is the single best accessibility
-decision available in this category — Figma can't retrofit it. Charter's job is to
-feed that DOM enough information (labels, types, value shapes) that the editor never
-has to fall back to Figma-style icon guessing. Keep controls in the DOM; keep the
-canvas for *rendering*, not for *input*.
+First, correct a tempting myth: KIT•10's DOM controls are **not** a unique
+advantage. All four tools already render their panels in React/DOM — the controls
+were never the canvas. Their shared accessibility failure is twofold: (a) the
+*design model* lives in a canvas/render tree with no assistive-tech-navigable
+representation, and (b) control *hygiene* is poor (icon-only, tiny targets, weak
+labels/contrast). KIT•10 must not confuse "our panel is DOM" with "we're
+accessible" — everyone's panel is DOM.
+
+The advantage KIT•10 *actually* has is deeper and rarer: **the design model is
+relational data in PGlite (resolved kits × axes × layers), not an opaque canvas
+scene.** A canvas engine can't easily hand assistive tech a meaningful object tree;
+KIT•10 can, because the model is already structured, queryable, and named. That's
+the structural edge — the ability to expose a genuinely semantic view of the design,
+which Figma's WASM/WebGPU scene fundamentally can't.
+
+Charter's job on this fork is two-fold:
+1. **Feed the DOM real semantics.** Every field the editor renders from a Charter
+   `FieldDef` must carry a human label and a semantic `inputType`, so the panel
+   presents labeled, focusable, adequately-sized controls — never bare glyphs. This
+   is the hygiene half; it's on the editor to render, but Charter owes it the data.
+2. **Don't let the canvas become the only representation.** Keep Vellum for
+   *rendering*, not as the source of truth for *what exists*. Because topology and
+   values live in the resolved model (not locked inside the render tree), the editor
+   retains the option to expose them semantically. Charter should preserve that —
+   e.g. it already keeps panel topology in the manifest + resolved data rather than
+   baking it only into `UiNode[]`.
 
 ## The problem none of the four share — and the one lesson that's really ours
 

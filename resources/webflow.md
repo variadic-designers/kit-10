@@ -10,6 +10,20 @@ overlay). Underneath, Webflow is explicitly a **CSS authoring tool**: styling is
 **class-based** with combo classes, values cascade **down breakpoints**, and the
 panel maps close to 1:1 onto real CSS properties.
 
+## Tech stack
+
+- **Designer:** a large **React** web app; internal state via a **Flux**
+  architecture. Designer Extensions run in sandboxed **iframes** talking to the host
+  over `postMessage` + JSON-RPC.
+- **Canvas:** uniquely in this set, the canvas *is the real thing* — an actual
+  rendered **HTML/CSS** page (in an iframe) that you edit directly, not a bespoke
+  renderer's stand-in for it.
+- **Output:** semantic **HTML/CSS/JS**; there is no separate "design format" — the
+  DOM you style is the DOM that ships.
+
+That the edited artifact is literally the production DOM is Webflow's defining
+architectural choice, and the source of both its fidelity and its cascade hazards.
+
 ## Accessibility
 
 - **Web-native DOM, but a dense expert cockpit.** Like Penpot, the panel is real
