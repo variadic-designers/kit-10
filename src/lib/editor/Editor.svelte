@@ -227,6 +227,7 @@
 	import ComposePanel from './panels/Compose.svelte';
 	import PluginsPanel from './panels/Plugins.svelte';
 	import AssetsPanel from './panels/Assets.svelte';
+	import LayersPanel from './panels/Layers.svelte';
 
 	import Nav from './Nav.svelte';
 	import Viewport from './Viewport.svelte';
@@ -687,6 +688,10 @@
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
 
 		<AxesPanel {api} {editorReady} bind:editorActivity />
+	{/snippet}
+
+	{#snippet console(editorReady)}
+		<LayersPanel {resolvedKits} />
 	{/snippet}
 
 	{#snippet dash(editorReady)}
