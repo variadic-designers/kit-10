@@ -1708,11 +1708,28 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				.selectFrom('kits')
 				.where('kits.id', '=', '00000000-0000-0000-0000-000000000000')
 				.select(['kits.id as kitId', 'kits.name as kitName']);
+		// Unused kits = kits in the view's own project that are NOT already composed into this view.
+		// The old leftJoin + `view_id != viewId` was wrong three ways: it fanned out to one row per
+		// composition (duplicates in the menu), dropped kits composed nowhere (NULL join row fails
+		// `!=`), and still listed a kit that's in THIS view if it was also in another. Subqueries
+		// keep it one row per kit with no join fan-out.
 		return db
 			.selectFrom('kits')
-			.leftJoin('compositions', 'compositions.kit_id', 'kits.id')
-			.where('compositions.view_id', '!=', viewId)
-			.select(['kits.id as kitId', 'kits.name as kitName', 'compositions.priority_index']);
+			.where(
+				'kits.project_id',
+				'=',
+				db.selectFrom('views').select('views.project_id').where('views.id', '=', viewId)
+			)
+			.where(
+				'kits.id',
+				'not in',
+				db
+					.selectFrom('compositions')
+					.select('compositions.kit_id')
+					.where('compositions.view_id', '=', viewId)
+			)
+			.orderBy('kits.last_modified', 'desc')
+			.select(['kits.id as kitId', 'kits.name as kitName']);
 	},
 
 	getKitsByProjectId: (projectId: string) => {
