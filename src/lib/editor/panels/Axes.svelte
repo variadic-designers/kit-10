@@ -48,11 +48,35 @@
 			},
 			'hr',
 			{
-				name: 'custom axis',
-				description: 'Add custom axis',
-				displayText: 'Custom Axis',
+				name: 'new-axis',
+				description: 'Create a new axis in this kit',
+				displayText: 'New Axis',
 				icon: 'fa-solid fa-plus',
-				onClick: () => {}
+				submenu: [
+					{
+						name: 'new-axis-categorical',
+						description: 'Discrete named variants (e.g. theme: light/dark)',
+						displayText: 'Categorical',
+						icon: 'fa-solid fa-list',
+						onClick: () => createNewAxis('categorical')
+					},
+					{
+						name: 'new-axis-range',
+						description: 'Not yet available',
+						displayText: 'Range (exclusive)',
+						icon: 'fa-solid fa-arrow-right-arrow-left',
+						disabled: true,
+						onClick: () => {}
+					},
+					{
+						name: 'new-axis-number',
+						description: 'Not yet available',
+						displayText: 'Number (continuous)',
+						icon: 'fa-solid fa-arrow-down-1-9',
+						disabled: true,
+						onClick: () => {}
+					}
+				]
 			},
 			{
 				name: 'use-axis',
@@ -90,6 +114,18 @@
 		const kitId = editorActivity.activeKitId;
 		if (!kitId) return;
 		await api.consumeAxis(kitId, axisId);
+		refreshTrigger++;
+	}
+
+	// Create a brand-new axis of `kind` in the project and consume it into the active kit so it shows
+	// up immediately. Only 'categorical' is wired for now; the other kinds are shown but disabled.
+	async function createNewAxis(kind: string) {
+		const projectId = editorActivity.activeProjectId;
+		const kitId = editorActivity.activeKitId;
+		if (!projectId || !kitId) return;
+		const axis = await api.createAxis(projectId, 'New Axis', undefined, kind);
+		if (!axis) return;
+		await api.consumeAxis(kitId, axis.id);
 		refreshTrigger++;
 	}
 
