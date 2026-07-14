@@ -581,8 +581,14 @@
 		border-bottom: 0.6px solid var(--color-text-muted);
 		border-bottom-left-radius: $x-space-xs;
 		pointer-events: none;
-		// No z-index needed: this ::before is on .view-field itself, so it paints after that
-		// element's own background (element bg first, then its positioned pseudo-children).
+		// z-index needed: this ::before is on .view-field, so it paints after that element's own
+		// background but BEFORE the `.view` button that follows it in tree order -- and that button
+		// has `background-color: inherit`, so on a selected row it inherits the opaque
+		// --color-surface-alt and would cover the curve's tip. Lifting the ::before above the button
+		// (z-index:1, still below the DnD indicator's z-index:3) keeps the tip visible. The trunk
+		// ::after doesn't need this: it's the last generated child of .view-node, structurally after
+		// the button already.
+		z-index: 1;
 	}
 
 	// When a parent row is selected, promote its subtree's guide line to primary.
