@@ -233,6 +233,38 @@
 			onFieldUpdate({ layerId: sourceLayerId, property: key, value: picked });
 		}
 	}
+
+	// --- Resize control (inputType === 'resize'): Figma-style Fixed / Hug / Fill ---
+	// The stored value IS the CSS-ish keyword Charter compiles: `fill` / `hug` / a length. Absent
+	// or `auto` reads as Hug in the UI (content-sized); only an explicit length reads as Fixed.
+	type ResizeMode = 'fixed' | 'hug' | 'fill';
+	const resizeMode = $derived<ResizeMode>(
+		value === 'fill' ? 'fill' : value === 'hug' || !value || value === 'auto' ? 'hug' : 'fixed'
+	);
+
+	function writeValue(v: string) {
+		if (!onFieldUpdate) {
+			console.log(`Update ${key}: ${v} on layer ${sourceLayerId} (no callback)`);
+			return;
+		}
+		if (!sourceLayerId) {
+			console.warn(`Cannot update ${key}: no source layer`);
+			return;
+		}
+		if (v !== value) onFieldUpdate({ layerId: sourceLayerId, property: key, value: v });
+	}
+
+	// Picking "Fixed" opens the inline number/length editor (reusing editValue/inputRef). Seed it
+	// with the current length if already fixed, else blank so the placeholder guides a fresh entry.
+	async function selectFixed() {
+		editValue.now = true;
+		editValue.content = resizeMode === 'fixed' ? (value ?? '') : '';
+		await tick();
+		if (inputRef) {
+			inputRef.focus();
+			inputRef.select();
+		}
+	}
 </script>
 
 <div
@@ -294,6 +326,62 @@
 				}
 			}}
 		/>
+	{:else if inputType === 'resize'}
+		<div class="option124__value option124__value--resize">
+			<div class="resize-seg" role="group" aria-label="Resizing mode">
+				<button
+					type="button"
+					class="resize-seg__btn"
+					class:resize-seg__btn--sel={resizeMode === 'fixed'}
+					title="Fixed size"
+					onclick={() => selectFixed()}
+				>
+					<i class="fa-solid fa-ruler"></i>
+				</button>
+				<button
+					type="button"
+					class="resize-seg__btn"
+					class:resize-seg__btn--sel={resizeMode === 'hug'}
+					title="Hug contents"
+					onclick={() => writeValue('hug')}
+				>
+					<i class="fa-solid fa-compress"></i>
+				</button>
+				<button
+					type="button"
+					class="resize-seg__btn"
+					class:resize-seg__btn--sel={resizeMode === 'fill'}
+					title="Fill container"
+					onclick={() => writeValue('fill')}
+				>
+					<i class="fa-solid fa-arrows-left-right-to-line"></i>
+				</button>
+			</div>
+			{#if resizeMode === 'fixed'}
+				{#if editValue.now}
+					<input
+						type="text"
+						title="Fixed size (e.g. 200px or 50%)"
+						bind:this={inputRef}
+						bind:value={editValue.content}
+						placeholder={value ?? '200px'}
+						class="resize-fixed"
+						onblur={() => cancelEditing()}
+						onkeydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter') {
+								confirmUpdateStyle();
+							} else if (e.key === 'Escape') {
+								cancelEditing();
+							}
+						}}
+					/>
+				{:else}
+					<button class="resize-fixed" type="button" onclick={() => startEditing()}>
+						{value}
+					</button>
+				{/if}
+			{/if}
+		</div>
 	{:else if inputType === 'asset'}
 		<div class="option124__value">
 			<SuggestField
@@ -520,6 +608,71 @@
 					color: var(--color-primary);
 				}
 			}
+
+			// Resize control container: lay out the segmented control + optional fixed input
+			// horizontally, and drop the plain-value button's own padding/hover/background.
+			&--resize {
+				display: flex;
+				align-items: center;
+				gap: $x-space-xs;
+				padding: 0;
+				background: transparent;
+				overflow: visible;
+
+				&:hover {
+					background: transparent;
+				}
+			}
+		}
+	}
+
+	.resize-seg {
+		display: inline-flex;
+		flex-shrink: 0;
+		border-radius: 2px;
+		overflow: hidden;
+		background: var(--color-panel-header-fill);
+	}
+
+	.resize-seg__btn {
+		all: unset;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
+		}
+
+		&--sel,
+		&--sel:hover {
+			background: var(--color-primary);
+			color: var(--color-pure);
+		}
+	}
+
+	.resize-fixed {
+		all: unset;
+		flex: 1;
+		min-width: 0;
+		padding: calc($x-space-xs / 2) $x-space-sm;
+		border-radius: 1px;
+		background: var(--color-panel-header-fill);
+		color: var(--color-add-var-text);
+		font-size: $x-font-size-sm;
+		cursor: pointer;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
 		}
 	}
 </style>

@@ -100,7 +100,7 @@ impl Default for GridLine {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum AlignValue {
     Start,
     End,
@@ -150,6 +150,22 @@ impl Default for NodePosition {
     }
 }
 
+// Mirrors vellum's api.rs Extent — serde output must match exactly. A box-model size dimension:
+// Auto | fixed px | percent-of-parent. `fr` is intentionally absent (that's a grid TrackSize /
+// flex_grow concern, never a value a child declares about its own size).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum Extent {
+    Auto,
+    Px(f32),
+    Percent(f32),
+}
+
+impl Default for Extent {
+    fn default() -> Self {
+        Extent::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BoxExtra {
     #[serde(default)]
@@ -166,6 +182,8 @@ struct BoxExtra {
     flex_shrink: Option<f32>,
     #[serde(default)]
     align_self: Option<AlignValue>,
+    #[serde(default)]
+    flex_basis: Option<Extent>,
     #[serde(default)]
     margin: f32,
     #[serde(default)]
@@ -197,10 +215,14 @@ struct BoxShadow {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BoxData {
     parent_id: Option<usize>,
-    width: f32,
-    height: f32,
-    max_width: f32,
-    max_height: f32,
+    width: Extent,
+    height: Extent,
+    #[serde(default)]
+    min_width: Extent,
+    #[serde(default)]
+    min_height: Extent,
+    max_width: Extent,
+    max_height: Extent,
     padding: [f32; 4],
     bg_color: [f32; 4],
     flex_direction: String,
@@ -231,8 +253,8 @@ struct UiBoxNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TextData {
     parent_id: Option<usize>,
-    width: f32,
-    height: f32,
+    width: Extent,
+    height: Extent,
     padding: [f32; 4],
     bg_color: [f32; 4],
     show_border: bool,
@@ -277,10 +299,13 @@ enum ImageSource {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ImgData {
     parent_id: Option<usize>,
-    width: f32,
-    height: f32,
+    width: Extent,
+    height: Extent,
     source: ImageSource,
-    cover: bool,
+    // CSS object-fit: "cover" | "contain" | "fill". Must be the field NAME vellum reads
+    // (`fit: String`) — an earlier `cover: bool` here silently never reached vellum (unknown key),
+    // so every image rendered as the `fit` default ("cover") regardless of this value.
+    fit: String,
     #[serde(default = "default_object_position")]
     object_position: [f32; 2],
     #[serde(default)]
@@ -656,6 +681,29 @@ fn parse_px(s: Option<&str>) -> f32 {
     }
 }
 
+// A box-model size dimension. `auto`/empty/unparseable -> Auto (the historical `width:0` default);
+// `N%` -> Percent(N/100); `Npx` or bare `N` -> Px(N). No `fr` here on purpose (that's a grid track
+// / flex-grow concern, not a self-declared size — see the Extent enum). Percent parsing is what
+// gives designers a fractional width without hardcoding pixels.
+fn parse_extent(s: Option<&str>) -> Extent {
+    let Some(v) = s else { return Extent::Auto };
+    let v = v.trim();
+    if v.is_empty() || v == "auto" {
+        return Extent::Auto;
+    }
+    if let Some(pct) = v.strip_suffix('%') {
+        return match pct.trim().parse::<f32>() {
+            Ok(n) => Extent::Percent(n / 100.0),
+            Err(_) => Extent::Auto,
+        };
+    }
+    let num = v.trim_end_matches("px");
+    match num.parse::<f32>() {
+        Ok(n) => Extent::Px(n),
+        Err(_) => Extent::Auto,
+    }
+}
+
 fn parse_track(s: &str) -> TrackSize {
     let s = s.trim();
     if s == "auto" {
@@ -799,13 +847,121 @@ fn extract_paint_props(
     }
 }
 
+// --- Phase 2: Figma-style per-axis resizing, compiled to taffy primitives ---
+//
+// A view's `width`/`height` can be `fill` or `hug` (in addition to a length/percent/auto). This is
+// Charter's OPINION about sizing -- a designer picks an intent, Charter emits the flex machinery
+// (flex-grow/shrink/basis, align-self, min:0) so they never hand-wire it. The raw flex fields stay
+// as an escape hatch for now (marked TEMPORARY in box_categories) but are meant to retire behind
+// this. Only an explicit `fill`/`hug` keyword engages compilation; a plain length/percent/absent
+// width keeps the prior CSS behavior verbatim, so existing layouts don't shift.
+#[derive(Clone, Copy, PartialEq)]
+enum ResizeKw {
+    Fill,
+    Hug,
+}
+
+fn resize_keyword(s: Option<&str>) -> Option<ResizeKw> {
+    match s.map(|v| v.trim()) {
+        Some("fill") => Some(ResizeKw::Fill),
+        Some("hug") => Some(ResizeKw::Hug),
+        _ => None,
+    }
+}
+
+struct ResizeCompile {
+    width: Extent,
+    height: Extent,
+    min_width: Extent,
+    min_height: Extent,
+    // `None` = leave whatever the raw flex prop produced; `Some` = resize intent overrides it.
+    flex_grow: Option<f32>,
+    flex_shrink: Option<f32>,
+    flex_basis: Option<Extent>,
+    align_self: Option<AlignValue>,
+}
+
+// Fill/Hug are direction-aware: the parent's MAIN axis gets grow/shrink/basis, the CROSS axis gets
+// align-self. `parent_main_horizontal` is Some(true) when the parent flexes in a row (width = main),
+// Some(false) for a column (height = main), None when there's no flex parent (a top-level view on
+// the infinite canvas) -- in which case Fill has nothing to fill and degrades to plain auto.
+fn compile_resize(
+    width_kw: Option<ResizeKw>,
+    height_kw: Option<ResizeKw>,
+    base_width: Extent,
+    base_height: Extent,
+    base_min_width: Extent,
+    base_min_height: Extent,
+    parent_main_horizontal: Option<bool>,
+) -> ResizeCompile {
+    let mut out = ResizeCompile {
+        // A keyword axis becomes content-sized (auto); a non-keyword axis keeps its parsed extent.
+        width: if width_kw.is_some() { Extent::Auto } else { base_width },
+        height: if height_kw.is_some() { Extent::Auto } else { base_height },
+        min_width: base_min_width,
+        min_height: base_min_height,
+        flex_grow: None,
+        flex_shrink: None,
+        flex_basis: None,
+        align_self: None,
+    };
+
+    let Some(main_is_width) = parent_main_horizontal else {
+        // No flex parent: keywords collapse to auto sizing with no flex/align overrides.
+        return out;
+    };
+
+    let main_kw = if main_is_width { width_kw } else { height_kw };
+    let cross_kw = if main_is_width { height_kw } else { width_kw };
+
+    match main_kw {
+        Some(ResizeKw::Fill) => {
+            out.flex_grow = Some(1.0);
+            out.flex_shrink = Some(1.0);
+            out.flex_basis = Some(Extent::Px(0.0)); // equal share of free space, not content+leftover
+            // Drop the automatic min-content floor so a Fill item can shrink to its share.
+            if main_is_width {
+                out.min_width = Extent::Px(0.0);
+            } else {
+                out.min_height = Extent::Px(0.0);
+            }
+        }
+        Some(ResizeKw::Hug) => {
+            // Content size, never grows or shrinks -- overflows a too-tight row, exactly like
+            // Figma's Hug (reach for Fill/Fixed to avoid overflow).
+            out.flex_grow = Some(0.0);
+            out.flex_shrink = Some(0.0);
+        }
+        None => {}
+    }
+
+    out.align_self = match cross_kw {
+        Some(ResizeKw::Fill) => Some(AlignValue::Stretch),
+        Some(ResizeKw::Hug) => Some(AlignValue::FlexStart),
+        None => None,
+    };
+
+    out
+}
+
 fn build_box_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
+    parent_main_horizontal: Option<bool>,
 ) -> UiNode {
     let paint = extract_paint_props(props, [0.0; 4]);
-    let width = parse_px(get_prop(props, "width").as_deref());
-    let height = parse_px(get_prop(props, "height").as_deref());
+    let width_str = get_prop(props, "width");
+    let height_str = get_prop(props, "height");
+    let width_kw = resize_keyword(width_str.as_deref());
+    let height_kw = resize_keyword(height_str.as_deref());
+    // parse_extent turns a `fill`/`hug` keyword into Auto already; compile_resize only consults
+    // these bases for non-keyword axes, so they line up.
+    let base_width = parse_extent(width_str.as_deref());
+    let base_height = parse_extent(height_str.as_deref());
+    let base_min_width = parse_extent(get_prop(props, "min-width").as_deref());
+    let base_min_height = parse_extent(get_prop(props, "min-height").as_deref());
+    let max_width = parse_extent(get_prop(props, "max-width").as_deref());
+    let max_height = parse_extent(get_prop(props, "max-height").as_deref());
 
     let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
         "row" => "Row",
@@ -815,7 +971,7 @@ fn build_box_node(
     }
     .to_string();
 
-    let extra = BoxExtra {
+    let mut extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
         align_items: parse_align(get_prop(props, "align-items").as_deref()),
         justify_content: parse_justify(get_prop(props, "justify-content").as_deref()),
@@ -825,7 +981,11 @@ fn build_box_node(
             .unwrap_or(0.0),
         flex_shrink: get_prop(props, "flex-shrink").map(|s| parse_px(Some(&s))),
         align_self: parse_align(get_prop(props, "align-self").as_deref()),
-        margin: parse_px(get_prop(props, "margin").as_deref()),
+        flex_basis: None,
+        // Charter deliberately does not expose margin — spacing between siblings is a container
+        // concern (gap / justify-content), not a per-child opinion. The field stays in the wire
+        // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
+        margin: 0.0,
         position: NodePosition::default(),
         grid_template_columns: get_prop(props, "grid-template-columns")
             .map(|s| parse_track_list(&s))
@@ -847,13 +1007,38 @@ fn build_box_node(
             .unwrap_or_default(),
     };
 
+    // Compile fill/hug intent and let it override the raw flex fields for keyword axes only.
+    let rc = compile_resize(
+        width_kw,
+        height_kw,
+        base_width,
+        base_height,
+        base_min_width,
+        base_min_height,
+        parent_main_horizontal,
+    );
+    if let Some(g) = rc.flex_grow {
+        extra.flex_grow = g;
+    }
+    if let Some(s) = rc.flex_shrink {
+        extra.flex_shrink = Some(s);
+    }
+    if let Some(b) = rc.flex_basis {
+        extra.flex_basis = Some(b);
+    }
+    if let Some(a) = rc.align_self {
+        extra.align_self = Some(a);
+    }
+
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id,
-            width,
-            height,
-            max_width: 0.0,
-            max_height: 0.0,
+            width: rc.width,
+            height: rc.height,
+            min_width: rc.min_width,
+            min_height: rc.min_height,
+            max_width,
+            max_height,
             padding: paint.padding,
             bg_color: paint.bg_color,
             flex_direction,
@@ -886,8 +1071,8 @@ fn build_text_node(
     UiNode::Text(UiTextNode {
         text_data: TextData {
             parent_id: Some(parent_id),
-            width: 0.0,
-            height: 0.0,
+            width: Extent::Auto,
+            height: Extent::Auto,
             padding: paint.padding,
             bg_color: paint.bg_color,
             show_border: paint.show_border,
@@ -916,11 +1101,14 @@ fn build_img_node(
     parent_id: Option<usize>,
 ) -> UiNode {
     let src = get_prop(props, "src").unwrap_or_default();
-    let fit = get_prop(props, "fit")
-        .as_deref()
-        .unwrap_or("cover")
-        .to_string();
-    let cover = fit == "cover";
+    // Normalize to the three fits vellum understands; anything else falls back to cover (vellum's
+    // own default), so a typo can't silently produce a blank/oddly-fit image.
+    let fit = match get_prop(props, "fit").as_deref() {
+        Some("contain") => "contain",
+        Some("fill") => "fill",
+        _ => "cover",
+    }
+    .to_string();
     let pos_str = get_prop(props, "object-position").unwrap_or_else(|| "0.5 0.5".to_string());
     let pos: [f32; 2] = {
         let parts: Vec<f32> = pos_str
@@ -936,14 +1124,14 @@ fn build_img_node(
     UiNode::Img(UiImgNode {
         img_data: ImgData {
             parent_id,
-            width: parse_px(get_prop(props, "width").as_deref()),
-            height: parse_px(get_prop(props, "height").as_deref()),
+            width: parse_extent(get_prop(props, "width").as_deref()),
+            height: parse_extent(get_prop(props, "height").as_deref()),
             source: if src.is_empty() {
                 ImageSource::None
             } else {
                 ImageSource::Ref(src)
             },
-            cover,
+            fit,
             object_position: pos,
             selected: 0,
             hovered: false,
@@ -976,6 +1164,10 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
     // ever take effect on a Box.
     let has_box_props = props.contains_key("width")
         || props.contains_key("height")
+        || props.contains_key("min-width")
+        || props.contains_key("min-height")
+        || props.contains_key("max-width")
+        || props.contains_key("max-height")
         || props.contains_key("display")
         || props.contains_key("flex-direction")
         || props.contains_key("gap")
@@ -994,11 +1186,26 @@ fn box_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "layout".to_string(),
             fields: vec![
-                FieldDef::new("width", None),
-                FieldDef::new("height", None),
+                FieldDef::new("width", None).with_input_type("resize"),
+                FieldDef::new("height", None).with_input_type("resize"),
+                FieldDef::new("min-width", Some("Min W")),
+                FieldDef::new("min-height", Some("Min H")),
+                FieldDef::new("max-width", Some("Max W")),
+                FieldDef::new("max-height", Some("Max H")),
                 FieldDef::new("padding", Some("Padding")),
                 FieldDef::new("flex-direction", Some("Direction")),
                 FieldDef::new("gap", Some("Gap")),
+                // Item-level flex (flex-grow / flex-shrink / align-self) is RETIRED from the panel:
+                // the width/height "resize" control (Fixed/Hug/Fill) is now Charter's opinion for
+                // per-item sizing and compiles those primitives itself (see compile_resize). The
+                // fields are still parsed by build_box_node as an escape hatch, just no longer
+                // surfaced here. Container-level arrangement stays exposed (plain inputs for now) --
+                // it's a different concern than item resizing and has no opinionated control yet;
+                // curate these when an alignment/auto-spacing control lands. `margin` remains
+                // intentionally absent (Charter's opinion is no margins -- see build_box_node).
+                FieldDef::new("align-items", Some("Align")),
+                FieldDef::new("justify-content", Some("Justify")),
+                FieldDef::new("flex-wrap", Some("Wrap")),
                 FieldDef::new("display", Some("Display")),
                 FieldDef::new("grid-template-columns", Some("Columns")),
                 FieldDef::new("grid-template-rows", Some("Rows")),
@@ -1084,10 +1291,12 @@ fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id,
-            width: 0.0,
-            height: 0.0,
-            max_width: 0.0,
-            max_height: 0.0,
+            width: Extent::Auto,
+            height: Extent::Auto,
+            max_width: Extent::Auto,
+            max_height: Extent::Auto,
+            min_width: Extent::Auto,
+            min_height: Extent::Auto,
             padding,
             bg_color: [0.0; 4],
             flex_direction: flex_direction.to_string(),
@@ -1110,10 +1319,12 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
     UiNode::Box(UiBoxNode {
         box_data: BoxData {
             parent_id: None,
-            width: 0.0,
-            height: 0.0,
-            max_width: 0.0,
-            max_height: 0.0,
+            width: Extent::Auto,
+            height: Extent::Auto,
+            max_width: Extent::Auto,
+            max_height: Extent::Auto,
+            min_width: Extent::Auto,
+            min_height: Extent::Auto,
             padding: [0.0; 4],
             bg_color: [0.0; 4],
             flex_direction: flex_direction.to_string(),
@@ -1195,6 +1406,9 @@ fn render_view_nodes(
     view_id: &str,
     ctx: &SelectionCtx,
     parent_id: Option<usize>,
+    // Whether this view's flex PARENT lays out in a row (Some(true)) or column (Some(false)); None
+    // at a top level (no flex parent). Drives direction-aware fill/hug -- see compile_resize.
+    parent_main_horizontal: Option<bool>,
     viewport: &mut Vec<UiNode>,
     node_view_ids: &mut Vec<String>,
     depth: u8,
@@ -1251,6 +1465,8 @@ fn render_view_nodes(
                     child_view_id,
                     ctx,
                     content_parent,
+                    // Nested text shares this text's own container, so its flex parent is the same.
+                    parent_main_horizontal,
                     viewport,
                     node_view_ids,
                     depth + 1,
@@ -1271,7 +1487,7 @@ fn render_view_nodes(
         // Any child views assigned to an image view are silently ignored.
     } else {
         let box_idx = viewport.len();
-        let mut node = build_box_node(&merged, content_parent);
+        let mut node = build_box_node(&merged, content_parent, parent_main_horizontal);
 
         if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
             box_data.selected = selection;
@@ -1280,6 +1496,13 @@ fn render_view_nodes(
 
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
+
+        // This box is the flex parent of its children; their fill/hug resolves against THIS box's
+        // main axis (row -> width is main, column -> height is main). Default direction is Column.
+        let child_main_horizontal = Some(matches!(
+            get_prop(&merged, "flex-direction").as_deref(),
+            Some("row") | Some("row-reverse")
+        ));
 
         // A Box is a pure container -- it never renders its own inline text. If a design wants
         // text inside a box, it nests a Text primitive as one of the box's children. So there is
@@ -1294,6 +1517,7 @@ fn render_view_nodes(
                     child_view_id,
                     ctx,
                     Some(box_idx),
+                    child_main_horizontal,
                     viewport,
                     node_view_ids,
                     depth + 1,
@@ -1379,6 +1603,9 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
             &view.view_id,
             &ctx,
             Some(cell_idx),
+            // Top-level cell is auto-sized scaffolding, not a meaningful flex container -> None,
+            // so a view's own fill/hug degrades to auto rather than stretching to nothing.
+            None,
             &mut viewport_data,
             &mut node_view_ids,
             0,
@@ -1416,6 +1643,8 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
                     &view.view_id,
                     &ctx,
                     Some(cell_idx),
+                    // Auto-sized grid cell -> no meaningful flex parent (see positioned branch).
+                    None,
                     &mut viewport_data,
                     &mut node_view_ids,
                     0,
@@ -2588,8 +2817,8 @@ mod text_paint_properties_tests {
         assert_eq!(text_data.corner_radius, 4.0);
         assert_eq!(text_data.padding, [8.0; 4]);
         // Still always auto-measured -- paint properties never affect sizing.
-        assert_eq!(text_data.width, 0.0);
-        assert_eq!(text_data.height, 0.0);
+        assert_eq!(text_data.width, Extent::Auto);
+        assert_eq!(text_data.height, Extent::Auto);
     }
 
     #[test]
@@ -2610,7 +2839,7 @@ mod text_paint_properties_tests {
         // No `background` prop -> transparent, matching CSS (a <div> with no background is
         // transparent). Boxes used to fall back to opaque neutral-gray; that's gone.
         let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
-        let node = build_box_node(&props, None);
+        let node = build_box_node(&props, None, None);
         let UiNode::Box(UiBoxNode { box_data }) = node else {
             panic!("expected a Box node");
         };
@@ -2652,10 +2881,12 @@ mod text_paint_properties_tests {
         let data = vec![UiNode::Box(UiBoxNode {
             box_data: BoxData {
                 parent_id: None,
-                width: 0.0,
-                height: 0.0,
-                max_width: 0.0,
-                max_height: 0.0,
+                width: Extent::Auto,
+                height: Extent::Auto,
+                max_width: Extent::Auto,
+                max_height: Extent::Auto,
+                min_width: Extent::Auto,
+                min_height: Extent::Auto,
                 padding: [16.0; 4],
                 bg_color: [0.9, 0.9, 0.9, 1.0],
                 flex_direction: "Column".to_string(),
@@ -2712,5 +2943,149 @@ mod text_paint_properties_tests {
             !json2.contains("viewport_data_binary"),
             "OnResolveResult JSON should omit viewport_data_binary when None, got: {json2}"
         );
+    }
+}
+
+#[cfg(test)]
+mod extent_parse_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn parse_extent_handles_percent_px_bare_and_auto() {
+        assert_eq!(parse_extent(Some("50%")), Extent::Percent(0.5));
+        assert_eq!(parse_extent(Some("100px")), Extent::Px(100.0));
+        assert_eq!(parse_extent(Some("40")), Extent::Px(40.0));
+        assert_eq!(parse_extent(Some("auto")), Extent::Auto);
+        assert_eq!(parse_extent(Some("")), Extent::Auto);
+        assert_eq!(parse_extent(None), Extent::Auto);
+        // 1fr is NOT a self-declared size -> falls through to Auto, never Px/Percent.
+        assert_eq!(parse_extent(Some("1fr")), Extent::Auto);
+    }
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn build_img_node_emits_fit_string_not_cover_bool() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("src".into(), prop("src", "logo"));
+        props.insert("fit".into(), prop("fit", "contain"));
+        let UiNode::Img(img) = build_img_node(&props, None) else { panic!("expected Img") };
+        // The wire field must be the `fit` string vellum reads -- not a `cover` bool that vellum
+        // would silently drop, leaving every image at the "cover" default.
+        assert_eq!(img.img_data.fit, "contain");
+
+        // Unknown/absent fit falls back to cover (vellum's own default).
+        let mut p2: HashMap<String, ResolvedProperty> = HashMap::new();
+        p2.insert("src".into(), prop("src", "logo"));
+        p2.insert("fit".into(), prop("fit", "bogus"));
+        let UiNode::Img(img2) = build_img_node(&p2, None) else { panic!("expected Img") };
+        assert_eq!(img2.img_data.fit, "cover");
+    }
+
+    #[test]
+    fn build_box_node_emits_percent_width_and_min_floor() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("width".into(), prop("width", "50%"));
+        props.insert("min-width".into(), prop("min-width", "80px"));
+        let node = build_box_node(&props, None, None);
+        let UiNode::Box(b) = node else { panic!("expected Box") };
+        assert_eq!(b.box_data.width, Extent::Percent(0.5));
+        assert_eq!(b.box_data.min_width, Extent::Px(80.0));
+        // Charter never emits margin -- its opinion.
+        assert_eq!(b.box_data.extra.margin, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "l".to_string(),
+            kit_id: "k".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn box_with(props: &[(&str, &str)], parent_main_horizontal: Option<bool>) -> BoxData {
+        let mut map: HashMap<String, ResolvedProperty> = HashMap::new();
+        for (k, v) in props {
+            map.insert((*k).to_string(), prop(k, v));
+        }
+        match build_box_node(&map, None, parent_main_horizontal) {
+            UiNode::Box(b) => b.box_data,
+            _ => panic!("expected Box"),
+        }
+    }
+
+    #[test]
+    fn fill_on_main_axis_row_becomes_grow_shrink_basis_zero_min_zero() {
+        let d = box_with(&[("width", "fill")], Some(true));
+        assert_eq!(d.width, Extent::Auto);
+        assert_eq!(d.min_width, Extent::Px(0.0));
+        assert_eq!(d.extra.flex_grow, 1.0);
+        assert_eq!(d.extra.flex_shrink, Some(1.0));
+        assert_eq!(d.extra.flex_basis, Some(Extent::Px(0.0)));
+        assert!(d.extra.align_self.is_none(), "width is the main axis in a row -> no align-self");
+    }
+
+    #[test]
+    fn fill_on_cross_axis_column_stretches_not_grows() {
+        let d = box_with(&[("width", "fill")], Some(false));
+        assert_eq!(d.width, Extent::Auto);
+        assert_eq!(d.extra.flex_grow, 0.0);
+        assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
+    }
+
+    #[test]
+    fn hug_on_main_axis_pins_grow_and_shrink_to_zero() {
+        let d = box_with(&[("width", "hug")], Some(true));
+        assert_eq!(d.width, Extent::Auto);
+        assert_eq!(d.extra.flex_grow, 0.0);
+        assert_eq!(d.extra.flex_shrink, Some(0.0));
+    }
+
+    #[test]
+    fn fill_with_no_flex_parent_degrades_to_plain_auto() {
+        let d = box_with(&[("width", "fill")], None);
+        assert_eq!(d.width, Extent::Auto);
+        assert_eq!(d.extra.flex_grow, 0.0);
+        assert!(d.extra.flex_basis.is_none());
+        assert!(d.extra.align_self.is_none());
+    }
+
+    #[test]
+    fn plain_length_width_keeps_raw_flex_and_is_untouched_by_resize() {
+        let d = box_with(&[("width", "200px"), ("flex-grow", "3")], Some(true));
+        assert_eq!(d.width, Extent::Px(200.0));
+        assert_eq!(d.extra.flex_grow, 3.0);
+        assert!(d.extra.flex_basis.is_none());
+    }
+
+    #[test]
+    fn fill_both_axes_row_grows_main_and_stretches_cross() {
+        let d = box_with(&[("width", "fill"), ("height", "fill")], Some(true));
+        assert_eq!(d.extra.flex_grow, 1.0);
+        assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
+        assert_eq!(d.min_width, Extent::Px(0.0));
     }
 }

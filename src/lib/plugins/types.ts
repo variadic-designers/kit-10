@@ -1,7 +1,17 @@
 import type { ResolvedKit } from 'manager';
 
 export type InputType =
-	'color' | 'text' | 'number' | 'select' | 'slider' | 'font' | 'children' | 'asset';
+	| 'color'
+	| 'text'
+	| 'number'
+	| 'select'
+	| 'slider'
+	| 'font'
+	| 'children'
+	| 'asset'
+	// Figma-style per-axis resizing: a Fixed/Hug/Fill segmented control that writes the keyword
+	// values Charter's compile_resize understands (`fill` / `hug` / a length). See StyleField.
+	| 'resize';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -58,13 +68,20 @@ export interface BoxShadow {
 	inset: boolean;
 }
 
+// A box-model size dimension, mirroring Vellum/Charter's `Extent` serde enum. `"Auto"` is a
+// unit variant (bare string); `Px`/`Percent` are newtype variants (single-key object). These
+// are produced by Charter and consumed by Vellum — the editor passes them through opaquely.
+export type Extent = 'Auto' | { Px: number } | { Percent: number };
+
 export interface UiBoxNode {
 	Box: {
 		parent_id: number | null;
-		width: number;
-		height: number;
-		max_width: number;
-		max_height: number;
+		width: Extent;
+		height: Extent;
+		min_width: Extent;
+		min_height: Extent;
+		max_width: Extent;
+		max_height: Extent;
 		padding: [number, number, number, number];
 		bg_color: [number, number, number, number];
 		flex_direction: FlexDir;
@@ -80,8 +97,8 @@ export interface UiBoxNode {
 export interface UiTextNode {
 	Text: {
 		parent_id: number | null;
-		width: number;
-		height: number;
+		width: Extent;
+		height: Extent;
 		padding: [number, number, number, number];
 		bg_color: [number, number, number, number];
 		show_border: boolean;
@@ -101,10 +118,11 @@ export interface UiTextNode {
 export interface UiImgNode {
 	Img: {
 		parent_id: number | null;
-		width: number;
-		height: number;
+		width: Extent;
+		height: Extent;
 		source: ImageSource;
-		cover: boolean;
+		// CSS object-fit: "cover" | "contain" | "fill". Field name must match Vellum's `fit`.
+		fit: string;
 		object_position: [number, number];
 	};
 }
