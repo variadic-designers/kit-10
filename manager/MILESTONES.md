@@ -297,17 +297,17 @@ Text nodes emitted by Charter with `width:0, height:0`. Vellum measures text dur
 
 `BoxExtra` gained `align_items`/`justify_content`/`flex_wrap` (container), `flex_grow`/`flex_shrink`/`align_self` (item), and uniform `margin` — mapped 1:1 onto taffy's `Style` (taffy already implemented all of it; the gap was purely the wire schema + Charter's property mapping). `Option`-typed fields mean "leave taffy's own default" when unset, verified with unit tests against the real `Style` struct. Charter maps these from kit properties of the same CSS name. Auto-margin centering deliberately not exposed — `align-items`/`justify-content` on the parent is the more direct modern equivalent.
 
-### [ ] M8.6 — Percentage-based sizing
+### [x] M8.6 — Percentage-based sizing
 
-`width`/`height`/`padding`/`margin` are `parse_px`-only today — percentages, `auto`, `em` all silently become `0.0`. Needs a real dimension type (not a bare `f32`) through the wire format, Charter's property parsing, and `apply_box_extra`/`node_style`.
+The box **sizing** fields (`width`/`height`/`min_*`/`max_*`) became an `Extent` enum (`Auto | Px(f32) | Percent(f32)`) through the wire format, mirroring taffy `Dimension` — the same wire-enum pattern as `TrackSize`. Charter's `parse_extent` handles `N%`/`Npx`/`auto`; `extent_dim` in `layout/mod.rs` maps to taffy for `size`/`min_size`/`max_size`. `padding`/`gap`/`margin` stay `parse_px`-only (percent there is niche); `em` still unsupported everywhere. `fr` deliberately stayed OUT of `Extent` — it's a grid-track/`flex_grow` concern, not a self-declared size.
 
-### [ ] M8.7 — min/max width and height
+### [x] M8.7 — min/max width and height
 
-`max_width`/`max_height` already exist on `UiNode` (`0.0` = no constraint) but Charter hardcodes them to `0.0` always — never reads a kit property into them. `min_width`/`min_height` don't exist in the wire format at all yet. Needs: wire fields for min, Charter mapping for both min and max (`min-width`, `min-height`, `max-width`, `max-height`), and taffy `Style.min_size`/`max_size` wiring in `apply_box_extra`/`node_style`.
+Shipped as part of the `Extent` conversion (M8.6): `min_width`/`min_height` added to the wire format (Box only), `max_*` converted from the `0.0`-means-auto sentinel to `Extent::Auto`, Charter maps `min-width`/`min-height`/`max-width`/`max-height`, and `apply_box_extra`/`build_node` wire taffy `Style.min_size`/`max_size`. min-size is what gives percent widths a usable floor (percent of an auto parent otherwise collapses to 0).
 
-### [ ] M8.8 — Overflow / clipping
+### [~] M8.8 — Overflow / clipping
 
-No overflow or scroll semantics. Content can currently render outside a box's own bounds with no way to clip it.
+**Images now clip**: `object-fit: cover` (and any oversized image) is clipped to the node box CPU-side in `prepare_images` (geometry+UV intersection) — there's no scissor in that pass, so without it a cover image bled outside its bounds. **Boxes still don't clip** — content can render outside a box's own bounds with no way to clip it (the "clip-to-frame" designer control is the remaining piece, tied to the resizing model M8.11).
 
 ### [ ] M8.9 — Real absolute positioning
 
@@ -316,6 +316,18 @@ No overflow or scroll semantics. Content can currently render outside a box's ow
 ### [ ] M8.10 — Box shadow exposed through Charter
 
 Vellum's renderer already supports shadows end-to-end (`BoxShadow`, blur/spread/inset — used today for the disabled-state glow and selection overlay), but Charter hardcodes `shadow: None` at both `BoxData` construction sites and never reads a `box-shadow`-style kit property. Unlike M8.6–M8.9 this isn't a taffy/renderer gap — the renderer-side plumbing exists; only Charter's property mapping is missing.
+
+### [x] M8.11 — Figma-style resizing (Fixed / Hug / Fill)
+
+Charter's first opinionated sizing layer (`compile_resize`): `width`/`height` accept `fill`/`hug` keywords compiled to taffy primitives (Fill → grow/shrink/`flex_basis:0`/`min:0` on the main axis, `align-self:stretch` on the cross axis; Hug → grow/shrink 0). Direction-aware via a parent-main-axis threaded through `render_view_nodes`; no flex parent → Fill degrades to auto. Added `flex_basis` to `BoxExtra` (what makes Fill an equal share, not content+leftover). Editor exposes it via `FieldDef inputType: "resize"` → a Fixed/Hug/Fill segmented control in `StyleField.svelte`. Retired the raw item-flex fields (`flex-grow`/`flex-shrink`/`align-self`) and `margin` from the panel; container-arrangement fields stay until they get their own control. Non-regressive: only explicit `fill`/`hug` engage; lengths keep prior CSS behavior.
+
+### [x] M8.12 — Correct flex text min-content
+
+`measure_text_node` now distinguishes taffy's `MinContent` probe (longest word) from `MaxContent` (full unwrapped line) instead of collapsing both to natural width. A flex item's automatic minimum size resolves to min-content, so the old collapse gave text-bearing children an automatic minimum equal to their whole width — they couldn't shrink or wrap and overflowed. `TextMeasureKey` gained a `width_mode` discriminant so min/max don't collide in the measure cache. Prerequisite for M8.11 to actually fit content.
+
+### [x] M8.13 — Image object-fit fix
+
+Charter emits `fit: String` (`cover`/`contain`/`fill`) — the field name Vellum reads — instead of a `cover: bool` that Vellum silently dropped (so every image rendered as the `cover` default). Paired with the M8.8 cover-clip.
 
 ---
 

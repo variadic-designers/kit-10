@@ -249,15 +249,19 @@ A flat array of nodes. Parent-child relationships are expressed via `parent_id` 
 
 Vellum renders these in index order. Parent layout is computed before children.
 
+Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`) are an **`Extent` enum**, not bare numbers: `"Auto"`, `{ "Px": 200.0 }`, or `{ "Percent": 0.5 }` (0.5 = 50%). `min`/`max` are Box-only.
+
 **Box node:**
 ```json
 {
   "Box": {
     "parent_id": null,
-    "width": 200.0,
-    "height": 80.0,
-    "max_width": 0.0,
-    "max_height": 0.0,
+    "width": { "Px": 200.0 },
+    "height": { "Px": 80.0 },
+    "min_width": "Auto",
+    "min_height": "Auto",
+    "max_width": "Auto",
+    "max_height": "Auto",
     "padding": [8.0, 8.0, 8.0, 8.0],
     "bg_color": [0.22, 0.51, 0.98, 1.0],
     "flex_direction": "Column",
@@ -270,14 +274,15 @@ Vellum renders these in index order. Parent layout is computed before children.
   }
 }
 ```
+(`extra: BoxExtra` — gap/align/flex/`flex_basis`/grid/position — is omitted here; it defaults when absent.)
 
 **Text node:**
 ```json
 {
   "Text": {
     "parent_id": 0,
-    "width": 0.0,
-    "height": 0.0,
+    "width": "Auto",
+    "height": "Auto",
     "padding": [0.0, 0.0, 0.0, 0.0],
     "bg_color": [0.0, 0.0, 0.0, 0.0],
     "show_border": false,
@@ -300,13 +305,15 @@ Vellum renders these in index order. Parent layout is computed before children.
 {
   "Img": {
     "parent_id": 0,
-    "width": 0.0,
-    "height": 200.0,
+    "width": "Auto",
+    "height": { "Px": 200.0 },
     "source": { "Url": "https://..." },
-    "cover": true
+    "fit": "cover",
+    "object_position": [0.5, 0.5]
   }
 }
 ```
+`fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong — Vellum reads `fit`.)
 
 `source` is one of: `"None"`, `{ "Url": "..." }`, or `{ "Bytes": [u8 array] }`.
 
