@@ -248,6 +248,48 @@
 
 	let pluginManager = $state<PluginManager | null>(null);
 
+	// Loading watchdog: if `initializeEditorState` hasn't produced an editor after this long,
+	// offer to purge IndexedDB. The usual cause is an incompatible persisted database -- e.g.
+	// after the PGlite 0.4 (Postgres 17) -> 0.5 (Postgres 18) bump, an existing data dir can't
+	// be opened by the newer Postgres and init hangs/throws. Purging is the escape hatch.
+	const LOADING_WATCHDOG_MS = 10_000;
+	let showPurgePrompt = $state(false);
+	let purging = $state(false);
+
+	// Delete every IndexedDB database for this origin (PGlite's data dir + the asset blob store),
+	// then hard-reload so the app re-seeds from scratch. Deliberately blunt -- this is the "my
+	// local db is wedged" button, safe to nuke since projects can be re-imported from an export.
+	async function purgeAndReload() {
+		if (purging) return;
+		purging = true;
+		try {
+			// Close our own connection first so it doesn't block the delete; ignore if we never
+			// got a handle (the hung-init case).
+			try {
+				await editorLoading?.core.close();
+			} catch {
+				// no-op: best effort
+			}
+			const dbs = (await indexedDB.databases?.()) ?? [];
+			await Promise.all(
+				dbs
+					.map((d) => d.name)
+					.filter((name): name is string => !!name)
+					.map(
+						(name) =>
+							new Promise<void>((resolve) => {
+								const req = indexedDB.deleteDatabase(name);
+								// Resolve on any terminal state -- onblocked included, so a stuck
+								// connection can't wedge the purge itself.
+								req.onsuccess = req.onerror = req.onblocked = () => resolve();
+							})
+					)
+			);
+		} finally {
+			location.reload();
+		}
+	}
+
 	// Panel manifests published by the active plugin via `kit10_panel_publish`. Today only Charter
 	// publishes one, keyed "views": it carries the Views panel's full tree topology (parent/child
 	// ids, root set, per-view icon, write-alias for DnD) bundled into one PanelManifest. The editor
@@ -258,6 +300,10 @@
 	const viewsPanelManifest = $derived(pluginManager?.panelManifest('views'));
 
 	onMount(async () => {
+		const watchdog = setTimeout(() => {
+			if (!editorLoading) showPurgePrompt = true;
+		}, LOADING_WATCHDOG_MS);
+
 		await initializeEditorState().then(async (e) => {
 			if (e) {
 				editorLoading = e;
@@ -281,6 +327,12 @@
 				}
 			}
 		});
+
+		clearTimeout(watchdog);
+		// initializeEditorState swallows init errors and returns undefined; if we settled
+		// without an editor it failed outright (not merely slow), so surface the purge
+		// prompt immediately rather than waiting on a watchdog that already fired or won't.
+		if (!editorLoading) showPurgePrompt = true;
 	});
 
 	// The interpreter is the one genuinely per-project plugin choice (see PluginActivation in
@@ -486,6 +538,102 @@
 	{/snippet}
 </Layout>
 
+{#if showPurgePrompt && !editorLoading}
+	<div class="purge-overlay" role="dialog" aria-modal="true" aria-labelledby="purge-title">
+		<div class="purge-card">
+			<h2 id="purge-title">Still loading…</h2>
+			<p>
+				The local database is taking too long to open. This usually means the stored data is from
+				an older, incompatible version of the engine. Purging clears the in-browser database and
+				reloads with a fresh demo project.
+			</p>
+			<p class="purge-warn">
+				This permanently deletes all locally-stored projects and assets. Export anything you want
+				to keep first (if you can reach it).
+			</p>
+			<div class="purge-actions">
+				<button class="purge-btn secondary" onclick={() => (showPurgePrompt = false)} disabled={purging}>
+					Keep waiting
+				</button>
+				<button class="purge-btn danger" onclick={purgeAndReload} disabled={purging}>
+					{purging ? 'Purging…' : 'Purge database & reload'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <style lang="scss">
 	@use '_index' as *;
+
+	.purge-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 9999;
+		display: grid;
+		place-items: center;
+		padding: 1.5rem;
+		background: rgba(0, 0, 0, 0.55);
+		backdrop-filter: blur(2px);
+	}
+
+	.purge-card {
+		max-width: 30rem;
+		width: 100%;
+		padding: 1.5rem;
+		border-radius: 12px;
+		background: var(--color-surface, #1f1f1f);
+		color: var(--color-text, #dcdcdc);
+		border: 1px solid var(--color-bg, #121212);
+		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+		font-family: sans-serif;
+		letter-spacing: 0.3px;
+
+		h2 {
+			margin: 0 0 0.75rem;
+			font-size: 1.15rem;
+		}
+
+		p {
+			margin: 0 0 0.75rem;
+			line-height: 1.5;
+			font-size: 0.9rem;
+		}
+
+		.purge-warn {
+			color: var(--color-danger, #e5645a);
+			font-weight: 600;
+		}
+	}
+
+	.purge-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+		margin-top: 1rem;
+	}
+
+	.purge-btn {
+		padding: 0.5rem 0.9rem;
+		border-radius: 8px;
+		font-size: 0.85rem;
+		cursor: pointer;
+		border: 1px solid transparent;
+
+		&:disabled {
+			opacity: 0.6;
+			cursor: default;
+		}
+
+		&.secondary {
+			background: transparent;
+			color: var(--color-text, #dcdcdc);
+			border-color: var(--color-text-muted, #606a78);
+		}
+
+		&.danger {
+			background: var(--color-danger, #e5645a);
+			color: #fff;
+		}
+	}
 </style>

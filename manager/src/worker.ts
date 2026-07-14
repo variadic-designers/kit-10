@@ -1,6 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
 
-import { pg_uuidv7 } from '@electric-sql/pglite/pg_uuidv7';
+import { pg_uuidv7 } from '@electric-sql/pglite-pg_uuidv7';
 import { worker } from '@electric-sql/pglite/worker';
 import { live } from '@electric-sql/pglite/live';
 

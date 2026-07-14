@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { pg_uuidv7 } from '@electric-sql/pglite/pg_uuidv7';
+import { pg_uuidv7 } from '@electric-sql/pglite-pg_uuidv7';
 import { Kysely, sql } from 'kysely';
 import { PgliteDialect } from '@soapbox/kysely-pglite';
 import { up } from './migrations/2026-04-21/index.js';

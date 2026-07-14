@@ -10,7 +10,14 @@ export default defineConfig({
 	plugins: [k10(), sveltekit(), devtoolsJson(), crossOriginIsolation()],
 
 	optimizeDeps: {
-		exclude: ['@electric-sql/pglite']
+		// pglite and its extension packages ship a `.tar.gz`/wasm bundle loaded via
+		// `new URL('./bundle', import.meta.url)`. Pre-bundling them with esbuild breaks
+		// that asset resolution (the URL points into .vite/deps, the tarball 404s, and
+		// PGlite init throws "failed to initialize properly"). Excluding keeps them served
+		// as-is so Vite rewrites the asset URL correctly. As of pglite 0.5 the extensions
+		// (pg_uuidv7) moved out of the main package into their own package, which must be
+		// excluded on its own — it used to be covered by excluding '@electric-sql/pglite'.
+		exclude: ['@electric-sql/pglite', '@electric-sql/pglite-pg_uuidv7']
 	},
 
 	worker: {
