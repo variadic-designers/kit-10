@@ -11,8 +11,6 @@
 
 	let { cascades }: LayersPanel = $props();
 
-	// Per kit, mark each entry as winning or overridden. Layers arrive most-specific first, so the
-	// FIRST layer to set a property is its winner; the same property lower in the stack is beaten.
 	type DisplayEntry = {
 		property: string;
 		value: string;
@@ -27,26 +25,29 @@
 		conditionValues: { axisId: string; value: string }[];
 		entries: DisplayEntry[];
 	};
-	type DisplayKit = { kitId: string; kitName: string; icon: string; layers: DisplayLayer[] };
+	// Layers of equal condition count are the same specificity tier. Orthogonal rules (different
+	// key-sets, same count) live in one tier and render side-by-side as columns; the tiers stack
+	// vertically, most-specific on top.
+	type Tier = { conditionCount: number; layers: DisplayLayer[] };
+	type DisplayKit = { kitId: string; kitName: string; icon: string; tiers: Tier[] };
 
 	const sections = $derived.by<DisplayKit[]>(() =>
 		cascades.map((kit, kitIndex) => {
+			// Override marking walks the WHOLE stack in specificity order (most-specific first), so a
+			// property claimed by a higher rule strikes every lower occurrence -- across columns and
+			// across tiers alike. The axis-priority tiebreak between two orthogonal same-tier rules is
+			// already baked into kit.layers' order by the resolver, so this walk honors it too.
 			const won = new Set<string>();
-			const layers: DisplayLayer[] = kit.layers.map((layer) => {
+			const ordered: DisplayLayer[] = kit.layers.map((layer) => {
 				const entries = [...layer.entries]
 					.sort((a, b) => a.property.localeCompare(b.property))
-					.map((e) => {
-						const overridden = won.has(e.property);
-						return {
-							property: e.property,
-							value: e.value,
-							isToken: e.isToken,
-							tokenAlias: e.tokenAlias,
-							overridden
-						};
-					});
-				// Mark these properties claimed only AFTER building this layer's entries, so the
-				// first (most-specific) setter is the winner and equal-property entries below it lose.
+					.map((e) => ({
+						property: e.property,
+						value: e.value,
+						isToken: e.isToken,
+						tokenAlias: e.tokenAlias,
+						overridden: won.has(e.property)
+					}));
 				for (const e of layer.entries) won.add(e.property);
 				return {
 					layerId: layer.layerId,
@@ -56,16 +57,29 @@
 					entries
 				};
 			});
-			return { kitId: kit.kitId, kitName: kit.kitName, icon: shapeIcon(kitIndex), layers };
+
+			// Group into tiers by condition count. `ordered` is already most-specific first, so counts
+			// are non-increasing; sort defensively anyway. Within a tier, layer order (the priority
+			// tiebreak) is preserved.
+			const tierMap = new Map<number, DisplayLayer[]>();
+			for (const l of ordered) {
+				if (!tierMap.has(l.conditionCount)) tierMap.set(l.conditionCount, []);
+				tierMap.get(l.conditionCount)!.push(l);
+			}
+			const tiers = [...tierMap.entries()]
+				.sort((a, b) => b[0] - a[0])
+				.map(([conditionCount, layers]) => ({ conditionCount, layers }));
+
+			return { kitId: kit.kitId, kitName: kit.kitName, icon: shapeIcon(kitIndex), tiers };
 		})
 	);
 
-	const hasContent = $derived(sections.some((s) => s.layers.length > 0));
+	const hasContent = $derived(sections.some((s) => s.tiers.length > 0));
 </script>
 
 <section class="layers">
 	<header class="layers__header">
-		<h2 title="Resolution inspector — the matched rules for the active view, stacked most-specific first; struck-through values were overridden by a higher rule">
+		<h2 title="Resolution inspector — matched rules for the active view. Rows are specificity tiers (most-specific on top); orthogonal rules in a tier sit side by side. Struck-through values were overridden by a higher rule.">
 			Layers
 		</h2>
 	</header>
@@ -75,43 +89,53 @@
 			<p class="layers__empty">No matched rules for the current selection.</p>
 		{:else}
 			{#each sections as section (section.kitId)}
-				{#if section.layers.length > 0}
+				{#if section.tiers.length > 0}
 					<div class="kit">
 						<div class="kit__name">
 							<i class="fa-solid {section.icon}"></i>
 							<span>{section.kitName}</span>
 						</div>
 
-						{#each section.layers as layer (layer.layerId)}
-							<div class="rule" style:--rule-color={layerDotColor(layer.keys, true)}>
-								<div class="rule__conds">
-									<span class="rule__tier" title="{layer.conditionCount} condition(s)">
-										{#if layer.conditionCount === 0}
-											<i class="fa-regular fa-circle"></i>
-										{:else}
-											{#each Array(layer.conditionCount) as _}<i class="fa-solid fa-circle"></i>{/each}
-										{/if}
-									</span>
-									{#if layer.conditionValues.length === 0}
-										<span class="chip chip--base">base</span>
+						{#each section.tiers as tier (tier.conditionCount)}
+							<div class="tier">
+								<div class="tier__rail" title="{tier.conditionCount} condition(s)">
+									{#if tier.conditionCount === 0}
+										<i class="fa-regular fa-circle"></i>
 									{:else}
-										{#each layer.conditionValues as cv (cv.axisId + cv.value)}
-											<span class="chip">{cv.value}</span>
-										{/each}
+										{#each Array(tier.conditionCount) as _}<i class="fa-solid fa-circle"></i>{/each}
 									{/if}
 								</div>
 
-								<dl class="rule__props">
-									{#each layer.entries as p (p.property)}
-										<div class="prop" class:prop--overridden={p.overridden}>
-											<dt title={p.property}>{p.property}</dt>
-											<dd title={p.value}>
-												{#if p.isToken && p.tokenAlias}<i class="fa-solid fa-link prop__token" title="token: {p.tokenAlias}"></i>{/if}
-												{p.value}
-											</dd>
+								<div class="tier__cols">
+									{#each tier.layers as layer (layer.layerId)}
+										<div class="rule" style:--rule-color={layerDotColor(layer.keys, true)}>
+											<div class="rule__conds">
+												{#if layer.conditionValues.length === 0}
+													<span class="chip chip--base">base</span>
+												{:else}
+													{#each layer.conditionValues as cv (cv.axisId + cv.value)}
+														<span class="chip">{cv.value}</span>
+													{/each}
+												{/if}
+											</div>
+
+											<dl class="rule__props">
+												{#each layer.entries as p (p.property)}
+													<div class="prop" class:prop--overridden={p.overridden}>
+														<dt title={p.property}>{p.property}</dt>
+														<dd title={p.value}>
+															{#if p.isToken && p.tokenAlias}<i
+																	class="fa-solid fa-link prop__token"
+																	title="token: {p.tokenAlias}"
+																></i>{/if}
+															{p.value}
+														</dd>
+													</div>
+												{/each}
+											</dl>
 										</div>
 									{/each}
-								</dl>
+								</div>
 							</div>
 						{/each}
 					</div>
@@ -184,10 +208,42 @@
 		}
 	}
 
+	// A specificity tier: a small left rail of condition pips + the tier's rules laid out as
+	// wrapping columns (orthogonal siblings side by side, using the wide drawer's horizontal room).
+	.tier {
+		display: flex;
+		align-items: flex-start;
+		gap: $x-space-sm;
+		margin-bottom: $x-space-sm;
+
+		&__rail {
+			flex: 0 0 auto;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 2px;
+			min-width: 0.9rem;
+			padding-top: 3px;
+			color: var(--color-text-muted);
+			font-size: 0.5rem;
+		}
+
+		&__cols {
+			flex: 1 1 auto;
+			min-width: 0;
+			display: flex;
+			flex-wrap: wrap;
+			gap: $x-space-sm;
+		}
+	}
+
 	.rule {
+		// Column: grow to share the row, but stay within a readable band; wrap when they don't fit.
+		flex: 1 1 13rem;
+		min-width: 11rem;
+		max-width: 24rem;
 		border-left: 3px solid var(--rule-color, var(--color-text-muted));
 		padding-left: $x-space-sm;
-		margin-bottom: $x-space-sm;
 
 		&__conds {
 			display: flex;
@@ -195,13 +251,6 @@
 			flex-wrap: wrap;
 			gap: $x-space-xs;
 			margin-bottom: calc($x-space-xs / 2);
-		}
-
-		&__tier {
-			display: inline-flex;
-			gap: 2px;
-			color: var(--rule-color, var(--color-text-muted));
-			font-size: 0.5rem;
 		}
 
 		&__props {
@@ -229,7 +278,7 @@
 
 	.prop {
 		display: grid;
-		grid-template-columns: minmax(6rem, 40%) 1fr;
+		grid-template-columns: minmax(5rem, 45%) 1fr;
 		gap: $x-space-sm;
 		font-size: $x-font-size-xs;
 		align-items: baseline;
@@ -251,7 +300,7 @@
 		}
 
 		// Overridden by a higher-specificity rule: struck through and dimmed, but still visible so
-		// the cascade chain reads top-to-bottom.
+		// the cascade chain reads top-to-bottom (and across columns).
 		&--overridden {
 			dt,
 			dd {
