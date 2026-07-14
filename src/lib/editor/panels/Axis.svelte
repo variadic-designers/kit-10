@@ -35,12 +35,16 @@
 		dragPayload?: () => DragPayload | null;
 		dragPreview?: string;
 		onArgChange: (arg: AxisArgValue | null) => void;
+		// Remove this axis from the active kit (unconsume). Mirrors the Compose panel's "Remove" on a
+		// composed kit -- detach from the container, not a project-wide delete. The parent owns the
+		// kit context + refresh, so this is a plain callback.
+		onRemove?: () => void;
 	};
 </script>
 
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
-	import { contextMenu } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
 	import { draggable } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 
@@ -59,7 +63,8 @@
 		disabled = false,
 		dragPayload,
 		dragPreview,
-		onArgChange
+		onArgChange,
+		onRemove
 	}: AxisProps = $props();
 
 	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
@@ -119,7 +124,7 @@
 		return `${scope} · ${conditions}${layer.active ? ' · active' : ''}`;
 	}
 
-	const axisContextMenu = [
+	const axisContextMenu: ContextMenuContent = [
 		{
 			name: 'custom axis',
 			description: 'Connect state',
@@ -134,6 +139,15 @@
 			displayText: 'Expose',
 			icon: 'fa-solid fa-tower-broadcast',
 			onClick: () => {}
+		},
+		'hr',
+		{
+			name: 'remove-axis',
+			description: 'Remove this axis from the kit',
+			displayText: 'Remove',
+			icon: 'fa-solid fa-trash',
+			tone: 'destructive',
+			onClick: () => onRemove?.()
 		}
 	];
 

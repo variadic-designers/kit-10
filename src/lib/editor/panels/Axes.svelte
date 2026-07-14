@@ -91,6 +91,16 @@
 		refreshTrigger++;
 	}
 
+	// Remove an axis from the active kit (unconsume) -- the inverse of addAxisToKit, mirroring the
+	// Compose panel's "Remove" on a composed kit. Not a project-wide delete; the axis stays available
+	// to re-add via "Use Axis".
+	async function removeAxisFromKit(axisId: string) {
+		const kitId = editorActivity.activeKitId;
+		if (!kitId) return;
+		await api.unconsumeAxis(kitId, axisId);
+		refreshTrigger++;
+	}
+
 	// Raw per-layer conditions, kit-scoped only — refetched on kit/view change, NOT on axis-arg change.
 	let layerConditionsByLayer = $state<
 		{ layerId: string; conds: { axisId: string; axisValueId: string; value: any }[] }[]
@@ -363,6 +373,7 @@
 						{} as Record<string, string>
 					)}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
+				onRemove={() => removeAxisFromKit(axisData.axisId)}
 				/>
 				</div>
 			{/each}
