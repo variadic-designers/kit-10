@@ -33,13 +33,12 @@
 	const addAxisContextMenu: ContextMenuContentGenerator = () => {
 		return [
 			{
-				name: 'custom axis',
-				description: 'Add custom axis',
-				displayText: 'Custom Axis',
-				icon: 'fa-solid fa-plus',
-				onClick: () => {}
+				name: 'expand',
+				description: 'Expand all Axes',
+				displayText: 'Expand',
+				icon: 'fa-solid fa-angles-down',
+				onClick: detailCollapse(false)
 			},
-			'hr',
 			{
 				name: 'collapse',
 				description: 'Collapse all Axes',
@@ -47,22 +46,30 @@
 				icon: 'fa-solid fa-angles-up',
 				onClick: detailCollapse(true)
 			},
-			{
-				name: 'expand',
-				description: 'Expand all Axes',
-				displayText: 'Expand',
-				icon: 'fa-solid fa-angles-down',
-				onClick: detailCollapse(false)
-			},
 			'hr',
-			// Axes in the project not yet consumed by this kit -- click to consume (add) one.
-			...unusedAxes.map((axis) => ({
-				name: `axis-${axis.axisId}`,
-				description: `Add ${axis.axisName ?? 'axis'} to this kit`,
-				displayText: axis.axisName ?? 'Untitled axis',
+			{
+				name: 'custom axis',
+				description: 'Add custom axis',
+				displayText: 'Custom Axis',
+				icon: 'fa-solid fa-plus',
+				onClick: () => {}
+			},
+			{
+				name: 'use-axis',
+				description: 'Use an existing axis from this project in this kit',
+				displayText: 'Use Axis',
 				icon: 'fa-solid fa-ruler-combined',
-				onClick: () => addAxisToKit(axis.axisId)
-			}))
+				// Disabled (won't open) when the kit already consumes every project axis.
+				disabled: unusedAxes.length === 0,
+				// Axes in the project not yet consumed by this kit -- click to consume (add) one.
+				submenu: unusedAxes.map((axis) => ({
+					name: `axis-${axis.axisId}`,
+					description: `Add ${axis.axisName ?? 'axis'} to this kit`,
+					displayText: axis.axisName ?? 'Untitled axis',
+					icon: 'fa-solid fa-ruler-combined',
+					onClick: () => addAxisToKit(axis.axisId)
+				}))
+			}
 		];
 	};
 
