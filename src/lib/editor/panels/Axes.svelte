@@ -80,6 +80,8 @@
 	let activeKitShape = $state('fa-circle');
 	// Axes in the project not yet consumed by the active kit -- offered in the add-axis context menu.
 	let unusedAxes = $state<{ axisId: string; axisName: string | null }[]>([]);
+	// Axis ids consumed by some OTHER kit -- those can only be removed from this kit, not hard-deleted.
+	let sharedAxisIds = $state<Set<string>>(new Set());
 	// Bumped after consuming an axis so the kit/view-keyed loadAxes effect re-runs and both the
 	// panel body (consumedAxes) and this menu (unusedAxes) refresh without a kit/view change.
 	let refreshTrigger = $state(0);
@@ -98,6 +100,14 @@
 		const kitId = editorActivity.activeKitId;
 		if (!kitId) return;
 		await api.unconsumeAxis(kitId, axisId);
+		refreshTrigger++;
+	}
+
+	// Hard-delete the axis project-wide (cascade). Only offered by the row menu when the axis isn't
+	// used by another kit (see sharedAxisIds), so this never destroys another kit's work.
+	async function deleteAxisHard(axisId: string) {
+		if (sharedAxisIds.has(axisId)) return; // guard: never hard-delete a shared axis
+		await api.deleteAxisCascade(axisId);
 		refreshTrigger++;
 	}
 
@@ -125,6 +135,9 @@
 			consumedAxes = axes;
 
 			unusedAxes = await api.getAxesExceptFromKitId(currentKitId).execute();
+
+			const sharedRows = await api.getAxisIdsUsedByOtherKits(currentKitId).execute();
+			sharedAxisIds = new Set(sharedRows.map((r) => r.axisId));
 
 			const valuesMap: Record<string, any[]> = {};
 			for (const axis of axes) {
@@ -374,6 +387,8 @@
 					)}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
 				onRemove={() => removeAxisFromKit(axisData.axisId)}
+				deletable={!sharedAxisIds.has(axisData.axisId)}
+				onDelete={() => deleteAxisHard(axisData.axisId)}
 				/>
 				</div>
 			{/each}

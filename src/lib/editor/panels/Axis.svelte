@@ -39,12 +39,16 @@
 		// composed kit -- detach from the container, not a project-wide delete. The parent owns the
 		// kit context + refresh, so this is a plain callback.
 		onRemove?: () => void;
+		// Whether this axis is safe to hard-delete project-wide (not consumed by any other kit). Gates
+		// the "Delete Axis" menu item; when false only "Remove" is offered.
+		deletable?: boolean;
+		onDelete?: () => void;
 	};
 </script>
 
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
-	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
 	import { draggable } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 
@@ -64,7 +68,9 @@
 		dragPayload,
 		dragPreview,
 		onArgChange,
-		onRemove
+		onRemove,
+		deletable = false,
+		onDelete
 	}: AxisProps = $props();
 
 	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
@@ -124,7 +130,8 @@
 		return `${scope} · ${conditions}${layer.active ? ' · active' : ''}`;
 	}
 
-	const axisContextMenu: ContextMenuContent = [
+	// Generator (not a static array) so the menu reflects the current `deletable` each time it opens.
+	const axisContextMenu: ContextMenuContentGenerator = () => [
 		{
 			name: 'custom axis',
 			description: 'Connect state',
@@ -148,7 +155,20 @@
 			icon: 'fa-solid fa-trash',
 			tone: 'destructive',
 			onClick: () => onRemove?.()
-		}
+		},
+		// Hard delete, offered only when the axis isn't used by another kit (parent-provided).
+		...(deletable
+			? [
+					{
+						name: 'delete-axis',
+						description: 'Delete this axis from the project (not used by other kits)',
+						displayText: 'Delete Axis',
+						icon: 'fa-solid fa-trash-can',
+						tone: 'destructive' as const,
+						onClick: () => onDelete?.()
+					}
+				]
+			: [])
 	];
 
 	function selectVariant(variantId: string) {

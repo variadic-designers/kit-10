@@ -223,6 +223,12 @@ export interface QueryAxis {
 	>;
 	renameAxis: (axisId: string, newName: string) => Promise<void>;
 	deleteAxis: (axisId: string) => Promise<void>;
+	// Hard-delete an axis and everything tying it down, in one transaction. Plain deleteAxis
+	// FK-fails whenever the axis is still consumed (axes_consumed / axis_args are ON DELETE
+	// restrict), so this clears args, layer conditions, and consumptions first, then the axis
+	// (axis_values cascade). Intended only when the axis isn't used by another kit -- see
+	// getAxisIdsUsedByOtherKits, which the UI gates the "Delete Axis" action on.
+	deleteAxisCascade: (axisId: string) => Promise<void>;
 	getAxesByProjectId: (projectId: string) => SelectQueryBuilder<
 		Schema,
 		'axes',
@@ -280,6 +286,11 @@ export interface QueryAxisConsumed {
 	getAxesExceptFromKitId: (
 		kitId: string | null
 	) => SelectQueryBuilder<Schema, 'axes', { axisId: string; axisName: string | null }>;
+	// Axis ids consumed by kits OTHER than `kitId` -- the "used anywhere else" set the Axes panel
+	// checks to decide whether an axis is safe to hard-delete vs. only removable from this kit.
+	getAxisIdsUsedByOtherKits: (
+		kitId: string | null
+	) => SelectQueryBuilder<Schema, 'axes_consumed', { axisId: string }>;
 }
 
 export interface QueryAxisArgs {
@@ -1363,6 +1374,32 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		await db.deleteFrom('axes').where('axes.id', '=', axisId).execute();
 	},
 
+	deleteAxisCascade: async (axisId: string) => {
+		await db.transaction().execute(async (trx) => {
+			// axis_args -> axes is ON DELETE restrict: clear the axis's args first.
+			await trx.deleteFrom('axis_args').where('axis_args.axis_id', '=', axisId).execute();
+			// layer_axis_values -> axis_values is ON DELETE restrict, and axis_values -> axes is
+			// cascade; so remove layer conditions on this axis's values before the axis delete
+			// triggers the axis_values cascade, or that cascade would be blocked.
+			const values = await trx
+				.selectFrom('axis_values')
+				.select('id')
+				.where('axis_id', '=', axisId)
+				.execute();
+			const valueIds = values.map((v) => v.id);
+			if (valueIds.length > 0) {
+				await trx
+					.deleteFrom('layer_axis_values')
+					.where('layer_axis_values.axis_value_id', 'in', valueIds)
+					.execute();
+			}
+			// axes_consumed -> axes is ON DELETE restrict: drop consumptions before the axis.
+			await trx.deleteFrom('axes_consumed').where('axes_consumed.axis_id', '=', axisId).execute();
+			// Finally the axis; axis_values cascade-delete with it.
+			await trx.deleteFrom('axes').where('axes.id', '=', axisId).execute();
+		});
+	},
+
 	createAxisValue: async (axisId: string, value: any) => {
 		return await db
 			.insertInto('axis_values')
@@ -1911,6 +1948,19 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			)
 			.orderBy('axes.name', 'asc')
 			.select(['axes.id as axisId', 'axes.name as axisName']);
+	},
+
+	getAxisIdsUsedByOtherKits: (kitId: string | null) => {
+		if (!kitId)
+			return db
+				.selectFrom('axes_consumed')
+				.where('axes_consumed.kit_id', '=', '00000000-0000-0000-0000-000000000000')
+				.select('axes_consumed.axis_id as axisId');
+		return db
+			.selectFrom('axes_consumed')
+			.where('axes_consumed.kit_id', '!=', kitId)
+			.select('axes_consumed.axis_id as axisId')
+			.distinct();
 	},
 
 	getAllAxisArgs: (viewId: string, kitId: string) => {
