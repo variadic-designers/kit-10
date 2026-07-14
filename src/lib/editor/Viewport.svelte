@@ -26,6 +26,9 @@
 	let canvas: HTMLCanvasElement;
 	let initialized = false;
 	let hasData = $state(false);
+	// Set when the browser's WebGPU is missing/incomplete (see webgpuUsable). Shows the
+	// unsupported-browser overlay instead of ever handing the canvas to wgpu (which would abort).
+	let webgpuUnsupported = $state(false);
 	let resizeObserver: ResizeObserver | null = null;
 
 	let panning = false;
@@ -99,7 +102,33 @@
 		requestRender();
 	}
 
+	// Capability preflight that mirrors wgpu's own surface-creation check (its webgpu backend does
+	// `canvas.getContext("webgpu")` then a strict `instanceof GPUCanvasContext`). A recent, complete
+	// WebGPU (current Firefox/Chrome/Edge) passes; an older/partial one -- notably older Firefox,
+	// which returns a context that fails that instanceof -- does not. wgpu hard-`expect()`s on that
+	// mismatch, which aborts the wasm (panic=abort, uncatchable) and hangs init forever. So we detect
+	// the same condition up front on a throwaway canvas and degrade to a message rather than let the
+	// real canvas reach wgpu. Using the same instanceof means we reject exactly the browsers wgpu
+	// would panic on, and only those.
+	function webgpuUsable(): boolean {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		if (typeof navigator === 'undefined' || !(navigator as any).gpu) return false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const Ctor = (globalThis as any).GPUCanvasContext;
+		if (typeof Ctor !== 'function') return false;
+		try {
+			const probe = document.createElement('canvas');
+			return probe.getContext('webgpu') instanceof Ctor;
+		} catch {
+			return false;
+		}
+	}
+
 	onMount(async () => {
+		if (!webgpuUsable()) {
+			webgpuUnsupported = true;
+			return;
+		}
 		vellum = await import('../vellum/vellum_renderer.js');
 		await vellum.default();
 		const initCanvas = () =>
@@ -277,7 +306,19 @@
 		onwheel={onWheel}
 	></canvas>
 
-	<div class="logo-overlay" class:ready={hasData}>
+	{#if webgpuUnsupported}
+		<div class="unsupported-overlay">
+			<div class="unsupported-card">
+				<h2>WebGPU isn't available</h2>
+				<p>
+					This editor renders with WebGPU, which your browser doesn't support yet. Please update
+					to the latest version of Firefox, Chrome, or Edge and reload.
+				</p>
+			</div>
+		</div>
+	{/if}
+
+	<div class="logo-overlay" class:ready={hasData || webgpuUnsupported}>
 		<svg width="0" height="0" style="position:absolute">
 			<defs>
 				<clipPath id="logoClip" clipPathUnits="objectBoundingBox">
@@ -303,6 +344,37 @@
 		position: relative;
 		width: 100%;
 		height: 100%;
+	}
+
+	.unsupported-overlay {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-items: center;
+		padding: 2rem;
+		background: var(--color-bg);
+		z-index: 1;
+	}
+
+	.unsupported-card {
+		max-width: 32rem;
+		text-align: center;
+		padding: 2rem;
+		border: 1px solid var(--color-border);
+		border-radius: 0.75rem;
+		background: var(--color-surface);
+
+		h2 {
+			margin: 0 0 0.75rem;
+			color: var(--color-heading);
+			font-size: 1.125rem;
+		}
+
+		p {
+			margin: 0;
+			color: var(--color-text-muted);
+			line-height: 1.5;
+		}
 	}
 
 	.logo-overlay {
