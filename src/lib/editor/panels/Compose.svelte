@@ -36,30 +36,34 @@
 	const composeContextMenuContent: ContextMenuContentGenerator = $derived(() => {
 		return [
 			{
-				name: 'add',
+				name: 'new-kit',
+				description: 'Create a new kit in this view',
 				displayText: 'New Kit',
 				icon: 'fa-solid fa-box-open',
 				onClick: () => {
 					if (editorActivity.activeViewId && editorActivity.activeProjectId) {
-						console.log('About to create kit');
 						api.createKitInProject(editorActivity.activeProjectId, 'Cool Kit').then((k) => {
 							if (k) attachKit(k.id);
 						});
 					}
 				}
 			},
-
-			'hr',
-
-			...kitsUnusedQuery.rows.map((k) => {
-				kitsQuery.rows;
-				return {
-					name: k.kitName,
+			{
+				name: 'use-kits',
+				description: 'Compose an existing kit from this project into the view',
+				displayText: 'Use Kits',
+				icon: 'fa-solid fa-puzzle-piece',
+				// Disabled (won't open) when every project kit is already composed here -- mirrors the
+				// Axes panel's "Use Axis" submenu.
+				disabled: kitsUnusedQuery.rows.length === 0,
+				submenu: kitsUnusedQuery.rows.map((k) => ({
+					name: `kit-${k.kitId}`,
+					description: `Add ${k.kitName} to this view`,
 					displayText: k.kitName,
 					icon: 'fa-solid fa-puzzle-piece',
 					onClick: () => attachKit(k.kitId)
-				};
-			})
+				}))
+			}
 		];
 	});
 
