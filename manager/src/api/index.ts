@@ -275,6 +275,11 @@ export interface QueryAxisConsumed {
 		'axes_consumed' | 'axes',
 		{ axisId: string; axisName: string | null; axisKind: string | null; priorityIndex: number }
 	>;
+	// Unused axes for a kit: axes in the kit's project not yet consumed by it (the mirror of
+	// getKitsExceptFromViewId for the Axes panel's add menu).
+	getAxesExceptFromKitId: (
+		kitId: string | null
+	) => SelectQueryBuilder<Schema, 'axes', { axisId: string; axisName: string | null }>;
 }
 
 export interface QueryAxisArgs {
@@ -1879,6 +1884,33 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'axes.kind as axisKind',
 				'axes_consumed.priority_index as priorityIndex'
 			]);
+	},
+
+	getAxesExceptFromKitId: (kitId: string | null) => {
+		if (!kitId)
+			return db
+				.selectFrom('axes')
+				.where('axes.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select(['axes.id as axisId', 'axes.name as axisName']);
+		// Unused axes = axes in the kit's own project not already consumed by this kit. Subqueries
+		// (no join) so it stays one row per axis -- same shape/rationale as getKitsExceptFromViewId.
+		return db
+			.selectFrom('axes')
+			.where(
+				'axes.project_id',
+				'=',
+				db.selectFrom('kits').select('kits.project_id').where('kits.id', '=', kitId)
+			)
+			.where(
+				'axes.id',
+				'not in',
+				db
+					.selectFrom('axes_consumed')
+					.select('axes_consumed.axis_id')
+					.where('axes_consumed.kit_id', '=', kitId)
+			)
+			.orderBy('axes.name', 'asc')
+			.select(['axes.id as axisId', 'axes.name as axisName']);
 	},
 
 	getAllAxisArgs: (viewId: string, kitId: string) => {

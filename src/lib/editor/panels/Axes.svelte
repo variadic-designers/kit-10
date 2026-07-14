@@ -54,7 +54,15 @@
 				icon: 'fa-solid fa-angles-down',
 				onClick: detailCollapse(false)
 			},
-			'hr'
+			'hr',
+			// Axes in the project not yet consumed by this kit -- click to consume (add) one.
+			...unusedAxes.map((axis) => ({
+				name: `axis-${axis.axisId}`,
+				description: `Add ${axis.axisName ?? 'axis'} to this kit`,
+				displayText: axis.axisName ?? 'Untitled axis',
+				icon: 'fa-solid fa-ruler-combined',
+				onClick: () => addAxisToKit(axis.axisId)
+			}))
 		];
 	};
 
@@ -63,6 +71,18 @@
 	let axisValues = $state<Record<string, any[]>>({});
 	let axisArgs = $state<Record<string, any>>({});
 	let activeKitShape = $state('fa-circle');
+	// Axes in the project not yet consumed by the active kit -- offered in the add-axis context menu.
+	let unusedAxes = $state<{ axisId: string; axisName: string | null }[]>([]);
+	// Bumped after consuming an axis so the kit/view-keyed loadAxes effect re-runs and both the
+	// panel body (consumedAxes) and this menu (unusedAxes) refresh without a kit/view change.
+	let refreshTrigger = $state(0);
+
+	async function addAxisToKit(axisId: string) {
+		const kitId = editorActivity.activeKitId;
+		if (!kitId) return;
+		await api.consumeAxis(kitId, axisId);
+		refreshTrigger++;
+	}
 
 	// Raw per-layer conditions, kit-scoped only — refetched on kit/view change, NOT on axis-arg change.
 	let layerConditionsByLayer = $state<
@@ -72,18 +92,22 @@
 	$effect(() => {
 		const currentKitId = editorActivity.activeKitId;
 		const currentViewId = editorActivity.activeViewId;
+		refreshTrigger; // dependency: re-run loadAxes after consuming an axis
 
 		if (!currentKitId || !editorReady) {
 			consumedAxes = [];
 			axisValues = {};
 			axisArgs = {};
 			layerConditionsByLayer = [];
+			unusedAxes = [];
 			return;
 		}
 
 		const loadAxes = async () => {
 			const axes = await api.getConsumedAxesByKitId(currentKitId).execute();
 			consumedAxes = axes;
+
+			unusedAxes = await api.getAxesExceptFromKitId(currentKitId).execute();
 
 			const valuesMap: Record<string, any[]> = {};
 			for (const axis of axes) {
