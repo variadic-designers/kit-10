@@ -29,6 +29,10 @@
 	// Set when the browser's WebGPU is missing/incomplete (see webgpuUsable). Shows the
 	// unsupported-browser overlay instead of ever handing the canvas to wgpu (which would abort).
 	let webgpuUnsupported = $state(false);
+	// Only Firefox gets the about:config tip -- on release Firefox, WebGPU ships present but gated
+	// behind dom.webgpu.enabled=false, so enabling it gives the real renderer. Other browsers that
+	// fail the preflight are genuinely too old, so they get the "update your browser" message.
+	const isFirefox = typeof navigator !== 'undefined' && /firefox/i.test(navigator.userAgent);
 	let resizeObserver: ResizeObserver | null = null;
 
 	let panning = false;
@@ -309,11 +313,25 @@
 	{#if webgpuUnsupported}
 		<div class="unsupported-overlay">
 			<div class="unsupported-card">
-				<h2>WebGPU isn't available</h2>
-				<p>
-					This editor renders with WebGPU, which your browser doesn't support yet. Please update
-					to the latest version of Firefox, Chrome, or Edge and reload.
-				</p>
+				<h2>WebGPU needs to be enabled</h2>
+				{#if isFirefox}
+					<p>This editor renders with WebGPU. Firefox supports it, but it's switched off by default.</p>
+					<details class="fix" open>
+						<summary>Turn it on — about 20 seconds</summary>
+						<ol>
+							<li>Open a new tab and visit <code>about:config</code>.</li>
+							<li>If Firefox shows a warning, choose <strong>Accept the Risk and Continue</strong>.</li>
+							<li>Search for <code>dom.webgpu.enabled</code>.</li>
+							<li>Click the toggle so its value becomes <code>true</code>.</li>
+							<li>Return to this tab and reload the page.</li>
+						</ol>
+					</details>
+				{:else}
+					<p>
+						This editor renders with WebGPU, which your browser doesn't support. Please update to the
+						latest Firefox, Chrome, or Edge, then reload.
+					</p>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -374,6 +392,53 @@
 			margin: 0;
 			color: var(--color-text-muted);
 			line-height: 1.5;
+		}
+
+		.fix {
+			margin-top: 1.25rem;
+			text-align: left;
+			border-top: 1px solid var(--color-border);
+			padding-top: 1.25rem;
+
+			summary {
+				cursor: pointer;
+				color: var(--color-text);
+				font-weight: 600;
+				text-align: center;
+			}
+
+			&[open] summary {
+				margin-bottom: 0.85rem;
+			}
+
+			ol {
+				margin: 0;
+				padding-left: 1.35rem;
+				color: var(--color-text-muted);
+
+				li {
+					line-height: 1.5;
+
+					& + li {
+						margin-top: 0.4rem;
+					}
+				}
+			}
+
+			strong {
+				color: var(--color-text);
+				font-weight: 600;
+			}
+
+			code {
+				padding: 0.05em 0.35em;
+				border-radius: 0.3rem;
+				background: var(--color-surface-alt);
+				color: var(--color-text);
+				font-family: ui-monospace, monospace;
+				font-size: 0.9em;
+				white-space: nowrap;
+			}
 		}
 	}
 
