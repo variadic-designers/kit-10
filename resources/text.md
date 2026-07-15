@@ -7,6 +7,24 @@ surface, and extrusion with roundedness) are impossible under the current
 "axis-aligned quad + coverage bitmap" model, and become *natural* under a single
 outline-driven, deformation-shared design.
 
+> **Reconciliation with Vellum's settled design (`taf_can_do/TECHNICAL.md §18`).**
+> §18 is a *settled* decision: the **2D pipeline stays 2D** — `UiNode`/taffy never
+> become 3D-aware — and genuine 3D is contained inside a `Scene3d` *camera node*
+> whose rect hosts a scissored raymarch pass over an SDF scene. This doc is aligned
+> to that. So there are **two representations of a glyph that transform into each
+> other**, both derived from the one master outline (§1):
+> - **Basic text** — 2D MSDF glyph on the **main pipeline** (flat, type-on-path,
+>   envelope, surface-decal). §18 calls 2D SDF text "purely additive, risks nothing."
+> - **Advanced text** — extruded / on-surface / welded 3D text living in the
+>   **`Scene3d`/SDF scene** (raymarched), never in the 2D pipeline.
+>
+> A text node **toggles between basic and advanced** because both are derivations of
+> the same outline — promote a flat label to a 3D extruded title, demote it back,
+> losslessly. That duality is the whole reconciliation: we never make the 2D pipeline
+> 3D; we let the *same glyph* be rendered by either the 2D pipeline (basic) or the
+> `Scene3d` raymarcher (advanced). **MSDF comes first** — it's the basic-text upgrade,
+> zero-conflict, and the shared field representation the advanced path also reads.
+
 The hard expectation that shapes everything here: **text must apply seamlessly onto
 the 3D SDFs.** Not as a bolted-on decal mode — as the same class of thing the SDF
 geometry is, flowing through the same deformation stage. If a designer welds a
@@ -218,32 +236,37 @@ instead of a hardcoded quad. Everything else is additive derivation.
 
 ## 6. Phasing (each phase independently shippable)
 
+> **Ordering (per the §18 reconciliation up top):** MSDF ships **first**, and the 2D
+> pipeline stays 2D — there is **no VP-matrix camera / depth buffer / 3D `GlyphVertex`**
+> on the main pipeline. 3D text is reached by *toggling a glyph's repr* into the
+> `Scene3d`/SDF path (Phases 3–4), never by 3D-ifying the pipeline.
+
 - **Phase 0 — Don't foreclose (now, ~free).** Reshape the glyph path so a glyph is
   `{ glyph_ref, geometry: mesh, repr, deform }` rather than a baked axis-aligned quad;
-  make `GlyphRepr` swappable; keep Stage A ⟂ Stage C. No new user-facing features —
-  pure hygiene so the rest is additive. Widen `GlyphVertex.position` to 3D behind the
-  scenes (z = 0).
-- **Phase 1 — Placement stage + camera-3D.** Per-glyph transform (unlocks **2D type
-  on a path** immediately — rigid per-glyph rotation). Land the VP-matrix ortho /
-  perspective camera + depth buffer (see the camera-3D note; today's 2D pan/zoom *is*
-  an ortho matrix, so this unifies rather than replaces). Text still coverage; accept
-  blur — this establishes the 3D *space* text will inhabit.
-- **Phase 2 — Outline + MSDF + fill mesh + warp.** Acquire glyph outlines (the pivot).
-  Derive MSDF (retires the zoom hacks; crisp under scale/rotate/perspective). Derive
-  fill mesh. Tessellated glyph mesh through Stage C → **envelope distort** and
-  **text-on-surface projection (decal / route a)**.
-- **Phase 3 — Extrusion (mesh route).** From the outline: cap + swept side walls +
-  **beveled/rounded rim profiles**, rasterized with Phase-1's camera + depth + normals
-  for lighting. Genuine extruded 3D text with roundedness; depth/bevel/round are
-  resolved (non-destructive) properties.
+  make `GlyphRepr` swappable behind the atlas/shader; keep Stage A ⟂ Stage C. Basic-
+  pipeline `GlyphVertex` stays **2D** (§18). Pure hygiene so the rest is additive.
+- **Phase 1 — Outline + MSDF (basic-text upgrade, the headline).** Acquire glyph
+  outlines (the pivot) and derive **MSDF** for the main 2D pipeline: crisp under any 2D
+  scale/rotate/transform, and it retires the `×dpr` + extreme-zoom cull hacks. §18-
+  endorsed as "purely additive." This is the near-term deliverable.
+- **Phase 2 — 2D placement stage + fill mesh + warp.** Per-glyph 2D transform (unlocks
+  **type on a path** — glyphs placed/rotated along a 2D path; pipeline stays 2D). Derive
+  a triangulated fill mesh; tessellated glyph mesh through Stage C → **envelope distort**
+  and **text-on-surface decal (route a)**.
+- **Phase 3 — Extrusion in the `Scene3d`/SDF scene (mesh route).** From the outline:
+  cap + swept side walls + **beveled/rounded rim profiles**, rendered inside a `Scene3d`
+  camera node (not the 2D pipeline). Genuine extruded 3D text with roundedness;
+  depth/bevel/round are resolved (non-destructive) properties. A text node reaching this
+  repr is the "promote basic → advanced" toggle.
 - **Phase 4 — Text as SDF field (raymarch route).** Once the `sdf3d.md` engine exists:
   glyph → 2D SDF → `opExtrusion` / `opRound` / `smin` → **emboss / deboss / weld text
-  into surfaces** and smooth organic 3D text. Hero text only. This is the payoff of
-  having shared the outline and the deformation stage all along.
+  into surfaces** and smooth organic 3D text, inside `Scene3d`. Hero text only. The
+  payoff of sharing the outline and the deformation stage all along.
 
-The dependency spine: Phase 0–1 need nothing new; **Phase 2's outline acquisition is
-the gate** for all crispness-under-transform and all extrusion; Phase 4 additionally
-needs the SDF renderer. So the ordering is forced and clean.
+The dependency spine: Phase 0 needs nothing new; **Phase 1's outline acquisition is the
+gate** for all crispness-under-transform and all extrusion; Phases 3–4 additionally need
+the `Scene3d` raymarch path. Ordering is forced and clean, and basic (Phase 1–2) is
+fully shippable before any 3D exists.
 
 ---
 
@@ -274,17 +297,20 @@ geometry that also happens to carry coverage.
 The concrete near-term path, smallest-risk first — this is the execution plan behind
 the phasing in §6:
 
-1. **Ship this doc.** Agree the north star and the two commitments (§9) before writing
-   code, so Phase 0 is done with intent.
-2. **Phase 0 hygiene in `taf_can_do`.** Reshape the glyph path so a glyph is
-   `{ glyph_ref, mesh, repr, deform }` (§5), and widen `GlyphVertex.position` to
-   `[f32;3]` (z = 0). No user-facing change; pure decoupling. Ships behind the
+1. **Phase 0 hygiene in `taf_can_do`.** Reshape the glyph path so a glyph carries
+   `{ glyph_ref, mesh, repr, deform }` (§5) and `GlyphRepr` is swappable behind the
+   atlas/shader — the basic `GlyphVertex` stays 2D (§18). Pure decoupling; ships behind
    existing behaviour.
+2. **MSDF, first (Phase 1).** Acquire glyph outlines (the gate) and stand up an MSDF
+   atlas + shader for the main 2D pipeline. Prove one glyph crisp under an arbitrary 2D
+   transform, then flip the default text repr to MSDF and retire the zoom hacks. This is
+   the prioritised deliverable.
 3. **Spec the shared deformation-stage interface** — the `p→p'` contract that *both*
-   text and SDF geometry consume (§2 Stage C). This is the load-bearing unification;
-   write it down before either side grows a private warp system.
-4. **MSDF spike.** Prove outline acquisition (Phase 2's gate) + one glyph rendered
-   from an MSDF atlas, crisp under an arbitrary transform. De-risks everything downstream.
+   text (Stage C) and SDF geometry consume. Write it down before either side grows a
+   private warp system; it's what makes basic ↔ advanced text one system.
+4. **Type-on-path (Phase 2), 2D.** Per-glyph 2D transform along a path, on the MSDF
+   basic pipeline — no 3D required, immediately useful, and the first real placement
+   feature.
 
 Only after those four is there a decision to make about *which* feature (path, warp,
 extrude) to build first — and by then it's a derivation, not a rewrite.
