@@ -11,7 +11,13 @@ export type InputType =
 	| 'asset'
 	// Figma-style per-axis resizing: a Fixed/Hug/Fill segmented control that writes the keyword
 	// values Charter's compile_resize understands (`fill` / `hug` / a length). See StyleField.
-	| 'resize';
+	| 'resize'
+	// Charter's arrangement opinion: a Stack/Cluster/Split/Center/Grid tab row + inline submenu
+	// that writes the keyword values compile_arrange understands. See ArrangeField.
+	| 'arrange'
+	// A numeric stepper (see FieldDef.spacingMode for scalar vs. CSS-shorthand box mode). See
+	// SpacingField.
+	| 'spacing';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -21,6 +27,18 @@ export interface SuggestionSource {
 	fetchFn?: string;
 }
 
+// Declared only on the "arrange" FieldDef -- the companion property keys/FieldDefs its tab widget
+// reads and writes, so the editor never hardcodes property names like "flex-direction" or "gap".
+// Same "typed side-channel keyed by inputType" shape as SuggestionSource. Mirrors Charter's
+// ArrangeKeys struct exactly (camelCase, see plugins/charter/src/lib.rs).
+export interface ArrangeKeys {
+	directionKey: string;
+	gap: FieldDef;
+	cellMin: FieldDef;
+	advanced: FieldDef[];
+	gridAdvanced: FieldDef[];
+}
+
 export interface FieldDef {
 	key: string;
 	displayText?: string;
@@ -28,6 +46,10 @@ export interface FieldDef {
 	options?: string[];
 	layerId?: string;
 	suggestionsFrom?: SuggestionSource;
+	arrangeKeys?: ArrangeKeys;
+	// Only meaningful when inputType is "spacing". "scalar" (gap, cell-min -- one number) vs.
+	// "box" (padding -- CSS 1/2/3/4-value shorthand with a 1<->4 expand/collapse affordance).
+	spacingMode?: 'scalar' | 'box';
 }
 
 export interface FieldCategory {

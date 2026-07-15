@@ -26,6 +26,7 @@
 		axisNameById?: Record<string, string>;
 		inputType?: InputType;
 		suggestionsFrom?: SuggestionSource;
+		spacingMode?: 'scalar' | 'box';
 		api?: Api;
 		projectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
@@ -48,6 +49,7 @@
 		axisNameById = {},
 		inputType,
 		suggestionsFrom,
+		spacingMode,
 		api,
 		projectId,
 		onFieldUpdate,
@@ -265,6 +267,95 @@
 			inputRef.select();
 		}
 	}
+
+	// --- Spacing control (inputType === 'spacing'): numeric stepper, with a 1<->4-value
+	// expand/collapse affordance for `spacingMode === 'box'` (padding's CSS shorthand). The
+	// stored value IS the shorthand string Charter's parse_padding_shorthand understands ("12" or
+	// "8 16" / "4 8 12" / "1 2 3 4"). Whether the widget shows one stepper or four is DERIVED from
+	// the value itself (how many space-separated numbers it currently holds), not separate
+	// component state -- so a value written elsewhere (Advanced, another session) always renders
+	// correctly. Token-scale-aware snapping is a natural extension once KIT•10 has a spacing-scale
+	// token type; there isn't one yet, so this is a plain numeric stepper for now.
+	type SpacingSlot = 'scalar' | 0 | 1 | 2 | 3;
+	const SPACING_STEP = 4; // matches the codebase's own 4px spacing rhythm
+
+	function expandShorthand(parts: number[]): [number, number, number, number] {
+		if (parts.length === 0) return [0, 0, 0, 0];
+		if (parts.length === 1) return [parts[0]!, parts[0]!, parts[0]!, parts[0]!];
+		if (parts.length === 2) return [parts[0]!, parts[1]!, parts[0]!, parts[1]!];
+		if (parts.length === 3) return [parts[0]!, parts[1]!, parts[2]!, parts[1]!];
+		return [parts[0]!, parts[1]!, parts[2]!, parts[3]!];
+	}
+
+	const spacingParts = $derived(
+		value
+			? value
+					.trim()
+					.split(/\s+/)
+					.filter(Boolean)
+					.map((n) => parseFloat(n) || 0)
+			: []
+	);
+	const spacingIsExpanded = $derived(spacingMode === 'box' && spacingParts.length > 1);
+	const spacingScalar = $derived(spacingParts[0] ?? 0);
+	const spacingTRBL = $derived(expandShorthand(spacingParts));
+	const spacingSides: [string, 0 | 1 | 2 | 3][] = [
+		['T', 0],
+		['R', 1],
+		['B', 2],
+		['L', 3]
+	];
+
+	function nudgeSpacing(slot: SpacingSlot, delta: number) {
+		if (slot === 'scalar') {
+			writeValue(String(Math.max(0, spacingScalar + delta)));
+			return;
+		}
+		const next = [...spacingTRBL] as [number, number, number, number];
+		next[slot] = Math.max(0, next[slot] + delta);
+		writeValue(next.join(' '));
+	}
+
+	function expandSpacingToBox() {
+		const v = spacingScalar;
+		writeValue(`${v} ${v} ${v} ${v}`);
+	}
+
+	function collapseSpacingToScalar() {
+		writeValue(String(spacingTRBL[0]));
+	}
+
+	let spacingEditingSlot = $state<SpacingSlot | null>(null);
+	let spacingInputRef: HTMLInputElement | undefined = $state();
+	let spacingEditContent = $state('');
+
+	async function startEditingSpacingSlot(slot: SpacingSlot) {
+		spacingEditingSlot = slot;
+		spacingEditContent = String(slot === 'scalar' ? spacingScalar : spacingTRBL[slot]);
+		await tick();
+		spacingInputRef?.focus();
+		spacingInputRef?.select();
+	}
+
+	function cancelEditingSpacingSlot() {
+		spacingEditingSlot = null;
+		spacingEditContent = '';
+	}
+
+	function confirmEditingSpacingSlot() {
+		const slot = spacingEditingSlot;
+		spacingEditingSlot = null;
+		const num = Math.max(0, parseFloat(spacingEditContent) || 0);
+		spacingEditContent = '';
+		if (slot === null) return;
+		if (slot === 'scalar') {
+			writeValue(String(num));
+			return;
+		}
+		const next = [...spacingTRBL] as [number, number, number, number];
+		next[slot] = num;
+		writeValue(next.join(' '));
+	}
 </script>
 
 <div
@@ -378,6 +469,84 @@
 				{:else}
 					<button class="resize-fixed" type="button" onclick={() => startEditing()}>
 						{value}
+					</button>
+				{/if}
+			{/if}
+		</div>
+	{:else if inputType === 'spacing'}
+		{#snippet spacingStepper(slot: 'scalar' | 0 | 1 | 2 | 3, num: number)}
+			<div class="spacing-stepper">
+				<button
+					type="button"
+					class="spacing-stepper__btn"
+					title="Decrease"
+					onclick={() => nudgeSpacing(slot, -SPACING_STEP)}
+				>
+					<i class="fa-solid fa-minus"></i>
+				</button>
+				{#if spacingEditingSlot === slot}
+					<input
+						type="text"
+						inputmode="numeric"
+						bind:this={spacingInputRef}
+						bind:value={spacingEditContent}
+						class="spacing-stepper__value spacing-stepper__value--edit"
+						onblur={() => confirmEditingSpacingSlot()}
+						onkeydown={(e: KeyboardEvent) => {
+							if (e.key === 'Enter') {
+								confirmEditingSpacingSlot();
+							} else if (e.key === 'Escape') {
+								cancelEditingSpacingSlot();
+							}
+						}}
+					/>
+				{:else}
+					<button
+						type="button"
+						class="spacing-stepper__value"
+						onclick={() => startEditingSpacingSlot(slot)}
+					>
+						{num}
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="spacing-stepper__btn"
+					title="Increase"
+					onclick={() => nudgeSpacing(slot, SPACING_STEP)}
+				>
+					<i class="fa-solid fa-plus"></i>
+				</button>
+			</div>
+		{/snippet}
+		<div class="option124__value option124__value--spacing">
+			{#if spacingIsExpanded}
+				<div class="spacing-box" role="group" aria-label="{displayText} per side">
+					{#each spacingSides as [label, idx] (idx)}
+						<div class="spacing-box__side">
+							<span class="spacing-box__label">{label}</span>
+							{@render spacingStepper(idx, spacingTRBL[idx])}
+						</div>
+					{/each}
+					<button
+						type="button"
+						class="spacing-toggle"
+						title="Collapse to one value"
+						onclick={() => collapseSpacingToScalar()}
+					>
+						<i class="fa-solid fa-compress"></i>
+					</button>
+				</div>
+			{:else}
+				{@render spacingStepper('scalar', spacingScalar)}
+				{#if spacingMode === 'box'}
+					<button
+						type="button"
+						class="spacing-toggle"
+						title="Expand to per-side"
+						onclick={() => expandSpacingToBox()}
+					>
+						<i class="fa-solid fa-expand"></i>
 					</button>
 				{/if}
 			{/if}
@@ -623,6 +792,21 @@
 					background: transparent;
 				}
 			}
+
+			// Spacing control container: same drop-padding/background treatment as resize, since
+			// it's also a composite of small buttons rather than one plain value box.
+			&--spacing {
+				display: flex;
+				align-items: center;
+				gap: $x-space-xs;
+				padding: 0;
+				background: transparent;
+				overflow: visible;
+
+				&:hover {
+					background: transparent;
+				}
+			}
 		}
 	}
 
@@ -674,5 +858,82 @@
 			background: var(--color-surface-alt);
 			color: var(--color-text);
 		}
+	}
+
+	.spacing-stepper {
+		display: inline-flex;
+		align-items: stretch;
+		flex-shrink: 0;
+		border-radius: 2px;
+		overflow: hidden;
+		background: var(--color-panel-header-fill);
+	}
+
+	.spacing-stepper__btn {
+		all: unset;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: calc($x-space-xs / 2) calc($x-space-xs / 2);
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
+		}
+	}
+
+	.spacing-stepper__value {
+		all: unset;
+		min-width: 1.6em;
+		text-align: center;
+		padding: calc($x-space-xs / 2) calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+		color: var(--color-text);
+		cursor: text;
+
+		&--edit {
+			background: var(--color-pure);
+			color: var(--color-primary);
+		}
+	}
+
+	.spacing-toggle {
+		all: unset;
+		flex-shrink: 0;
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: calc($x-space-xs / 2);
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+		border-radius: 2px;
+
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
+		}
+	}
+
+	.spacing-box {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: calc($x-space-xs / 2);
+	}
+
+	.spacing-box__side {
+		display: inline-flex;
+		align-items: center;
+		gap: calc($x-space-xs / 2);
+	}
+
+	.spacing-box__label {
+		font-size: $x-font-size-xs;
+		opacity: 0.6;
+		min-width: 0.8em;
 	}
 </style>

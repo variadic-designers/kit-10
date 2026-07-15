@@ -2,6 +2,7 @@
 	import Panel from '../Panel.svelte';
 	import StyleField from './StyleField.svelte';
 	import ChildViewField, { type ChildViewCandidate } from './ChildViewField.svelte';
+	import ArrangeField from './ArrangeField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
@@ -204,6 +205,18 @@
 										{onFieldUpdate}
 										{onSelectView}
 									/>
+								{:else if field.inputType === 'arrange'}
+									<ArrangeField
+										{field}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{axisNameById}
+										{track}
+										{resolvedMap}
+										{api}
+										projectId={activeProjectId}
+										{onFieldUpdate}
+										{callUtilityPlugin}
+									/>
 								{:else}
 									<StyleField
 										{...track(field.key)}
@@ -213,7 +226,11 @@
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										inputType={field.inputType}
-										suggestionsFrom={resolveSuggestionSource(field.inputType, field.suggestionsFrom)}
+										spacingMode={field.spacingMode}
+										suggestionsFrom={resolveSuggestionSource(
+											field.inputType,
+											field.suggestionsFrom
+										)}
 										{api}
 										projectId={activeProjectId}
 										{onFieldUpdate}
