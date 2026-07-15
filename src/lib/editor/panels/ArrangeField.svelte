@@ -47,12 +47,38 @@
 	const arrangeKeys = $derived(field.arrangeKeys as ArrangeKeys);
 
 	type ArrangeKind = 'stack' | 'cluster' | 'split' | 'center' | 'grid';
-	const TABS: { kind: ArrangeKind; label: string; icon: string }[] = [
-		{ kind: 'stack', label: 'Stack', icon: 'fa-solid fa-bars' },
-		{ kind: 'cluster', label: 'Cluster', icon: 'fa-solid fa-grip' },
-		{ kind: 'split', label: 'Split', icon: 'fa-solid fa-arrows-left-right' },
-		{ kind: 'center', label: 'Center', icon: 'fa-solid fa-align-center' },
-		{ kind: 'grid', label: 'Grid', icon: 'fa-solid fa-table-cells' }
+	const TABS: { kind: ArrangeKind; label: string; icon: string; tooltip: string }[] = [
+		{
+			kind: 'stack',
+			label: 'Stack',
+			icon: 'fa-solid fa-bars',
+			tooltip: 'Flow children in one direction with a gap — forms, lists, the default box shape'
+		},
+		{
+			kind: 'cluster',
+			label: 'Cluster',
+			icon: 'fa-solid fa-grip',
+			tooltip: 'Wrap children in a row, packed to the start — chip rows, toolbars, button groups'
+		},
+		{
+			kind: 'split',
+			label: 'Split',
+			icon: 'fa-solid fa-arrows-left-right',
+			tooltip: 'Push children to opposite ends, centered on the cross axis — headers, nav bars'
+		},
+		{
+			kind: 'center',
+			label: 'Center',
+			icon: 'fa-solid fa-align-center',
+			tooltip: 'Center a child on both axes — hero sections, empty states, badges'
+		},
+		{
+			kind: 'grid',
+			label: 'Grid',
+			icon: 'fa-solid fa-table-cells',
+			tooltip:
+				'Equal-size responsive cells that wrap automatically — galleries, card grids, dashboards'
+		}
 	];
 
 	// "stack", absent, or unrecognized all read as Stack -- mirrors Charter's parse_arrange
@@ -113,7 +139,7 @@
 	);
 </script>
 
-{#snippet fieldRow(fd: FieldDef)}
+{#snippet fieldRow(fd: FieldDef, tooltip?: string)}
 	<StyleField
 		{...track(fd.key)}
 		displayText={fd.displayText ?? fd.key}
@@ -122,6 +148,7 @@
 		{axisNameById}
 		inputType={fd.inputType}
 		spacingMode={fd.spacingMode}
+		labelTooltip={tooltip}
 		suggestionsFrom={resolveSuggestionSource(fd.inputType, fd.suggestionsFrom)}
 		{api}
 		{projectId}
@@ -156,6 +183,7 @@
 				aria-selected={activeKind === tab.kind}
 				class="arrange-field__tab"
 				class:arrange-field__tab--sel={activeKind === tab.kind}
+				title={tab.tooltip}
 				onclick={() => selectTab(tab.kind)}
 			>
 				<i class={tab.icon}></i>
@@ -167,13 +195,15 @@
 	<div class="arrange-field__submenu">
 		{#if activeKind === 'stack'}
 			<div class="arrange-field__row">
-				<span class="arrange-field__row-label">Direction</span>
+				<span class="arrange-field__row-label" title="Which way children flow, one after another"
+					>Direction</span
+				>
 				<div class="arrange-seg" role="group" aria-label="Direction">
 					<button
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={!directionIsRow}
-						title="Down"
+						title="Stack downward — a column"
 						onclick={() => writeDirection('column')}
 					>
 						<i class="fa-solid fa-arrow-down"></i>
@@ -182,25 +212,27 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={directionIsRow}
-						title="Right"
+						title="Stack rightward — a row"
 						onclick={() => writeDirection('row')}
 					>
 						<i class="fa-solid fa-arrow-right"></i>
 					</button>
 				</div>
 			</div>
-			{@render fieldRow(arrangeKeys.gap)}
+			{@render fieldRow(arrangeKeys.gap, 'Space between children')}
 		{:else if activeKind === 'cluster'}
-			{@render fieldRow(arrangeKeys.gap)}
+			{@render fieldRow(arrangeKeys.gap, 'Space between children')}
 		{:else if activeKind === 'split'}
 			<div class="arrange-field__row">
-				<span class="arrange-field__row-label">Axis</span>
+				<span class="arrange-field__row-label" title="Which axis the two ends push apart along"
+					>Axis</span
+				>
 				<div class="arrange-seg" role="group" aria-label="Axis">
 					<button
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={directionIsRow}
-						title="Horizontal"
+						title="Split left/right — a row"
 						onclick={() => writeDirection('row')}
 					>
 						<i class="fa-solid fa-arrows-left-right"></i>
@@ -209,7 +241,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={!directionIsRow}
-						title="Vertical"
+						title="Split top/bottom — a column"
 						onclick={() => writeDirection('column')}
 					>
 						<i class="fa-solid fa-arrows-up-down"></i>
@@ -217,16 +249,25 @@
 				</div>
 			</div>
 		{:else if activeKind === 'grid'}
-			{@render fieldRow(arrangeKeys.cellMin)}
-			{@render fieldRow(arrangeKeys.gap)}
+			{@render fieldRow(
+				arrangeKeys.cellMin,
+				'The smallest a column is allowed to get before wrapping to the next row'
+			)}
+			{@render fieldRow(arrangeKeys.gap, 'Space between cells')}
 		{/if}
 
 		{#if activeKind !== 'grid'}
-			<details class="arrange-disclosure">
+			<details
+				class="arrange-disclosure"
+				title="Raw flex properties {activeKind} doesn't expose directly — still real, still editable"
+			>
 				<summary class="arrange-disclosure__summary">
 					<span>Advanced flex</span>
 					{#if anyFieldHasValue(advancedFields)}
-						<i class="fa-solid fa-circle arrange-disclosure__badge"></i>
+						<i
+							class="fa-solid fa-circle arrange-disclosure__badge"
+							title="One or more advanced fields have a value set"
+						></i>
 					{/if}
 					<i class="fa-solid fa-angle-down arrange-disclosure__caret"></i>
 				</summary>
@@ -237,11 +278,17 @@
 				</div>
 			</details>
 		{:else}
-			<details class="arrange-disclosure">
+			<details
+				class="arrange-disclosure"
+				title="Explicit CSS Grid track definitions, for layouts Cell Min + Gap can't express"
+			>
 				<summary class="arrange-disclosure__summary">
 					<span>Custom tracks</span>
 					{#if anyFieldHasValue(arrangeKeys.gridAdvanced)}
-						<i class="fa-solid fa-circle arrange-disclosure__badge"></i>
+						<i
+							class="fa-solid fa-circle arrange-disclosure__badge"
+							title="One or more custom tracks are set"
+						></i>
 					{/if}
 					<i class="fa-solid fa-angle-down arrange-disclosure__caret"></i>
 				</summary>

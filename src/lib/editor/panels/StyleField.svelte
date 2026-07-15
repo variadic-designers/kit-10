@@ -27,6 +27,10 @@
 		inputType?: InputType;
 		suggestionsFrom?: SuggestionSource;
 		spacingMode?: 'scalar' | 'box';
+		// Optional hover explanation for the label button, e.g. ArrangeField's Gap/Cell Min
+		// follow-ons -- distinct from the track dot's title, which explains the value's SOURCE
+		// layer/condition rather than what the field itself does.
+		labelTooltip?: string;
 		api?: Api;
 		projectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
@@ -50,6 +54,7 @@
 		inputType,
 		suggestionsFrom,
 		spacingMode,
+		labelTooltip,
 		api,
 		projectId,
 		onFieldUpdate,
@@ -369,6 +374,7 @@
 		class="option124__style-name"
 		class:option124__style-name--highlighted={highlighted}
 		use:contextMenu={menu}
+		title={labelTooltip}
 		onclick={() => {
 			highlighted = !highlighted;
 		}}
