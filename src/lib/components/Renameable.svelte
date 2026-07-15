@@ -79,10 +79,6 @@
 {/if}
 
 <style>
-	.renameable {
-		cursor: text;
-	}
-
 	.renameable-input {
 		min-width: 3ch;
 		font: inherit;
