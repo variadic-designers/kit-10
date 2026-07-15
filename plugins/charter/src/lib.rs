@@ -31,8 +31,8 @@ struct FieldDef {
     key: String,
     #[serde(rename = "displayText")]
     display_text: Option<String>,
-    // "color" | "text" | "number" | "select" | "slider" | "font" -- how the editor should render
-    // this field's input. None means the editor's default (plain text).
+    // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" -- how
+    // the editor should render this field's input. None means the editor's default (plain text).
     #[serde(rename = "inputType", default)]
     input_type: Option<String>,
     // Names which utility plugin + functions serve suggestions for this field -- the editor
@@ -40,6 +40,15 @@ struct FieldDef {
     // 1st Principle: "no lock-in to a specific tool for a specific job."
     #[serde(rename = "suggestionsFrom", default)]
     suggestions_from: Option<SuggestionSource>,
+    // Only set on the "arrange" field. Declares the companion property keys/FieldDefs its tab
+    // widget reads and writes, so the editor never hardcodes property names like "flex-direction"
+    // or "gap" -- same "typed side-channel keyed by inputType" shape as suggestions_from.
+    #[serde(rename = "arrangeKeys", default)]
+    arrange_keys: Option<Box<ArrangeKeys>>,
+    // Only set on inputType "spacing" fields. "scalar" (gap, cell-min -- one number) vs "box"
+    // (padding -- CSS 1/2/3/4-value shorthand, with a 1<->4 expand/collapse affordance).
+    #[serde(rename = "spacingMode", default)]
+    spacing_mode: Option<String>,
 }
 
 impl FieldDef {
@@ -49,6 +58,8 @@ impl FieldDef {
             display_text: display_text.map(str::to_string),
             input_type: None,
             suggestions_from: None,
+            arrange_keys: None,
+            spacing_mode: None,
         }
     }
 
@@ -58,6 +69,16 @@ impl FieldDef {
     // src/lib/plugins/suggestion-providers.ts), swappable without recompiling Charter.
     fn with_input_type(mut self, input_type: &str) -> Self {
         self.input_type = Some(input_type.to_string());
+        self
+    }
+
+    fn with_arrange_keys(mut self, keys: ArrangeKeys) -> Self {
+        self.arrange_keys = Some(Box::new(keys));
+        self
+    }
+
+    fn with_spacing_mode(mut self, mode: &str) -> Self {
+        self.spacing_mode = Some(mode.to_string());
         self
     }
 }
@@ -71,6 +92,44 @@ struct SuggestionSource {
     fetch_fn: Option<String>,
 }
 
+// Declared only on the "arrange" FieldDef (see box_categories). Charter's one earned arrangement
+// opinion (Stack/Cluster/Split/Center/Grid tabs) needs its editor widget to read/write several
+// OTHER properties beyond its own (direction, gap, grid cell-min, plus the raw escape-hatch
+// fields for each tab's "Advanced" disclosure) -- this struct is how it declares them as data
+// instead of the editor hardcoding property names (see the "Editor Plugin Agnosticism" note in
+// CLAUDE.md). `gap`/`cell_min` carry full FieldDefs (not just key strings) so the editor can hand
+// them straight to the existing generic StyleField component, exactly like `advanced`/
+// `grid_advanced` already must.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArrangeKeys {
+    // Property the Direction (Stack) / Axis (Split) segmented control writes -- "flex-direction".
+    direction_key: String,
+    gap: FieldDef,
+    cell_min: FieldDef,
+    // Stack/Cluster/Split/Center's "Advanced flex" disclosure: raw flex-direction/align-items/
+    // justify-content/flex-wrap/display fields, still real panel controls, one click away.
+    advanced: Vec<FieldDef>,
+    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row.
+    grid_advanced: Vec<FieldDef>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ArrangeKind {
+    Stack,
+    Cluster,
+    Split,
+    Center,
+    Grid,
+}
+
+impl Default for ArrangeKind {
+    fn default() -> Self {
+        ArrangeKind::Stack
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FieldCategory {
     name: String,
@@ -78,13 +137,18 @@ struct FieldCategory {
 }
 
 // Track/grid types mirror vellum's api.rs — serde output must match exactly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 enum TrackSize {
     Px(f32),
     Fr(f32),
     Auto,
     MinContent,
     MaxContent,
+    // Responsive auto-fit repeat, opinionated (not raw CSS `repeat()`): as many tracks as fit,
+    // each `minmax(f32 px, 1fr)`. This is what compile_arrange's Grid tab emits from a single
+    // "Cell min" number -- must match Vellum's TrackSize::AutoFit exactly (see the module-level
+    // comment above).
+    AutoFit(f32),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +175,7 @@ enum AlignValue {
     Stretch,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum JustifyValue {
     Start,
     End,
@@ -124,7 +188,7 @@ enum JustifyValue {
     SpaceAround,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum FlexWrapValue {
     NoWrap,
     Wrap,
@@ -812,6 +876,24 @@ struct PaintProps {
     padding: [f32; 4],
 }
 
+// CSS padding shorthand: 1 value (all sides), 2 (vert|horiz), 3 (top|horiz|bottom), or 4
+// (top|right|bottom|left, verbatim). Output order matches taf_can_do's BoxData.padding
+// convention (confirmed against its layout code): [top, right, bottom, left].
+fn parse_padding_shorthand(s: Option<&str>) -> [f32; 4] {
+    let Some(v) = s else { return [0.0; 4] };
+    let parts: Vec<f32> = v
+        .split_whitespace()
+        .map(|part| parse_px(Some(part)))
+        .collect();
+    match parts.as_slice() {
+        [] => [0.0; 4],
+        [all] => [*all; 4],
+        [v, h] => [*v, *h, *v, *h],
+        [t, h, b] => [*t, *h, *b, *h],
+        [t, r, b, l, ..] => [*t, *r, *b, *l],
+    }
+}
+
 fn extract_paint_props(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     default_bg: [f32; 4],
@@ -820,7 +902,7 @@ fn extract_paint_props(
     let border = get_prop(props, "border").unwrap_or_default();
     let border_width = parse_px(get_prop(props, "border-width").as_deref());
     let radius = parse_px(get_prop(props, "border-radius").as_deref());
-    let padding = parse_px(get_prop(props, "padding").as_deref());
+    let padding = parse_padding_shorthand(get_prop(props, "padding").as_deref());
     let has_border = !border.is_empty() && border != "none";
 
     PaintProps {
@@ -843,7 +925,7 @@ fn extract_paint_props(
             0.0
         },
         corner_radius: radius,
-        padding: [padding; 4],
+        padding,
     }
 }
 
@@ -896,8 +978,16 @@ fn compile_resize(
 ) -> ResizeCompile {
     let mut out = ResizeCompile {
         // A keyword axis becomes content-sized (auto); a non-keyword axis keeps its parsed extent.
-        width: if width_kw.is_some() { Extent::Auto } else { base_width },
-        height: if height_kw.is_some() { Extent::Auto } else { base_height },
+        width: if width_kw.is_some() {
+            Extent::Auto
+        } else {
+            base_width
+        },
+        height: if height_kw.is_some() {
+            Extent::Auto
+        } else {
+            base_height
+        },
         min_width: base_min_width,
         min_height: base_min_height,
         flex_grow: None,
@@ -919,7 +1009,7 @@ fn compile_resize(
             out.flex_grow = Some(1.0);
             out.flex_shrink = Some(1.0);
             out.flex_basis = Some(Extent::Px(0.0)); // equal share of free space, not content+leftover
-            // Drop the automatic min-content floor so a Fill item can shrink to its share.
+                                                    // Drop the automatic min-content floor so a Fill item can shrink to its share.
             if main_is_width {
                 out.min_width = Extent::Px(0.0);
             } else {
@@ -944,6 +1034,118 @@ fn compile_resize(
     out
 }
 
+// --- Arrangement: Stack/Cluster/Split/Center/Grid, compiled to taffy primitives ---
+//
+// Charter's second earned layout opinion (see resources/layout-affordances.md), same template as
+// compile_resize above: a designer picks a named outcome, Charter fills in the flex/grid
+// machinery. Every output field here is a DEFAULT, not a force -- it only takes effect when the
+// corresponding raw property was never explicitly set (via its tab's own follow-on OR the
+// per-tab "Advanced"/"Custom tracks" escape hatch). This keeps Advanced a genuinely live override
+// for every tab, not just Stack: a hidden field whose edits have no visible effect would be
+// exactly the unexplained-mode-behavior Figma failure this whole feature exists to avoid.
+fn parse_arrange(s: Option<&str>) -> ArrangeKind {
+    match s.map(str::trim) {
+        Some("cluster") => ArrangeKind::Cluster,
+        Some("split") => ArrangeKind::Split,
+        Some("center") => ArrangeKind::Center,
+        Some("grid") => ArrangeKind::Grid,
+        // "stack", absent, or unrecognized -- Default hard (a fresh box needs zero panel touches).
+        _ => ArrangeKind::Stack,
+    }
+}
+
+struct ArrangeCompile {
+    // Fully resolved -- folds in the old inline row/row-reverse/column-reverse/else-column match
+    // plus each kind's own directional default, so there's a single source of truth for it.
+    flex_direction: String,
+    align_items: Option<AlignValue>,
+    justify_content: Option<JustifyValue>,
+    flex_wrap: Option<FlexWrapValue>,
+    grid_template_columns: Option<Vec<TrackSize>>,
+}
+
+fn resolve_flex_direction(raw: Option<&str>, kind: ArrangeKind) -> String {
+    match raw {
+        Some("row") => "Row",
+        Some("row-reverse") => "RowReverse",
+        Some("column-reverse") => "ColumnReverse",
+        Some("column") => "Column",
+        // Absent or unrecognized: Cluster/Split default to Row (their common case -- a wrapping
+        // chip row, a horizontal header split); everything else defaults to Column, unchanged
+        // from the original fallback.
+        _ => match kind {
+            ArrangeKind::Cluster | ArrangeKind::Split => "Row",
+            _ => "Column",
+        },
+    }
+    .to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compile_arrange(
+    kind: ArrangeKind,
+    raw_flex_direction: Option<&str>,
+    raw_align_items: Option<AlignValue>,
+    raw_justify_content: Option<JustifyValue>,
+    raw_flex_wrap: Option<FlexWrapValue>,
+    raw_grid_template_columns_set: bool,
+    cell_min: f32,
+) -> ArrangeCompile {
+    let flex_direction = resolve_flex_direction(raw_flex_direction, kind);
+    let mut out = ArrangeCompile {
+        flex_direction,
+        align_items: None,
+        justify_content: None,
+        flex_wrap: None,
+        grid_template_columns: None,
+    };
+
+    match kind {
+        ArrangeKind::Stack => {
+            // Direction is a free choice with no Justify/Wrap opinion; only the Row cross-axis
+            // gets a sensible default (vertically centering a horizontal stack's items).
+            if raw_align_items.is_none() && out.flex_direction == "Row" {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Cluster => {
+            // Cluster IS row-flow-that-wraps by definition -- no Direction follow-on exists for
+            // it, so its identity comes entirely from these defaults.
+            if raw_flex_wrap.is_none() {
+                out.flex_wrap = Some(FlexWrapValue::Wrap);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::FlexStart);
+            }
+        }
+        ArrangeKind::Split => {
+            if raw_justify_content.is_none() {
+                out.justify_content = Some(JustifyValue::SpaceBetween);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Center => {
+            if raw_justify_content.is_none() {
+                out.justify_content = Some(JustifyValue::Center);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Grid => {
+            // "Custom tracks" (raw grid-template-columns) wins if the user reached for it;
+            // otherwise Cell-min alone produces a responsive grid the instant Grid is picked.
+            if !raw_grid_template_columns_set {
+                out.grid_template_columns = Some(vec![TrackSize::AutoFit(cell_min)]);
+            }
+        }
+    }
+
+    out
+}
+
 fn build_box_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
@@ -963,19 +1165,38 @@ fn build_box_node(
     let max_width = parse_extent(get_prop(props, "max-width").as_deref());
     let max_height = parse_extent(get_prop(props, "max-height").as_deref());
 
-    let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
-        "row" => "Row",
-        "row-reverse" => "RowReverse",
-        "column-reverse" => "ColumnReverse",
-        _ => "Column",
-    }
-    .to_string();
+    // Raw values, kept as Option so compile_arrange can tell "never set" apart from "explicitly
+    // set to the same thing a default would pick" -- an explicit set (via a tab's own follow-on,
+    // or the Advanced/Custom-tracks escape hatch) always wins.
+    let raw_flex_direction = get_prop(props, "flex-direction");
+    let raw_align_items = parse_align(get_prop(props, "align-items").as_deref());
+    let raw_justify_content = parse_justify(get_prop(props, "justify-content").as_deref());
+    let raw_flex_wrap = get_prop(props, "flex-wrap")
+        .as_deref()
+        .map(|s| parse_wrap(Some(s)));
+    let raw_grid_template_columns =
+        get_prop(props, "grid-template-columns").map(|s| parse_track_list(&s));
+    let cell_min = get_prop(props, "grid-cell-min")
+        .map(|s| parse_px(Some(&s)))
+        .filter(|&v| v > 0.0)
+        .unwrap_or(160.0);
+
+    let arrange_kind = parse_arrange(get_prop(props, "arrange").as_deref());
+    let ac = compile_arrange(
+        arrange_kind,
+        raw_flex_direction.as_deref(),
+        raw_align_items,
+        raw_justify_content,
+        raw_flex_wrap,
+        raw_grid_template_columns.is_some(),
+        cell_min,
+    );
 
     let mut extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
-        align_items: parse_align(get_prop(props, "align-items").as_deref()),
-        justify_content: parse_justify(get_prop(props, "justify-content").as_deref()),
-        flex_wrap: parse_wrap(get_prop(props, "flex-wrap").as_deref()),
+        align_items: raw_align_items.or(ac.align_items),
+        justify_content: raw_justify_content.or(ac.justify_content),
+        flex_wrap: raw_flex_wrap.or(ac.flex_wrap).unwrap_or_default(),
         flex_grow: get_prop(props, "flex-grow")
             .map(|s| parse_px(Some(&s)))
             .unwrap_or(0.0),
@@ -987,9 +1208,9 @@ fn build_box_node(
         // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
         margin: 0.0,
         position: NodePosition::default(),
-        grid_template_columns: get_prop(props, "grid-template-columns")
-            .map(|s| parse_track_list(&s))
-            .unwrap_or_default(),
+        grid_template_columns: ac
+            .grid_template_columns
+            .unwrap_or_else(|| raw_grid_template_columns.unwrap_or_default()),
         grid_template_rows: get_prop(props, "grid-template-rows")
             .map(|s| parse_track_list(&s))
             .unwrap_or_default(),
@@ -1041,7 +1262,7 @@ fn build_box_node(
             max_height,
             padding: paint.padding,
             bg_color: paint.bg_color,
-            flex_direction,
+            flex_direction: ac.flex_direction,
             show_border: paint.show_border,
             border_color: paint.border_color,
             border_width: paint.border_width,
@@ -1169,10 +1390,12 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("max-width")
         || props.contains_key("max-height")
         || props.contains_key("display")
+        || props.contains_key("arrange")
         || props.contains_key("flex-direction")
         || props.contains_key("gap")
         || props.contains_key("grid-template-columns")
-        || props.contains_key("grid-template-rows");
+        || props.contains_key("grid-template-rows")
+        || props.contains_key("grid-cell-min");
 
     if has_text_props && !has_box_props {
         "text"
@@ -1181,38 +1404,57 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
     }
 }
 
-fn box_categories() -> Vec<FieldCategory> {
-    vec![
-        FieldCategory {
-            name: "layout".to_string(),
-            fields: vec![
-                FieldDef::new("width", None).with_input_type("resize"),
-                FieldDef::new("height", None).with_input_type("resize"),
-                FieldDef::new("min-width", Some("Min W")),
-                FieldDef::new("min-height", Some("Min H")),
-                FieldDef::new("max-width", Some("Max W")),
-                FieldDef::new("max-height", Some("Max H")),
-                FieldDef::new("padding", Some("Padding")),
+// The item-level flex trio (flex-grow/flex-shrink/align-self) and margin are RETIRED from the
+// panel entirely (no FieldDef anywhere, parse-only escape hatch) -- resize/compile_resize already
+// own per-item sizing, and Charter's opinion is no margins (see build_box_node). This is the same
+// "retired-opinion fields stay panel-absent, parse-only" tier the arrangement fields below join.
+fn arrange_field() -> FieldDef {
+    FieldDef::new("arrange", Some("Arrangement"))
+        .with_input_type("arrange")
+        .with_arrange_keys(ArrangeKeys {
+            direction_key: "flex-direction".to_string(),
+            gap: FieldDef::new("gap", Some("Gap"))
+                .with_input_type("spacing")
+                .with_spacing_mode("scalar"),
+            cell_min: FieldDef::new("grid-cell-min", Some("Cell Min")),
+            // Raw escape hatches for Stack/Cluster/Split/Center's "Advanced flex" disclosure --
+            // still real, parseable panel controls (build_box_node/compile_arrange only fill
+            // these in when unset), just no longer front-and-center.
+            advanced: vec![
                 FieldDef::new("flex-direction", Some("Direction")),
-                FieldDef::new("gap", Some("Gap")),
-                // Item-level flex (flex-grow / flex-shrink / align-self) is RETIRED from the panel:
-                // the width/height "resize" control (Fixed/Hug/Fill) is now Charter's opinion for
-                // per-item sizing and compiles those primitives itself (see compile_resize). The
-                // fields are still parsed by build_box_node as an escape hatch, just no longer
-                // surfaced here. Container-level arrangement stays exposed (plain inputs for now) --
-                // it's a different concern than item resizing and has no opinionated control yet;
-                // curate these when an alignment/auto-spacing control lands. `margin` remains
-                // intentionally absent (Charter's opinion is no margins -- see build_box_node).
                 FieldDef::new("align-items", Some("Align")),
                 FieldDef::new("justify-content", Some("Justify")),
                 FieldDef::new("flex-wrap", Some("Wrap")),
                 FieldDef::new("display", Some("Display")),
+            ],
+            // Raw escape hatches for Grid's "Custom tracks" disclosure -- the CSS-Grid
+            // sublanguage Phase 3 replaces as the *default* surface, not as a capability.
+            grid_advanced: vec![
                 FieldDef::new("grid-template-columns", Some("Columns")),
                 FieldDef::new("grid-template-rows", Some("Rows")),
                 FieldDef::new("grid-auto-columns", Some("Auto Cols")),
                 FieldDef::new("grid-auto-rows", Some("Auto Rows")),
                 FieldDef::new("grid-column", Some("Col Span")),
                 FieldDef::new("grid-row", Some("Row Span")),
+            ],
+        })
+}
+
+fn box_categories() -> Vec<FieldCategory> {
+    vec![
+        FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                arrange_field(),
+                FieldDef::new("width", None).with_input_type("resize"),
+                FieldDef::new("height", None).with_input_type("resize"),
+                FieldDef::new("min-width", Some("Min W")),
+                FieldDef::new("min-height", Some("Min H")),
+                FieldDef::new("max-width", Some("Max W")),
+                FieldDef::new("max-height", Some("Max H")),
+                FieldDef::new("padding", Some("Padding"))
+                    .with_input_type("spacing")
+                    .with_spacing_mode("box"),
             ],
         },
         FieldCategory {
@@ -2981,7 +3223,9 @@ mod extent_parse_tests {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("src".into(), prop("src", "logo"));
         props.insert("fit".into(), prop("fit", "contain"));
-        let UiNode::Img(img) = build_img_node(&props, None) else { panic!("expected Img") };
+        let UiNode::Img(img) = build_img_node(&props, None) else {
+            panic!("expected Img")
+        };
         // The wire field must be the `fit` string vellum reads -- not a `cover` bool that vellum
         // would silently drop, leaving every image at the "cover" default.
         assert_eq!(img.img_data.fit, "contain");
@@ -2990,7 +3234,9 @@ mod extent_parse_tests {
         let mut p2: HashMap<String, ResolvedProperty> = HashMap::new();
         p2.insert("src".into(), prop("src", "logo"));
         p2.insert("fit".into(), prop("fit", "bogus"));
-        let UiNode::Img(img2) = build_img_node(&p2, None) else { panic!("expected Img") };
+        let UiNode::Img(img2) = build_img_node(&p2, None) else {
+            panic!("expected Img")
+        };
         assert_eq!(img2.img_data.fit, "cover");
     }
 
@@ -3000,7 +3246,9 @@ mod extent_parse_tests {
         props.insert("width".into(), prop("width", "50%"));
         props.insert("min-width".into(), prop("min-width", "80px"));
         let node = build_box_node(&props, None, None);
-        let UiNode::Box(b) = node else { panic!("expected Box") };
+        let UiNode::Box(b) = node else {
+            panic!("expected Box")
+        };
         assert_eq!(b.box_data.width, Extent::Percent(0.5));
         assert_eq!(b.box_data.min_width, Extent::Px(80.0));
         // Charter never emits margin -- its opinion.
@@ -3045,7 +3293,10 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.flex_shrink, Some(1.0));
         assert_eq!(d.extra.flex_basis, Some(Extent::Px(0.0)));
-        assert!(d.extra.align_self.is_none(), "width is the main axis in a row -> no align-self");
+        assert!(
+            d.extra.align_self.is_none(),
+            "width is the main axis in a row -> no align-self"
+        );
     }
 
     #[test]
@@ -3087,5 +3338,290 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
         assert_eq!(d.min_width, Extent::Px(0.0));
+    }
+}
+
+#[cfg(test)]
+mod arrange_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "l".to_string(),
+            kit_id: "k".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn box_with(props: &[(&str, &str)]) -> BoxData {
+        let mut map: HashMap<String, ResolvedProperty> = HashMap::new();
+        for (k, v) in props {
+            map.insert((*k).to_string(), prop(k, v));
+        }
+        match build_box_node(&map, None, None) {
+            UiNode::Box(b) => b.box_data,
+            _ => panic!("expected Box"),
+        }
+    }
+
+    // --- box_categories() shape ---
+
+    #[test]
+    fn box_categories_declares_an_arrange_field_with_populated_arrange_keys() {
+        let categories = box_categories();
+        let field = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .find(|f| f.key == "arrange")
+            .expect("box_categories() should declare an \"arrange\" field");
+        assert_eq!(field.input_type.as_deref(), Some("arrange"));
+        let keys = field
+            .arrange_keys
+            .as_ref()
+            .expect("arrange field should carry arrangeKeys");
+        assert_eq!(keys.direction_key, "flex-direction");
+        assert_eq!(keys.gap.key, "gap");
+        assert_eq!(keys.cell_min.key, "grid-cell-min");
+        assert!(!keys.advanced.is_empty());
+        assert!(!keys.grid_advanced.is_empty());
+    }
+
+    #[test]
+    fn box_categories_top_level_no_longer_lists_arrangement_knobs() {
+        // These now live only inside arrange_keys (advanced/grid_advanced/gap/cell_min), not as
+        // standalone top-level FieldDefs -- see the layout-affordances.md Phase 1 payoff.
+        let categories = box_categories();
+        let top_level_keys: Vec<&str> = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .map(|f| f.key.as_str())
+            .collect();
+        for retired in [
+            "flex-direction",
+            "gap",
+            "align-items",
+            "justify-content",
+            "flex-wrap",
+            "display",
+            "grid-template-columns",
+            "grid-template-rows",
+            "grid-auto-columns",
+            "grid-auto-rows",
+            "grid-column",
+            "grid-row",
+            "grid-cell-min",
+        ] {
+            assert!(
+                !top_level_keys.contains(&retired),
+                "\"{retired}\" should not be a top-level layout FieldDef anymore"
+            );
+        }
+    }
+
+    // --- parse_padding_shorthand ---
+
+    #[test]
+    fn padding_shorthand_one_value_applies_to_all_sides() {
+        assert_eq!(
+            parse_padding_shorthand(Some("12")),
+            [12.0, 12.0, 12.0, 12.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_two_values_are_vert_then_horiz() {
+        assert_eq!(
+            parse_padding_shorthand(Some("8 16")),
+            [8.0, 16.0, 8.0, 16.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_three_values_are_top_horiz_bottom() {
+        assert_eq!(
+            parse_padding_shorthand(Some("4 8 12")),
+            [4.0, 8.0, 12.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_four_values_are_top_right_bottom_left() {
+        assert_eq!(
+            parse_padding_shorthand(Some("1 2 3 4")),
+            [1.0, 2.0, 3.0, 4.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_absent_is_zero() {
+        assert_eq!(parse_padding_shorthand(None), [0.0; 4]);
+    }
+
+    // --- TrackSize::AutoFit wire shape ---
+
+    #[test]
+    fn track_size_autofit_serializes_as_expected() {
+        let json = serde_json::to_string(&TrackSize::AutoFit(160.0)).unwrap();
+        assert_eq!(json, r#"{"AutoFit":160.0}"#);
+    }
+
+    // --- direction defaulting (resolve_flex_direction) ---
+
+    #[test]
+    fn cluster_and_split_default_direction_to_row_when_unset() {
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Cluster), "Row");
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Split), "Row");
+    }
+
+    #[test]
+    fn stack_and_center_default_direction_to_column_when_unset() {
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Stack), "Column");
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Center), "Column");
+    }
+
+    #[test]
+    fn explicit_direction_always_wins_regardless_of_kind() {
+        assert_eq!(
+            resolve_flex_direction(Some("column"), ArrangeKind::Cluster),
+            "Column"
+        );
+        assert_eq!(
+            resolve_flex_direction(Some("row-reverse"), ArrangeKind::Stack),
+            "RowReverse"
+        );
+    }
+
+    // --- compile_arrange / build_box_node integration, per ArrangeKind ---
+
+    #[test]
+    fn fresh_box_defaults_to_stack_column_zero_touches() {
+        let d = box_with(&[]);
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.align_items, None);
+        assert_eq!(d.extra.justify_content, None);
+    }
+
+    #[test]
+    fn stack_row_defaults_align_items_center_when_unset() {
+        let d = box_with(&[("arrange", "stack"), ("flex-direction", "row")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn stack_row_respects_explicit_align_items_override() {
+        let d = box_with(&[
+            ("arrange", "stack"),
+            ("flex-direction", "row"),
+            ("align-items", "flex-end"),
+        ]);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexEnd));
+    }
+
+    #[test]
+    fn cluster_forces_row_wrap_defaults_when_unset() {
+        let d = box_with(&[("arrange", "cluster")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.flex_wrap, FlexWrapValue::Wrap);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexStart));
+    }
+
+    #[test]
+    fn cluster_respects_explicit_advanced_overrides() {
+        // The "Advanced flex" escape hatch stays live even while Cluster is active.
+        let d = box_with(&[
+            ("arrange", "cluster"),
+            ("flex-wrap", "nowrap"),
+            ("align-items", "center"),
+        ]);
+        assert_eq!(d.extra.flex_wrap, FlexWrapValue::NoWrap);
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn split_defaults_row_space_between_center_when_unset() {
+        let d = box_with(&[("arrange", "split")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn split_axis_column_is_a_vertical_split() {
+        let d = box_with(&[("arrange", "split"), ("flex-direction", "column")]);
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
+    }
+
+    #[test]
+    fn center_defaults_justify_and_align_center_and_leaves_direction_untouched() {
+        let d = box_with(&[("arrange", "center")]);
+        // Center is axis-free -- no follow-on touches direction, so it falls through to the
+        // plain absent-flex-direction default (Column), same as a fresh box.
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::Center));
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn grid_defaults_to_autofit_from_cell_min() {
+        let d = box_with(&[("arrange", "grid"), ("grid-cell-min", "200")]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::AutoFit(200.0)]
+        );
+    }
+
+    #[test]
+    fn grid_falls_back_to_160_when_cell_min_unset() {
+        let d = box_with(&[("arrange", "grid")]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::AutoFit(160.0)]
+        );
+    }
+
+    #[test]
+    fn grid_custom_tracks_override_wins_over_cell_min() {
+        let d = box_with(&[
+            ("arrange", "grid"),
+            ("grid-cell-min", "200"),
+            ("grid-template-columns", "1fr 2fr"),
+        ]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::Fr(1.0), TrackSize::Fr(2.0)]
+        );
+    }
+
+    #[test]
+    fn unrecognized_arrange_value_falls_back_to_stack() {
+        let d = box_with(&[("arrange", "bogus"), ("flex-direction", "row")]);
+        // Falls back to Stack's rules: Row + unset align-items -> defaults to Center.
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    // --- detect_primitive: arrange/grid-cell-min are box-forcing ---
+
+    #[test]
+    fn arrange_property_forces_box_detection() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("font-size".to_string(), prop("font-size", "14px"));
+        props.insert("arrange".to_string(), prop("arrange", "stack"));
+        assert_eq!(detect_primitive(&props), "box");
+    }
+
+    #[test]
+    fn grid_cell_min_property_forces_box_detection() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("color".to_string(), prop("color", "#111111"));
+        props.insert("grid-cell-min".to_string(), prop("grid-cell-min", "160"));
+        assert_eq!(detect_primitive(&props), "box");
     }
 }
