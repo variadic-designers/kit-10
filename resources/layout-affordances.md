@@ -1,5 +1,18 @@
 # Charter Layout category — a long-term affordance plan
 
+> **Status: Phases 1–3 shipped.** `arrange`/`compile_arrange` (Stack/Cluster/
+> Split/Center/Grid tabs + inline submenus + per-tab Advanced disclosure),
+> the `spacing` inputType (numeric stepper + padding's 1↔4 CSS-shorthand
+> affordance), and Grid's real `Cell min + Gap → repeat(auto-fit,
+> minmax(min,1fr))` opinion are all live — see CLAUDE.md's Charter section
+> for the implementation. Two deliberate deviations from the phased roadmap
+> below: **Grid shipped with its real auto-fit opinion immediately**
+> (skipping the Phase 1 raw-fields stub — Vellum's `TrackSize` gained an
+> `AutoFit(f32)` variant to support it), and **Spacing shipped without
+> token-scale awareness** (no spacing-scale token type exists in KIT•10 yet;
+> the stepper is a plain numeric control with a documented future hook).
+> Phases 4–5 below remain unbuilt, forward-looking plan.
+
 An opinion piece, sibling to [charter.md](./charter.md). It reads the current
 `box_categories()` **`layout`** field set against the four-tool critique and proposes
 a phased path from "mostly raw CSS knobs" to "a small vocabulary of outcome-named
