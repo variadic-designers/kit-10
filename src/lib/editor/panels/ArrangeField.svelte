@@ -99,6 +99,18 @@
 	function anyFieldHasValue(fields: FieldDef[]): boolean {
 		return fields.some((fd) => !!resolvedMap.get(fd.key)?.value);
 	}
+
+	// Stack and Split already expose a friendly Direction/Axis control for arrangeKeys.directionKey
+	// above -- showing its raw FieldDef again under "Advanced flex" would be the exact same
+	// property in two visible widgets at once, with the raw one adding nothing the friendly one
+	// can't already do. Drop it only for the tabs that actually offer that friendly control;
+	// Cluster/Center have no direction follow-on, so it stays their only way to touch it. Filtered
+	// by directionKey (Charter-declared data), never by the literal string "flex-direction".
+	const advancedFields = $derived(
+		activeKind === 'stack' || activeKind === 'split'
+			? arrangeKeys.advanced.filter((fd) => fd.key !== arrangeKeys.directionKey)
+			: arrangeKeys.advanced
+	);
 </script>
 
 {#snippet fieldRow(fd: FieldDef)}
@@ -213,13 +225,13 @@
 			<details class="arrange-disclosure">
 				<summary class="arrange-disclosure__summary">
 					<span>Advanced flex</span>
-					{#if anyFieldHasValue(arrangeKeys.advanced)}
+					{#if anyFieldHasValue(advancedFields)}
 						<i class="fa-solid fa-circle arrange-disclosure__badge"></i>
 					{/if}
 					<i class="fa-solid fa-angle-down arrange-disclosure__caret"></i>
 				</summary>
 				<div class="arrange-disclosure__content">
-					{#each arrangeKeys.advanced as fd (fd.key)}
+					{#each advancedFields as fd (fd.key)}
 						{@render fieldRow(fd)}
 					{/each}
 				</div>
