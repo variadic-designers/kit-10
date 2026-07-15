@@ -138,19 +138,20 @@ export async function importAssetFile(
 	// might not be in IDB yet if the DB was restored from an export without blobs).
 	await assetBytes.put(row.id, raw);
 
-	// Defer Vellum upload to a microtask so the import bookkeeping (pending removal,
-	// panel re-render) completes before the synchronous WASM decode + GPU upload.
-	queueMicrotask(() => {
-		const vellum = getVellumInstance();
-		if (vellum) {
-			try {
-				vellum.load_image(row.id, raw);
-				requestVellumRender();
-			} catch (e) {
-				console.warn('Failed to load image into Vellum:', e);
-			}
+	// Upload to Vellum's GPU cache synchronously so the image is loaded before the re-resolve
+	// this import triggers runs layout — intrinsic sizing needs the decoded dimensions on the
+	// first layout pass, otherwise a freshly-imported image renders at the wrong size for a
+	// frame. The WASM decode + GPU upload blocks the main thread for ~50ms on a 4K image, which
+	// is acceptable for a one-off manual import (vs. the old deferred queueMicrotask upload).
+	const vellum = getVellumInstance();
+	if (vellum) {
+		try {
+			vellum.load_image(row.id, raw);
+			requestVellumRender();
+		} catch (e) {
+			console.warn('Failed to load image into Vellum:', e);
 		}
-	});
+	}
 
 	const record = rowToRecord(row);
 	registerAsset(row);
