@@ -241,14 +241,23 @@ instead of a hardcoded quad. Everything else is additive derivation.
 > on the main pipeline. 3D text is reached by *toggling a glyph's repr* into the
 > `Scene3d`/SDF path (Phases 3–4), never by 3D-ifying the pipeline.
 
-- **Phase 0 — Don't foreclose (now, ~free).** Reshape the glyph path so a glyph is
+- **Phase 0 — Don't foreclose (now, ~free). ✅ SHIPPED.** Reshape the glyph path so a glyph is
   `{ glyph_ref, geometry: mesh, repr, deform }` rather than a baked axis-aligned quad;
   make `GlyphRepr` swappable behind the atlas/shader; keep Stage A ⟂ Stage C. Basic-
   pipeline `GlyphVertex` stays **2D** (§18). Pure hygiene so the rest is additive.
-- **Phase 1 — Outline + MSDF (basic-text upgrade, the headline).** Acquire glyph
-  outlines (the pivot) and derive **MSDF** for the main 2D pipeline: crisp under any 2D
-  scale/rotate/transform, and it retires the `×dpr` + extreme-zoom cull hacks. §18-
-  endorsed as "purely additive." This is the near-term deliverable.
+- **Phase 1 — Outline + MTSDF (basic-text upgrade, the headline). ✅ SHIPPED** (`taf_can_do`
+  `src/text/msdf.rs`, `src/render/glyph_shader.wgsl`; commits `ab93efd`/`ceb6fba`/`86fa0cc`).
+  Acquire glyph outlines (the pivot) and derive an **MTSDF** for the main 2D pipeline —
+  RGB = multi-channel SDF (median-reconstructed in the shader for crisp corners), **A = true
+  single-channel SDF** reserved for the future Scene3d / text-on-SDF path (Phases 3–4), so it
+  comes for free. Generated via `fdsm` (`generate_mtsdf` + `correct_error_mtsdf` before
+  `correct_sign_mtsdf`), cached per `(font_id, glyph_id, weight)`, variable-font `wght` axis
+  pinned before outline extraction. Crisp under any 2D scale/rotate/transform; retires the
+  `×dpr` + extreme-zoom cull hacks. Note: the plan called this "MSDF"; it shipped as **MTSDF**
+  (the extra true-SDF alpha channel) precisely to feed Phases 3–4 for free. §18-endorsed as
+  "purely additive." Follow-up fixes: per-glyph generation cache (perf), variable-font weight,
+  and intersection-artifact error correction (`DistanceCheckMode::Always`, so interior stroke-
+  join clashes on `e`/`t`/`D` get exact-checked, not just edge artifacts).
 - **Phase 2 — 2D placement stage + fill mesh + warp.** Per-glyph 2D transform (unlocks
   **type on a path** — glyphs placed/rotated along a 2D path; pipeline stays 2D). Derive
   a triangulated fill mesh; tessellated glyph mesh through Stage C → **envelope distort**
@@ -297,14 +306,15 @@ geometry that also happens to carry coverage.
 The concrete near-term path, smallest-risk first — this is the execution plan behind
 the phasing in §6:
 
-1. **Phase 0 hygiene in `taf_can_do`.** Reshape the glyph path so a glyph carries
+1. **✅ Phase 0 hygiene in `taf_can_do`.** Reshape the glyph path so a glyph carries
    `{ glyph_ref, mesh, repr, deform }` (§5) and `GlyphRepr` is swappable behind the
    atlas/shader — the basic `GlyphVertex` stays 2D (§18). Pure decoupling; ships behind
    existing behaviour.
-2. **MSDF, first (Phase 1).** Acquire glyph outlines (the gate) and stand up an MSDF
-   atlas + shader for the main 2D pipeline. Prove one glyph crisp under an arbitrary 2D
-   transform, then flip the default text repr to MSDF and retire the zoom hacks. This is
-   the prioritised deliverable.
+2. **✅ MTSDF, first (Phase 1).** Glyph outlines (the gate) + an MTSDF atlas + shader for
+   the main 2D pipeline are in; default text repr flipped to MTSDF and the zoom hacks
+   retired. Shipped as MTSDF rather than plain MSDF (see §6). Remaining polish is visual:
+   intersection-artifact tuning (`DistanceCheckMode::Always`; `edge_coloring_simple`
+   `sin_alpha` still at `0.03` vs msdfgen's `~sin(3.0)` default if speckles persist).
 3. **Spec the shared deformation-stage interface** — the `p→p'` contract that *both*
    text (Stage C) and SDF geometry consume. Write it down before either side grows a
    private warp system; it's what makes basic ↔ advanced text one system.

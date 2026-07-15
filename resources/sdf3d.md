@@ -666,7 +666,98 @@ and it has to live in the model, not be rediscovered in the shader.
 
 ---
 
+## 10. Curated shape library — what KIT•10 actually exposes to users
+
+§2's catalogue is ~33 functions, quoted verbatim because completeness matters for a
+reference. But a design tool's shape picker is a UI surface, not a textbook — putting
+all 33 in front of a user is noise, not power. Most of the catalogue is redundant
+variants (arbitrary-orientation forms, once a node has its own position/rotation via
+`opTx`) or single-purpose curios. This section consolidates §2 into what the picker
+should actually offer, applying §8's own rules (#5 prefer exact primitives, #4 no
+free `vec3` scale) as the filter.
+
+### 10.1 Tier 1 — core set (ship first)
+
+| Shape | Backing primitive | Exactness | Why it's core |
+|---|---|---|---|
+| Box | `sdBox` | exact | 3D sibling of the 2D box KIT•10 already has; corner rounding is a modifier (§10.4), not a separate shape |
+| Sphere | `sdSphere` | exact | simplest solid; the canonical primitive |
+| Cylinder | `sdCappedCylinder` | exact | common structural shape |
+| Cone | `sdCappedCone` | exact | covers frustum/taper needs (a "capped cone" with `r1≈0` reads as a plain cone) |
+| Torus | `sdTorus` | exact | the one genuinely non-convex "interesting" shape users will reach for |
+| Capsule | `sdCapsule` (segment `a→b`, natively parameterized) | exact | pill shape, common in UI/badge/icon work |
+| Pyramid | `sdPyramid` | exact | common structural shape |
+| Plane | `sdPlane` | exact | backdrop/ground-catcher utility more than a "placed shape," but cheap and near-universally wanted for studio-style compositions |
+
+### 10.2 Tier 2 — secondary set (add once Tier 1 ships and demand shows)
+
+| Shape | Backing primitive | Exactness | Why it's secondary, not core |
+|---|---|---|---|
+| Rounded Cylinder | `sdRoundedCylinder` | exact | a Cylinder refinement; real but lower-frequency need |
+| Round Cone | `sdRoundCone` | exact | smoothly-tapered cone/capsule hybrid, more specialized silhouette |
+| Box Frame | `sdBoxFrame` | exact | hollow/wireframe look — popular in modern UI decoration, but a style choice more than a base shape |
+| Octahedron | `sdOctahedron` (the exact branch — see §10.3 caution) | exact | diamond/gem silhouette, distinct enough from Box/Pyramid to earn a slot |
+| Hex Prism | `sdHexPrism` | exact | common in badge/iconography work |
+| Rhombus | `sdRhombus` | exact | diamond-plate silhouette |
+| Cut Sphere / Cut Hollow Sphere | `sdCutSphere` / `sdCutHollowSphere` | exact | dome/bowl/shell shapes — genuinely useful for badges and UI chrome, but a compound idea (sphere + cut) rather than a first shape a user reaches for |
+
+### 10.3 Excluded from the picker (with reasons — revisit only on a concrete need)
+
+- **All "Arb" (arbitrary-endpoint) variants** (`sdCappedCylinderArb`, `sdCappedConeArb`,
+  `sdRoundConeArb`) — **redundant by construction.** Every KIT•10 node already carries
+  its own position + rotation (`opTx`, §5); a user orients the ordinary Tier-1/2
+  primitive rather than needing a bespoke "from point A to point B" version of the
+  same shape. The math stays available internally where a primitive is inherently
+  segment-defined (Capsule already is), but never as a *distinct* picker entry —
+  shipping both would just be two ways to do the same thing.
+- **`sdCappedTorus`, `sdLink`, `sdSolidAngle`, `sdVesicaSegment`, `sdDeathStar`** —
+  single-purpose curios (chain link, angular wedge, lens, crescent) that read as "one
+  specific icon" rather than a general-purpose building block. Skip for v1; each is a
+  candidate to add later only if a specific design need names it (e.g. an actual
+  chain-link icon), not preemptively.
+- **Infinite `sdCylinder` / `sdConeInfinite`** — only meaningful combined with a
+  boolean cut; not independently placeable/resizable the way a shape picker expects.
+  The capped versions (already Tier 1/2) cover the practical need.
+- **`udTriangle` / `udQuad`** — unsigned (open, no inside/outside), need `opOnion`/
+  `opRound` layered on top to become solid. Building blocks other primitives could
+  compose from, not standalone picker shapes.
+- **`sdOctahedron`'s bound/approximate branch** — the article gives an exact form
+  (used above) and a cheaper bound approximation for distant/LOD rendering. KIT•10 has
+  no LOD system; always use the exact branch. Flagged here so it isn't accidentally
+  reached for as "the" octahedron formula later.
+- **`sdEllipsoid`** — **flagged, not excluded outright.** Per §2.3, this is *not* an
+  exact SDF, only a lower bound — and per §5, non-uniform scale is banned at the type
+  level, so a first-class Ellipsoid primitive is the *only* legal way to get a
+  stretched-sphere shape at all (you cannot fake it by scaling a Sphere). Real design
+  value, real correctness cost. **Gate it behind the exact/bound propagation actually
+  being implemented (§8 rule 2)** — do not ship it before the raymarcher can be
+  conservative near a bound-only surface, or it will tunnel/shimmer.
+- **`sdTriPrism`** — bound only, and its silhouette is already well covered by Box (+ a
+  boolean cut) or Hex Prism's family. Not enough unique value to carry the step-size
+  risk.
+
+### 10.4 "Rounded" is a modifier, not a separate shape
+
+Don't multiply the picker with a rounded variant of every entry (`sdBox` next to
+`sdRoundBox`, etc.) — expose **one** corner/edge-rounding control per shape (`opRound`
+generically, or a primitive's own native round parameter where it has one, e.g.
+`sdRoundBox`/`sdRoundedCylinder`/`sdCappedCone`→`sdRoundCone`) rather than doubling
+the shape count. This mirrors how the existing 2D box already has one radius control,
+not "Box" and "Rounded Box" as two menu entries — same interaction model, one
+dimension higher.
+
+### 10.5 Net picker contents (Tier 1 + Tier 2)
+
+Box, Sphere, Cylinder, Cone, Torus, Capsule, Pyramid, Plane, Rounded Cylinder, Round
+Cone, Box Frame, Octahedron, Hex Prism, Rhombus, Cut Sphere, Cut Hollow Sphere — **16
+shapes**, every one an exact SDF, out of §2's ~33. Ellipsoid is the one flagged
+future addition once bound-propagation exists; everything else in §10.3 stays
+excluded pending a concrete need.
+
+---
+
 *Source: Inigo Quilez, "distance functions" — https://iquilezles.org/articles/distfunctions/
 (3D primitives, operators, deformations). §7 sphere-trace/normal snippets are standard
 practice from IQ's raymarching material, flagged as not being on the distfunctions page.
-All GLSL in §§2–6 is quoted verbatim from the article.*
+All GLSL in §§2–6 is quoted verbatim from the article. §10 is original curation, not
+from the source article.*
