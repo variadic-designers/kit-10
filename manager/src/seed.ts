@@ -936,6 +936,11 @@ export async function seedDemoProject(
 	const featuresKit = await boxKit('Features', {
 		'flex-direction': 'row',
 		'justify-content': 'center',
+		// Explicit: Charter's Stack arrangement now defaults a row's align-items to Center when
+		// unset (see compile_arrange in plugins/charter/src/lib.rs), which would otherwise flip
+		// these three cards from stretch-to-equal-height to center-at-own-height -- visible here
+		// since the cards' body text differs in length and wraps to different line counts.
+		'align-items': 'stretch',
 		gap: '24px',
 		padding: '48px',
 		background: '#ffffff'
@@ -952,6 +957,10 @@ export async function seedDemoProject(
 	const footerKit = await boxKit('Footer', {
 		'flex-direction': 'row',
 		'justify-content': 'center',
+		// Explicit for the same reason as featuresKit above -- cosmetically inert today (footer
+		// has one auto-height child, so stretch vs. center is currently a no-op) but stops this
+		// kit from silently depending on Charter's Stack default if it ever gains a sibling.
+		'align-items': 'stretch',
 		padding: '28px',
 		background: '#0f172a'
 	});
