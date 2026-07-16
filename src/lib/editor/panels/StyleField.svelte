@@ -786,11 +786,15 @@
 
 			// Resize control container: lay out the segmented control + optional fixed input
 			// horizontally, and drop the plain-value button's own padding/hover/background.
+			// Unlike plain value boxes this is a composite (3 segments + a value input) whose
+			// intrinsic width exceeds the standard 40% value column -- allow it to grow, or the
+			// Fixed value renders clipped off the panel's right edge.
 			&--resize {
 				display: flex;
 				align-items: center;
 				gap: $x-space-xs;
 				padding: 0;
+				flex-grow: 1;
 				background: transparent;
 				overflow: visible;
 
@@ -849,8 +853,10 @@
 	.resize-fixed {
 		all: unset;
 		flex: 1;
-		min-width: 0;
-		padding: calc($x-space-xs / 2) $x-space-sm;
+		// Never collapse below ~3 digits -- with min-width: 0 a tight row shrank this to
+		// padding-only and the value overflowed the panel edge instead of showing.
+		min-width: 3ch;
+		padding: calc($x-space-xs / 2) $x-space-xs;
 		border-radius: 1px;
 		background: var(--color-panel-header-fill);
 		color: var(--color-add-var-text);

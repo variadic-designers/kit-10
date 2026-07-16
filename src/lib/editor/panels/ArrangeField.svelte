@@ -183,10 +183,16 @@
 				aria-selected={activeKind === tab.kind}
 				class="arrange-field__tab"
 				class:arrange-field__tab--sel={activeKind === tab.kind}
+				class:arrange-field__tab--big={tab.kind === 'grid'}
+				style="grid-area: {tab.kind}"
 				title={tab.tooltip}
 				onclick={() => selectTab(tab.kind)}
 			>
-				<i class={tab.icon}></i>
+				{#if tab.kind === 'grid'}
+					<!-- Only the double-size cell has room for its icon; the 1fr cells stay
+					     label-only so "Cluster"/"Center" never truncate at panel width. -->
+					<i class={tab.icon}></i>
+				{/if}
 				<span>{tab.label}</span>
 			</button>
 		{/each}
@@ -344,24 +350,38 @@
 			text-transform: capitalize;
 		}
 
+		// A deliberate grid, not a wrapping row: four 1fr pattern cells in a 2x2 block, with
+		// Grid itself as one 2fr-wide cell spanning both rows on the right -- so the tab that
+		// MAKES grids visually IS one big grid cell, and nothing rag-wraps at panel width.
 		&__tabs {
-			display: flex;
-			flex-wrap: wrap;
+			display: grid;
+			grid-template-columns: 1fr 1fr 2fr;
+			grid-template-areas:
+				'stack cluster grid'
+				'split center grid';
 			gap: 2px;
 			padding-inline: $x-space-sm;
 			margin-top: calc($x-space-xs / 2);
 		}
 
 		&__tab {
-			display: inline-flex;
+			display: flex;
 			align-items: center;
+			justify-content: center;
 			gap: calc($x-space-xs / 2);
-			padding: calc($x-space-xs / 2) $x-space-xs;
+			min-width: 0;
+			padding: calc($x-space-xs / 2) calc($x-space-xs / 2);
 			border-radius: 2px;
 			font-size: $x-font-size-xs;
 			color: var(--color-add-var-text);
 			cursor: pointer;
 			background: var(--color-panel-header-fill);
+
+			span {
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
 
 			&:hover {
 				background: var(--color-surface-alt);
@@ -372,6 +392,16 @@
 			&--sel:hover {
 				background: var(--color-primary);
 				color: var(--color-pure);
+			}
+
+			// The 2x2 Grid cell: icon above label, roomier icon -- it has two rows of height.
+			&--big {
+				flex-direction: column;
+				gap: calc($x-space-xs / 2);
+
+				i {
+					font-size: $x-font-size-md;
+				}
 			}
 		}
 
