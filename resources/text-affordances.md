@@ -1,7 +1,7 @@
 # Charter Text primitive — a long-term affordance plan
 
-> **Status: Phase 1 shipped, Phase 2 partially shipped (both 2026-07-16),
-> UX-scoped; Phases 3–5 remain forward-looking plan.** The font-facts
+> **Status: Phases 1–3 shipped (Phase 2 partially), all 2026-07-16,
+> UX-scoped; Phases 4–5 remain forward-looking plan.** The font-facts
 > channel is live: Fontavious's `family_facts`, the host-assembled
 > `fontFacts` map on `on_resolve`, Charter's `resolve_font_weight` +
 > `snap_text_weights`, and the `font_requests` output driving the editor's
@@ -9,17 +9,28 @@
 > implementation. `font-weight` is now `inputType: "weight"` —
 > `WeightField.svelte` renders a segmented row of named-weight buttons
 > (same grammar as `arrange`'s tabs), filtered to the resolved family's
-> real weights via `fontFacts`. Two deliberate deviations from the plan
-> below, both "UX first, not data-integrity yet": **facts are
-> catalogue-only** — the Vellum `font_facts`-from-loaded-bytes oracle
-> (Phase 1's uploaded-font leg) is deferred until font uploads exist, so no
-> Vellum change shipped at all; and **Phase 2 shipped without a raw-numeric
-> escape hatch** — unlike Arrangement's Advanced disclosure (a genuinely
-> separate raw field), font-weight has no companion raw property to expose
-> since it IS the raw property, so the picker is the only panel surface
-> now. Parsing itself is untouched — an oddball value written by DB/
-> import/seed still resolves and Phase 1 still snaps it visually; it's
-> simply not free-typable from this panel. Sibling to
+> real weights via `fontFacts`. `text-align`/`text-decoration` are real:
+> Vellum's `TextData`/`TextAreaData` gained `text_align`/`text_decoration`
+> wire fields (`taf_can_do` commit 2efd8a5), rendered via cosmic-text's own
+> alignment parameter and per-span decoration system (real font-metric
+> offset/thickness, not a guessed baseline), and Charter's
+> `parse_text_align`/`parse_text_decoration` + `inputType: "align"`/
+> `"decoration"` give them real four- and three-icon segmented panel
+> controls — see CLAUDE.md's Phase 3 note for the implementation. Three
+> deliberate deviations from the plan below, all "UX first, not
+> data-integrity yet": **facts are catalogue-only** — the Vellum
+> `font_facts`-from-loaded-bytes oracle (Phase 1's uploaded-font leg) is
+> deferred until font uploads exist; **Phase 2 shipped without a
+> raw-numeric escape hatch** — unlike Arrangement's Advanced disclosure (a
+> genuinely separate raw field), font-weight has no companion raw property
+> to expose since it IS the raw property, so the picker is the only panel
+> surface now (parsing itself is untouched — an oddball DB/import/seed
+> value still resolves and still gets Phase 1's snap, just isn't
+> free-typable from this panel); and **decoration stayed single-choice**
+> (None/Underline/Line-through as one segmented control, matching the
+> wire's `TextDecorationKind` enum) rather than Phase 3's original
+> "toggles" language, since the wire never modeled underline and
+> line-through as independently combinable in the first place. Sibling to
 > [layout-affordances.md](./layout-affordances.md), whose phases 1–5 all
 > shipped; this doc applies the same method — earn opinions, retire raw
 > debt, one `compile_*` + widget per keyword contract — to the `Text`
@@ -201,16 +212,25 @@ wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
 - _Payoff, realized:_ the failure Phase 1 handles gracefully mostly stopped
   being enterable at all, from the panel.
 
-### Phase 3 — Make Align and Decor real
+### Phase 3 — Make Align and Decor real — **shipped**
 
-- The two dead-end fields either work or leave. They should work: `TextData`
-  gains `text_align` (cosmic-text `Align` maps directly) and decoration needs
-  Vellum-side line drawing (underline/strikethrough quads next to the glyph
-  quads — same shader, rects only).
-- Panel: `text-align` becomes a four-icon segmented control (left / center /
-  right / justify), `text-decoration` becomes toggles — both currently free
-  text a designer must spell correctly into a field that does nothing.
-- _Payoff:_ two lies removed; two raw strings retired from the surface.
+- **Shipped:** `TextData`/`TextAreaData` gained `text_align`
+  (`taf_can_do` maps it straight onto cosmic-text's own `Buffer::set_text`
+  alignment parameter) and `text_decoration` — decoration draws via
+  cosmic-text's native per-span decoration system (`Attrs::underline`/
+  `.strikethrough()`, real font-metric offset/thickness read back off
+  `run.decorations`), not a hand-rolled geometry heuristic as originally
+  scoped here. The quads reuse the glyph shader/buffer as a new solid-fill
+  `mode`, rather than a separate box-shader draw call.
+- **Shipped, with one shape change:** `text-align` is the planned four-icon
+  segmented control (left / center / right / justify). `text-decoration`
+  shipped as a **three-way segmented control** (none / underline /
+  line-through), not independent toggles — the wire's `TextDecorationKind`
+  is a single enum (Charter's `text_categories()` has always declared
+  "Decor" as one field, never two), so toggles would have implied a
+  combinability the data model never had.
+- _Payoff, realized:_ two lies removed; two raw strings retired from the
+  surface.
 
 ### Phase 4 — Derived leading (the "reduce complexity" payoff)
 
