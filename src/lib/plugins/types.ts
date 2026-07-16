@@ -17,7 +17,12 @@ export type InputType =
 	| 'arrange'
 	// A numeric stepper (see FieldDef.spacingMode for scalar vs. CSS-shorthand box mode). See
 	// SpacingField.
-	| 'spacing';
+	| 'spacing'
+	// A segmented row of named-weight buttons, same "selector, not free text" grammar as
+	// arrange/resize -- but the choices are runtime data (the currently resolved font-family's
+	// real weights, from the fontFacts channel), not something Charter declares per FieldDef.
+	// See WeightField.
+	| 'weight';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.

@@ -4,9 +4,10 @@
 	import ChildViewField, { type ChildViewCandidate } from './ChildViewField.svelte';
 	import ArrangeField from './ArrangeField.svelte';
 	import ResizeField from './ResizeField.svelte';
+	import WeightField from './WeightField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
+	import type { FamilyFacts, FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { shapeIcon } from './layer-color.ts';
 
@@ -16,6 +17,7 @@
 		resolvedKits: ResolvedKit[] | null;
 		fieldCategories?: FieldCategory[];
 		activeProjectId?: string | null;
+		fontFacts?: Record<string, FamilyFacts>;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 		onSelectView?: (viewId: string) => void;
@@ -27,6 +29,7 @@
 		resolvedKits,
 		fieldCategories,
 		activeProjectId,
+		fontFacts,
 		onFieldUpdate,
 		callUtilityPlugin,
 		onSelectView
@@ -229,6 +232,15 @@
 										projectId={activeProjectId}
 										{onFieldUpdate}
 										{callUtilityPlugin}
+									/>
+								{:else if field.inputType === 'weight'}
+									<WeightField
+										{field}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{track}
+										{resolvedMap}
+										{fontFacts}
+										{onFieldUpdate}
 									/>
 								{:else}
 									<StyleField

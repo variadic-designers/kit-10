@@ -565,6 +565,7 @@
 			{selection}
 			fieldCategories={pluginManager?.fieldCategories}
 			activeProjectId={editorActivity.activeProjectId}
+			{fontFacts}
 			onFieldUpdate={pluginManager?.fieldUpdate}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 			onSelectView={(id) => selectViewShared(editorActivity, selection, id)}

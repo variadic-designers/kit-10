@@ -1,0 +1,202 @@
+<script lang="ts">
+	import { layerDotColor } from './layer-color.ts';
+	import type { FamilyFacts, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
+	import type { ResolvedProperty } from 'manager';
+
+	// Same shape ArrangeField/ResizeField take -- Styles.svelte's `track()` passed down so this
+	// component can resolve the source layer/kit/keys for its own key ("font-weight").
+	type TrackInfo = {
+		sourceLayerId: string | null;
+		kitId: string | null;
+		kitIcon: string;
+		keys: string[];
+		conditionValues: { axisId: string; value: string }[];
+		isToken: boolean;
+		tokenAlias: string | null;
+		tokenId: string | null;
+	};
+
+	type WeightFieldProps = {
+		field: FieldDef;
+		position?: 'top' | 'bottom' | 'mid';
+		track: (key: string) => TrackInfo;
+		resolvedMap: Map<string, ResolvedProperty>;
+		// family -> weight ranges, from Editor.svelte's font-facts channel (see CLAUDE.md's
+		// weight-snapping note). Absent/uncatalogued family means no filtering opinion -- same
+		// "no facts, no opinion" rule Charter's resolve_font_weight applies to rendering.
+		fontFacts?: Record<string, FamilyFacts>;
+		onFieldUpdate?: (update: FieldUpdate) => void;
+	};
+
+	let {
+		field,
+		position = 'mid',
+		track,
+		resolvedMap,
+		fontFacts = {},
+		onFieldUpdate
+	}: WeightFieldProps = $props();
+
+	const STANDARD_WEIGHTS: { weight: number; label: string }[] = [
+		{ weight: 100, label: 'Thin' },
+		{ weight: 200, label: 'Extra Light' },
+		{ weight: 300, label: 'Light' },
+		{ weight: 400, label: 'Regular' },
+		{ weight: 500, label: 'Medium' },
+		{ weight: 600, label: 'SemiBold' },
+		{ weight: 700, label: 'Bold' },
+		{ weight: 800, label: 'Extra Bold' },
+		{ weight: 900, label: 'Black' }
+	];
+
+	const currentFamily = $derived(resolvedMap.get('font-family')?.value ?? null);
+	// Absent/unparseable reads as 400, mirroring Charter's own font-weight default.
+	const currentWeight = $derived.by(() => {
+		const raw = resolvedMap.get(field.key)?.value;
+		const n = raw ? parseInt(raw, 10) : NaN;
+		return Number.isFinite(n) && n > 0 ? n : 400;
+	});
+
+	// Which named weights the resolved family can actually render, from the font-facts channel
+	// (text-affordances Phase 1/2) -- "pick from what exists," not free-typed numbers Lato has
+	// no file for. No facts for this family (uncatalogued, or not fetched yet) -> the full
+	// standard set, unfiltered, exactly Charter's own "no facts, no opinion" fallback.
+	const availableWeights = $derived.by(() => {
+		if (!currentFamily) return STANDARD_WEIGHTS;
+		const facts = Object.entries(fontFacts).find(
+			([family]) => family.toLowerCase() === currentFamily.toLowerCase()
+		)?.[1];
+		if (!facts || facts.variants.length === 0) return STANDARD_WEIGHTS;
+		return STANDARD_WEIGHTS.filter((w) =>
+			facts.variants.some((v) => w.weight >= v.weightMin && w.weight <= v.weightMax)
+		);
+	});
+
+	function trackColor(axisIds: string[]): string {
+		return layerDotColor(axisIds, true);
+	}
+
+	function trackTitle(conditions: { axisId: string; value: string }[]): string {
+		if (conditions.length === 0) return 'Base layer · always applies';
+		const parts = conditions.map((c) => `${c.axisId}: ${c.value}`).join(', ');
+		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
+	}
+
+	function selectWeight(weight: number) {
+		if (weight === currentWeight) return;
+		const t = track(field.key);
+		if (!onFieldUpdate || !t.sourceLayerId) return;
+		onFieldUpdate({ layerId: t.sourceLayerId, property: field.key, value: String(weight) });
+	}
+</script>
+
+<div
+	class="weight-field"
+	class:weight-field--top={position === 'top'}
+	class:weight-field--bottom={position === 'bottom'}
+>
+	<div class="weight-field__header">
+		<button
+			class="weight-field__track"
+			style="--track-color: {trackColor(track(field.key).keys)}"
+			aria-label="Weight source"
+			title={trackTitle(track(field.key).conditionValues)}
+			type="button"
+		>
+			<i class="fa-solid {track(field.key).kitIcon}"></i>
+		</button>
+		<span class="weight-field__label">{field.displayText ?? field.key}</span>
+	</div>
+
+	<div class="weight-field__options" role="group" aria-label="Font weight">
+		{#each availableWeights as opt (opt.weight)}
+			<button
+				type="button"
+				class="weight-field__btn"
+				class:weight-field__btn--sel={currentWeight === opt.weight}
+				title="{opt.label} ({opt.weight})"
+				onclick={() => selectWeight(opt.weight)}
+			>
+				{opt.weight}
+			</button>
+		{/each}
+	</div>
+</div>
+
+<style lang="scss">
+	@use '_index' as *;
+
+	button {
+		all: unset;
+	}
+
+	.weight-field {
+		display: flex;
+		flex-direction: column;
+		user-select: none;
+		padding-block: calc($x-space-xs / 2);
+
+		@include layout-respond('md') {
+			font-size: $x-font-size-sm;
+			letter-spacing: 1px;
+		}
+
+		&__header {
+			display: flex;
+			align-items: center;
+			gap: $x-space-xs;
+			padding-inline: $x-space-sm;
+			font-weight: 600;
+		}
+
+		&__track {
+			text-align: center;
+			font-size: $x-font-size-sm;
+			color: var(--track-color, var(--color-text));
+			flex: 0 0 auto;
+		}
+
+		&__label {
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+			text-transform: capitalize;
+		}
+
+		// A wrapping row, not a fixed grid -- the option count varies with the resolved family's
+		// facts (a static two-weight family shows 2 buttons, a full variable family shows 9).
+		&__options {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 2px;
+			padding-inline: $x-space-sm;
+			margin-top: calc($x-space-xs / 2);
+		}
+
+		&__btn {
+			cursor: pointer;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			min-width: 2.4em;
+			padding: calc($x-space-xs / 2) $x-space-xs;
+			border-radius: 2px;
+			font-size: $x-font-size-xs;
+			color: var(--color-add-var-text);
+			background: var(--color-panel-header-fill);
+
+			&:hover {
+				background: var(--color-surface-alt);
+				color: var(--color-text);
+			}
+
+			&--sel,
+			&--sel:hover {
+				background: var(--color-primary);
+				color: var(--color-pure);
+			}
+		}
+	}
+</style>
