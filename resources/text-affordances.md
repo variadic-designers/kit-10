@@ -1,15 +1,25 @@
 # Charter Text primitive — a long-term affordance plan
 
-> **Status: Phase 1 shipped (2026-07-16), UX-scoped; Phases 2–5 remain
-> forward-looking plan.** The font-facts channel is live: Fontavious's
-> `family_facts`, the host-assembled `fontFacts` map on `on_resolve`,
-> Charter's `resolve_font_weight` + `snap_text_weights`, and the
-> `font_requests` output driving the editor's font fetching — see CLAUDE.md's
-> weight-snapping note for the implementation. One deliberate deviation,
-> per "UX first, not data-integrity yet": **facts are catalogue-only** —
-> the Vellum `font_facts`-from-loaded-bytes oracle (Phase 1's uploaded-font
-> leg below) is deferred until font uploads exist as a feature, so no
-> Vellum change shipped at all. Sibling to
+> **Status: Phase 1 shipped, Phase 2 partially shipped (both 2026-07-16),
+> UX-scoped; Phases 3–5 remain forward-looking plan.** The font-facts
+> channel is live: Fontavious's `family_facts`, the host-assembled
+> `fontFacts` map on `on_resolve`, Charter's `resolve_font_weight` +
+> `snap_text_weights`, and the `font_requests` output driving the editor's
+> font fetching — see CLAUDE.md's weight-snapping note for the
+> implementation. `font-weight` is now `inputType: "weight"` —
+> `WeightField.svelte` renders a segmented row of named-weight buttons
+> (same grammar as `arrange`'s tabs), filtered to the resolved family's
+> real weights via `fontFacts`. Two deliberate deviations from the plan
+> below, both "UX first, not data-integrity yet": **facts are
+> catalogue-only** — the Vellum `font_facts`-from-loaded-bytes oracle
+> (Phase 1's uploaded-font leg) is deferred until font uploads exist, so no
+> Vellum change shipped at all; and **Phase 2 shipped without a raw-numeric
+> escape hatch** — unlike Arrangement's Advanced disclosure (a genuinely
+> separate raw field), font-weight has no companion raw property to expose
+> since it IS the raw property, so the picker is the only panel surface
+> now. Parsing itself is untouched — an oddball value written by DB/
+> import/seed still resolves and Phase 1 still snaps it visually; it's
+> simply not free-typable from this panel. Sibling to
 > [layout-affordances.md](./layout-affordances.md), whose phases 1–5 all
 > shipped; this doc applies the same method — earn opinions, retire raw
 > debt, one `compile_*` + widget per keyword contract — to the `Text`
@@ -165,20 +175,31 @@ wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
   cosmic-text's matcher. cosmic-text's own fallback remains as the last-line
   safety net for the not-yet-loaded window.
 
-### Phase 2 — Weight stops being a free number
+### Phase 2 — Weight stops being a free number — **shipped, partially**
 
-- `font-weight` gets `inputType: "weight"`: a picker whose options are the
-  _actually available_ weights of the currently resolved family, from the
-  same facts channel — named (Light / Regular / Medium / SemiBold / Bold /
-  numeric for oddballs), only-pickable-if-exists.
-- The editor learns nothing about fonts: the options are data, derived from
-  facts the host already holds; the widget writes plain numbers Charter
-  already parses. Free-typed numbers keep parsing (escape hatch), per the
-  retired-fields precedent.
+- **Shipped:** `font-weight` is `inputType: "weight"` (Charter just names
+  the kind; it carries no companion keys, unlike `arrangeKeys`/
+  `resizeKeys`, since the choices are runtime facts Charter doesn't hold).
+  `WeightField.svelte` renders the nine standard named weights (Thin 100 …
+  Black 900) as a wrapping button row, filtered client-side to what the
+  resolved family's `fontFacts` entry actually covers — Lato: `[400, 700]`;
+  Inter's 400–700 variable range: `[400, 500, 600, 700]`. An uncatalogued
+  family (no facts entry) falls back to the full unfiltered set — Charter's
+  own "no facts, no opinion" rule, applied client-side too.
+- **Not shipped:** a raw-numeric escape hatch. Arrangement's Advanced row
+  works because Advanced exposes a genuinely _separate_ raw property
+  (`flex-direction` etc.) alongside the friendly control. `font-weight` has
+  no such pair — the picker writes the exact same property a raw field
+  would — so there is no raw sibling to reveal, and the picker is simply
+  the only panel surface for this property now. A value written outside
+  the panel (DB edit, import, seed) is untouched — parsing doesn't care
+  where a value came from — and still gets Phase 1's render-time snap; it
+  just can't be typed from here anymore, which is the intended tightening.
 - Phase 1's substitution demotes from primary UX to safety net — it still
-  covers stale values, axis-resolved weights, and family switches.
-- _Payoff:_ the failure Phase 1 handles gracefully mostly stops being
-  enterable at all.
+  covers stale values, axis-resolved weights, and family switches (the
+  moment between picking a new family and its facts landing).
+- _Payoff, realized:_ the failure Phase 1 handles gracefully mostly stopped
+  being enterable at all, from the panel.
 
 ### Phase 3 — Make Align and Decor real
 
