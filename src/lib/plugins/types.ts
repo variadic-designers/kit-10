@@ -161,6 +161,29 @@ export interface UiImgNode {
 
 export type UiNode = UiBoxNode | UiTextNode | UiImgNode;
 
+// One weight-range + style a font family actually has. Assembled host-side (Editor.svelte)
+// from Fontavious's `family_facts` and handed to Charter in on_resolve's `fontFacts` map,
+// where resolve_font_weight snaps requested weights to what the family can really render.
+// camelCase: JS-authored input (see the wire-format pitfall in CLAUDE.md).
+export interface FontFactVariant {
+	weightMin: number;
+	weightMax: number;
+	style: string;
+}
+
+export interface FamilyFacts {
+	variants: FontFactVariant[];
+}
+
+// The concrete (family, weight, style) set Charter's viewport renders, post weight-snapping —
+// what the editor's font scan fetches, so it never re-derives weights from raw kit properties.
+// snake_case fields: Charter-authored output.
+export interface FontRequest {
+	family: string;
+	weight: number;
+	style: string;
+}
+
 export interface OnResolveResult {
 	categories: FieldCategory[];
 	viewport_data: UiNode[];
@@ -168,6 +191,7 @@ export interface OnResolveResult {
 	// structural grid scaffolding nodes that don't belong to any view. Used to resolve a
 	// viewport click-to-select hit-test index (from vellum.get_selection) back to a view id.
 	node_view_ids: string[];
+	font_requests?: FontRequest[];
 	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
 	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified
 	// viewport_data path — avoids the ~47ms JSON parse wall at 10k views.

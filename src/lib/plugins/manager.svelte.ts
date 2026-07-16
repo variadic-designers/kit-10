@@ -5,8 +5,10 @@ import createPlugin, {
 } from '@extism/extism';
 import type { Api, ResolvedKit } from 'manager';
 import type {
+	FamilyFacts,
 	FieldCategory,
 	FieldUpdate,
+	FontRequest,
 	LoadedPlugin,
 	OnResolveResult,
 	PanelManifest,
@@ -56,6 +58,10 @@ export function createPluginManager(api: Api) {
 	let viewportDataBinary = $state<Uint8Array | null>(null);
 	// Parallel to viewportData (same length/order) -- see OnResolveResult.node_view_ids.
 	let nodeViewIds = $state<string[]>([]);
+	// The concrete (family, weight, style) set the current viewport renders, post Charter
+	// weight-snapping. Editor.svelte's font scan fetches exactly these -- never re-deriving
+	// weights from raw kit properties (single decision point: Charter's resolve_font_weight).
+	let fontRequests = $state<FontRequest[]>([]);
 	let context: PluginContext = { resolvedKits: null };
 
 	let activePlugin: Plugin | null = null;
@@ -80,6 +86,7 @@ export function createPluginManager(api: Api) {
 	let _selPrimary: string | null = null;
 	let _selSecondary: string[] = [];
 	let _hoveredViewId: string | null = null;
+	let _fontFacts: Record<string, FamilyFacts> = {};
 
 	// Debounce timers
 	let dataTimer: ReturnType<typeof setTimeout> | null = null;
@@ -265,7 +272,8 @@ export function createPluginManager(api: Api) {
 			viewHints: _hints ?? {},
 			projectViews: serializeResolvedViews(_projectViews) ?? [],
 			selectedViewPrimary: _selPrimary,
-			selectedViewSecondary: _selSecondary
+			selectedViewSecondary: _selSecondary,
+			fontFacts: _fontFacts
 		});
 		mark('resolve:serialize:end');
 
@@ -279,6 +287,7 @@ export function createPluginManager(api: Api) {
 		if (result) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
+			fontRequests = parsed.font_requests ?? [];
 			if (parsed.viewport_data_binary) {
 				const binaryStr = atob(parsed.viewport_data_binary);
 				const bytes = new Uint8Array(binaryStr.length);
@@ -422,12 +431,14 @@ export function createPluginManager(api: Api) {
 		kits: ResolvedKit[] | null,
 		hints: Record<string, unknown> | null,
 		viewId: string | null,
-		projectViews: ResolvedView[]
+		projectViews: ResolvedView[],
+		fontFacts: Record<string, FamilyFacts> = {}
 	) {
 		_kits = kits;
 		_hints = hints;
 		_viewId = viewId;
 		_projectViews = projectViews;
+		_fontFacts = fontFacts;
 		context = { resolvedKits: kits };
 
 		// Invalidate any already-queued runSelectionChange — its last_resolve_input is stale.
@@ -521,6 +532,9 @@ export function createPluginManager(api: Api) {
 		},
 		get nodeViewIds() {
 			return nodeViewIds;
+		},
+		get fontRequests() {
+			return fontRequests;
 		},
 		loadPlugin,
 		loadUtilityPlugin,
