@@ -365,6 +365,12 @@ struct TextData {
     text_align: String,
     #[serde(default = "default_text_decoration")]
     text_decoration: String,
+    // Absolute px, always resolved -- see compile_line_height. `0.0` reads as "not provided" on
+    // Vellum's side (its own font_size*1.2 fallback), matching what an old, not-yet-redeployed
+    // Vellum build already did before this field existed -- but Charter itself never emits 0.0
+    // in practice (compile_line_height always derives a real ratio when unset).
+    #[serde(default)]
+    line_height: f32,
     #[serde(default)]
     selected: u8,
     #[serde(default)]
@@ -1371,6 +1377,33 @@ fn parse_text_decoration(s: Option<&str>) -> String {
     .to_string()
 }
 
+// Resolves `line-height` to a concrete absolute px value -- Vellum never receives an "unset"
+// number (see TextData.line_height's doc). Same only-when-unset rule as compile_arrange: an
+// explicit raw `line-height` always wins over the derived ramp, parsed CSS-style --
+// - a `px` value is absolute ("24px" -> 24.0), independent of font_size;
+// - a bare number is a MULTIPLIER of font_size ("1.5" -> font_size * 1.5), matching CSS's own
+//   unitless line-height semantics (deliberately NOT routed through parse_px, which treats a
+//   bare number as literal px -- that's the wrong reading for this property specifically).
+// Unset/unparseable derives a ratio ramp: ~1.5× at body sizes, tightening toward ~1.1× at
+// display sizes -- tight leading reads fine on one giant headline, but the same ratio across
+// several lines of body text collides. 20px/48px are the ramp's flat-below/flat-above anchors;
+// linear in between.
+fn compile_line_height(font_size: f32, raw: Option<&str>) -> f32 {
+    if let Some(s) = raw {
+        let s = s.trim();
+        if let Some(px) = s.strip_suffix("px") {
+            if let Ok(v) = px.trim().parse::<f32>() {
+                return v;
+            }
+        } else if let Ok(mult) = s.parse::<f32>() {
+            return font_size * mult;
+        }
+    }
+    let t = ((font_size - 20.0) / (48.0 - 20.0)).clamp(0.0, 1.0);
+    let ratio = 1.5 - t * (1.5 - 1.1);
+    font_size * ratio
+}
+
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: usize,
@@ -1382,6 +1415,8 @@ fn build_text_node(
     let font_family = get_prop(props, "font-family").unwrap_or_else(|| "sans-serif".to_string());
     let text_align = parse_text_align(get_prop(props, "text-align").as_deref());
     let text_decoration = parse_text_decoration(get_prop(props, "text-decoration").as_deref());
+    let resolved_font_size = if font_size > 0.0 { font_size } else { 16.0 };
+    let line_height = compile_line_height(resolved_font_size, get_prop(props, "line-height").as_deref());
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, [0.0; 4]);
@@ -1399,7 +1434,7 @@ fn build_text_node(
             corner_radius: paint.corner_radius,
             opacity: 1.0,
             content,
-            font_size: if font_size > 0.0 { font_size } else { 16.0 },
+            font_size: resolved_font_size,
             font_family,
             font_weight: if font_weight > 0 { font_weight } else { 400 },
             font_style: "Normal".to_string(),
@@ -1410,6 +1445,7 @@ fn build_text_node(
             },
             text_align,
             text_decoration,
+            line_height,
             selected: 0,
             hovered: false,
         },
@@ -3281,6 +3317,86 @@ mod text_align_decoration_tests {
         let json = serde_json::to_string(&node).unwrap();
         assert!(json.contains("\"text_align\":\"Right\""), "json was: {json}");
         assert!(json.contains("\"text_decoration\":\"LineThrough\""), "json was: {json}");
+    }
+}
+
+#[cfg(test)]
+mod line_height_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn explicit_px_value_wins_regardless_of_font_size() {
+        assert_eq!(compile_line_height(16.0, Some("24px")), 24.0);
+        assert_eq!(compile_line_height(48.0, Some("24px")), 24.0, "px is absolute, ignores font_size");
+    }
+
+    #[test]
+    fn explicit_bare_number_is_a_multiplier_of_font_size() {
+        assert_eq!(compile_line_height(16.0, Some("1.5")), 24.0);
+        assert_eq!(compile_line_height(40.0, Some("2")), 80.0);
+    }
+
+    #[test]
+    fn unset_or_unparseable_derives_the_ratio_ramp() {
+        // Body-size flat anchor: <= 20px always gets the full 1.5x ratio.
+        assert_eq!(compile_line_height(16.0, None), 16.0 * 1.5);
+        assert_eq!(compile_line_height(20.0, None), 20.0 * 1.5);
+        // Display-size flat anchor: >= 48px always gets the tight 1.1x ratio.
+        assert_eq!(compile_line_height(48.0, None), 48.0 * 1.1);
+        assert_eq!(compile_line_height(64.0, None), 64.0 * 1.1);
+        // Midpoint (34px, halfway 20..48) interpolates to the ramp's midpoint ratio (1.3x).
+        let mid = compile_line_height(34.0, None);
+        assert!((mid - 34.0 * 1.3).abs() < 0.01, "got {mid}");
+        // Garbage text falls through to the same derived ramp as None.
+        assert_eq!(compile_line_height(16.0, Some("garbage")), compile_line_height(16.0, None));
+    }
+
+    #[test]
+    fn build_text_node_reads_line_height_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("font-size".to_string(), prop("16px"));
+        props.insert("line-height".to_string(), prop("1.5"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.line_height, 24.0);
+    }
+
+    #[test]
+    fn build_text_node_derives_line_height_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        // No font-size set either -- resolved_font_size falls back to 16.0, matching the
+        // 1.5x ratio for body sizes.
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.line_height, 16.0 * 1.5);
+    }
+
+    // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output Vellum
+    // deserializes -- assert on the serialized JSON key, not just the Rust struct field.
+    #[test]
+    fn text_data_serializes_line_height_as_snake_case() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("font-size".to_string(), prop("20px"));
+        props.insert("line-height".to_string(), prop("30px"));
+        let node = build_text_node(&props, 0);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"line_height\":30"), "json was: {json}");
     }
 }
 
