@@ -1633,6 +1633,16 @@ fn text_categories() -> Vec<FieldCategory> {
                 // weight field", not declare the choices, since they're runtime/per-family data
                 // it doesn't carry (unlike arrangeKeys/resizeKeys, which are static per FieldDef).
                 FieldDef::new("font-weight", Some("Weight")).with_input_type("weight"),
+                // Plain field, no inputType -- same as font-size. Deliberately NOT a numeric
+                // stepper: compile_line_height's raw value is CSS-style dual-syntax (a bare
+                // number is a MULTIPLIER of font-size, a `px` value is absolute -- see its own
+                // doc comment), and a stepper that always wrote bare numbers would silently
+                // collide with the multiplier reading. Free text lets a designer type either
+                // form directly, matching how real CSS line-height authoring already works.
+                // Per text-affordances Phase 4/5: this is deliberately standalone now (user
+                // asked for it ahead of Phase 5's grouped Typography control, which is deferred)
+                // rather than waiting to ride in as a follow-on there.
+                FieldDef::new("line-height", Some("Leading")),
                 // Fixed, Charter-known choice sets (unlike "weight"'s runtime facts) -- same
                 // "hardcoded segmented buttons" shape as "resize"'s Fixed/Hug/Fill, handled
                 // inline in StyleField.svelte rather than a dedicated wrapper component.
@@ -3388,6 +3398,18 @@ mod line_height_tests {
 
     // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output Vellum
     // deserializes -- assert on the serialized JSON key, not just the Rust struct field.
+    #[test]
+    fn text_categories_declares_a_plain_line_height_field() {
+        let categories = text_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let field = fields.iter().find(|f| f.key == "line-height").expect("line-height field");
+        // No inputType -- free text, same as font-size, so a designer can type either CSS form
+        // (a bare multiplier or an absolute px value) directly. Deliberately standalone ahead of
+        // Phase 5's grouped Typography control (deferred), per explicit user request.
+        assert_eq!(field.input_type, None);
+        assert_eq!(field.display_text.as_deref(), Some("Leading"));
+    }
+
     #[test]
     fn text_data_serializes_line_height_as_snake_case() {
         let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
