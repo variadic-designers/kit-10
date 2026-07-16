@@ -1,7 +1,7 @@
 # Charter Text primitive — a long-term affordance plan
 
-> **Status: Phases 1–3 shipped (Phase 2 partially), all 2026-07-16,
-> UX-scoped; Phases 4–5 remain forward-looking plan.** The font-facts
+> **Status: Phases 1–4 shipped (Phase 2 partially), all 2026-07-16,
+> UX-scoped; Phase 5 remains forward-looking plan.** The font-facts
 > channel is live: Fontavious's `family_facts`, the host-assembled
 > `fontFacts` map on `on_resolve`, Charter's `resolve_font_weight` +
 > `snap_text_weights`, and the `font_requests` output driving the editor's
@@ -31,18 +31,24 @@
 > wire's `TextDecorationKind` enum) rather than Phase 3's original
 > "toggles" language, since the wire never modeled underline and
 > line-through as independently combinable in the first place. **Phases
-> 4–5 were refined 2026-07-16 (still unbuilt, plan only)**, per user
-> request, into a single combined design: Phase 4 gives `line-height` a
-> real concrete `f32` wire field (`compile_line_height`, same
-> only-when-unset rule) with **no standalone panel row** — it only
-> surfaces inside Phase 5's grouped Typography control, which anchors one
-> `FieldDef` on `font-family` (`inputType: "typography"` +
-> `typographyKeys`, the `arrangeKeys`/`resizeKeys` pattern) so Family,
-> Size, Weight, Line height, Align, and Decor collapse into **one header +
-> follow-ons** — one panel "place," matching Arrangement's own shape —
-> while each follow-on keeps resolving and coloring independently (the
-> Webflow cascade-visibility principle is not negotiable, even for
-> layout consolidation) — Phase 5 is assessed **low-risk** (a direct
+> 4–5 were refined 2026-07-16** into a single combined design, and
+> **Phase 4 shipped the same day**: `line-height` is a real concrete
+> `f32` wire field (`taf_can_do` commit 3a50b8b — `TextData`/
+> `TextAreaData.line_height`, threaded through `shape_area`,
+> `measure_text_node`, `hash_area`, the `TextMeasureKey` cache, and
+> `project_text_area`'s zoom scaling — see CLAUDE.md's Phase 4 note) and
+> Charter's `compile_line_height` (same only-when-unset rule as
+> `compile_arrange`; a bare number is a CSS-style multiplier of
+> `font-size`, a `px` value is absolute, unset derives the ratio ramp).
+> **No standalone panel row was added** — it only surfaces inside Phase
+> 5's grouped Typography control below, which anchors one `FieldDef` on
+> `font-family` (`inputType: "typography"` + `typographyKeys`, the
+> `arrangeKeys`/`resizeKeys` pattern) so Family, Size, Weight, Line
+> height, Align, and Decor collapse into **one header + follow-ons** —
+> one panel "place," matching Arrangement's own shape — while each
+> follow-on keeps resolving and coloring independently (the Webflow
+> cascade-visibility principle is not negotiable, even for layout
+> consolidation). Phase 5 itself remains unbuilt, assessed **low-risk** (a direct
 > reuse of the already-proven `ArrangeField`/`ResizeField` pattern), so
 > this holds by default. **Phase 6 (added 2026-07-16, contingency only,
 > not planned to build)** documents what a true single-resolved-property
@@ -250,35 +256,52 @@ wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
 - _Payoff, realized:_ two lies removed; two raw strings retired from the
   surface.
 
-### Phase 4 — Derived leading, a real `line-height` wire field (refined plan)
+### Phase 4 — Derived leading, a real `line-height` wire field — **shipped**
 
-- **New concrete wire field, not an `Option`.** `TextData`/`TextAreaData`
-  gain `line_height: f32` — always a resolved absolute px value, same
-  convention `font_size` already uses (Charter never ships "unset" numbers
-  to Vellum; it resolves the opinion before the wire). `shape_area`'s
-  `Metrics::new(area.font_size, area.line_height)` replaces the hardcoded
-  `area.font_size * 1.2`. `hash_area` must hash it — it changes glyph
-  vertical position/wrapping, not just post-cache color/position.
-- **`compile_line_height(font_size, raw) -> f32`** — the only-when-unset
-  rule verbatim from `compile_arrange`/`compile_resize`: an explicit raw
-  `line-height` kit property always wins (parsed CSS-style — a bare number
-  is a multiplier of `font-size`, e.g. `"1.5"` → `font_size * 1.5`; a
-  `px` value is absolute, e.g. `"24px"`); absent, Charter derives it via a
-  ratio ramp (≈1.5 at body sizes, tightening toward ≈1.1 at display
-  sizes — mirrors real type-scale practice: tight leading reads fine on
-  one giant display line, but the same ratio on 3 lines of body text
-  collides).
-- **No standalone panel row.** This is deliberately the "reduce complexity,
-  zero new controls by default" phase — `line-height` only ever appears as
-  a Typography follow-on (Phase 5 below), the escape hatch for the rare
-  case the ramp is wrong, never a 6th permanent row.
+- **Shipped: concrete wire field, not an `Option`.** `TextData`/
+  `TextAreaData` gained `line_height: f32` — always a resolved absolute
+  px value, same convention `font_size` already uses. `≤ 0.0` is the
+  "not provided" sentinel (the `font_weight` `if > 0 { .. } else { 400 }`
+  idiom, already established elsewhere in `taf_can_do`) rather than an
+  `Option` — a stale, not-yet-redeployed Charter build degrades to the
+  old hardcoded `font_size * 1.2` ratio instead of a hard deserialize
+  failure. Both consumption sites — `shape_area` (actual rendering) and
+  `measure_text_node` (taffy's layout measure pass) — read it with the
+  identical fallback, since they must agree exactly or the box taffy
+  sizes at layout time disagrees with what render draws. `hash_area` and
+  the taffy `TextMeasureKey` cache both include it now (changes glyph
+  vertical position / `content_height`, not just post-cache state), and
+  `project_text_area` scales it by `view_zoom` identically to
+  `font_size` (the `0.0` sentinel scales to `0.0`, so the fallback
+  survives projection at any zoom level).
+- **Shipped: `compile_line_height(font_size, raw) -> f32`** — the
+  only-when-unset rule verbatim from `compile_arrange`/`compile_resize`:
+  an explicit raw `line-height` kit property always wins (parsed
+  CSS-style — a bare number is a multiplier of `font-size`, e.g. `"1.5"`
+  → `font_size * 1.5`, deliberately not routed through `parse_px`, which
+  reads a bare number as literal px; a `px` value is absolute, e.g.
+  `"24px"`); absent or unparseable, Charter derives it via a ratio ramp
+  (1.5× flat at ≤20px body sizes, tightening linearly to 1.1× flat at
+  ≥48px display sizes).
+- **Shipped: no standalone panel row.** `line-height` has no `FieldDef`
+  of its own — this is deliberately the "reduce complexity, zero new
+  controls by default" phase. It will only ever appear as a Typography
+  follow-on once Phase 5 ships, the escape hatch for the rare case the
+  ramp is wrong, never a 6th permanent row on its own.
 - `letter-spacing` stays out of this phase — cosmic-text has no native
   tracking, so it would mean Vellum manually offsetting glyph quads
   post-shaping, a materially bigger change than `line-height`'s "pass a
   different number to `Metrics::new`". Revisit only if a real design needs
   it.
-- _Payoff:_ typography looks professionally set with zero new default
-  controls — the opinion is a default, not a field.
+- _Payoff, realized:_ typography looks professionally set with zero new
+  default controls — the opinion is a default, not a field. (Not yet
+  independently visually confirmed on the actual GPU canvas — this
+  session's headless container has no WebGPU; verified instead via 6 new
+  Charter unit tests asserting exact `compile_line_height` output across
+  the ramp's anchors/midpoint/both raw-value forms, 3 new Vellum tests for
+  hash invalidation and zoom-scaling correctness, and a live app smoke
+  test across several text views at different font sizes with zero
+  console errors post-deploy.)
 
 ### Phase 5 — Typography as one grouped control, one layer-bound "place" (refined plan)
 
