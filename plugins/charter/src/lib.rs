@@ -32,8 +32,8 @@ struct FieldDef {
     #[serde(rename = "displayText")]
     display_text: Option<String>,
     // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" |
-    // "weight" -- how the editor should render this field's input. None means the editor's
-    // default (plain text).
+    // "weight" | "align" | "decoration" -- how the editor should render this field's input.
+    // None means the editor's default (plain text).
     #[serde(rename = "inputType", default)]
     input_type: Option<String>,
     // Names which utility plugin + functions serve suggestions for this field -- the editor
@@ -357,10 +357,26 @@ struct TextData {
     font_weight: u16,
     font_style: String,
     text_color: [f32; 4],
+    // Wire values are Vellum's TextAlign/TextDecorationKind enum variant names verbatim
+    // ("Left"/"Center"/"Right"/"Justify", "None"/"Underline"/"LineThrough") -- see
+    // parse_text_align/parse_text_decoration. Plain String like font_style, not a Rust enum on
+    // this side: Charter never round-trips these, it only ever writes them.
+    #[serde(default = "default_text_align")]
+    text_align: String,
+    #[serde(default = "default_text_decoration")]
+    text_decoration: String,
     #[serde(default)]
     selected: u8,
     #[serde(default)]
     hovered: bool,
+}
+
+fn default_text_align() -> String {
+    "Left".to_string()
+}
+
+fn default_text_decoration() -> String {
+    "None".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1330,6 +1346,31 @@ fn build_box_node(
     })
 }
 
+// text-align: "left" (default hard, absent/unrecognized reads as Left -- same fallback grammar
+// as parse_arrange) | "center" | "right" | "justify". Wire value is Vellum's TextAlign variant
+// name verbatim.
+fn parse_text_align(s: Option<&str>) -> String {
+    match s.map(str::trim) {
+        Some("center") => "Center",
+        Some("right") => "Right",
+        Some("justify") => "Justify",
+        _ => "Left",
+    }
+    .to_string()
+}
+
+// text-decoration: single-choice, mirroring the "Decor" FieldDef -- never underline AND
+// line-through at once. "none" (default) | "underline" | "line-through". Wire value is
+// Vellum's TextDecorationKind variant name verbatim.
+fn parse_text_decoration(s: Option<&str>) -> String {
+    match s.map(str::trim) {
+        Some("underline") => "Underline",
+        Some("line-through") => "LineThrough",
+        _ => "None",
+    }
+    .to_string()
+}
+
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: usize,
@@ -1339,6 +1380,8 @@ fn build_text_node(
     let font_weight = parse_px(get_prop(props, "font-weight").as_deref()) as u16;
     let content = get_prop(props, "content").unwrap_or_else(|| "Text".to_string());
     let font_family = get_prop(props, "font-family").unwrap_or_else(|| "sans-serif".to_string());
+    let text_align = parse_text_align(get_prop(props, "text-align").as_deref());
+    let text_decoration = parse_text_decoration(get_prop(props, "text-decoration").as_deref());
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, [0.0; 4]);
@@ -1365,6 +1408,8 @@ fn build_text_node(
             } else {
                 [0.2, 0.2, 0.2, 1.0]
             },
+            text_align,
+            text_decoration,
             selected: 0,
             hovered: false,
         },
@@ -1552,8 +1597,11 @@ fn text_categories() -> Vec<FieldCategory> {
                 // weight field", not declare the choices, since they're runtime/per-family data
                 // it doesn't carry (unlike arrangeKeys/resizeKeys, which are static per FieldDef).
                 FieldDef::new("font-weight", Some("Weight")).with_input_type("weight"),
-                FieldDef::new("text-align", Some("Align")),
-                FieldDef::new("text-decoration", Some("Decor")),
+                // Fixed, Charter-known choice sets (unlike "weight"'s runtime facts) -- same
+                // "hardcoded segmented buttons" shape as "resize"'s Fixed/Hug/Fill, handled
+                // inline in StyleField.svelte rather than a dedicated wrapper component.
+                FieldDef::new("text-align", Some("Align")).with_input_type("align"),
+                FieldDef::new("text-decoration", Some("Decor")).with_input_type("decoration"),
             ],
         },
         // Paint properties a text node can carry directly (a highlighted/pill label) without
@@ -3149,6 +3197,90 @@ mod children_containment_tests {
             orphan_occurrences, 1,
             "a view referenced by nobody must still render, as its own top-level cell"
         );
+    }
+}
+
+#[cfg(test)]
+mod text_align_decoration_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn parse_text_align_maps_known_keywords_and_defaults_to_left() {
+        assert_eq!(parse_text_align(Some("center")), "Center");
+        assert_eq!(parse_text_align(Some("right")), "Right");
+        assert_eq!(parse_text_align(Some("justify")), "Justify");
+        assert_eq!(parse_text_align(Some("left")), "Left");
+        assert_eq!(parse_text_align(Some("garbage")), "Left");
+        assert_eq!(parse_text_align(None), "Left");
+    }
+
+    #[test]
+    fn parse_text_decoration_maps_known_keywords_and_defaults_to_none() {
+        assert_eq!(parse_text_decoration(Some("underline")), "Underline");
+        assert_eq!(parse_text_decoration(Some("line-through")), "LineThrough");
+        assert_eq!(parse_text_decoration(Some("none")), "None");
+        assert_eq!(parse_text_decoration(Some("garbage")), "None");
+        assert_eq!(parse_text_decoration(None), "None");
+    }
+
+    #[test]
+    fn build_text_node_reads_align_and_decoration_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-align".to_string(), prop("center"));
+        props.insert("text-decoration".to_string(), prop("underline"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.text_align, "Center");
+        assert_eq!(t.text_data.text_decoration, "Underline");
+    }
+
+    #[test]
+    fn build_text_node_defaults_align_and_decoration_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.text_align, "Left");
+        assert_eq!(t.text_data.text_decoration, "None");
+    }
+
+    // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output that
+    // Vellum deserializes -- assert on the serialized JSON's key/value strings, not just the
+    // Rust struct's fields, since a rename in either place fails silently (unwrap_or_default).
+    #[test]
+    fn text_categories_declares_align_and_decoration_as_segmented_input_types() {
+        let categories = text_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let align = fields.iter().find(|f| f.key == "text-align").expect("text-align field");
+        assert_eq!(align.input_type.as_deref(), Some("align"));
+        let decor = fields.iter().find(|f| f.key == "text-decoration").expect("text-decoration field");
+        assert_eq!(decor.input_type.as_deref(), Some("decoration"));
+    }
+
+    #[test]
+    fn text_data_serializes_align_and_decoration_as_vellum_enum_variant_names() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-align".to_string(), prop("right"));
+        props.insert("text-decoration".to_string(), prop("line-through"));
+        let node = build_text_node(&props, 0);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"text_align\":\"Right\""), "json was: {json}");
+        assert!(json.contains("\"text_decoration\":\"LineThrough\""), "json was: {json}");
     }
 }
 
