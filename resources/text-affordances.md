@@ -30,7 +30,19 @@
 > (None/Underline/Line-through as one segmented control, matching the
 > wire's `TextDecorationKind` enum) rather than Phase 3's original
 > "toggles" language, since the wire never modeled underline and
-> line-through as independently combinable in the first place. Sibling to
+> line-through as independently combinable in the first place. **Phases
+> 4–5 were refined 2026-07-16 (still unbuilt, plan only)**, per user
+> request, into a single combined design: Phase 4 gives `line-height` a
+> real concrete `f32` wire field (`compile_line_height`, same
+> only-when-unset rule) with **no standalone panel row** — it only
+> surfaces inside Phase 5's grouped Typography control, which anchors one
+> `FieldDef` on `font-family` (`inputType: "typography"` +
+> `typographyKeys`, the `arrangeKeys`/`resizeKeys` pattern) so Family,
+> Size, Weight, Line height, Align, and Decor collapse into **one header +
+> follow-ons** — one panel "place," matching Arrangement's own shape —
+> while each follow-on keeps resolving and coloring independently (the
+> Webflow cascade-visibility principle is not negotiable, even for
+> layout consolidation). Sibling to
 > [layout-affordances.md](./layout-affordances.md), whose phases 1–5 all
 > shipped; this doc applies the same method — earn opinions, retire raw
 > debt, one `compile_*` + widget per keyword contract — to the `Text`
@@ -232,32 +244,79 @@ wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
 - _Payoff, realized:_ two lies removed; two raw strings retired from the
   surface.
 
-### Phase 4 — Derived leading (the "reduce complexity" payoff)
+### Phase 4 — Derived leading, a real `line-height` wire field (refined plan)
 
-- No new raw field by default: Charter computes `line_height` from
-  `font-size` — the classic ratio ramp (≈1.5 at body sizes, tightening
-  toward ≈1.1 at display sizes) — and emits it on a new `TextData` wire
-  field, which replaces Vellum's hardcoded `* 1.2`.
-- `compile_arrange`'s only-when-unset rule applies verbatim: an explicit
-  `line-height` kit property (parse-only, no default surface) always wins;
-  the derivation never fights an author.
-- `letter-spacing` is the same shape _but not free_: cosmic-text has no
-  native tracking, so Vellum would offset glyph quads itself post-shaping.
-  Ship leading first; tracking only if wanted later.
-- _Payoff:_ typography looks professionally set with zero new controls — the
-  opinion is a default, not a field.
+- **New concrete wire field, not an `Option`.** `TextData`/`TextAreaData`
+  gain `line_height: f32` — always a resolved absolute px value, same
+  convention `font_size` already uses (Charter never ships "unset" numbers
+  to Vellum; it resolves the opinion before the wire). `shape_area`'s
+  `Metrics::new(area.font_size, area.line_height)` replaces the hardcoded
+  `area.font_size * 1.2`. `hash_area` must hash it — it changes glyph
+  vertical position/wrapping, not just post-cache color/position.
+- **`compile_line_height(font_size, raw) -> f32`** — the only-when-unset
+  rule verbatim from `compile_arrange`/`compile_resize`: an explicit raw
+  `line-height` kit property always wins (parsed CSS-style — a bare number
+  is a multiplier of `font-size`, e.g. `"1.5"` → `font_size * 1.5`; a
+  `px` value is absolute, e.g. `"24px"`); absent, Charter derives it via a
+  ratio ramp (≈1.5 at body sizes, tightening toward ≈1.1 at display
+  sizes — mirrors real type-scale practice: tight leading reads fine on
+  one giant display line, but the same ratio on 3 lines of body text
+  collides).
+- **No standalone panel row.** This is deliberately the "reduce complexity,
+  zero new controls by default" phase — `line-height` only ever appears as
+  a Typography follow-on (Phase 5 below), the escape hatch for the rare
+  case the ramp is wrong, never a 6th permanent row.
+- `letter-spacing` stays out of this phase — cosmic-text has no native
+  tracking, so it would mean Vellum manually offsetting glyph quads
+  post-shaping, a materially bigger change than `line-height`'s "pass a
+  different number to `Metrics::new`". Revisit only if a real design needs
+  it.
+- _Payoff:_ typography looks professionally set with zero new default
+  controls — the opinion is a default, not a field.
 
-### Phase 5 — Typography as one grouped control
+### Phase 5 — Typography as one grouped control, one layer-bound "place" (refined plan)
 
-- Family / weight / size / leading collapse into a single `inputType:
-"typography"` control using the same disclosure grammar as `arrange`
-  (header → follow-ons → one labeled Advanced), replacing four top-level
-  rows. Same `FieldDef` side-channel pattern as `arrangeKeys`/`resizeKeys`.
-- Type-scale awareness (size snapping to a project scale) is deferred exactly
-  like spacing's token-scale was: KIT•10 has no scale token type yet. The
-  hook is documented, not built.
-- _Payoff:_ the text category's first impression becomes one control + Fill +
-  content, matching the layout category's post-arrangement density.
+The concrete ask this refines: today Family / Size / Weight / Align / Decor
+are five separately-headered rows, each its own header-row-and-track-dot —
+five "places" a designer has to scan. Collapse that to **one panel slot**,
+the same way Arrangement collapsed the flex quartet into one slot — without
+pretending the five properties are actually one property underneath.
+
+- **Charter declares one `FieldDef`, anchored on `font-family`** — the
+  property every Text node always has, same anchoring logic `resize` uses
+  for width/height. It carries `inputType: "typography"` and a
+  `typographyKeys` side-channel (same "typed side-channel keyed by
+  inputType" shape as `arrangeKeys`/`resizeKeys`): `size` (font-size),
+  `weight` (font-weight — keeps its own `inputType: "weight"` untouched,
+  so `WeightField`'s per-family fact-filtering keeps working exactly as it
+  does today), `lineHeight` (Phase 4's new field), `align`, `decoration`.
+- **`TypographyField.svelte`** (new, mirrors `ArrangeField`'s shape): one
+  header — track dot + label — clicking it opens the family `SuggestField`
+  picker in place (the header doubles as the always-visible primary
+  control, same as Arrangement's tab row being both the selector and the
+  visible state). Every follow-on renders directly below as an ordinary
+  `StyleField` row — no `<details>`/Advanced disclosure needed here,
+  unlike Arrangement or Resize, because there is no raw-vs-friendly split
+  left to hide: weight/align/decoration are already the friendly controls
+  (Phases 2–3 already retired their raw equivalents from the surface), and
+  size/line-height/family have no rawer form to begin with.
+- **What actually collapses is panel real estate, not resolution.** Each
+  follow-on stays its own independently resolved property with its own
+  track dot/color — exactly how `resize`'s Min/Max and `arrange`'s
+  Gap/Direction already behave today. If a density axis layer overrides
+  only `font-size`, that row's dot shows the density layer's hue while
+  Family's dot still shows the base layer's. Collapsing every follow-on
+  into one synthetic color would erase real cascade information —
+  precisely the charter.md Webflow lesson (principle 8 in
+  layout-affordances' own list) this plan has followed at every prior
+  phase. "One place" is a layout decision, not a resolution-model change.
+- Type-scale awareness (size snapping to a project scale) stays deferred —
+  no scale token type exists yet. The hook is documented, not built.
+- _Payoff:_ the text category shrinks from 5 typography rows + Highlight's
+  4 rows (9 total) down to 1 typography control + Fill + Content +
+  Highlight — matching the layout category's post-arrangement density
+  (CLAUDE.md: `box_categories()`'s layout category went from ~19 fields to
+  4).
 
 ---
 
