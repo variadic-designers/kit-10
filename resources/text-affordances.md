@@ -40,14 +40,22 @@
 > Charter's `compile_line_height` (same only-when-unset rule as
 > `compile_arrange`; a bare number is a CSS-style multiplier of
 > `font-size`, a `px` value is absolute, unset derives the ratio ramp).
-> **No standalone panel row was added** — it only surfaces inside Phase
-> 5's grouped Typography control below, which anchors one `FieldDef` on
-> `font-family` (`inputType: "typography"` + `typographyKeys`, the
-> `arrangeKeys`/`resizeKeys` pattern) so Family, Size, Weight, Line
-> height, Align, and Decor collapse into **one header + follow-ons** —
-> one panel "place," matching Arrangement's own shape — while each
-> follow-on keeps resolving and coloring independently (the Webflow
-> cascade-visibility principle is not negotiable, even for layout
+> **Deviation from the refined plan, same day, by explicit user request:**
+> a standalone panel row shipped anyway (`FieldDef::new("line-height",
+Some("Leading"))`, no `inputType` — plain free text, same as
+> `font-size`, deliberately not a numeric stepper, since a stepper always
+> writes a bare number and would silently collide with
+> `compile_line_height`'s CSS-style dual reading). "Just for line-height,
+> defer Phase 5" was the ask — so Leading is live in the panel now, ahead
+> of and independent from Phase 5's grouping. Phase 5 below, if it ships
+> later, is expected to fold this `FieldDef` into `typographyKeys` rather
+> than leave it a permanent 6th top-level row. Phase 5 itself anchors one
+> `FieldDef` on `font-family` (`inputType: "typography"` +
+> `typographyKeys`, the `arrangeKeys`/`resizeKeys` pattern) so Family,
+> Size, Weight, Line height, Align, and Decor collapse into **one header +
+> follow-ons** — one panel "place," matching Arrangement's own shape —
+> while each follow-on keeps resolving and coloring independently (the
+> Webflow cascade-visibility principle is not negotiable, even for layout
 > consolidation). Phase 5 itself remains unbuilt, assessed **low-risk** (a direct
 > reuse of the already-proven `ArrangeField`/`ResizeField` pattern), so
 > this holds by default. **Phase 6 (added 2026-07-16, contingency only,
@@ -283,11 +291,21 @@ wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
   `"24px"`); absent or unparseable, Charter derives it via a ratio ramp
   (1.5× flat at ≤20px body sizes, tightening linearly to 1.1× flat at
   ≥48px display sizes).
-- **Shipped: no standalone panel row.** `line-height` has no `FieldDef`
-  of its own — this is deliberately the "reduce complexity, zero new
-  controls by default" phase. It will only ever appear as a Typography
-  follow-on once Phase 5 ships, the escape hatch for the rare case the
-  ramp is wrong, never a 6th permanent row on its own.
+- **Deviation, shipped same day by explicit user request: a standalone
+  panel row after all.** The original plan here was "no `FieldDef` of
+  its own — reduce complexity, zero new controls by default." The user
+  asked to surface it in the panel now anyway, deferring only Phase 5's
+  grouping. `FieldDef::new("line-height", Some("Leading"))` carries no
+  `inputType` — plain free text, same as `font-size`, deliberately not a
+  numeric stepper: the existing `spacing` scalar stepper (`gap`/
+  `cell-min`) always writes a bare number, which would silently collide
+  with `compile_line_height`'s CSS-style dual reading (bare = multiplier,
+  `px` = absolute) — free text is what lets a designer type either form
+  directly, matching real CSS line-height authoring. Verified live:
+  typing `"1.4"` and separately `"48px"` both round-trip through the DB
+  write correctly. Expected to fold into Phase 5's `typographyKeys` as a
+  follow-on rather than staying a permanent 6th top-level row, whenever
+  Phase 5 ships.
 - `letter-spacing` stays out of this phase — cosmic-text has no native
   tracking, so it would mean Vellum manually offsetting glyph quads
   post-shaping, a materially bigger change than `line-height`'s "pass a
