@@ -1,8 +1,15 @@
 # Charter Text primitive — a long-term affordance plan
 
-> **Status: unbuilt, forward-looking plan (authored 2026-07-16).** Nothing
-> below is implemented. Phase 1 (weight honesty via the font-facts channel)
-> is the next planned Charter work. Sibling to
+> **Status: Phase 1 shipped (2026-07-16), UX-scoped; Phases 2–5 remain
+> forward-looking plan.** The font-facts channel is live: Fontavious's
+> `family_facts`, the host-assembled `fontFacts` map on `on_resolve`,
+> Charter's `resolve_font_weight` + `snap_text_weights`, and the
+> `font_requests` output driving the editor's font fetching — see CLAUDE.md's
+> weight-snapping note for the implementation. One deliberate deviation,
+> per "UX first, not data-integrity yet": **facts are catalogue-only** —
+> the Vellum `font_facts`-from-loaded-bytes oracle (Phase 1's uploaded-font
+> leg below) is deferred until font uploads exist as a feature, so no
+> Vellum change shipped at all. Sibling to
 > [layout-affordances.md](./layout-affordances.md), whose phases 1–5 all
 > shipped; this doc applies the same method — earn opinions, retire raw
 > debt, one `compile_*` + widget per keyword contract — to the `Text`
