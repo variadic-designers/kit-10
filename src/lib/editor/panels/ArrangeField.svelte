@@ -188,11 +188,7 @@
 				title={tab.tooltip}
 				onclick={() => selectTab(tab.kind)}
 			>
-				{#if tab.kind === 'grid'}
-					<!-- Only the double-size cell has room for its icon; the 1fr cells stay
-					     label-only so "Cluster"/"Center" never truncate at panel width. -->
-					<i class={tab.icon}></i>
-				{/if}
+				<i class={tab.icon}></i>
 				<span>{tab.label}</span>
 			</button>
 		{/each}
