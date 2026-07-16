@@ -3,6 +3,7 @@
 	import StyleField from './StyleField.svelte';
 	import ChildViewField, { type ChildViewCandidate } from './ChildViewField.svelte';
 	import ArrangeField from './ArrangeField.svelte';
+	import ResizeField from './ResizeField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
@@ -207,6 +208,18 @@
 									/>
 								{:else if field.inputType === 'arrange'}
 									<ArrangeField
+										{field}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{axisNameById}
+										{track}
+										{resolvedMap}
+										{api}
+										projectId={activeProjectId}
+										{onFieldUpdate}
+										{callUtilityPlugin}
+									/>
+								{:else if field.inputType === 'resize' && field.resizeKeys}
+									<ResizeField
 										{field}
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}

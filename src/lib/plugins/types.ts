@@ -39,6 +39,15 @@ export interface ArrangeKeys {
 	gridAdvanced: FieldDef[];
 }
 
+// Declared only on "resize" FieldDefs (width/height) -- the dimension's own min/max limit fields,
+// revealed as inline follow-ons exactly when a limit is meaningful (Fill, or a fixed % of the
+// parent) instead of four permanent top-level rows. Mirrors Charter's ResizeKeys struct exactly
+// (camelCase, see plugins/charter/src/lib.rs).
+export interface ResizeKeys {
+	min: FieldDef;
+	max: FieldDef;
+}
+
 export interface FieldDef {
 	key: string;
 	displayText?: string;
@@ -47,6 +56,7 @@ export interface FieldDef {
 	layerId?: string;
 	suggestionsFrom?: SuggestionSource;
 	arrangeKeys?: ArrangeKeys;
+	resizeKeys?: ResizeKeys;
 	// Only meaningful when inputType is "spacing". "scalar" (gap, cell-min -- one number) vs.
 	// "box" (padding -- CSS 1/2/3/4-value shorthand with a 1<->4 expand/collapse affordance).
 	spacingMode?: 'scalar' | 'box';
