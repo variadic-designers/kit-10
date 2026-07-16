@@ -42,7 +42,13 @@
 > follow-ons** — one panel "place," matching Arrangement's own shape —
 > while each follow-on keeps resolving and coloring independently (the
 > Webflow cascade-visibility principle is not negotiable, even for
-> layout consolidation). Sibling to
+> layout consolidation) — Phase 5 is assessed **low-risk** (a direct
+> reuse of the already-proven `ArrangeField`/`ResizeField` pattern), so
+> this holds by default. **Phase 6 (added 2026-07-16, contingency only,
+> not planned to build)** documents what a true single-resolved-property
+> collapse would require and cost, as a fallback if Phase 5's per-row
+> coloring proves confusing in real use — deliberately not a next step.
+> Sibling to
 > [layout-affordances.md](./layout-affordances.md), whose phases 1–5 all
 > shipped; this doc applies the same method — earn opinions, retire raw
 > debt, one `compile_*` + widget per keyword contract — to the `Text`
@@ -312,11 +318,51 @@ pretending the five properties are actually one property underneath.
   phase. "One place" is a layout decision, not a resolution-model change.
 - Type-scale awareness (size snapping to a project scale) stays deferred —
   no scale token type exists yet. The hook is documented, not built.
+- **Risk assessment: low.** This phase is a straight application of an
+  already-proven pattern — `ArrangeField.svelte`/`ResizeField.svelte`
+  already wrap a header + independently-tracked follow-on rows today, so
+  `TypographyField.svelte` has no new architecture to invent, only a new
+  `FieldDef`/`*Keys` shape and a new Svelte component copying the existing
+  one. Nothing here is expected to need the Phase 6 fallback below.
 - _Payoff:_ the text category shrinks from 5 typography rows + Highlight's
   4 rows (9 total) down to 1 typography control + Fill + Content +
   Highlight — matching the layout category's post-arrangement density
   (CLAUDE.md: `box_categories()`'s layout category went from ~19 fields to
   4).
+
+### Phase 6 — True single-layer collapse (contingency, not a default target)
+
+Not planned to build proactively. Phase 5's per-follow-on independent
+resolution/coloring is a **deliberate correctness choice**, not a stopgap —
+but it's captured here as an explicit fallback in case a real usage pattern
+proves it wrong in practice (e.g. designers consistently editing all five
+Typography properties together, on one layer, and finding five different
+track dots more confusing than reassuring for a control that reads as "one
+thing" at a glance).
+
+- **What it would actually mean:** collapsing Typography's sub-properties
+  onto **one genuinely shared resolved value** — not five independently
+  resolvable properties any more, but a single property (e.g. `typography`,
+  holding a bundled value, or every follow-on's write forced onto
+  `font-family`'s own `sourceLayerId` regardless of which layer would
+  naturally own that specific property) — so the whole group shows exactly
+  one track dot, because it structurally _is_ one thing to the resolver,
+  not five things wearing one label.
+- **The real cost, stated plainly:** this sacrifices the cascade-visibility
+  principle every other phase in this plan (and `layout-affordances.md`
+  before it) has held as non-negotiable — a density-axis layer overriding
+  only `font-size` would become invisible as a distinct fact; the panel
+  would show "Typography: Base layer" even while one sub-value diverges
+  per-axis underneath. That's real information loss, not just a visual
+  simplification, so this is not a phase to build "for tidiness" — only
+  in response to a demonstrated problem with Phase 5's actual UX in use.
+- **If it is ever built:** it likely needs its own resolver-level concept
+  (a composite/bundled property type), not just a panel trick — the
+  resolver would need to understand "these five kit properties are written
+  and read as one unit" as a first-class idea, which is a bigger change
+  than anything else in this document. Scope it properly against
+  `resolve.ts`'s actual capabilities before starting, rather than assuming
+  it's a small follow-on to Phase 5.
 
 ---
 
