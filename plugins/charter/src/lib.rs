@@ -31,8 +31,9 @@ struct FieldDef {
     key: String,
     #[serde(rename = "displayText")]
     display_text: Option<String>,
-    // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" -- how
-    // the editor should render this field's input. None means the editor's default (plain text).
+    // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" |
+    // "weight" -- how the editor should render this field's input. None means the editor's
+    // default (plain text).
     #[serde(rename = "inputType", default)]
     input_type: Option<String>,
     // Names which utility plugin + functions serve suggestions for this field -- the editor
@@ -1546,7 +1547,11 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("color", Some("Fill")),
                 FieldDef::new("font-family", Some("Family")).with_input_type("font"),
                 FieldDef::new("font-size", Some("Size")),
-                FieldDef::new("font-weight", Some("Weight")),
+                // Options are enumerated editor-side from the font-facts channel (the currently
+                // resolved font-family's real weights) -- Charter only needs to say "this is a
+                // weight field", not declare the choices, since they're runtime/per-family data
+                // it doesn't carry (unlike arrangeKeys/resizeKeys, which are static per FieldDef).
+                FieldDef::new("font-weight", Some("Weight")).with_input_type("weight"),
                 FieldDef::new("text-align", Some("Align")),
                 FieldDef::new("text-decoration", Some("Decor")),
             ],
