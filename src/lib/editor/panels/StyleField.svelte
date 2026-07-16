@@ -425,11 +425,11 @@
 		/>
 	{:else if inputType === 'resize'}
 		<div class="option124__value option124__value--resize">
-			<div class="resize-seg" role="group" aria-label="Resizing mode">
+			<div class="seg-control" role="group" aria-label="Resizing mode">
 				<button
 					type="button"
-					class="resize-seg__btn"
-					class:resize-seg__btn--sel={resizeMode === 'fixed'}
+					class="seg-control__btn"
+					class:seg-control__btn--sel={resizeMode === 'fixed'}
 					title="Fixed size"
 					onclick={() => selectFixed()}
 				>
@@ -437,8 +437,8 @@
 				</button>
 				<button
 					type="button"
-					class="resize-seg__btn"
-					class:resize-seg__btn--sel={resizeMode === 'hug'}
+					class="seg-control__btn"
+					class:seg-control__btn--sel={resizeMode === 'hug'}
 					title="Hug contents"
 					onclick={() => writeValue('hug')}
 				>
@@ -446,8 +446,8 @@
 				</button>
 				<button
 					type="button"
-					class="resize-seg__btn"
-					class:resize-seg__btn--sel={resizeMode === 'fill'}
+					class="seg-control__btn"
+					class:seg-control__btn--sel={resizeMode === 'fill'}
 					title="Fill container"
 					onclick={() => writeValue('fill')}
 				>
@@ -478,6 +478,38 @@
 					</button>
 				{/if}
 			{/if}
+		</div>
+	{:else if inputType === 'align'}
+		<div class="option124__value option124__value--resize">
+			<div class="seg-control" role="group" aria-label="Text align">
+				{#each [{ v: 'left', icon: 'fa-align-left', title: 'Left' }, { v: 'center', icon: 'fa-align-center', title: 'Center' }, { v: 'right', icon: 'fa-align-right', title: 'Right' }, { v: 'justify', icon: 'fa-align-justify', title: 'Justify' }] as opt (opt.v)}
+					<button
+						type="button"
+						class="seg-control__btn"
+						class:seg-control__btn--sel={(value ?? 'left') === opt.v}
+						title={opt.title}
+						onclick={() => writeValue(opt.v)}
+					>
+						<i class="fa-solid {opt.icon}"></i>
+					</button>
+				{/each}
+			</div>
+		</div>
+	{:else if inputType === 'decoration'}
+		<div class="option124__value option124__value--resize">
+			<div class="seg-control" role="group" aria-label="Text decoration">
+				{#each [{ v: 'none', icon: 'fa-slash', title: 'None' }, { v: 'underline', icon: 'fa-underline', title: 'Underline' }, { v: 'line-through', icon: 'fa-strikethrough', title: 'Line-through' }] as opt (opt.v)}
+					<button
+						type="button"
+						class="seg-control__btn"
+						class:seg-control__btn--sel={(value ?? 'none') === opt.v}
+						title={opt.title}
+						onclick={() => writeValue(opt.v)}
+					>
+						<i class="fa-solid {opt.icon}"></i>
+					</button>
+				{/each}
+			</div>
 		</div>
 	{:else if inputType === 'spacing'}
 		{#snippet spacingStepper(slot: 'scalar' | 0 | 1 | 2 | 3, num: number)}
@@ -820,7 +852,10 @@
 		}
 	}
 
-	.resize-seg {
+	// Shared by resize (Fixed/Hug/Fill), align (Left/Center/Right/Justify), and decoration
+	// (None/Underline/Line-through) -- one mutually-exclusive button-row look for every "pick a
+	// fixed, Charter-known keyword" control, generic name since it's no longer resize-specific.
+	.seg-control {
 		display: inline-flex;
 		flex-shrink: 0;
 		border-radius: 2px;
@@ -828,7 +863,7 @@
 		background: var(--color-panel-header-fill);
 	}
 
-	.resize-seg__btn {
+	.seg-control__btn {
 		all: unset;
 		cursor: pointer;
 		display: inline-flex;

@@ -22,7 +22,15 @@ export type InputType =
 	// arrange/resize -- but the choices are runtime data (the currently resolved font-family's
 	// real weights, from the fontFacts channel), not something Charter declares per FieldDef.
 	// See WeightField.
-	| 'weight';
+	| 'weight'
+	// Four-icon segmented control (left/center/right/justify), writing the keyword values
+	// Charter's parse_text_align understands. Fixed, Charter-known choices (unlike "weight") --
+	// handled inline in StyleField, same shape as "resize"'s Fixed/Hug/Fill.
+	| 'align'
+	// Three-way segmented control (none/underline/line-through -- text-affordances Phase 3 keeps
+	// this single-choice, matching the wire's TextDecorationKind enum, not independent toggles),
+	// writing the keyword values Charter's parse_text_decoration understands.
+	| 'decoration';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
