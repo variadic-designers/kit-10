@@ -425,6 +425,11 @@ struct OnResolveResult {
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
+    // The concrete (family, weight, style) set the viewport renders, post weight-snapping —
+    // what the editor's font scan should fetch (see resolve_font_weight). snake_case like the
+    // rest of this Charter-authored struct.
+    #[serde(default)]
+    font_requests: Vec<FontRequest>,
     // MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. Present when the
     // viewport data is non-empty. The JS side decodes this and calls `vellum.set_data_binary()`
     // instead of JSON-stringifying viewport_data and calling `vellum.set_data()`. This avoids
@@ -596,6 +601,25 @@ struct ViewMeta {
     resolved_kits: Vec<ResolvedKit>,
 }
 
+// One weight-range + style a font family actually has. Host-assembled from Fontavious's
+// catalogue (`family_facts`) today; a future uploaded-font path would contribute entries from
+// Vellum's loaded bytes instead — same shape either way (see resources/text-affordances.md's
+// two-oracle note). camelCase: this JSON is JS-authored.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FontFactVariant {
+    weight_min: u16,
+    weight_max: u16,
+    #[serde(default)]
+    style: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FamilyFacts {
+    variants: Vec<FontFactVariant>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct OnResolveInput {
@@ -613,6 +637,11 @@ struct OnResolveInput {
     // last_resolve_input and re-read on the next selection-only patch.
     #[serde(default)]
     hovered_view_id: Option<String>,
+    // Keyed by family name as the kit property spells it (matched case-insensitively). Absent
+    // families pass their requested weight through untouched — no facts, no opinion. Riding
+    // last_resolve_input like everything else, so the selection fast path snaps identically.
+    #[serde(default)]
+    font_facts: std::collections::HashMap<String, FamilyFacts>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
@@ -1813,6 +1842,103 @@ pub fn on_init(_input: String) -> FnResult<String> {
 // "" entries in node_view_ids mark structural grid scaffolding (root/row/cell wrapper boxes)
 // that don't belong to any view; a click resolving to one of those should be treated the same
 // as clicking empty space.
+// The CSS font-weight matching algorithm over the weights a family actually has, per its
+// facts. Charter's single decision point for weight substitution (text-affordances Phase 1):
+// the editor's font fetching consumes this function's OUTPUT (via `font_requests`), never
+// re-deciding — so the panel's requested weight, the fetched file, and the rendered glyphs
+// can't disagree. A family with no facts (uncatalogued) returns the request untouched;
+// cosmic-text's own nearest-loaded matching remains the last-line fallback for that case and
+// for the not-yet-loaded window.
+fn resolve_font_weight(requested: u16, facts: &FamilyFacts) -> u16 {
+    if facts.variants.is_empty() {
+        return requested;
+    }
+    // A variable range covering the request serves it exactly; otherwise each range's nearest
+    // endpoint is a discrete candidate.
+    if facts
+        .variants
+        .iter()
+        .any(|v| requested >= v.weight_min && requested <= v.weight_max)
+    {
+        return requested;
+    }
+    let candidates: std::collections::BTreeSet<u16> = facts
+        .variants
+        .iter()
+        .map(|v| requested.clamp(v.weight_min, v.weight_max))
+        .collect();
+
+    let below = candidates.iter().rev().find(|&&w| w < requested).copied();
+    let above = candidates.iter().find(|&&w| w > requested).copied();
+
+    // CSS: <400 prefers lighter first; >500 prefers heavier first; the 400..=500 zone looks
+    // up toward 500, then below, then above.
+    let pick = if requested < 400 {
+        below.or(above)
+    } else if requested > 500 {
+        above.or(below)
+    } else {
+        candidates
+            .range(requested..=500)
+            .next()
+            .copied()
+            .or(below)
+            .or(above)
+    };
+    pick.unwrap_or(requested)
+}
+
+// Post-walk over the built viewport: snap every Text node's weight to what its family can
+// actually render. Runs at the very end of build_viewport so both on_resolve and
+// on_selection_change's rebuild get identical treatment, and no per-node code needs facts
+// threaded through it.
+fn snap_text_weights(nodes: &mut [UiNode], facts: &std::collections::HashMap<String, FamilyFacts>) {
+    if facts.is_empty() {
+        return;
+    }
+    for node in nodes {
+        if let UiNode::Text(t) = node {
+            let family_facts = facts
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(&t.text_data.font_family))
+                .map(|(_, v)| v);
+            if let Some(f) = family_facts {
+                t.text_data.font_weight = resolve_font_weight(t.text_data.font_weight, f);
+            }
+        }
+    }
+}
+
+// The concrete (family, weight, style) set the viewport actually renders — post-snapping — so
+// the editor fetches exactly the files Charter decided on, instead of re-deriving weights from
+// raw kit properties (which may name weights that don't exist).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+struct FontRequest {
+    family: String,
+    weight: u16,
+    style: String,
+}
+
+fn collect_font_requests(nodes: &[UiNode]) -> Vec<FontRequest> {
+    let mut set = std::collections::BTreeSet::new();
+    for node in nodes {
+        if let UiNode::Text(t) = node {
+            if t.text_data.font_family.is_empty() {
+                continue;
+            }
+            // Lowercased: Fontavious's catalogue styles are "normal"/"italic" and its variant
+            // matching is case-sensitive, while TextData's font_style is Vellum-cased ("Normal").
+            let style = t.text_data.font_style.to_lowercase();
+            set.insert(FontRequest {
+                family: t.text_data.font_family.clone(),
+                weight: t.text_data.font_weight,
+                style: if style.is_empty() { "normal".to_string() } else { style },
+            });
+        }
+    }
+    set.into_iter().collect()
+}
+
 fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
     let mut viewport_data: Vec<UiNode> = Vec::new();
     let mut node_view_ids: Vec<String> = Vec::new();
@@ -1927,6 +2053,8 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
             }
         }
     }
+
+    snap_text_weights(&mut viewport_data, &parsed.font_facts);
 
     (viewport_data, node_view_ids)
 }
@@ -2124,10 +2252,12 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let (viewport_data, node_view_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
+    let font_requests = collect_font_requests(&viewport_data);
     let result = OnResolveResult {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
+        font_requests,
         viewport_data_binary,
     };
 
@@ -2314,6 +2444,7 @@ mod position_wire_tests {
             selected_view_primary: None,
             selected_view_secondary: vec![],
             hovered_view_id: None,
+            font_facts: Default::default(),
         };
 
         let (viewport, node_view_ids) = build_viewport(&input);
@@ -2419,6 +2550,7 @@ mod selection_and_hover_tests {
             selected_view_primary: primary.map(str::to_string),
             selected_view_secondary: vec![],
             hovered_view_id: hovered.map(str::to_string),
+            font_facts: Default::default(),
         }
     }
 
@@ -2543,6 +2675,7 @@ mod selection_and_hover_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            font_requests: vec![],
             viewport_data_binary: None,
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -2886,6 +3019,7 @@ mod children_containment_tests {
             selected_view_primary: None,
             selected_view_secondary: vec![],
             hovered_view_id: None,
+            font_facts: Default::default(),
         }
     }
 
@@ -3199,6 +3333,7 @@ mod text_paint_properties_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            font_requests: vec![],
             viewport_data_binary: Some("AAAA".to_string()),
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -3370,6 +3505,146 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
         assert_eq!(d.min_width, Extent::Px(0.0));
+    }
+}
+
+#[cfg(test)]
+mod font_facts_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn facts(ranges: &[(u16, u16)]) -> FamilyFacts {
+        FamilyFacts {
+            variants: ranges
+                .iter()
+                .map(|&(lo, hi)| FontFactVariant {
+                    weight_min: lo,
+                    weight_max: hi,
+                    style: "normal".to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn weight_inside_a_variable_range_passes_through_exactly() {
+        // Inter-shaped: one 400-700 variable range.
+        assert_eq!(resolve_font_weight(550, &facts(&[(400, 700)])), 550);
+        assert_eq!(resolve_font_weight(400, &facts(&[(400, 700)])), 400);
+    }
+
+    #[test]
+    fn heavy_request_snaps_up_first_then_down() {
+        // Lato-shaped: static 400 + 700. CSS: >500 prefers heavier.
+        let lato = facts(&[(400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(600, &lato), 700);
+        assert_eq!(resolve_font_weight(900, &lato), 700, "nothing above -> nearest below");
+    }
+
+    #[test]
+    fn light_request_snaps_down_first_then_up() {
+        let lato = facts(&[(400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(300, &lato), 400, "nothing below -> nearest above");
+        let three_weights = facts(&[(200, 200), (400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(300, &three_weights), 200, "<400 prefers lighter");
+    }
+
+    #[test]
+    fn the_400_500_zone_looks_up_toward_500_first() {
+        let f = facts(&[(300, 300), (500, 500), (700, 700)]);
+        assert_eq!(resolve_font_weight(450, &f), 500);
+        assert_eq!(resolve_font_weight(400, &f), 500, "400 checks 500 before below");
+        let no_500 = facts(&[(300, 300), (700, 700)]);
+        assert_eq!(resolve_font_weight(450, &no_500), 300, "nothing in 450..=500 -> below next");
+    }
+
+    #[test]
+    fn no_facts_for_family_passes_weight_through() {
+        assert_eq!(resolve_font_weight(600, &facts(&[])), 600);
+    }
+
+    #[test]
+    fn snap_text_weights_matches_family_case_insensitively_and_leaves_unknown_families_alone() {
+        let mut props = std::collections::HashMap::new();
+        props.insert("content".to_string(), prop("hi"));
+        props.insert("font-family".to_string(), prop("Lato"));
+        props.insert("font-weight".to_string(), prop("600"));
+        let mut nodes = vec![build_text_node(&props, 0)];
+
+        let mut facts_map = std::collections::HashMap::new();
+        facts_map.insert("lato".to_string(), facts(&[(400, 400), (700, 700)]));
+        snap_text_weights(&mut nodes, &facts_map);
+        let UiNode::Text(t) = &nodes[0] else { panic!("expected Text") };
+        assert_eq!(t.text_data.font_weight, 700, "600 on Lato snaps to 700, key case-insensitive");
+
+        // A family with no facts entry is untouched.
+        props.insert("font-family".to_string(), prop("Mystery Serif"));
+        let mut nodes2 = vec![build_text_node(&props, 0)];
+        snap_text_weights(&mut nodes2, &facts_map);
+        let UiNode::Text(t2) = &nodes2[0] else { panic!("expected Text") };
+        assert_eq!(t2.text_data.font_weight, 600);
+    }
+
+    #[test]
+    fn collect_font_requests_dedupes_and_defaults_style() {
+        let mut props = std::collections::HashMap::new();
+        props.insert("content".to_string(), prop("hi"));
+        props.insert("font-family".to_string(), prop("Inter"));
+        props.insert("font-weight".to_string(), prop("700"));
+        let a = build_text_node(&props, 0);
+        let b = build_text_node(&props, 0);
+        let requests = collect_font_requests(&[a, b]);
+        assert_eq!(requests.len(), 1, "identical variants dedupe");
+        assert_eq!(requests[0].family, "Inter");
+        assert_eq!(requests[0].weight, 700);
+        assert_eq!(requests[0].style, "normal");
+    }
+
+    // Wire-key tests, per the serde-rename pitfall: the INPUT is JS-authored (camelCase key
+    // `fontFacts`), the OUTPUT is Charter-authored (snake_case key `font_requests`) — a test
+    // asserting only on struct fields would pass even if either rename regressed.
+    #[test]
+    fn on_resolve_input_deserializes_camel_case_font_facts() {
+        let json = r#"{
+            "activeViewId": null,
+            "resolvedKits": [],
+            "viewHints": {},
+            "fontFacts": { "Lato": { "variants": [{ "weightMin": 400, "weightMax": 400, "style": "normal" }] } }
+        }"#;
+        let parsed: OnResolveInput = serde_json::from_str(json).expect("deserialize");
+        let lato = parsed.font_facts.get("Lato").expect("Lato facts present");
+        assert_eq!(lato.variants[0].weight_min, 400);
+    }
+
+    #[test]
+    fn on_resolve_result_serializes_snake_case_font_requests() {
+        let result = OnResolveResult {
+            categories: vec![],
+            viewport_data: vec![],
+            node_view_ids: vec![],
+            font_requests: vec![FontRequest {
+                family: "Lato".to_string(),
+                weight: 700,
+                style: "normal".to_string(),
+            }],
+            viewport_data_binary: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"font_requests\""), "snake_case output key, got: {json}");
+        assert!(!json.contains("fontRequests"), "must NOT be camelCase: {json}");
+        assert!(json.contains("\"weight\":700"));
     }
 }
 
