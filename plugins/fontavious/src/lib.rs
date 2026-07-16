@@ -132,6 +132,42 @@ pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
     Ok(res.body())
 }
 
+// The catalogue's variant ranges, minus the vendor URL -- the fact Charter's weight snapping
+// needs ("what weights does this family actually have"), shaped for the host to forward into
+// on_resolve's fontFacts map. camelCase because the consumer is JS-side first.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FactsVariant {
+    weight_min: u16,
+    weight_max: u16,
+    style: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct FamilyFactsOutput {
+    variants: Vec<FactsVariant>,
+}
+
+/// The full variant set of a catalogued family -- weight ranges + styles, no URLs, no I/O.
+/// This is the "what is fetchable" oracle (see resources/text-affordances.md): the host
+/// assembles these into the fontFacts map Charter's resolve_font_weight decides against.
+/// Errors for an uncatalogued family, same contract as variant_url -- the caller treats
+/// that as "no facts, pass weights through untouched".
+#[plugin_fn]
+pub fn family_facts(input: String) -> FnResult<String> {
+    let input: FetchFontInput = serde_json::from_str(&input)?;
+    let entry = catalogue()
+        .into_iter()
+        .find(|e| e.family.eq_ignore_ascii_case(&input.value))
+        .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
+    let variants = entry
+        .variants
+        .into_iter()
+        .map(|v| FactsVariant { weight_min: v.weight_min, weight_max: v.weight_max, style: v.style })
+        .collect();
+    Ok(serde_json::to_string(&FamilyFactsOutput { variants })?)
+}
+
 #[derive(Debug, Clone, Serialize)]
 struct VariantUrlOutput {
     url: String,
@@ -241,5 +277,25 @@ mod catalogue_tests {
     fn find_matching_variant_errors_on_uncatalogued_weight() {
         let input = FetchFontInput { value: "Lato".to_string(), weight: 600, style: "normal".to_string() };
         assert!(find_matching_variant(&input).is_err());
+    }
+
+    // family_facts feeds Charter's weight snapping via the host-assembled fontFacts map --
+    // assert on the serialized KEY NAMES, not just the values, per the camelCase wire pitfall
+    // (a snake_case key here silently reads as undefined on the JS side).
+    #[test]
+    fn family_facts_serializes_camel_case_variant_ranges() {
+        let entries = catalogue();
+        let lato = entries.iter().find(|e| e.family == "Lato").expect("Lato should be catalogued");
+        let variants: Vec<FactsVariant> = lato
+            .variants
+            .iter()
+            .map(|v| FactsVariant { weight_min: v.weight_min, weight_max: v.weight_max, style: v.style.clone() })
+            .collect();
+        let json = serde_json::to_string(&FamilyFactsOutput { variants }).expect("serialize");
+        assert!(json.contains("\"variants\""));
+        assert!(json.contains("\"weightMin\":400"));
+        assert!(json.contains("\"weightMax\":700"));
+        assert!(!json.contains("weight_min"), "must be camelCase on the wire: {json}");
+        assert!(!json.contains("\"url\""), "facts must not leak vendor URLs: {json}");
     }
 }

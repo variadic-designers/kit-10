@@ -598,7 +598,7 @@ export async function seedDemoProject(
 		'Light Comfort Primary Hover',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1000, 0] }
 		}
 	))!;
@@ -636,7 +636,7 @@ export async function seedDemoProject(
 		'Dark Comfort Danger Click',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [0, 400] }
 		}
 	))!;
@@ -676,7 +676,7 @@ export async function seedDemoProject(
 		'Light Compact Ghost Disabled',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [500, 400] }
 		}
 	))!;
@@ -715,7 +715,7 @@ export async function seedDemoProject(
 		'Dark Compact Positive',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1000, 400] }
 		}
 	))!;
@@ -754,7 +754,7 @@ export async function seedDemoProject(
 		'Light Comfort Tertiary Click',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [1500, 400] }
 		}
 	))!;
@@ -798,7 +798,7 @@ export async function seedDemoProject(
 		'Button (cloned default)',
 		{
 			charter: { primitive: 'box' },
-		view_icon: 'fa-regular fa-window-maximize',
+			view_icon: 'fa-regular fa-window-maximize',
 			vellum: { position: [2000, 400] }
 		}
 	))!;
@@ -842,7 +842,10 @@ export async function seedDemoProject(
 	}
 
 	async function textView(name: string, kit: { id: string }, content: string): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'text' }, view_icon: 'fa-solid fa-italic' }))!;
+		const v = (await api.createViewInProject(proj.id, name, {
+			charter: { primitive: 'text' },
+			view_icon: 'fa-solid fa-italic'
+		}))!;
 		await api.attachKitToComposition(kit.id, v.id);
 		await api.createToken(proj.id, 'content', s(content), { viewId: v.id });
 		return v.id;
@@ -852,7 +855,10 @@ export async function seedDemoProject(
 		name: string,
 		kit: { id: string },
 		childIds: string[],
-		hints: Record<string, unknown> = { charter: { primitive: 'box' }, view_icon: 'fa-regular fa-window-maximize' }
+		hints: Record<string, unknown> = {
+			charter: { primitive: 'box' },
+			view_icon: 'fa-regular fa-window-maximize'
+		}
 	): Promise<string> {
 		const v = (await api.createViewInProject(proj.id, name, hints))!;
 		await api.attachKitToComposition(kit.id, v.id);
@@ -878,7 +884,10 @@ export async function seedDemoProject(
 	}
 
 	async function imageView(name: string, kit: { id: string }): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, { charter: { primitive: 'image' }, view_icon: 'fa-solid fa-image' }))!;
+		const v = (await api.createViewInProject(proj.id, name, {
+			charter: { primitive: 'image' },
+			view_icon: 'fa-solid fa-image'
+		}))!;
 		await api.attachKitToComposition(kit.id, v.id);
 		return v.id;
 	}
@@ -936,6 +945,11 @@ export async function seedDemoProject(
 	const featuresKit = await boxKit('Features', {
 		'flex-direction': 'row',
 		'justify-content': 'center',
+		// Explicit: Charter's Stack arrangement now defaults a row's align-items to Center when
+		// unset (see compile_arrange in plugins/charter/src/lib.rs), which would otherwise flip
+		// these three cards from stretch-to-equal-height to center-at-own-height -- visible here
+		// since the cards' body text differs in length and wraps to different line counts.
+		'align-items': 'stretch',
 		gap: '24px',
 		padding: '48px',
 		background: '#ffffff'
@@ -952,6 +966,10 @@ export async function seedDemoProject(
 	const footerKit = await boxKit('Footer', {
 		'flex-direction': 'row',
 		'justify-content': 'center',
+		// Explicit for the same reason as featuresKit above -- cosmetically inert today (footer
+		// has one auto-height child, so stretch vs. center is currently a no-op) but stops this
+		// kit from silently depending on Charter's Stack default if it ever gains a sibling.
+		'align-items': 'stretch',
 		padding: '28px',
 		background: '#0f172a'
 	});
@@ -1034,6 +1052,90 @@ export async function seedDemoProject(
 		charter: { primitive: 'box' },
 		view_icon: 'fa-regular fa-window-maximize',
 		vellum: { position: [-1100, 0] }
+	});
+
+	// ==========================================================================================
+	// Arrangement demos -- one small view per compile_arrange opinion beyond Stack (which the
+	// whole landing page already exercises), so every tab of the editor's Arrangement control
+	// has a live example: Cluster (wrapping tag row), Split (label pushed apart from a status
+	// pill), Grid (auto-fit tiles). Positioned as a strip left of the landing page.
+	// ==========================================================================================
+
+	// --- Cluster: chips wrap inside a fixed-width card (row + wrap + start-packed) ---
+	const chipKit = await textKit('Chip', {
+		'font-size': '13px',
+		'font-weight': '600',
+		color: '#3730a3',
+		background: '#e0e7ff',
+		'border-radius': '999px',
+		padding: '6px 12px'
+	});
+	const tagClusterKit = await boxKit('Tag Cluster', {
+		arrange: 'cluster',
+		gap: '8px',
+		padding: '16px',
+		background: '#ffffff',
+		border: '#e2e8f0',
+		'border-radius': '12px',
+		width: '300px'
+	});
+	const chips: string[] = [];
+	for (const tag of ['Axes', 'Kits', 'Views', 'Layers', 'Tokens', 'Resolution', 'Charter'])
+		chips.push(await textView(`Chip: ${tag}`, chipKit, tag));
+	await boxView('Tag Cluster', tagClusterKit, chips, {
+		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
+		vellum: { position: [-1500, 0] }
+	});
+
+	// --- Split: two ends pushed apart, centered on the cross axis ---
+	const statusPillKit = await textKit('Status Pill', {
+		'font-size': '13px',
+		'font-weight': '600',
+		color: '#166534',
+		background: '#dcfce7',
+		'border-radius': '999px',
+		padding: '6px 12px'
+	});
+	const splitRowKit = await boxKit('Split Row', {
+		arrange: 'split',
+		padding: '16px',
+		background: '#ffffff',
+		border: '#e2e8f0',
+		'border-radius': '12px',
+		width: '300px'
+	});
+	const splitLabel = await textView('Split Label', bodyKit, 'Notifications');
+	const splitStatus = await textView('Split Status', statusPillKit, 'On');
+	await boxView('Split Row', splitRowKit, [splitLabel, splitStatus], {
+		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
+		vellum: { position: [-1500, 260] }
+	});
+
+	// --- Grid: auto-fit tiles (Cell Min + Gap -> repeat(auto-fit, minmax(80px, 1fr))) ---
+	// 300px card - 32px padding = 268px content -> three ~83px columns, six tiles, two rows.
+	const tileKit = await boxKit('Tile', {
+		background: '#e2e8f0',
+		'border-radius': '8px',
+		height: '64px'
+	});
+	const tileGridKit = await boxKit('Tile Grid', {
+		arrange: 'grid',
+		'grid-cell-min': '80px',
+		gap: '10px',
+		padding: '16px',
+		background: '#ffffff',
+		border: '#e2e8f0',
+		'border-radius': '12px',
+		width: '300px'
+	});
+	const tiles: string[] = [];
+	for (let i = 1; i <= 6; i++) tiles.push(await boxView(`Tile ${i}`, tileKit, []));
+	await boxView('Tile Grid', tileGridKit, tiles, {
+		charter: { primitive: 'box' },
+		view_icon: 'fa-regular fa-window-maximize',
+		vellum: { position: [-1500, 420] }
 	});
 
 	console.log('Demo project seeded: KIT\u202210 Demo');

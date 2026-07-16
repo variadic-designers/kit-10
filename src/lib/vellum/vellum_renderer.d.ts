@@ -64,9 +64,9 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_8779: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_8781: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7375: (a: number, b: number, c: number) => void;
+    readonly __wasm_bindgen_func_elem_8853: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8855: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7449: (a: number, b: number, c: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

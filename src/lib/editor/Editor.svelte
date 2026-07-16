@@ -236,7 +236,7 @@
 	import { mark, measure } from './profile.js';
 	import { RESOLVE_LIVE_QUERY_SQL } from './resolve-live-query.js';
 
-	import type { ResolvedView } from '$lib/plugins/types.js';
+	import type { FamilyFacts, ResolvedView } from '$lib/plugins/types.js';
 	import type { FontFetchPayload } from '$lib/plugins/suggestion-providers.js';
 	import { onMount } from 'svelte';
 
@@ -370,7 +370,13 @@
 
 	$effect(() => {
 		if (!pluginManager) return;
-		pluginManager.setData(resolvedKits, viewHints, editorActivity.activeViewId, resolvedViews);
+		pluginManager.setData(
+			resolvedKits,
+			viewHints,
+			editorActivity.activeViewId,
+			resolvedViews,
+			fontFacts
+		);
 	});
 
 	$effect(() => {
@@ -383,17 +389,59 @@
 		pluginManager.setHover(hoveredViewId);
 	});
 
-	// Resolve-time fallback: catches font-family/font-weight values that were typed/imported
-	// directly, or edited independently after a font was already picked, rather than fetched via
-	// SuggestField (which only ever fetches the family at weight 400 when a font is first
-	// picked). Best-effort only -- a catalogue miss or fetch failure just leaves that weight
-	// falling back to whatever's already loaded, exactly as it already does today; never
-	// surfaced as an error to the user.
+	// Font facts (text-affordances Phase 1): for every family the resolved data names, ask
+	// Fontavious's `family_facts` which weight ranges actually exist, and hand the assembled
+	// map to Charter via setData -> on_resolve's `fontFacts`. Charter's resolve_font_weight
+	// snaps requested weights to what the family can really render (e.g. Lato has no 600 ->
+	// renders 700), so panel-requested weights that don't exist stop silently falling through
+	// to cosmic-text's nearest-loaded guess. Facts are static catalogue data, fetched once per
+	// family; an uncatalogued family simply has no entry and its weights pass through
+	// untouched. Reassigned (never mutated) so the setData $effect below re-fires and
+	// re-resolves once facts land -- facts aren't DB rows, so the live-query dedup never sees
+	// them.
+	const attemptedFactsFamilies = new Set<string>();
+	let fontFacts = $state<Record<string, FamilyFacts>>({});
+
+	$effect(() => {
+		if (!pluginManager) return;
+
+		const families = new Set<string>();
+		for (const view of resolvedViews) {
+			for (const kit of view.resolvedKits) {
+				const family = kit.properties.get('font-family')?.value;
+				if (family) families.add(family);
+			}
+		}
+
+		for (const family of families) {
+			const key = family.toLowerCase();
+			if (attemptedFactsFamilies.has(key)) continue;
+			attemptedFactsFamilies.add(key);
+
+			pluginManager
+				.callUtilityPlugin('fontavious', 'family_facts', JSON.stringify({ value: family }))
+				.then((result) => {
+					const facts = JSON.parse((result as { text(): string }).text()) as FamilyFacts;
+					fontFacts = { ...fontFacts, [family]: facts };
+				})
+				.catch(() => {
+					// Not in the catalogue -- expected for a genuinely unknown family. No facts
+					// means no snapping opinion; the weight passes through as typed.
+				});
+		}
+	});
+
+	// Font fetching: driven by Charter's `font_requests` -- the concrete (family, weight,
+	// style) set the viewport actually renders, POST weight-snapping -- so this scan fetches
+	// exactly the files Charter decided on instead of re-deriving weights from raw kit
+	// properties (single decision point: Charter's resolve_font_weight; this is just its
+	// supply chain). Best-effort only -- a catalogue miss or fetch failure leaves that variant
+	// falling back to whatever's already loaded; never surfaced as a user-facing error.
 	//
-	// Tracks (family, weight) PAIRS, not just families: a fetched static Google Font file is a
-	// single fixed weight, unlike a variable font (one file, any weight in its range via
-	// interpolation) -- "Inter at 400 is loaded" says nothing on its own about whether "Inter at
-	// 700" needs a separate fetch.
+	// Tracks (family, weight, style) TRIPLES, not just families: a fetched static Google Font
+	// file is a single fixed weight, unlike a variable font (one file, any weight in its range
+	// via interpolation) -- "Inter at 400 is loaded" says nothing on its own about whether
+	// "Inter at 700" needs a separate fetch.
 	//
 	// Deliberately does NOT ask Vellum "is this weight loaded" -- that would mean Vellum has to
 	// learn to introspect a loaded font's actual variable-axis range (it used to, via `swash`;
@@ -406,34 +454,29 @@
 	// it's handed and renders them, which cosmic-text already does correctly regardless.
 	const attemptedVariants = new Set<string>();
 	const loadedFontUrls = new Set<string>();
+	// URLs with a fetch already in flight. Several variants can resolve to the SAME file (every
+	// weight of a variable font) in the same resolve burst -- without this, each launches its
+	// own duplicate download before the first ever lands in loadedFontUrls.
+	const pendingFontUrls = new Set<string>();
 
 	$effect(() => {
 		if (!pluginManager) return;
 
-		const variants = new Map<string, { family: string; weight: number }>();
-		for (const view of resolvedViews) {
-			for (const kit of view.resolvedKits) {
-				const family = kit.properties.get('font-family')?.value;
-				if (!family) continue;
-				const weightStr = kit.properties.get('font-weight')?.value;
-				const weight = weightStr ? parseInt(weightStr, 10) : 400;
-				variants.set(`${family}::${weight}`, { family, weight: weight > 0 ? weight : 400 });
-			}
-		}
-
-		for (const [key, { family, weight }] of variants) {
+		for (const req of pluginManager.fontRequests) {
+			const key = `${req.family}::${req.weight}::${req.style}`;
 			if (attemptedVariants.has(key)) continue;
-			attemptedVariants.add(key);
 
 			const vellum = getVellumInstance();
 			if (!vellum) continue;
+			attemptedVariants.add(key);
 
-			const payload: FontFetchPayload = { value: family, weight, style: 'normal' };
+			const payload: FontFetchPayload = { value: req.family, weight: req.weight, style: req.style };
 			pluginManager
 				.callUtilityPlugin('fontavious', 'variant_url', JSON.stringify(payload))
 				.then((result) => {
 					const { url } = JSON.parse((result as { text(): string }).text()) as { url: string };
-					if (loadedFontUrls.has(url)) return; // same file already fetched+loaded
+					if (loadedFontUrls.has(url) || pendingFontUrls.has(url)) return; // fetched or in flight
+					pendingFontUrls.add(url);
 
 					return pluginManager
 						?.callUtilityPlugin('fontavious', 'fetch_font', JSON.stringify(payload))
@@ -444,7 +487,8 @@
 								loadedFontUrls.add(url);
 								requestVellumRender();
 							}
-						});
+						})
+						.finally(() => pendingFontUrls.delete(url));
 				})
 				.catch((err) => {
 					// Not in Fontavious's catalogue, or the fetch failed -- this is expected/fine
@@ -521,6 +565,7 @@
 			{selection}
 			fieldCategories={pluginManager?.fieldCategories}
 			activeProjectId={editorActivity.activeProjectId}
+			{fontFacts}
 			onFieldUpdate={pluginManager?.fieldUpdate}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 			onSelectView={(id) => selectViewShared(editorActivity, selection, id)}
@@ -543,16 +588,20 @@
 		<div class="purge-card">
 			<h2 id="purge-title">Still loading…</h2>
 			<p>
-				The local database is taking too long to open. This usually means the stored data is from
-				an older, incompatible version of the engine. Purging clears the in-browser database and
+				The local database is taking too long to open. This usually means the stored data is from an
+				older, incompatible version of the engine. Purging clears the in-browser database and
 				reloads with a fresh demo project.
 			</p>
 			<p class="purge-warn">
-				This permanently deletes all locally-stored projects and assets. Export anything you want
-				to keep first (if you can reach it).
+				This permanently deletes all locally-stored projects and assets. Export anything you want to
+				keep first (if you can reach it).
 			</p>
 			<div class="purge-actions">
-				<button class="purge-btn secondary" onclick={() => (showPurgePrompt = false)} disabled={purging}>
+				<button
+					class="purge-btn secondary"
+					onclick={() => (showPurgePrompt = false)}
+					disabled={purging}
+				>
 					Keep waiting
 				</button>
 				<button class="purge-btn danger" onclick={purgeAndReload} disabled={purging}>

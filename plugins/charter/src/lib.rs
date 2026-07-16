@@ -31,8 +31,9 @@ struct FieldDef {
     key: String,
     #[serde(rename = "displayText")]
     display_text: Option<String>,
-    // "color" | "text" | "number" | "select" | "slider" | "font" -- how the editor should render
-    // this field's input. None means the editor's default (plain text).
+    // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" |
+    // "weight" | "align" | "decoration" -- how the editor should render this field's input.
+    // None means the editor's default (plain text).
     #[serde(rename = "inputType", default)]
     input_type: Option<String>,
     // Names which utility plugin + functions serve suggestions for this field -- the editor
@@ -40,6 +41,20 @@ struct FieldDef {
     // 1st Principle: "no lock-in to a specific tool for a specific job."
     #[serde(rename = "suggestionsFrom", default)]
     suggestions_from: Option<SuggestionSource>,
+    // Only set on the "arrange" field. Declares the companion property keys/FieldDefs its tab
+    // widget reads and writes, so the editor never hardcodes property names like "flex-direction"
+    // or "gap" -- same "typed side-channel keyed by inputType" shape as suggestions_from.
+    #[serde(rename = "arrangeKeys", default)]
+    arrange_keys: Option<Box<ArrangeKeys>>,
+    // Only set on "resize" fields (width/height). Declares the dimension's min/max limit fields
+    // as the resize control's own contextual follow-ons instead of four permanent top-level rows
+    // (layout-affordances Phase 4) -- same side-channel shape as arrange_keys.
+    #[serde(rename = "resizeKeys", default)]
+    resize_keys: Option<Box<ResizeKeys>>,
+    // Only set on inputType "spacing" fields. "scalar" (gap, cell-min -- one number) vs "box"
+    // (padding -- CSS 1/2/3/4-value shorthand, with a 1<->4 expand/collapse affordance).
+    #[serde(rename = "spacingMode", default)]
+    spacing_mode: Option<String>,
 }
 
 impl FieldDef {
@@ -49,6 +64,9 @@ impl FieldDef {
             display_text: display_text.map(str::to_string),
             input_type: None,
             suggestions_from: None,
+            arrange_keys: None,
+            resize_keys: None,
+            spacing_mode: None,
         }
     }
 
@@ -58,6 +76,21 @@ impl FieldDef {
     // src/lib/plugins/suggestion-providers.ts), swappable without recompiling Charter.
     fn with_input_type(mut self, input_type: &str) -> Self {
         self.input_type = Some(input_type.to_string());
+        self
+    }
+
+    fn with_arrange_keys(mut self, keys: ArrangeKeys) -> Self {
+        self.arrange_keys = Some(Box::new(keys));
+        self
+    }
+
+    fn with_resize_keys(mut self, keys: ResizeKeys) -> Self {
+        self.resize_keys = Some(Box::new(keys));
+        self
+    }
+
+    fn with_spacing_mode(mut self, mode: &str) -> Self {
+        self.spacing_mode = Some(mode.to_string());
         self
     }
 }
@@ -71,6 +104,57 @@ struct SuggestionSource {
     fetch_fn: Option<String>,
 }
 
+// Declared only on the "arrange" FieldDef (see box_categories). Charter's one earned arrangement
+// opinion (Stack/Cluster/Split/Center/Grid tabs) needs its editor widget to read/write several
+// OTHER properties beyond its own (direction, gap, grid cell-min, plus the raw escape-hatch
+// fields for each tab's "Advanced" disclosure) -- this struct is how it declares them as data
+// instead of the editor hardcoding property names (see the "Editor Plugin Agnosticism" note in
+// CLAUDE.md). `gap`/`cell_min` carry full FieldDefs (not just key strings) so the editor can hand
+// them straight to the existing generic StyleField component, exactly like `advanced`/
+// `grid_advanced` already must.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ArrangeKeys {
+    // Property the Direction (Stack) / Axis (Split) segmented control writes -- "flex-direction".
+    direction_key: String,
+    gap: FieldDef,
+    cell_min: FieldDef,
+    // Stack/Cluster/Split/Center's "Advanced flex" disclosure: raw flex-direction/align-items/
+    // justify-content/flex-wrap/display fields, still real panel controls, one click away.
+    advanced: Vec<FieldDef>,
+    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row.
+    grid_advanced: Vec<FieldDef>,
+}
+
+// Declared only on the two "resize" FieldDefs (width/height in box_categories). Phase 4 of
+// layout-affordances: min/max limits matter only when a dimension can actually vary with context
+// (Fill, or a fixed percent of a parent that isn't self-sized -- see CLAUDE.md's `min_width`
+// percent-floor note), so instead of four permanent top-level rows they ride the resize control
+// as its own inline follow-ons, revealed exactly when meaningful. Full FieldDefs, same reason as
+// ArrangeKeys: the editor hands them straight to the generic StyleField, hardcoding nothing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResizeKeys {
+    min: FieldDef,
+    max: FieldDef,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ArrangeKind {
+    Stack,
+    Cluster,
+    Split,
+    Center,
+    Grid,
+}
+
+impl Default for ArrangeKind {
+    fn default() -> Self {
+        ArrangeKind::Stack
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FieldCategory {
     name: String,
@@ -78,13 +162,18 @@ struct FieldCategory {
 }
 
 // Track/grid types mirror vellum's api.rs — serde output must match exactly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 enum TrackSize {
     Px(f32),
     Fr(f32),
     Auto,
     MinContent,
     MaxContent,
+    // Responsive auto-fit repeat, opinionated (not raw CSS `repeat()`): as many tracks as fit,
+    // each `minmax(f32 px, 1fr)`. This is what compile_arrange's Grid tab emits from a single
+    // "Cell min" number -- must match Vellum's TrackSize::AutoFit exactly (see the module-level
+    // comment above).
+    AutoFit(f32),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,7 +200,7 @@ enum AlignValue {
     Stretch,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum JustifyValue {
     Start,
     End,
@@ -124,7 +213,7 @@ enum JustifyValue {
     SpaceAround,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum FlexWrapValue {
     NoWrap,
     Wrap,
@@ -268,10 +357,32 @@ struct TextData {
     font_weight: u16,
     font_style: String,
     text_color: [f32; 4],
+    // Wire values are Vellum's TextAlign/TextDecorationKind enum variant names verbatim
+    // ("Left"/"Center"/"Right"/"Justify", "None"/"Underline"/"LineThrough") -- see
+    // parse_text_align/parse_text_decoration. Plain String like font_style, not a Rust enum on
+    // this side: Charter never round-trips these, it only ever writes them.
+    #[serde(default = "default_text_align")]
+    text_align: String,
+    #[serde(default = "default_text_decoration")]
+    text_decoration: String,
+    // Absolute px, always resolved -- see compile_line_height. `0.0` reads as "not provided" on
+    // Vellum's side (its own font_size*1.2 fallback), matching what an old, not-yet-redeployed
+    // Vellum build already did before this field existed -- but Charter itself never emits 0.0
+    // in practice (compile_line_height always derives a real ratio when unset).
+    #[serde(default)]
+    line_height: f32,
     #[serde(default)]
     selected: u8,
     #[serde(default)]
     hovered: bool,
+}
+
+fn default_text_align() -> String {
+    "Left".to_string()
+}
+
+fn default_text_decoration() -> String {
+    "None".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,6 +448,11 @@ struct OnResolveResult {
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
+    // The concrete (family, weight, style) set the viewport renders, post weight-snapping —
+    // what the editor's font scan should fetch (see resolve_font_weight). snake_case like the
+    // rest of this Charter-authored struct.
+    #[serde(default)]
+    font_requests: Vec<FontRequest>,
     // MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. Present when the
     // viewport data is non-empty. The JS side decodes this and calls `vellum.set_data_binary()`
     // instead of JSON-stringifying viewport_data and calling `vellum.set_data()`. This avoids
@@ -508,6 +624,25 @@ struct ViewMeta {
     resolved_kits: Vec<ResolvedKit>,
 }
 
+// One weight-range + style a font family actually has. Host-assembled from Fontavious's
+// catalogue (`family_facts`) today; a future uploaded-font path would contribute entries from
+// Vellum's loaded bytes instead — same shape either way (see resources/text-affordances.md's
+// two-oracle note). camelCase: this JSON is JS-authored.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FontFactVariant {
+    weight_min: u16,
+    weight_max: u16,
+    #[serde(default)]
+    style: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FamilyFacts {
+    variants: Vec<FontFactVariant>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct OnResolveInput {
@@ -525,6 +660,11 @@ struct OnResolveInput {
     // last_resolve_input and re-read on the next selection-only patch.
     #[serde(default)]
     hovered_view_id: Option<String>,
+    // Keyed by family name as the kit property spells it (matched case-insensitively). Absent
+    // families pass their requested weight through untouched — no facts, no opinion. Riding
+    // last_resolve_input like everything else, so the selection fast path snaps identically.
+    #[serde(default)]
+    font_facts: std::collections::HashMap<String, FamilyFacts>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
@@ -812,6 +952,24 @@ struct PaintProps {
     padding: [f32; 4],
 }
 
+// CSS padding shorthand: 1 value (all sides), 2 (vert|horiz), 3 (top|horiz|bottom), or 4
+// (top|right|bottom|left, verbatim). Output order matches taf_can_do's BoxData.padding
+// convention (confirmed against its layout code): [top, right, bottom, left].
+fn parse_padding_shorthand(s: Option<&str>) -> [f32; 4] {
+    let Some(v) = s else { return [0.0; 4] };
+    let parts: Vec<f32> = v
+        .split_whitespace()
+        .map(|part| parse_px(Some(part)))
+        .collect();
+    match parts.as_slice() {
+        [] => [0.0; 4],
+        [all] => [*all; 4],
+        [v, h] => [*v, *h, *v, *h],
+        [t, h, b] => [*t, *h, *b, *h],
+        [t, r, b, l, ..] => [*t, *r, *b, *l],
+    }
+}
+
 fn extract_paint_props(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     default_bg: [f32; 4],
@@ -820,7 +978,7 @@ fn extract_paint_props(
     let border = get_prop(props, "border").unwrap_or_default();
     let border_width = parse_px(get_prop(props, "border-width").as_deref());
     let radius = parse_px(get_prop(props, "border-radius").as_deref());
-    let padding = parse_px(get_prop(props, "padding").as_deref());
+    let padding = parse_padding_shorthand(get_prop(props, "padding").as_deref());
     let has_border = !border.is_empty() && border != "none";
 
     PaintProps {
@@ -843,7 +1001,7 @@ fn extract_paint_props(
             0.0
         },
         corner_radius: radius,
-        padding: [padding; 4],
+        padding,
     }
 }
 
@@ -896,8 +1054,16 @@ fn compile_resize(
 ) -> ResizeCompile {
     let mut out = ResizeCompile {
         // A keyword axis becomes content-sized (auto); a non-keyword axis keeps its parsed extent.
-        width: if width_kw.is_some() { Extent::Auto } else { base_width },
-        height: if height_kw.is_some() { Extent::Auto } else { base_height },
+        width: if width_kw.is_some() {
+            Extent::Auto
+        } else {
+            base_width
+        },
+        height: if height_kw.is_some() {
+            Extent::Auto
+        } else {
+            base_height
+        },
         min_width: base_min_width,
         min_height: base_min_height,
         flex_grow: None,
@@ -919,7 +1085,7 @@ fn compile_resize(
             out.flex_grow = Some(1.0);
             out.flex_shrink = Some(1.0);
             out.flex_basis = Some(Extent::Px(0.0)); // equal share of free space, not content+leftover
-            // Drop the automatic min-content floor so a Fill item can shrink to its share.
+                                                    // Drop the automatic min-content floor so a Fill item can shrink to its share.
             if main_is_width {
                 out.min_width = Extent::Px(0.0);
             } else {
@@ -944,6 +1110,118 @@ fn compile_resize(
     out
 }
 
+// --- Arrangement: Stack/Cluster/Split/Center/Grid, compiled to taffy primitives ---
+//
+// Charter's second earned layout opinion (see resources/layout-affordances.md), same template as
+// compile_resize above: a designer picks a named outcome, Charter fills in the flex/grid
+// machinery. Every output field here is a DEFAULT, not a force -- it only takes effect when the
+// corresponding raw property was never explicitly set (via its tab's own follow-on OR the
+// per-tab "Advanced"/"Custom tracks" escape hatch). This keeps Advanced a genuinely live override
+// for every tab, not just Stack: a hidden field whose edits have no visible effect would be
+// exactly the unexplained-mode-behavior Figma failure this whole feature exists to avoid.
+fn parse_arrange(s: Option<&str>) -> ArrangeKind {
+    match s.map(str::trim) {
+        Some("cluster") => ArrangeKind::Cluster,
+        Some("split") => ArrangeKind::Split,
+        Some("center") => ArrangeKind::Center,
+        Some("grid") => ArrangeKind::Grid,
+        // "stack", absent, or unrecognized -- Default hard (a fresh box needs zero panel touches).
+        _ => ArrangeKind::Stack,
+    }
+}
+
+struct ArrangeCompile {
+    // Fully resolved -- folds in the old inline row/row-reverse/column-reverse/else-column match
+    // plus each kind's own directional default, so there's a single source of truth for it.
+    flex_direction: String,
+    align_items: Option<AlignValue>,
+    justify_content: Option<JustifyValue>,
+    flex_wrap: Option<FlexWrapValue>,
+    grid_template_columns: Option<Vec<TrackSize>>,
+}
+
+fn resolve_flex_direction(raw: Option<&str>, kind: ArrangeKind) -> String {
+    match raw {
+        Some("row") => "Row",
+        Some("row-reverse") => "RowReverse",
+        Some("column-reverse") => "ColumnReverse",
+        Some("column") => "Column",
+        // Absent or unrecognized: Cluster/Split default to Row (their common case -- a wrapping
+        // chip row, a horizontal header split); everything else defaults to Column, unchanged
+        // from the original fallback.
+        _ => match kind {
+            ArrangeKind::Cluster | ArrangeKind::Split => "Row",
+            _ => "Column",
+        },
+    }
+    .to_string()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn compile_arrange(
+    kind: ArrangeKind,
+    raw_flex_direction: Option<&str>,
+    raw_align_items: Option<AlignValue>,
+    raw_justify_content: Option<JustifyValue>,
+    raw_flex_wrap: Option<FlexWrapValue>,
+    raw_grid_template_columns_set: bool,
+    cell_min: f32,
+) -> ArrangeCompile {
+    let flex_direction = resolve_flex_direction(raw_flex_direction, kind);
+    let mut out = ArrangeCompile {
+        flex_direction,
+        align_items: None,
+        justify_content: None,
+        flex_wrap: None,
+        grid_template_columns: None,
+    };
+
+    match kind {
+        ArrangeKind::Stack => {
+            // Direction is a free choice with no Justify/Wrap opinion; only the Row cross-axis
+            // gets a sensible default (vertically centering a horizontal stack's items).
+            if raw_align_items.is_none() && out.flex_direction == "Row" {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Cluster => {
+            // Cluster IS row-flow-that-wraps by definition -- no Direction follow-on exists for
+            // it, so its identity comes entirely from these defaults.
+            if raw_flex_wrap.is_none() {
+                out.flex_wrap = Some(FlexWrapValue::Wrap);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::FlexStart);
+            }
+        }
+        ArrangeKind::Split => {
+            if raw_justify_content.is_none() {
+                out.justify_content = Some(JustifyValue::SpaceBetween);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Center => {
+            if raw_justify_content.is_none() {
+                out.justify_content = Some(JustifyValue::Center);
+            }
+            if raw_align_items.is_none() {
+                out.align_items = Some(AlignValue::Center);
+            }
+        }
+        ArrangeKind::Grid => {
+            // "Custom tracks" (raw grid-template-columns) wins if the user reached for it;
+            // otherwise Cell-min alone produces a responsive grid the instant Grid is picked.
+            if !raw_grid_template_columns_set {
+                out.grid_template_columns = Some(vec![TrackSize::AutoFit(cell_min)]);
+            }
+        }
+    }
+
+    out
+}
+
 fn build_box_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
@@ -963,19 +1241,38 @@ fn build_box_node(
     let max_width = parse_extent(get_prop(props, "max-width").as_deref());
     let max_height = parse_extent(get_prop(props, "max-height").as_deref());
 
-    let flex_direction = match get_prop(props, "flex-direction").as_deref().unwrap_or("") {
-        "row" => "Row",
-        "row-reverse" => "RowReverse",
-        "column-reverse" => "ColumnReverse",
-        _ => "Column",
-    }
-    .to_string();
+    // Raw values, kept as Option so compile_arrange can tell "never set" apart from "explicitly
+    // set to the same thing a default would pick" -- an explicit set (via a tab's own follow-on,
+    // or the Advanced/Custom-tracks escape hatch) always wins.
+    let raw_flex_direction = get_prop(props, "flex-direction");
+    let raw_align_items = parse_align(get_prop(props, "align-items").as_deref());
+    let raw_justify_content = parse_justify(get_prop(props, "justify-content").as_deref());
+    let raw_flex_wrap = get_prop(props, "flex-wrap")
+        .as_deref()
+        .map(|s| parse_wrap(Some(s)));
+    let raw_grid_template_columns =
+        get_prop(props, "grid-template-columns").map(|s| parse_track_list(&s));
+    let cell_min = get_prop(props, "grid-cell-min")
+        .map(|s| parse_px(Some(&s)))
+        .filter(|&v| v > 0.0)
+        .unwrap_or(160.0);
+
+    let arrange_kind = parse_arrange(get_prop(props, "arrange").as_deref());
+    let ac = compile_arrange(
+        arrange_kind,
+        raw_flex_direction.as_deref(),
+        raw_align_items,
+        raw_justify_content,
+        raw_flex_wrap,
+        raw_grid_template_columns.is_some(),
+        cell_min,
+    );
 
     let mut extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
-        align_items: parse_align(get_prop(props, "align-items").as_deref()),
-        justify_content: parse_justify(get_prop(props, "justify-content").as_deref()),
-        flex_wrap: parse_wrap(get_prop(props, "flex-wrap").as_deref()),
+        align_items: raw_align_items.or(ac.align_items),
+        justify_content: raw_justify_content.or(ac.justify_content),
+        flex_wrap: raw_flex_wrap.or(ac.flex_wrap).unwrap_or_default(),
         flex_grow: get_prop(props, "flex-grow")
             .map(|s| parse_px(Some(&s)))
             .unwrap_or(0.0),
@@ -987,9 +1284,9 @@ fn build_box_node(
         // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
         margin: 0.0,
         position: NodePosition::default(),
-        grid_template_columns: get_prop(props, "grid-template-columns")
-            .map(|s| parse_track_list(&s))
-            .unwrap_or_default(),
+        grid_template_columns: ac
+            .grid_template_columns
+            .unwrap_or_else(|| raw_grid_template_columns.unwrap_or_default()),
         grid_template_rows: get_prop(props, "grid-template-rows")
             .map(|s| parse_track_list(&s))
             .unwrap_or_default(),
@@ -1041,7 +1338,7 @@ fn build_box_node(
             max_height,
             padding: paint.padding,
             bg_color: paint.bg_color,
-            flex_direction,
+            flex_direction: ac.flex_direction,
             show_border: paint.show_border,
             border_color: paint.border_color,
             border_width: paint.border_width,
@@ -1055,6 +1352,58 @@ fn build_box_node(
     })
 }
 
+// text-align: "left" (default hard, absent/unrecognized reads as Left -- same fallback grammar
+// as parse_arrange) | "center" | "right" | "justify". Wire value is Vellum's TextAlign variant
+// name verbatim.
+fn parse_text_align(s: Option<&str>) -> String {
+    match s.map(str::trim) {
+        Some("center") => "Center",
+        Some("right") => "Right",
+        Some("justify") => "Justify",
+        _ => "Left",
+    }
+    .to_string()
+}
+
+// text-decoration: single-choice, mirroring the "Decor" FieldDef -- never underline AND
+// line-through at once. "none" (default) | "underline" | "line-through". Wire value is
+// Vellum's TextDecorationKind variant name verbatim.
+fn parse_text_decoration(s: Option<&str>) -> String {
+    match s.map(str::trim) {
+        Some("underline") => "Underline",
+        Some("line-through") => "LineThrough",
+        _ => "None",
+    }
+    .to_string()
+}
+
+// Resolves `line-height` to a concrete absolute px value -- Vellum never receives an "unset"
+// number (see TextData.line_height's doc). Same only-when-unset rule as compile_arrange: an
+// explicit raw `line-height` always wins over the derived ramp, parsed CSS-style --
+// - a `px` value is absolute ("24px" -> 24.0), independent of font_size;
+// - a bare number is a MULTIPLIER of font_size ("1.5" -> font_size * 1.5), matching CSS's own
+//   unitless line-height semantics (deliberately NOT routed through parse_px, which treats a
+//   bare number as literal px -- that's the wrong reading for this property specifically).
+// Unset/unparseable derives a ratio ramp: ~1.5× at body sizes, tightening toward ~1.1× at
+// display sizes -- tight leading reads fine on one giant headline, but the same ratio across
+// several lines of body text collides. 20px/48px are the ramp's flat-below/flat-above anchors;
+// linear in between.
+fn compile_line_height(font_size: f32, raw: Option<&str>) -> f32 {
+    if let Some(s) = raw {
+        let s = s.trim();
+        if let Some(px) = s.strip_suffix("px") {
+            if let Ok(v) = px.trim().parse::<f32>() {
+                return v;
+            }
+        } else if let Ok(mult) = s.parse::<f32>() {
+            return font_size * mult;
+        }
+    }
+    let t = ((font_size - 20.0) / (48.0 - 20.0)).clamp(0.0, 1.0);
+    let ratio = 1.5 - t * (1.5 - 1.1);
+    font_size * ratio
+}
+
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: usize,
@@ -1064,6 +1413,10 @@ fn build_text_node(
     let font_weight = parse_px(get_prop(props, "font-weight").as_deref()) as u16;
     let content = get_prop(props, "content").unwrap_or_else(|| "Text".to_string());
     let font_family = get_prop(props, "font-family").unwrap_or_else(|| "sans-serif".to_string());
+    let text_align = parse_text_align(get_prop(props, "text-align").as_deref());
+    let text_decoration = parse_text_decoration(get_prop(props, "text-decoration").as_deref());
+    let resolved_font_size = if font_size > 0.0 { font_size } else { 16.0 };
+    let line_height = compile_line_height(resolved_font_size, get_prop(props, "line-height").as_deref());
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, [0.0; 4]);
@@ -1081,7 +1434,7 @@ fn build_text_node(
             corner_radius: paint.corner_radius,
             opacity: 1.0,
             content,
-            font_size: if font_size > 0.0 { font_size } else { 16.0 },
+            font_size: resolved_font_size,
             font_family,
             font_weight: if font_weight > 0 { font_weight } else { 400 },
             font_style: "Normal".to_string(),
@@ -1090,6 +1443,9 @@ fn build_text_node(
             } else {
                 [0.2, 0.2, 0.2, 1.0]
             },
+            text_align,
+            text_decoration,
+            line_height,
             selected: 0,
             hovered: false,
         },
@@ -1169,10 +1525,12 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("max-width")
         || props.contains_key("max-height")
         || props.contains_key("display")
+        || props.contains_key("arrange")
         || props.contains_key("flex-direction")
         || props.contains_key("gap")
         || props.contains_key("grid-template-columns")
-        || props.contains_key("grid-template-rows");
+        || props.contains_key("grid-template-rows")
+        || props.contains_key("grid-cell-min");
 
     if has_text_props && !has_box_props {
         "text"
@@ -1181,38 +1539,65 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
     }
 }
 
-fn box_categories() -> Vec<FieldCategory> {
-    vec![
-        FieldCategory {
-            name: "layout".to_string(),
-            fields: vec![
-                FieldDef::new("width", None).with_input_type("resize"),
-                FieldDef::new("height", None).with_input_type("resize"),
-                FieldDef::new("min-width", Some("Min W")),
-                FieldDef::new("min-height", Some("Min H")),
-                FieldDef::new("max-width", Some("Max W")),
-                FieldDef::new("max-height", Some("Max H")),
-                FieldDef::new("padding", Some("Padding")),
+// The item-level flex trio (flex-grow/flex-shrink/align-self) and margin are RETIRED from the
+// panel entirely (no FieldDef anywhere, parse-only escape hatch) -- resize/compile_resize already
+// own per-item sizing, and Charter's opinion is no margins (see build_box_node). This is the same
+// "retired-opinion fields stay panel-absent, parse-only" tier the arrangement fields below join.
+fn arrange_field() -> FieldDef {
+    FieldDef::new("arrange", Some("Arrangement"))
+        .with_input_type("arrange")
+        .with_arrange_keys(ArrangeKeys {
+            direction_key: "flex-direction".to_string(),
+            gap: FieldDef::new("gap", Some("Gap"))
+                .with_input_type("spacing")
+                .with_spacing_mode("scalar"),
+            cell_min: FieldDef::new("grid-cell-min", Some("Cell Min")),
+            // Raw escape hatches for Stack/Cluster/Split/Center's "Advanced flex" disclosure --
+            // still real, parseable panel controls (build_box_node/compile_arrange only fill
+            // these in when unset), just no longer front-and-center.
+            advanced: vec![
                 FieldDef::new("flex-direction", Some("Direction")),
-                FieldDef::new("gap", Some("Gap")),
-                // Item-level flex (flex-grow / flex-shrink / align-self) is RETIRED from the panel:
-                // the width/height "resize" control (Fixed/Hug/Fill) is now Charter's opinion for
-                // per-item sizing and compiles those primitives itself (see compile_resize). The
-                // fields are still parsed by build_box_node as an escape hatch, just no longer
-                // surfaced here. Container-level arrangement stays exposed (plain inputs for now) --
-                // it's a different concern than item resizing and has no opinionated control yet;
-                // curate these when an alignment/auto-spacing control lands. `margin` remains
-                // intentionally absent (Charter's opinion is no margins -- see build_box_node).
                 FieldDef::new("align-items", Some("Align")),
                 FieldDef::new("justify-content", Some("Justify")),
                 FieldDef::new("flex-wrap", Some("Wrap")),
                 FieldDef::new("display", Some("Display")),
+            ],
+            // Raw escape hatches for Grid's "Custom tracks" disclosure -- the CSS-Grid
+            // sublanguage Phase 3 replaces as the *default* surface, not as a capability.
+            grid_advanced: vec![
                 FieldDef::new("grid-template-columns", Some("Columns")),
                 FieldDef::new("grid-template-rows", Some("Rows")),
                 FieldDef::new("grid-auto-columns", Some("Auto Cols")),
                 FieldDef::new("grid-auto-rows", Some("Auto Rows")),
                 FieldDef::new("grid-column", Some("Col Span")),
                 FieldDef::new("grid-row", Some("Row Span")),
+            ],
+        })
+}
+
+fn box_categories() -> Vec<FieldCategory> {
+    vec![
+        FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                arrange_field(),
+                // min/max ride each dimension's resize control as contextual follow-ons
+                // (ResizeKeys), not top-level rows -- see the ResizeKeys comment.
+                FieldDef::new("width", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-width", Some("Min")),
+                        max: FieldDef::new("max-width", Some("Max")),
+                    }),
+                FieldDef::new("height", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-height", Some("Min")),
+                        max: FieldDef::new("max-height", Some("Max")),
+                    }),
+                FieldDef::new("padding", Some("Padding"))
+                    .with_input_type("spacing")
+                    .with_spacing_mode("box"),
             ],
         },
         FieldCategory {
@@ -1243,9 +1628,26 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("color", Some("Fill")),
                 FieldDef::new("font-family", Some("Family")).with_input_type("font"),
                 FieldDef::new("font-size", Some("Size")),
-                FieldDef::new("font-weight", Some("Weight")),
-                FieldDef::new("text-align", Some("Align")),
-                FieldDef::new("text-decoration", Some("Decor")),
+                // Options are enumerated editor-side from the font-facts channel (the currently
+                // resolved font-family's real weights) -- Charter only needs to say "this is a
+                // weight field", not declare the choices, since they're runtime/per-family data
+                // it doesn't carry (unlike arrangeKeys/resizeKeys, which are static per FieldDef).
+                FieldDef::new("font-weight", Some("Weight")).with_input_type("weight"),
+                // Plain field, no inputType -- same as font-size. Deliberately NOT a numeric
+                // stepper: compile_line_height's raw value is CSS-style dual-syntax (a bare
+                // number is a MULTIPLIER of font-size, a `px` value is absolute -- see its own
+                // doc comment), and a stepper that always wrote bare numbers would silently
+                // collide with the multiplier reading. Free text lets a designer type either
+                // form directly, matching how real CSS line-height authoring already works.
+                // Per text-affordances Phase 4/5: this is deliberately standalone now (user
+                // asked for it ahead of Phase 5's grouped Typography control, which is deferred)
+                // rather than waiting to ride in as a follow-on there.
+                FieldDef::new("line-height", Some("Leading")),
+                // Fixed, Charter-known choice sets (unlike "weight"'s runtime facts) -- same
+                // "hardcoded segmented buttons" shape as "resize"'s Fixed/Hug/Fill, handled
+                // inline in StyleField.svelte rather than a dedicated wrapper component.
+                FieldDef::new("text-align", Some("Align")).with_input_type("align"),
+                FieldDef::new("text-decoration", Some("Decor")).with_input_type("decoration"),
             ],
         },
         // Paint properties a text node can carry directly (a highlighted/pill label) without
@@ -1539,6 +1941,103 @@ pub fn on_init(_input: String) -> FnResult<String> {
 // "" entries in node_view_ids mark structural grid scaffolding (root/row/cell wrapper boxes)
 // that don't belong to any view; a click resolving to one of those should be treated the same
 // as clicking empty space.
+// The CSS font-weight matching algorithm over the weights a family actually has, per its
+// facts. Charter's single decision point for weight substitution (text-affordances Phase 1):
+// the editor's font fetching consumes this function's OUTPUT (via `font_requests`), never
+// re-deciding — so the panel's requested weight, the fetched file, and the rendered glyphs
+// can't disagree. A family with no facts (uncatalogued) returns the request untouched;
+// cosmic-text's own nearest-loaded matching remains the last-line fallback for that case and
+// for the not-yet-loaded window.
+fn resolve_font_weight(requested: u16, facts: &FamilyFacts) -> u16 {
+    if facts.variants.is_empty() {
+        return requested;
+    }
+    // A variable range covering the request serves it exactly; otherwise each range's nearest
+    // endpoint is a discrete candidate.
+    if facts
+        .variants
+        .iter()
+        .any(|v| requested >= v.weight_min && requested <= v.weight_max)
+    {
+        return requested;
+    }
+    let candidates: std::collections::BTreeSet<u16> = facts
+        .variants
+        .iter()
+        .map(|v| requested.clamp(v.weight_min, v.weight_max))
+        .collect();
+
+    let below = candidates.iter().rev().find(|&&w| w < requested).copied();
+    let above = candidates.iter().find(|&&w| w > requested).copied();
+
+    // CSS: <400 prefers lighter first; >500 prefers heavier first; the 400..=500 zone looks
+    // up toward 500, then below, then above.
+    let pick = if requested < 400 {
+        below.or(above)
+    } else if requested > 500 {
+        above.or(below)
+    } else {
+        candidates
+            .range(requested..=500)
+            .next()
+            .copied()
+            .or(below)
+            .or(above)
+    };
+    pick.unwrap_or(requested)
+}
+
+// Post-walk over the built viewport: snap every Text node's weight to what its family can
+// actually render. Runs at the very end of build_viewport so both on_resolve and
+// on_selection_change's rebuild get identical treatment, and no per-node code needs facts
+// threaded through it.
+fn snap_text_weights(nodes: &mut [UiNode], facts: &std::collections::HashMap<String, FamilyFacts>) {
+    if facts.is_empty() {
+        return;
+    }
+    for node in nodes {
+        if let UiNode::Text(t) = node {
+            let family_facts = facts
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(&t.text_data.font_family))
+                .map(|(_, v)| v);
+            if let Some(f) = family_facts {
+                t.text_data.font_weight = resolve_font_weight(t.text_data.font_weight, f);
+            }
+        }
+    }
+}
+
+// The concrete (family, weight, style) set the viewport actually renders — post-snapping — so
+// the editor fetches exactly the files Charter decided on, instead of re-deriving weights from
+// raw kit properties (which may name weights that don't exist).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+struct FontRequest {
+    family: String,
+    weight: u16,
+    style: String,
+}
+
+fn collect_font_requests(nodes: &[UiNode]) -> Vec<FontRequest> {
+    let mut set = std::collections::BTreeSet::new();
+    for node in nodes {
+        if let UiNode::Text(t) = node {
+            if t.text_data.font_family.is_empty() {
+                continue;
+            }
+            // Lowercased: Fontavious's catalogue styles are "normal"/"italic" and its variant
+            // matching is case-sensitive, while TextData's font_style is Vellum-cased ("Normal").
+            let style = t.text_data.font_style.to_lowercase();
+            set.insert(FontRequest {
+                family: t.text_data.font_family.clone(),
+                weight: t.text_data.font_weight,
+                style: if style.is_empty() { "normal".to_string() } else { style },
+            });
+        }
+    }
+    set.into_iter().collect()
+}
+
 fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
     let mut viewport_data: Vec<UiNode> = Vec::new();
     let mut node_view_ids: Vec<String> = Vec::new();
@@ -1653,6 +2152,8 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
             }
         }
     }
+
+    snap_text_weights(&mut viewport_data, &parsed.font_facts);
 
     (viewport_data, node_view_ids)
 }
@@ -1850,10 +2351,12 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let (viewport_data, node_view_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
+    let font_requests = collect_font_requests(&viewport_data);
     let result = OnResolveResult {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
+        font_requests,
         viewport_data_binary,
     };
 
@@ -2040,6 +2543,7 @@ mod position_wire_tests {
             selected_view_primary: None,
             selected_view_secondary: vec![],
             hovered_view_id: None,
+            font_facts: Default::default(),
         };
 
         let (viewport, node_view_ids) = build_viewport(&input);
@@ -2145,6 +2649,7 @@ mod selection_and_hover_tests {
             selected_view_primary: primary.map(str::to_string),
             selected_view_secondary: vec![],
             hovered_view_id: hovered.map(str::to_string),
+            font_facts: Default::default(),
         }
     }
 
@@ -2269,6 +2774,7 @@ mod selection_and_hover_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            font_requests: vec![],
             viewport_data_binary: None,
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -2612,6 +3118,7 @@ mod children_containment_tests {
             selected_view_primary: None,
             selected_view_secondary: vec![],
             hovered_view_id: None,
+            font_facts: Default::default(),
         }
     }
 
@@ -2736,6 +3243,182 @@ mod children_containment_tests {
             orphan_occurrences, 1,
             "a view referenced by nobody must still render, as its own top-level cell"
         );
+    }
+}
+
+#[cfg(test)]
+mod text_align_decoration_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn parse_text_align_maps_known_keywords_and_defaults_to_left() {
+        assert_eq!(parse_text_align(Some("center")), "Center");
+        assert_eq!(parse_text_align(Some("right")), "Right");
+        assert_eq!(parse_text_align(Some("justify")), "Justify");
+        assert_eq!(parse_text_align(Some("left")), "Left");
+        assert_eq!(parse_text_align(Some("garbage")), "Left");
+        assert_eq!(parse_text_align(None), "Left");
+    }
+
+    #[test]
+    fn parse_text_decoration_maps_known_keywords_and_defaults_to_none() {
+        assert_eq!(parse_text_decoration(Some("underline")), "Underline");
+        assert_eq!(parse_text_decoration(Some("line-through")), "LineThrough");
+        assert_eq!(parse_text_decoration(Some("none")), "None");
+        assert_eq!(parse_text_decoration(Some("garbage")), "None");
+        assert_eq!(parse_text_decoration(None), "None");
+    }
+
+    #[test]
+    fn build_text_node_reads_align_and_decoration_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-align".to_string(), prop("center"));
+        props.insert("text-decoration".to_string(), prop("underline"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.text_align, "Center");
+        assert_eq!(t.text_data.text_decoration, "Underline");
+    }
+
+    #[test]
+    fn build_text_node_defaults_align_and_decoration_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.text_align, "Left");
+        assert_eq!(t.text_data.text_decoration, "None");
+    }
+
+    // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output that
+    // Vellum deserializes -- assert on the serialized JSON's key/value strings, not just the
+    // Rust struct's fields, since a rename in either place fails silently (unwrap_or_default).
+    #[test]
+    fn text_categories_declares_align_and_decoration_as_segmented_input_types() {
+        let categories = text_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let align = fields.iter().find(|f| f.key == "text-align").expect("text-align field");
+        assert_eq!(align.input_type.as_deref(), Some("align"));
+        let decor = fields.iter().find(|f| f.key == "text-decoration").expect("text-decoration field");
+        assert_eq!(decor.input_type.as_deref(), Some("decoration"));
+    }
+
+    #[test]
+    fn text_data_serializes_align_and_decoration_as_vellum_enum_variant_names() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-align".to_string(), prop("right"));
+        props.insert("text-decoration".to_string(), prop("line-through"));
+        let node = build_text_node(&props, 0);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"text_align\":\"Right\""), "json was: {json}");
+        assert!(json.contains("\"text_decoration\":\"LineThrough\""), "json was: {json}");
+    }
+}
+
+#[cfg(test)]
+mod line_height_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn explicit_px_value_wins_regardless_of_font_size() {
+        assert_eq!(compile_line_height(16.0, Some("24px")), 24.0);
+        assert_eq!(compile_line_height(48.0, Some("24px")), 24.0, "px is absolute, ignores font_size");
+    }
+
+    #[test]
+    fn explicit_bare_number_is_a_multiplier_of_font_size() {
+        assert_eq!(compile_line_height(16.0, Some("1.5")), 24.0);
+        assert_eq!(compile_line_height(40.0, Some("2")), 80.0);
+    }
+
+    #[test]
+    fn unset_or_unparseable_derives_the_ratio_ramp() {
+        // Body-size flat anchor: <= 20px always gets the full 1.5x ratio.
+        assert_eq!(compile_line_height(16.0, None), 16.0 * 1.5);
+        assert_eq!(compile_line_height(20.0, None), 20.0 * 1.5);
+        // Display-size flat anchor: >= 48px always gets the tight 1.1x ratio.
+        assert_eq!(compile_line_height(48.0, None), 48.0 * 1.1);
+        assert_eq!(compile_line_height(64.0, None), 64.0 * 1.1);
+        // Midpoint (34px, halfway 20..48) interpolates to the ramp's midpoint ratio (1.3x).
+        let mid = compile_line_height(34.0, None);
+        assert!((mid - 34.0 * 1.3).abs() < 0.01, "got {mid}");
+        // Garbage text falls through to the same derived ramp as None.
+        assert_eq!(compile_line_height(16.0, Some("garbage")), compile_line_height(16.0, None));
+    }
+
+    #[test]
+    fn build_text_node_reads_line_height_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("font-size".to_string(), prop("16px"));
+        props.insert("line-height".to_string(), prop("1.5"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.line_height, 24.0);
+    }
+
+    #[test]
+    fn build_text_node_derives_line_height_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        // No font-size set either -- resolved_font_size falls back to 16.0, matching the
+        // 1.5x ratio for body sizes.
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.text_data.line_height, 16.0 * 1.5);
+    }
+
+    // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output Vellum
+    // deserializes -- assert on the serialized JSON key, not just the Rust struct field.
+    #[test]
+    fn text_categories_declares_a_plain_line_height_field() {
+        let categories = text_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let field = fields.iter().find(|f| f.key == "line-height").expect("line-height field");
+        // No inputType -- free text, same as font-size, so a designer can type either CSS form
+        // (a bare multiplier or an absolute px value) directly. Deliberately standalone ahead of
+        // Phase 5's grouped Typography control (deferred), per explicit user request.
+        assert_eq!(field.input_type, None);
+        assert_eq!(field.display_text.as_deref(), Some("Leading"));
+    }
+
+    #[test]
+    fn text_data_serializes_line_height_as_snake_case() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("font-size".to_string(), prop("20px"));
+        props.insert("line-height".to_string(), prop("30px"));
+        let node = build_text_node(&props, 0);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"line_height\":30"), "json was: {json}");
     }
 }
 
@@ -2925,6 +3608,7 @@ mod text_paint_properties_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            font_requests: vec![],
             viewport_data_binary: Some("AAAA".to_string()),
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -2981,7 +3665,9 @@ mod extent_parse_tests {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("src".into(), prop("src", "logo"));
         props.insert("fit".into(), prop("fit", "contain"));
-        let UiNode::Img(img) = build_img_node(&props, None) else { panic!("expected Img") };
+        let UiNode::Img(img) = build_img_node(&props, None) else {
+            panic!("expected Img")
+        };
         // The wire field must be the `fit` string vellum reads -- not a `cover` bool that vellum
         // would silently drop, leaving every image at the "cover" default.
         assert_eq!(img.img_data.fit, "contain");
@@ -2990,7 +3676,9 @@ mod extent_parse_tests {
         let mut p2: HashMap<String, ResolvedProperty> = HashMap::new();
         p2.insert("src".into(), prop("src", "logo"));
         p2.insert("fit".into(), prop("fit", "bogus"));
-        let UiNode::Img(img2) = build_img_node(&p2, None) else { panic!("expected Img") };
+        let UiNode::Img(img2) = build_img_node(&p2, None) else {
+            panic!("expected Img")
+        };
         assert_eq!(img2.img_data.fit, "cover");
     }
 
@@ -3000,7 +3688,9 @@ mod extent_parse_tests {
         props.insert("width".into(), prop("width", "50%"));
         props.insert("min-width".into(), prop("min-width", "80px"));
         let node = build_box_node(&props, None, None);
-        let UiNode::Box(b) = node else { panic!("expected Box") };
+        let UiNode::Box(b) = node else {
+            panic!("expected Box")
+        };
         assert_eq!(b.box_data.width, Extent::Percent(0.5));
         assert_eq!(b.box_data.min_width, Extent::Px(80.0));
         // Charter never emits margin -- its opinion.
@@ -3045,7 +3735,10 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.flex_shrink, Some(1.0));
         assert_eq!(d.extra.flex_basis, Some(Extent::Px(0.0)));
-        assert!(d.extra.align_self.is_none(), "width is the main axis in a row -> no align-self");
+        assert!(
+            d.extra.align_self.is_none(),
+            "width is the main axis in a row -> no align-self"
+        );
     }
 
     #[test]
@@ -3087,5 +3780,464 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
         assert_eq!(d.min_width, Extent::Px(0.0));
+    }
+}
+
+#[cfg(test)]
+mod font_facts_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn facts(ranges: &[(u16, u16)]) -> FamilyFacts {
+        FamilyFacts {
+            variants: ranges
+                .iter()
+                .map(|&(lo, hi)| FontFactVariant {
+                    weight_min: lo,
+                    weight_max: hi,
+                    style: "normal".to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn weight_inside_a_variable_range_passes_through_exactly() {
+        // Inter-shaped: one 400-700 variable range.
+        assert_eq!(resolve_font_weight(550, &facts(&[(400, 700)])), 550);
+        assert_eq!(resolve_font_weight(400, &facts(&[(400, 700)])), 400);
+    }
+
+    #[test]
+    fn heavy_request_snaps_up_first_then_down() {
+        // Lato-shaped: static 400 + 700. CSS: >500 prefers heavier.
+        let lato = facts(&[(400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(600, &lato), 700);
+        assert_eq!(resolve_font_weight(900, &lato), 700, "nothing above -> nearest below");
+    }
+
+    #[test]
+    fn light_request_snaps_down_first_then_up() {
+        let lato = facts(&[(400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(300, &lato), 400, "nothing below -> nearest above");
+        let three_weights = facts(&[(200, 200), (400, 400), (700, 700)]);
+        assert_eq!(resolve_font_weight(300, &three_weights), 200, "<400 prefers lighter");
+    }
+
+    #[test]
+    fn the_400_500_zone_looks_up_toward_500_first() {
+        let f = facts(&[(300, 300), (500, 500), (700, 700)]);
+        assert_eq!(resolve_font_weight(450, &f), 500);
+        assert_eq!(resolve_font_weight(400, &f), 500, "400 checks 500 before below");
+        let no_500 = facts(&[(300, 300), (700, 700)]);
+        assert_eq!(resolve_font_weight(450, &no_500), 300, "nothing in 450..=500 -> below next");
+    }
+
+    #[test]
+    fn no_facts_for_family_passes_weight_through() {
+        assert_eq!(resolve_font_weight(600, &facts(&[])), 600);
+    }
+
+    #[test]
+    fn snap_text_weights_matches_family_case_insensitively_and_leaves_unknown_families_alone() {
+        let mut props = std::collections::HashMap::new();
+        props.insert("content".to_string(), prop("hi"));
+        props.insert("font-family".to_string(), prop("Lato"));
+        props.insert("font-weight".to_string(), prop("600"));
+        let mut nodes = vec![build_text_node(&props, 0)];
+
+        let mut facts_map = std::collections::HashMap::new();
+        facts_map.insert("lato".to_string(), facts(&[(400, 400), (700, 700)]));
+        snap_text_weights(&mut nodes, &facts_map);
+        let UiNode::Text(t) = &nodes[0] else { panic!("expected Text") };
+        assert_eq!(t.text_data.font_weight, 700, "600 on Lato snaps to 700, key case-insensitive");
+
+        // A family with no facts entry is untouched.
+        props.insert("font-family".to_string(), prop("Mystery Serif"));
+        let mut nodes2 = vec![build_text_node(&props, 0)];
+        snap_text_weights(&mut nodes2, &facts_map);
+        let UiNode::Text(t2) = &nodes2[0] else { panic!("expected Text") };
+        assert_eq!(t2.text_data.font_weight, 600);
+    }
+
+    #[test]
+    fn collect_font_requests_dedupes_and_defaults_style() {
+        let mut props = std::collections::HashMap::new();
+        props.insert("content".to_string(), prop("hi"));
+        props.insert("font-family".to_string(), prop("Inter"));
+        props.insert("font-weight".to_string(), prop("700"));
+        let a = build_text_node(&props, 0);
+        let b = build_text_node(&props, 0);
+        let requests = collect_font_requests(&[a, b]);
+        assert_eq!(requests.len(), 1, "identical variants dedupe");
+        assert_eq!(requests[0].family, "Inter");
+        assert_eq!(requests[0].weight, 700);
+        assert_eq!(requests[0].style, "normal");
+    }
+
+    // Wire-key tests, per the serde-rename pitfall: the INPUT is JS-authored (camelCase key
+    // `fontFacts`), the OUTPUT is Charter-authored (snake_case key `font_requests`) — a test
+    // asserting only on struct fields would pass even if either rename regressed.
+    #[test]
+    fn on_resolve_input_deserializes_camel_case_font_facts() {
+        let json = r#"{
+            "activeViewId": null,
+            "resolvedKits": [],
+            "viewHints": {},
+            "fontFacts": { "Lato": { "variants": [{ "weightMin": 400, "weightMax": 400, "style": "normal" }] } }
+        }"#;
+        let parsed: OnResolveInput = serde_json::from_str(json).expect("deserialize");
+        let lato = parsed.font_facts.get("Lato").expect("Lato facts present");
+        assert_eq!(lato.variants[0].weight_min, 400);
+    }
+
+    #[test]
+    fn on_resolve_result_serializes_snake_case_font_requests() {
+        let result = OnResolveResult {
+            categories: vec![],
+            viewport_data: vec![],
+            node_view_ids: vec![],
+            font_requests: vec![FontRequest {
+                family: "Lato".to_string(),
+                weight: 700,
+                style: "normal".to_string(),
+            }],
+            viewport_data_binary: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"font_requests\""), "snake_case output key, got: {json}");
+        assert!(!json.contains("fontRequests"), "must NOT be camelCase: {json}");
+        assert!(json.contains("\"weight\":700"));
+    }
+}
+
+#[cfg(test)]
+mod arrange_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "l".to_string(),
+            kit_id: "k".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn box_with(props: &[(&str, &str)]) -> BoxData {
+        let mut map: HashMap<String, ResolvedProperty> = HashMap::new();
+        for (k, v) in props {
+            map.insert((*k).to_string(), prop(k, v));
+        }
+        match build_box_node(&map, None, None) {
+            UiNode::Box(b) => b.box_data,
+            _ => panic!("expected Box"),
+        }
+    }
+
+    // --- box_categories() shape ---
+
+    #[test]
+    fn box_categories_declares_an_arrange_field_with_populated_arrange_keys() {
+        let categories = box_categories();
+        let field = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .find(|f| f.key == "arrange")
+            .expect("box_categories() should declare an \"arrange\" field");
+        assert_eq!(field.input_type.as_deref(), Some("arrange"));
+        let keys = field
+            .arrange_keys
+            .as_ref()
+            .expect("arrange field should carry arrangeKeys");
+        assert_eq!(keys.direction_key, "flex-direction");
+        assert_eq!(keys.gap.key, "gap");
+        assert_eq!(keys.cell_min.key, "grid-cell-min");
+        assert!(!keys.advanced.is_empty());
+        assert!(!keys.grid_advanced.is_empty());
+    }
+
+    #[test]
+    fn box_categories_top_level_no_longer_lists_arrangement_knobs() {
+        // These now live only inside arrange_keys (advanced/grid_advanced/gap/cell_min), not as
+        // standalone top-level FieldDefs -- see the layout-affordances.md Phase 1 payoff.
+        let categories = box_categories();
+        let top_level_keys: Vec<&str> = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .map(|f| f.key.as_str())
+            .collect();
+        for retired in [
+            "flex-direction",
+            "gap",
+            "align-items",
+            "justify-content",
+            "flex-wrap",
+            "display",
+            "grid-template-columns",
+            "grid-template-rows",
+            "grid-auto-columns",
+            "grid-auto-rows",
+            "grid-column",
+            "grid-row",
+            "grid-cell-min",
+        ] {
+            assert!(
+                !top_level_keys.contains(&retired),
+                "\"{retired}\" should not be a top-level layout FieldDef anymore"
+            );
+        }
+    }
+
+    // --- box_categories() min/max limit fold (layout-affordances Phase 4) ---
+
+    #[test]
+    fn box_categories_top_level_no_longer_lists_min_max_fields() {
+        let categories = box_categories();
+        let top_level_keys: Vec<&str> = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .map(|f| f.key.as_str())
+            .collect();
+        for retired in ["min-width", "min-height", "max-width", "max-height"] {
+            assert!(
+                !top_level_keys.contains(&retired),
+                "\"{retired}\" should ride its dimension's resize control (ResizeKeys), not be a top-level FieldDef"
+            );
+        }
+    }
+
+    #[test]
+    fn resize_fields_carry_their_own_limit_keys() {
+        let categories = box_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+
+        let width = fields.iter().find(|f| f.key == "width").expect("width field");
+        let rk = width.resize_keys.as_ref().expect("width should carry resizeKeys");
+        assert_eq!(rk.min.key, "min-width");
+        assert_eq!(rk.max.key, "max-width");
+
+        let height = fields.iter().find(|f| f.key == "height").expect("height field");
+        let rk = height.resize_keys.as_ref().expect("height should carry resizeKeys");
+        assert_eq!(rk.min.key, "min-height");
+        assert_eq!(rk.max.key, "max-height");
+    }
+
+    // --- parse_padding_shorthand ---
+
+    #[test]
+    fn padding_shorthand_one_value_applies_to_all_sides() {
+        assert_eq!(
+            parse_padding_shorthand(Some("12")),
+            [12.0, 12.0, 12.0, 12.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_two_values_are_vert_then_horiz() {
+        assert_eq!(
+            parse_padding_shorthand(Some("8 16")),
+            [8.0, 16.0, 8.0, 16.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_three_values_are_top_horiz_bottom() {
+        assert_eq!(
+            parse_padding_shorthand(Some("4 8 12")),
+            [4.0, 8.0, 12.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_four_values_are_top_right_bottom_left() {
+        assert_eq!(
+            parse_padding_shorthand(Some("1 2 3 4")),
+            [1.0, 2.0, 3.0, 4.0]
+        );
+    }
+
+    #[test]
+    fn padding_shorthand_absent_is_zero() {
+        assert_eq!(parse_padding_shorthand(None), [0.0; 4]);
+    }
+
+    // --- TrackSize::AutoFit wire shape ---
+
+    #[test]
+    fn track_size_autofit_serializes_as_expected() {
+        let json = serde_json::to_string(&TrackSize::AutoFit(160.0)).unwrap();
+        assert_eq!(json, r#"{"AutoFit":160.0}"#);
+    }
+
+    // --- direction defaulting (resolve_flex_direction) ---
+
+    #[test]
+    fn cluster_and_split_default_direction_to_row_when_unset() {
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Cluster), "Row");
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Split), "Row");
+    }
+
+    #[test]
+    fn stack_and_center_default_direction_to_column_when_unset() {
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Stack), "Column");
+        assert_eq!(resolve_flex_direction(None, ArrangeKind::Center), "Column");
+    }
+
+    #[test]
+    fn explicit_direction_always_wins_regardless_of_kind() {
+        assert_eq!(
+            resolve_flex_direction(Some("column"), ArrangeKind::Cluster),
+            "Column"
+        );
+        assert_eq!(
+            resolve_flex_direction(Some("row-reverse"), ArrangeKind::Stack),
+            "RowReverse"
+        );
+    }
+
+    // --- compile_arrange / build_box_node integration, per ArrangeKind ---
+
+    #[test]
+    fn fresh_box_defaults_to_stack_column_zero_touches() {
+        let d = box_with(&[]);
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.align_items, None);
+        assert_eq!(d.extra.justify_content, None);
+    }
+
+    #[test]
+    fn stack_row_defaults_align_items_center_when_unset() {
+        let d = box_with(&[("arrange", "stack"), ("flex-direction", "row")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn stack_row_respects_explicit_align_items_override() {
+        let d = box_with(&[
+            ("arrange", "stack"),
+            ("flex-direction", "row"),
+            ("align-items", "flex-end"),
+        ]);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexEnd));
+    }
+
+    #[test]
+    fn cluster_forces_row_wrap_defaults_when_unset() {
+        let d = box_with(&[("arrange", "cluster")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.flex_wrap, FlexWrapValue::Wrap);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexStart));
+    }
+
+    #[test]
+    fn cluster_respects_explicit_advanced_overrides() {
+        // The "Advanced flex" escape hatch stays live even while Cluster is active.
+        let d = box_with(&[
+            ("arrange", "cluster"),
+            ("flex-wrap", "nowrap"),
+            ("align-items", "center"),
+        ]);
+        assert_eq!(d.extra.flex_wrap, FlexWrapValue::NoWrap);
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn split_defaults_row_space_between_center_when_unset() {
+        let d = box_with(&[("arrange", "split")]);
+        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn split_axis_column_is_a_vertical_split() {
+        let d = box_with(&[("arrange", "split"), ("flex-direction", "column")]);
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
+    }
+
+    #[test]
+    fn center_defaults_justify_and_align_center_and_leaves_direction_untouched() {
+        let d = box_with(&[("arrange", "center")]);
+        // Center is axis-free -- no follow-on touches direction, so it falls through to the
+        // plain absent-flex-direction default (Column), same as a fresh box.
+        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.extra.justify_content, Some(JustifyValue::Center));
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn grid_defaults_to_autofit_from_cell_min() {
+        let d = box_with(&[("arrange", "grid"), ("grid-cell-min", "200")]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::AutoFit(200.0)]
+        );
+    }
+
+    #[test]
+    fn grid_falls_back_to_160_when_cell_min_unset() {
+        let d = box_with(&[("arrange", "grid")]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::AutoFit(160.0)]
+        );
+    }
+
+    #[test]
+    fn grid_custom_tracks_override_wins_over_cell_min() {
+        let d = box_with(&[
+            ("arrange", "grid"),
+            ("grid-cell-min", "200"),
+            ("grid-template-columns", "1fr 2fr"),
+        ]);
+        assert_eq!(
+            d.extra.grid_template_columns,
+            vec![TrackSize::Fr(1.0), TrackSize::Fr(2.0)]
+        );
+    }
+
+    #[test]
+    fn unrecognized_arrange_value_falls_back_to_stack() {
+        let d = box_with(&[("arrange", "bogus"), ("flex-direction", "row")]);
+        // Falls back to Stack's rules: Row + unset align-items -> defaults to Center.
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    // --- detect_primitive: arrange/grid-cell-min are box-forcing ---
+
+    #[test]
+    fn arrange_property_forces_box_detection() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("font-size".to_string(), prop("font-size", "14px"));
+        props.insert("arrange".to_string(), prop("arrange", "stack"));
+        assert_eq!(detect_primitive(&props), "box");
+    }
+
+    #[test]
+    fn grid_cell_min_property_forces_box_detection() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("color".to_string(), prop("color", "#111111"));
+        props.insert("grid-cell-min".to_string(), prop("grid-cell-min", "160"));
+        assert_eq!(detect_primitive(&props), "box");
     }
 }
