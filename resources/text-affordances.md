@@ -41,8 +41,9 @@
 > `compile_arrange`; a bare number is a CSS-style multiplier of
 > `font-size`, a `px` value is absolute, unset derives the ratio ramp).
 > **Deviation from the refined plan, same day, by explicit user request:**
-> a standalone panel row shipped anyway (`FieldDef::new("line-height",
-Some("Leading"))`, no `inputType` — plain free text, same as
+> a standalone panel row shipped anyway
+> (`FieldDef::new("line-height", Some("Leading"))`, no `inputType` —
+> plain free text, same as
 > `font-size`, deliberately not a numeric stepper, since a stepper always
 > writes a bare number and would silently collide with
 > `compile_line_height`'s CSS-style dual reading). "Just for line-height,
