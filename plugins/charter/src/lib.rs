@@ -45,6 +45,11 @@ struct FieldDef {
     // or "gap" -- same "typed side-channel keyed by inputType" shape as suggestions_from.
     #[serde(rename = "arrangeKeys", default)]
     arrange_keys: Option<Box<ArrangeKeys>>,
+    // Only set on "resize" fields (width/height). Declares the dimension's min/max limit fields
+    // as the resize control's own contextual follow-ons instead of four permanent top-level rows
+    // (layout-affordances Phase 4) -- same side-channel shape as arrange_keys.
+    #[serde(rename = "resizeKeys", default)]
+    resize_keys: Option<Box<ResizeKeys>>,
     // Only set on inputType "spacing" fields. "scalar" (gap, cell-min -- one number) vs "box"
     // (padding -- CSS 1/2/3/4-value shorthand, with a 1<->4 expand/collapse affordance).
     #[serde(rename = "spacingMode", default)]
@@ -59,6 +64,7 @@ impl FieldDef {
             input_type: None,
             suggestions_from: None,
             arrange_keys: None,
+            resize_keys: None,
             spacing_mode: None,
         }
     }
@@ -74,6 +80,11 @@ impl FieldDef {
 
     fn with_arrange_keys(mut self, keys: ArrangeKeys) -> Self {
         self.arrange_keys = Some(Box::new(keys));
+        self
+    }
+
+    fn with_resize_keys(mut self, keys: ResizeKeys) -> Self {
+        self.resize_keys = Some(Box::new(keys));
         self
     }
 
@@ -112,6 +123,19 @@ struct ArrangeKeys {
     advanced: Vec<FieldDef>,
     // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row.
     grid_advanced: Vec<FieldDef>,
+}
+
+// Declared only on the two "resize" FieldDefs (width/height in box_categories). Phase 4 of
+// layout-affordances: min/max limits matter only when a dimension can actually vary with context
+// (Fill, or a fixed percent of a parent that isn't self-sized -- see CLAUDE.md's `min_width`
+// percent-floor note), so instead of four permanent top-level rows they ride the resize control
+// as its own inline follow-ons, revealed exactly when meaningful. Full FieldDefs, same reason as
+// ArrangeKeys: the editor hands them straight to the generic StyleField, hardcoding nothing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResizeKeys {
+    min: FieldDef,
+    max: FieldDef,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1446,12 +1470,20 @@ fn box_categories() -> Vec<FieldCategory> {
             name: "layout".to_string(),
             fields: vec![
                 arrange_field(),
-                FieldDef::new("width", None).with_input_type("resize"),
-                FieldDef::new("height", None).with_input_type("resize"),
-                FieldDef::new("min-width", Some("Min W")),
-                FieldDef::new("min-height", Some("Min H")),
-                FieldDef::new("max-width", Some("Max W")),
-                FieldDef::new("max-height", Some("Max H")),
+                // min/max ride each dimension's resize control as contextual follow-ons
+                // (ResizeKeys), not top-level rows -- see the ResizeKeys comment.
+                FieldDef::new("width", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-width", Some("Min")),
+                        max: FieldDef::new("max-width", Some("Max")),
+                    }),
+                FieldDef::new("height", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-height", Some("Min")),
+                        max: FieldDef::new("max-height", Some("Max")),
+                    }),
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
@@ -3422,6 +3454,40 @@ mod arrange_tests {
                 "\"{retired}\" should not be a top-level layout FieldDef anymore"
             );
         }
+    }
+
+    // --- box_categories() min/max limit fold (layout-affordances Phase 4) ---
+
+    #[test]
+    fn box_categories_top_level_no_longer_lists_min_max_fields() {
+        let categories = box_categories();
+        let top_level_keys: Vec<&str> = categories
+            .iter()
+            .flat_map(|c| &c.fields)
+            .map(|f| f.key.as_str())
+            .collect();
+        for retired in ["min-width", "min-height", "max-width", "max-height"] {
+            assert!(
+                !top_level_keys.contains(&retired),
+                "\"{retired}\" should ride its dimension's resize control (ResizeKeys), not be a top-level FieldDef"
+            );
+        }
+    }
+
+    #[test]
+    fn resize_fields_carry_their_own_limit_keys() {
+        let categories = box_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+
+        let width = fields.iter().find(|f| f.key == "width").expect("width field");
+        let rk = width.resize_keys.as_ref().expect("width should carry resizeKeys");
+        assert_eq!(rk.min.key, "min-width");
+        assert_eq!(rk.max.key, "max-width");
+
+        let height = fields.iter().find(|f| f.key == "height").expect("height field");
+        let rk = height.resize_keys.as_ref().expect("height should carry resizeKeys");
+        assert_eq!(rk.min.key, "min-height");
+        assert_eq!(rk.max.key, "max-height");
     }
 
     // --- parse_padding_shorthand ---
