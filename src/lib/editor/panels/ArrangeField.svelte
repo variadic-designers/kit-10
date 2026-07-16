@@ -350,12 +350,13 @@
 			text-transform: capitalize;
 		}
 
-		// A deliberate grid, not a wrapping row: four 1fr pattern cells in a 2x2 block, with
-		// Grid itself as one 2fr-wide cell spanning both rows on the right -- so the tab that
-		// MAKES grids visually IS one big grid cell, and nothing rag-wraps at panel width.
+		// A deliberate grid, not a wrapping row: three equal columns -- every pattern cell as
+		// wide as the Grid cell -- with the 2x2 block (Stack/Cluster over Split/Center) on the
+		// left and Grid itself spanning both rows on the right, so the tab that MAKES grids
+		// visually IS one big grid cell, and nothing rag-wraps at panel width.
 		&__tabs {
 			display: grid;
-			grid-template-columns: 1fr 1fr 2fr;
+			grid-template-columns: 2fr 2fr 2fr;
 			grid-template-areas:
 				'stack cluster grid'
 				'split center grid';
