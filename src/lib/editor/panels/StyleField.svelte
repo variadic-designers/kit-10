@@ -8,7 +8,7 @@
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
 	import { assetRegister } from '../assetStore.ts';
 	import type { Api } from 'manager';
-	import type { FieldUpdate, InputType, SuggestionSource } from '$lib/plugins/types.js';
+	import type { FieldUpdate, FontLoadStatus, InputType, SuggestionSource } from '$lib/plugins/types.js';
 
 	type StyleFieldProps = {
 		key: string;
@@ -26,6 +26,9 @@
 		axisNameById?: Record<string, string>;
 		inputType?: InputType;
 		suggestionsFrom?: SuggestionSource;
+		// Editor.svelte's font-scan status, keyed by family -- only consulted when inputType is
+		// 'font' (this field's own value is a family name). See FontLoadStatus's doc comment.
+		fontStatus?: Record<string, FontLoadStatus>;
 		spacingMode?: 'scalar' | 'box';
 		// Optional hover explanation for the label button, e.g. ArrangeField's Gap/Cell Min
 		// follow-ons -- distinct from the track dot's title, which explains the value's SOURCE
@@ -53,6 +56,7 @@
 		axisNameById = {},
 		inputType,
 		suggestionsFrom,
+		fontStatus,
 		spacingMode,
 		labelTooltip,
 		api,
@@ -60,6 +64,10 @@
 		onFieldUpdate,
 		callUtilityPlugin
 	}: StyleFieldProps = $props();
+
+	const currentFontStatus = $derived(
+		inputType === 'font' && value ? fontStatus?.[value] : undefined
+	);
 
 	const menu = () => {
 		return [
@@ -596,7 +604,7 @@
 			/>
 		</div>
 	{:else if suggestionsFrom && !isToken}
-		<div class="option124__value">
+		<div class="option124__value" class:option124__value--font={inputType === 'font'}>
 			<SuggestField
 				{value}
 				pluginName={suggestionsFrom.plugin}
@@ -608,6 +616,17 @@
 					: undefined}
 				onPick={(picked, fetched) => confirmSuggestionPick(picked, fetched)}
 			/>
+			{#if inputType === 'font' && value && currentFontStatus}
+				{#if currentFontStatus.state === 'loading'}
+					<i class="fa-solid fa-spinner fa-spin field-status field-status--loading" title="Loading {value}…"
+					></i>
+				{:else if currentFontStatus.state === 'error'}
+					<i
+						class="fa-solid fa-triangle-exclamation field-status field-status--error"
+						title="{value} failed to load: {currentFontStatus.detail ?? 'unknown error'}"
+					></i>
+				{/if}
+			{/if}
 		</div>
 	{:else if editValue.now}
 		<input
@@ -812,6 +831,26 @@
 			// Unlike plain value boxes this is a composite (3 segments + a value input) whose
 			// intrinsic width exceeds the standard 40% value column -- allow it to grow, or the
 			// Fixed value renders clipped off the panel's right edge.
+			// Font field container: SuggestField's picker button plus an optional loading/error
+			// status glyph laid out beside it (see FontLoadStatus).
+			&--font {
+				display: flex;
+				align-items: center;
+				gap: 0;
+				padding: 0;
+				background: transparent;
+				overflow: visible;
+
+				&:hover {
+					background: transparent;
+				}
+
+				:global(.suggest-field) {
+					flex: 1;
+					min-width: 0;
+				}
+			}
+
 			&--resize {
 				display: flex;
 				align-items: center;
@@ -973,5 +1012,19 @@
 		font-size: $x-font-size-xs;
 		opacity: 0.6;
 		min-width: 0.8em;
+	}
+
+	.field-status {
+		flex: 0 0 auto;
+		margin-inline-start: calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+
+		&--loading {
+			opacity: 0.6;
+		}
+
+		&--error {
+			color: var(--color-error, oklch(63.7% 0.2078 25.3));
+		}
 	}
 </style>

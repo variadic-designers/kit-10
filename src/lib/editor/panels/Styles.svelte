@@ -8,8 +8,15 @@
 	import ColorField from './ColorField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { FamilyFacts, FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
+	import type {
+		FamilyFacts,
+		FieldCategory,
+		FieldDef,
+		FieldUpdate,
+		FontLoadStatus
+	} from '$lib/plugins/types.js';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
+	import { factsForFamily, resolveFontWeight } from '$lib/plugins/font-weight.js';
 	import { shapeIcon } from './layer-color.ts';
 
 	type StylesPanel = {
@@ -19,6 +26,7 @@
 		fieldCategories?: FieldCategory[];
 		activeProjectId?: string | null;
 		fontFacts?: Record<string, FamilyFacts>;
+		fontStatus?: Record<string, FontLoadStatus>;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 		onSelectView?: (viewId: string) => void;
@@ -31,6 +39,7 @@
 		fieldCategories,
 		activeProjectId,
 		fontFacts,
+		fontStatus,
 		onFieldUpdate,
 		callUtilityPlugin,
 		onSelectView
@@ -176,6 +185,31 @@
 			tokenId: null
 		};
 	}
+
+	// Wraps the plain onFieldUpdate for the font-family field only: after a family pick lands
+	// (a literal value, not a token drop -- see below), check whether the CURRENTLY set
+	// font-weight is one the new family can actually render. If not, proactively write the same
+	// nearest-weight fallback Charter's own resolve_font_weight would apply at render time, so
+	// the panel shows a working weight selected instead of silently rendering one weight while
+	// the Weight control shows nothing selected (its buttons are filtered to the new family's
+	// facts, and the stale stored weight won't be among them). Token-backed family picks are
+	// left alone -- `update.value` is undefined for those, and re-pointing a shared kit token's
+	// weight based on one view's resolution would be the wrong scope for the write.
+	function onFontFamilyFieldUpdate(update: FieldUpdate) {
+		onFieldUpdate?.(update);
+		if (!update.value) return;
+
+		const facts = factsForFamily(fontFacts, update.value);
+		const rawWeight = resolvedMap.get('font-weight')?.value;
+		const currentWeight = rawWeight ? parseInt(rawWeight, 10) : 400;
+		const requested = Number.isFinite(currentWeight) && currentWeight > 0 ? currentWeight : 400;
+		const snapped = resolveFontWeight(requested, facts);
+		if (snapped === requested) return;
+
+		const t = track('font-weight');
+		if (!t.sourceLayerId) return;
+		onFieldUpdate?.({ layerId: t.sourceLayerId, property: 'font-weight', value: String(snapped) });
+	}
 </script>
 
 <Panel
@@ -265,9 +299,12 @@
 											field.inputType,
 											field.suggestionsFrom
 										)}
+										{fontStatus}
 										{api}
 										projectId={activeProjectId}
-										{onFieldUpdate}
+										onFieldUpdate={field.key === 'font-family'
+											? onFontFamilyFieldUpdate
+											: onFieldUpdate}
 										{callUtilityPlugin}
 									/>
 								{/if}

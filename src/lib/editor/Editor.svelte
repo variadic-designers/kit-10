@@ -236,7 +236,7 @@
 	import { mark, measure } from './profile.js';
 	import { RESOLVE_LIVE_QUERY_SQL } from './resolve-live-query.js';
 
-	import type { FamilyFacts, ResolvedView } from '$lib/plugins/types.js';
+	import type { FamilyFacts, FontLoadStatus, ResolvedView } from '$lib/plugins/types.js';
 	import type { FontFetchPayload } from '$lib/plugins/suggestion-providers.js';
 	import { onMount } from 'svelte';
 
@@ -448,6 +448,19 @@
 	// own duplicate download before the first ever lands in loadedFontUrls.
 	const pendingFontUrls = new Set<string>();
 
+	// Per-family visibility into this scan (see FontLoadStatus's doc comment) -- StyleField's
+	// font-family field renders this so a total failure (bad catalogue entry, unreachable CDN,
+	// cache fault) is visible in the panel instead of only in the console / IndexedDB devtools.
+	// A single missing weight of an otherwise-loaded family is NOT an error (documented,
+	// expected behavior -- see CLAUDE.md's "not every font has every weight" note): `ready` is
+	// sticky and a later per-weight miss never downgrades it back to `error`.
+	let fontStatus = $state<Record<string, FontLoadStatus>>({});
+
+	function setFontStatus(family: string, status: FontLoadStatus) {
+		if (fontStatus[family]?.state === 'ready' && status.state !== 'ready') return;
+		fontStatus = { ...fontStatus, [family]: status };
+	}
+
 	$effect(() => {
 		if (!pluginManager) return;
 
@@ -458,13 +471,19 @@
 			const vellum = getVellumInstance();
 			if (!vellum) continue;
 			attemptedVariants.add(key);
+			if (fontStatus[req.family]?.state !== 'ready' && fontStatus[req.family]?.state !== 'loading') {
+				setFontStatus(req.family, { state: 'loading' });
+			}
 
 			const payload: FontFetchPayload = { value: req.family, weight: req.weight, style: req.style };
 			pluginManager
 				.callUtilityPlugin('fontavious', 'variant_url', JSON.stringify(payload))
 				.then((result) => {
 					const { url } = JSON.parse((result as { text(): string }).text()) as { url: string };
-					if (loadedFontUrls.has(url) || pendingFontUrls.has(url)) return; // fetched or in flight
+					if (loadedFontUrls.has(url) || pendingFontUrls.has(url)) {
+						setFontStatus(req.family, { state: 'ready' });
+						return;
+					}
 					pendingFontUrls.add(url);
 
 					return pluginManager
@@ -475,6 +494,7 @@
 								vellum.load_font(bytes);
 								loadedFontUrls.add(url);
 								requestVellumRender();
+								setFontStatus(req.family, { state: 'ready' });
 							}
 						})
 						.finally(() => pendingFontUrls.delete(url));
@@ -487,6 +507,7 @@
 					// here (a bad payload shape, an unreachable host) previously looked identical
 					// to "just not catalogued" and cost real time to track down by hand.
 					console.warn(`[fontavious] variant_url/fetch_font failed for ${key}:`, err);
+					setFontStatus(req.family, { state: 'error', detail: String(err) });
 				});
 		}
 	});
@@ -555,6 +576,7 @@
 			fieldCategories={pluginManager?.fieldCategories}
 			activeProjectId={editorActivity.activeProjectId}
 			{fontFacts}
+			{fontStatus}
 			onFieldUpdate={pluginManager?.fieldUpdate}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 			onSelectView={(id) => selectViewShared(editorActivity, selection, id)}
