@@ -179,7 +179,8 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/arimo/v36/P5sMzZCDf9_T_10ZxCE.woff2"
 			}
-		]
+		],
+		"aliases": ["Arial", "Helvetica", "Liberation Sans"]
 	},
 	{
 		"family": "Tinos",
@@ -199,7 +200,8 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/tinos/v26/buE1poGnedXvwj1AW3Fu0C8.woff2"
 			}
-		]
+		],
+		"aliases": ["Times New Roman", "Times", "Liberation Serif"]
 	},
 	{
 		"family": "Cousine",
@@ -219,7 +221,8 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lNkaiiRdih4SpP9Z8K2TnM0g.woff2"
 			}
-		]
+		],
+		"aliases": ["Courier New", "Liberation Mono"]
 	},
 	{
 		"family": "Carlito",
@@ -239,7 +242,8 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn4SDPw3m-pk039BIykWXolUw.woff2"
 			}
-		]
+		],
+		"aliases": ["Calibri"]
 	},
 	{
 		"family": "Caladea",
@@ -259,7 +263,8 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/caladea/v10/kJE2BugZ7AAjhybUtaNY790SqQ.woff2"
 			}
-		]
+		],
+		"aliases": ["Cambria"]
 	},
 	{
 		"family": "Gelasio",
@@ -273,96 +278,7 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/gelasio/v14/cIf9MaFfvUQxTTqS9C6hYQ.woff2"
 			}
-		]
-	},
-	{
-		"family": "Arial",
-		"licenseTier": "proprietary",
-		"category": "sans",
-		"aliasOf": "Arimo",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Helvetica",
-		"licenseTier": "proprietary",
-		"category": "sans",
-		"aliasOf": "Arimo",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Times New Roman",
-		"licenseTier": "proprietary",
-		"category": "serif",
-		"aliasOf": "Tinos",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Times",
-		"licenseTier": "proprietary",
-		"category": "serif",
-		"aliasOf": "Tinos",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Courier New",
-		"licenseTier": "proprietary",
-		"category": "mono",
-		"aliasOf": "Cousine",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Calibri",
-		"licenseTier": "proprietary",
-		"category": "sans",
-		"aliasOf": "Carlito",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Cambria",
-		"licenseTier": "proprietary",
-		"category": "serif",
-		"aliasOf": "Caladea",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Georgia",
-		"licenseTier": "proprietary",
-		"category": "serif",
-		"aliasOf": "Gelasio",
-		"substitute": {
-			"reason": "metric"
-		}
-	},
-	{
-		"family": "Liberation Sans",
-		"licenseTier": "ofl",
-		"category": "sans",
-		"aliasOf": "Arimo"
-	},
-	{
-		"family": "Liberation Serif",
-		"licenseTier": "ofl",
-		"category": "serif",
-		"aliasOf": "Tinos"
-	},
-	{
-		"family": "Liberation Mono",
-		"licenseTier": "ofl",
-		"category": "mono",
-		"aliasOf": "Cousine"
+		],
+		"aliases": ["Georgia"]
 	}
 ]

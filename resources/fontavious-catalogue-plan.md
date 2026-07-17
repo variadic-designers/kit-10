@@ -15,12 +15,12 @@
 ## 1. The core idea — two layers that grow at different rates
 
 The catalogue splits into two layers. Everything expensive lives in the small
-one; everything a *user can type* lives in the cheap one.
+one; everything a _user can type_ lives in the cheap one.
 
-| Layer | What it is | Cost to add one | How fast it should grow |
-|---|---|---|---|
-| **Renderable roots** | Families we actually fetch bytes for (one variable WOFF2 each where possible) | A URL + a fetch/cache slot | **Slowly** — curated, ~200–250 |
-| **Names / aliases** | Recognized font names that *render via* a root — proprietary names included | ~one JSON line, no URL, no fetch | **Freely** — hundreds are ~free |
+| Layer                | What it is                                                                    | Cost to add one                  | How fast it should grow         |
+| -------------------- | ----------------------------------------------------------------------------- | -------------------------------- | ------------------------------- |
+| **Renderable roots** | Families we actually fetch bytes for (one variable WOFF2 each where possible) | A URL + a fetch/cache slot       | **Slowly** — curated, ~200–250  |
+| **Names / aliases**  | Recognized font names that _render via_ a root — proprietary names included   | ~one JSON line, no URL, no fetch | **Freely** — hundreds are ~free |
 
 The renderable roots are the only thing that grows the fetch surface, the
 `§7`-cache (see `nature-of-fonts.md`), the download payload, and the
@@ -30,8 +30,8 @@ roughly one JSON line each. A user who types "Helvetica," "SF Pro,"
 "Calibri," or "Times New Roman" gets a hit, and we ship **zero** new font
 files for any of them.
 
-**Growth is bounded by the number of distinct *designs*, not by the number of
-*names users expect*.** That is the whole strategy.
+**Growth is bounded by the number of distinct _designs_, not by the number of
+_names users expect_.** That is the whole strategy.
 
 ---
 
@@ -41,19 +41,19 @@ Two distinct relationships, both of which collapse many names onto one file.
 
 ### 2.1 Metric-compatible clones (layout-safe)
 
-Fonts engineered to share *identical* advance widths and line metrics — swap
+Fonts engineered to share _identical_ advance widths and line metrics — swap
 one for another and text does not reflow. There is a free OFL clone for every
 core Microsoft/system font, so the **entire system-font namespace costs 6
 renderable files**:
 
-| User types | Rendered via (OFL root) | Metric fidelity |
-|---|---|---|
-| Arial, Helvetica, Liberation Sans, Nimbus Sans | **Arimo** | exact |
-| Times New Roman, Times, Liberation Serif | **Tinos** | exact |
-| Courier New, Consolas* | **Cousine** | exact (Courier), approx (Consolas) |
-| Calibri | **Carlito** | exact |
-| Cambria | **Caladea** | exact |
-| Georgia | **Gelasio** | exact |
+| User types                                     | Rendered via (OFL root) | Metric fidelity                    |
+| ---------------------------------------------- | ----------------------- | ---------------------------------- |
+| Arial, Helvetica, Liberation Sans, Nimbus Sans | **Arimo**               | exact                              |
+| Times New Roman, Times, Liberation Serif       | **Tinos**               | exact                              |
+| Courier New, Consolas\*                        | **Cousine**             | exact (Courier), approx (Consolas) |
+| Calibri                                        | **Carlito**             | exact                              |
+| Cambria                                        | **Caladea**             | exact                              |
+| Georgia                                        | **Gelasio**             | exact                              |
 
 Arimo/Tinos/Cousine/Carlito/Caladea/Gelasio become OFL **roots** (real files);
 every proprietary name above is a cheap **alias** onto one of them. This is
@@ -63,89 +63,110 @@ Figma/Webflow docs reference constantly, for six files.
 ### 2.2 Visual look-alikes (approximate — may reflow)
 
 Popular proprietary display/brand fonts with a strong free cousin that is
-*not* metric-identical. These render, but layout can shift, so they are badged
+_not_ metric-identical. These render, but layout can shift, so they are badged
 approximate rather than leaned on:
 
-| User types | Rendered via | |
-|---|---|---|
-| SF Pro, Helvetica Neue, Segoe UI | Inter (Selawik for Segoe) | ≈ visual |
-| Gotham, Proxima Nova | Montserrat | ≈ visual |
-| Futura, Avenir | Jost / Nunito | ≈ visual |
-| Myriad Pro | Source Sans 3 | ≈ visual (designed as a relative) |
-| Circular, DIN | Manrope / Saira | ≈ visual |
+| User types                       | Rendered via              |                                   |
+| -------------------------------- | ------------------------- | --------------------------------- |
+| SF Pro, Helvetica Neue, Segoe UI | Inter (Selawik for Segoe) | ≈ visual                          |
+| Gotham, Proxima Nova             | Montserrat                | ≈ visual                          |
+| Futura, Avenir                   | Jost / Nunito             | ≈ visual                          |
+| Myriad Pro                       | Source Sans 3             | ≈ visual (designed as a relative) |
+| Circular, DIN                    | Manrope / Saira           | ≈ visual                          |
 
-The **metric vs. visual** distinction is recorded per alias (`substitute.reason`)
-and matters: metric substitutions are layout-safe; visual ones must be flagged
-approximate in the UI because glyph widths differ.
+The **metric vs. visual** distinction matters: metric aliases are layout-safe;
+visual ones can reflow and should be flagged approximate in the UI. (Phase 0
+ships metric aliases only — a flat `aliases` list, §4. When Phase 5 adds visual
+look-alikes, the list entry grows a per-alias `reason` so the picker can say
+"≈ approximates Gotham" instead of "matches Arial".)
 
 ### 2.3 The judgment call: don't over-collapse
 
 Metric-clones and proprietary look-alikes fold aggressively. **Genuinely
-distinct OFL designs stay separate even when similar** — a user wants *both*
+distinct OFL designs stay separate even when similar** — a user wants _both_
 Inter and Roboto even though they rhyme. Dedup targets clones and
 substitutes; it never collapses distinct choices a designer would pick between.
 
 ---
 
-## 3. License tiers — how proprietary is marked, and why it's safe
+## 3. Two separate legal questions — copyright AND trademark
 
-Four-tier `licenseTier`. The load-bearing rule: **proprietary entries are
-name-only — no URL, we never fetch, cache, or ship their bytes.**
+There are **two** distinct exposures, and they need different answers.
 
-| Tier | Fetch bytes? | Bundle in export? | In catalogue as |
-|---|---|---|---|
-| `ofl` | yes | yes (+ license file) | renderable root |
-| `free-proprietary` (Fontshare closed) | yes (cache OK) | **no** — link only | renderable root |
-| `proprietary` | **no** | **no** | **name + `substitute` pointer only** |
-| `upload` | user supplies | user's call | runtime, not catalogued |
+**Copyright / redistribution** — handled by shipping no proprietary bytes.
+`licenseTier` on each **root** governs this:
 
-So "Arial" lives in the catalogue as
-`{ family: "Arial", licenseTier: "proprietary", aliasOf: "Arimo",
-substitute: { reason: "metric" } }` — acknowledged, resolvable, clearly
-flagged, with **no Arial bytes anywhere**. Real bytes for a proprietary font
-only ever arrive when the *user uploads their own licensed file*
-(`nature-of-fonts.md` §3.2 lane 2 / §6.5); until then we render the marked
-substitute.
+| Tier                                  | Fetch bytes?   | Bundle in export?    |
+| ------------------------------------- | -------------- | -------------------- |
+| `ofl`                                 | yes            | yes (+ license file) |
+| `free-proprietary` (Fontshare closed) | yes (cache OK) | **no** — link only   |
+| `upload`                              | user supplies  | user's call          |
 
-**Why listing proprietary names is fine.** We ship Arimo (OFL) and *label* the
-user's intent — we do not ship Arial. Recognizing a font *name* as an input
-and rendering a free substitute is interoperability / nominative use, exactly
-what LibreOffice, ChromeOS, and Android do. Typeface *names* can be trademarks,
-but acknowledging one as a recognized alias is not redistribution of the
-*font*, which is the thing the licenses actually restrict.
+**Trademark** — a font _name_ like "Arial", "Times New Roman", "Calibri" is a
+registered mark (Monotype, Microsoft, …). This is **not** covered by "we don't
+ship the bytes." Naming a catalogue _product_ "Arial" — presenting it as a font
+we offer — risks trading on the mark, even with a substitution badge. Nobody
+legitimate does this: Google Fonts ships **Arimo**, never "Arial," and only
+_describes_ it as "metric-compatible with Arial."
 
-This tier field is the same one `nature-of-fonts.md` §7.3 needs for the
-cache export-guard and §6.4 wants for search faceting — one addition, three
-consumers.
+So proprietary names are **not catalogue entries and not a `licenseTier`**.
+They are **aliases attached to the OFL root** — search/import keys only:
+
+- The catalogue _product_ is always the OFL font. The picker shows **"Arimo"**,
+  never a row titled "Arial."
+- Typing "Arial" _finds_ Arimo (alias match), labelled "Arimo" with a
+  referential **"matches Arial"** note. A design that references
+  `font-family: Arial` _resolves_ to Arimo. Pure interoperability.
+- The trademark appears **only referentially** ("matches Arial"), never as our
+  product's identity — the same nominative use OS font substitution
+  (fontconfig `Arial → Liberation Sans`) and Google Fonts' own descriptions
+  rely on.
+
+This keeps the two-layer value (a Figma refugee typing "Arial" gets a hit,
+imports resolve) while staying in the nominative-use lane. Real bytes for an
+actual proprietary font only ever arrive via **user upload** of a file they
+license (`nature-of-fonts.md` §3.2 lane 2 / §6.5).
+
+> **Not legal advice.** Monotype in particular enforces aggressively around
+> Arial/Helvetica. The alias-only framing matches industry practice, but a
+> commercial launch should get a quick IP-counsel pass on the name list.
 
 ---
 
 ## 4. Schema extension
 
-Renderable roots keep today's shape plus two tags; aliases are a new, cheap,
-URL-less record shape.
+There is only ever **one** record type — the renderable root — plus two tags
+and an `aliases` list. No separate alias/proprietary record exists; a
+trademarked name never becomes a `family`.
 
 ```jsonc
-// renderable root — today's shape + licenseTier + category
-{ "family": "Arimo", "vendor": "google", "licenseTier": "ofl", "category": "sans",
-  "variants": [
-    { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/..." }
-  ] }
-
-// alias / proprietary name — no variants, no URL (a single cheap line)
-{ "family": "Arial", "licenseTier": "proprietary", "category": "sans",
-  "aliasOf": "Arimo", "substitute": { "reason": "metric" } }
-
-// a same-license vendor rename is just an alias with no substitute
-{ "family": "Liberation Sans", "licenseTier": "ofl", "aliasOf": "Arimo" }
+// renderable root — today's shape + licenseTier + category + aliases
+{
+	"family": "Arimo",
+	"vendor": "google",
+	"licenseTier": "ofl",
+	"category": "sans",
+	"aliases": ["Arial", "Helvetica", "Liberation Sans"],
+	"variants": [
+		{
+			"weightMin": 400,
+			"weightMax": 700,
+			"style": "normal",
+			"url": "https://fonts.gstatic.com/..."
+		}
+	]
+}
 ```
 
-- `aliasOf: string` — "render me via this root." Present ⇒ this entry has no
-  bytes of its own; resolution follows it.
-- `substitute: { reason: "metric" | "visual" }` — present on cross-family
-  substitutions; drives the UI badge (metric = layout-safe, visual =
-  approximate). Absent on a pure same-license rename.
-- `licenseTier`, `category` — added to *every* entry (roots too).
+- `aliases: string[]` — alternative names that resolve to THIS entry: search
+  keys + import-match keys. Includes proprietary/trademarked names, used
+  referentially only (§3). The picker still labels the row with `family`
+  ("Arimo"), never an alias.
+- `licenseTier` (default `ofl`), `category` — on the **root**. The ~13
+  pre-existing entries omit them and default correctly; new roots set them.
+- **Phase 5 forward-compat:** when visual look-alikes land, an `aliases` entry
+  may become `{ name, reason: "visual" }` so the note reads "≈ approximates X"
+  instead of "matches X". Phase 0 ships the flat string form (metric only).
 
 Preserve the existing invariants: `weightMin..weightMax` still models
 variable-range vs. static-discrete correctly per root (getting it wrong
@@ -155,27 +176,27 @@ to close**, the current catalogue is normal-only.
 
 ---
 
-## 5. Resolution behavior — substitution stays inside Fontavious
+## 5. Resolution behavior — alias matching stays inside Fontavious
 
-The catalogue owner resolves aliases; callers never learn a substitution
-happened.
+The catalogue owner resolves aliases; callers only ever deal in the OFL root.
 
-- **`find_matching_variant` / `variant_url`** follow `aliasOf` to the root
-  *before* range-matching. Charter and the editor's scan ask for "Arial" and
-  get Arimo's URL/bytes. This keeps CLAUDE.md's "the scan asks Fontavious
-  which URL" contract intact — the substitution is a catalogue detail, opaque
-  to the scan's URL set and the cache key (the cache keys on the *root's* URL,
-  so "Arial" and "Liberation Sans" and "Arimo" share one cached file — free
-  dedup, same as variable-weight dedup).
+- **`find_entry`** matches the query against a `family` OR any of its `aliases`
+  (family wins if both could match), returning the root that owns the file.
+  `find_matching_variant` / `variant_url` / `family_facts` all go through it,
+  so Charter and the editor's scan ask for "Arial" and transparently get
+  Arimo's URL/bytes/facts. The cache keys on the _root's_ URL, so "Arial",
+  "Liberation Sans", and "Arimo" share one cached file — free dedup, same as
+  variable-weight dedup.
+- **`search_catalogue`** matches family + aliases, but always emits the root's
+  own name as `value`/`label` ("Arimo"). A match that came _via_ an alias adds
+  a referential **`note: "matches Arial"`**; a direct family match has no note.
+  Nothing in the results is ever titled with a trademark.
 - **`family_facts`** reports the **root's** real weight ranges, so Charter's
   weight-snapping is correct for what actually renders.
-- **`search_fonts`** projects each alias's `licenseTier` + `substitute.reason`
-  into the editor's **generic** suggestion contract so `SuggestField.svelte`
-  can badge them ("proprietary · rendering Arimo", "≈ approximate"). This is
-  the "marked as such" surface the user sees — see §5.1 for why it's generic.
 
 Everything above is additive to the existing exports; no caller outside
-Fontavious changes shape.
+Fontavious changes shape. Badges (`badge`/`tone`) remain wired for the future
+`free-proprietary` (Fontshare) tier; §5.1 covers why the slots are generic.
 
 ### 5.1 Two shapes — keep the editor contract plugin-agnostic
 
@@ -185,10 +206,10 @@ plugin) must be able to feed the same editor UI without inheriting any of
 Fontavious's font-specific vocabulary (VISION.md 1st Principle; the
 `feedback-editor-plugin-agnosticism` memory).
 
-- **Fontavious's internal catalogue shape** (`licenseTier`, `aliasOf`,
-  `substitute`, `weightMin/Max`, `variants`, `url` — §4) is the plugin's
+- **Fontavious's internal catalogue shape** (`licenseTier`, `aliases`,
+  `category`, `weightMin/Max`, `variants`, `url` — §4) is the plugin's
   **private data**. The editor never reads `catalogue.json`; it only ever
-  sees the *outputs* of `search_fonts`/`fetch_font`/`variant_url`. A Font
+  sees the _outputs_ of `search_fonts`/`fetch_font`/`variant_url`. A Font
   Awesome plugin would have its own unrelated internal shape (icon names,
   `brands`/`solid`/`regular` styles). These never collide, because they are
   never a shared contract — so this half staying Fontavious-defined is
@@ -203,52 +224,54 @@ Fontavious's font-specific vocabulary (VISION.md 1st Principle; the
   no editor recompile of anything else.
 
 The badge/disclosure surface must therefore be expressed in **generic display
-slots the editor defines**, which each plugin *projects into* — never
+slots the editor defines**, which each plugin _projects into_ — never
 font-specific fields on the shared type:
 
 ```ts
 // editor-owned, plugin-agnostic (SuggestField.svelte)
 type SuggestionEntry = {
-  value: string; label?: string;
-  badge?: string;                        // "PROPRIETARY", "BRANDS", "PRO"… — a short opaque tag
-  tone?: 'neutral' | 'info' | 'warn';    // generic emphasis, no domain meaning
-  note?: string;                         // "rendering Arimo", "≈ approximate"
+	value: string;
+	label?: string;
+	badge?: string; // "PROPRIETARY", "BRANDS", "PRO"… — a short opaque tag
+	tone?: 'neutral' | 'info' | 'warn'; // generic emphasis, no domain meaning
+	note?: string; // "matches Arial", "≈ approximate"
 };
 ```
 
-Fontavious maps `licenseTier: proprietary` + `substitute.reason: "metric"` →
-`{ badge: "proprietary", tone: "warn", note: "rendering Arimo" }`. A Font
-Awesome plugin maps `style: "brands"` → `{ badge: "brands" }`. **The editor
-renders `badge`/`tone`/`note` without knowing what a font, a license, or an
-icon is** — the words `licenseTier`/`substitute`/`font` never appear in the
-generic contract. (This corrects an earlier draft of this plan that put a
-`tier`/`note` pair directly on `SuggestionEntry` — `tier` is a font word and
-does not belong on the shared type.)
+Fontavious maps an alias match → `{ note: "matches Arial" }`, and (future) a
+`free-proprietary` root → `{ badge: "free", tone: "info" }`. A Font Awesome
+plugin maps `style: "brands"` → `{ badge: "brands" }`. **The editor renders
+`badge`/`tone`/`note` without knowing what a font, a license, or an icon is**
+— the words `licenseTier`/`alias`/`font` never appear in the generic contract.
+(This corrects an earlier draft that put a font-specific `tier` field directly
+on `SuggestionEntry` — `tier` is a font word and does not belong on the shared
+type.)
 
 ---
 
 ## 6. Build phases
 
-1. **Schema + resolver alias-following (Phase 0).** Add `licenseTier`,
-   `category`, `aliasOf`, `substitute` to the types; teach
-   `find_matching_variant` to follow `aliasOf`; thread `tier`/`note` through
-   `search_fonts` → `SuggestField`. Small; unblocks everything else. Extend
-   the existing catalogue tests (URL-host check generalizes to "roots have
-   vendor URLs, aliases have none").
+1. **Schema + alias matching (Phase 0). ✅ SHIPPED** (branch
+   `feat/fontavious-catalogue-aliases`). Added `licenseTier`/`category`/
+   `aliases` to `CatalogueEntry`; `find_entry` matches family + aliases;
+   `search_catalogue` surfaces the OFL root with a "matches X" note; the
+   editor's `SuggestionEntry` gained generic `badge`/`tone`/`note` slots.
+   Shipped **together with Phase 3's 6 clone roots** as one vertical slice.
 2. **Generated OFL core.** Run the `nature-of-fonts.md` §6.2 pipeline
    (`google-font-metadata` + CSS2 UA URL resolution) to produce ~200 genuinely
    distinct families — variable files where they exist, **italics included**,
    `category` tagged, `licenseTier: ofl`. This is the real renderable set;
    replaces hand-authoring.
-3. **Metric-clone aliases (§2.1).** Add the 6 clone roots
-   (Arimo/Tinos/Cousine/Carlito/Caladea/Gelasio) + the proprietary aliases
-   onto them. Entire MS/system namespace, 0 files beyond the 6 roots.
+3. **Metric-clone roots + aliases (§2.1). ✅ SHIPPED with Phase 0.** The 6 clone
+   roots (Arimo/Tinos/Cousine/Carlito/Caladea/Gelasio) carry the proprietary
+   system-font names as `aliases`. Entire MS/system namespace, 0 files beyond
+   the 6 roots, no trademarked product names.
 4. **Fontshare premium-free tier.** Satoshi, General Sans, Clash Display/Grotesk,
    Cabinet Grotesk, Switzer, Ranade, Sentient, etc. — `free-proprietary`,
    `vendor: "fontshare"`, host added to the Extism `allowedHosts`. The
    Framer/Webflow flavor Google lacks.
-5. **Visual-substitution aliases (§2.2).** The curated proprietary
-   look-alike set, `substitute.reason: "visual"`, badged approximate.
+5. **Visual look-alike aliases (§2.2).** The curated free-cousin set as
+   aliases with per-entry `reason: "visual"`, noted "≈ approximates X".
 
 **Target shape:** ~200–250 **renderable files** (the only thing that grows
 fetch/cache/payload) backing **~500–600 typeable names** (the namespace, near
