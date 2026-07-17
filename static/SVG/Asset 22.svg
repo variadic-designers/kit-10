@@ -3,7 +3,7 @@
     <style>
       .cls-1 {
         fill: none;
-        stroke: #93c5fd;
+        stroke: oklch(80.9% 0.0956 251.8);
         stroke-miterlimit: 10;
         stroke-width: 40px;
       }
@@ -13,11 +13,11 @@
       }
 
       .cls-3 {
-        fill: #3b82f6;
+        fill: oklch(62.3% 0.188 259.8);
       }
 
       .cls-4 {
-        fill: #93c5fd;
+        fill: oklch(80.9% 0.0956 251.8);
       }
 
       .cls-5 {
@@ -29,48 +29,48 @@
       }
 
       .cls-7 {
-        fill: #750787;
+        fill: oklch(41% 0.1909 320.8);
       }
 
       .cls-8 {
-        fill: #004dff;
+        fill: oklch(52% 0.2679 263.2);
       }
 
       .cls-9 {
-        fill: #008026;
+        fill: oklch(52.2% 0.1599 145.9);
       }
 
       .cls-10 {
-        fill: #ffed00;
+        fill: oklch(93.1% 0.1966 104);
       }
 
       .cls-11 {
-        fill: #ff8c00;
+        fill: oklch(75.1% 0.1791 58.3);
       }
 
       .cls-12 {
-        fill: #e40303;
+        fill: oklch(57.8% 0.2361 29.1);
       }
 
       .cls-13 {
-        fill: #613915;
+        fill: oklch(38.6% 0.0751 59.3);
       }
 
       .cls-14 {
-        fill: #74d7ee;
+        fill: oklch(82.7% 0.0982 214.7);
       }
 
       .cls-15 {
-        fill: #ffafc8;
+        fill: oklch(83.7% 0.0981 359.1);
       }
 
       .cls-16 {
-        fill: #fff;
+        fill: oklch(100% 0 0);
       }
     </style>
     <linearGradient id="linear-gradient" x1="566.95" y1="1101.34" x2="559.95" y2="55.86" gradientUnits="userSpaceOnUse">
-      <stop offset="0.72" stop-color="#3b82f6"/>
-      <stop offset="0.98" stop-color="#93c5fd"/>
+      <stop offset="0.72" stop-color="oklch(62.3% 0.188 259.8)"/>
+      <stop offset="0.98" stop-color="oklch(80.9% 0.0956 251.8)"/>
     </linearGradient>
     <clipPath id="clip-path">
       <path class="cls-1" d="M986.5,525.63c-172.77,0-312.84,140.06-312.84,312.84v47.16c198.82,0,360-161.18,360-360Zm-625.67,0H313.66c0,198.82,161.19,360,360,360V838.47C673.66,665.69,533.6,525.63,360.83,525.63Zm-47.17,0h47.17c172.77,0,312.83-140.06,312.83-312.84V165.63C474.85,165.63,313.66,326.81,313.66,525.63Zm360-360v47.16c0,172.78,140.07,312.84,312.84,312.84h47.16C1033.66,326.81,872.48,165.63,673.66,165.63ZM90.85,388.13v497.5h0c122.88,0,222.5-99.61,222.5-222.5V165.63h0C190.46,165.63,90.85,265.25,90.85,388.13Z"/>

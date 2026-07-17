@@ -19,17 +19,17 @@ export async function seedDemoProject(
 	// PluginActivation in schema.ts), loaded globally rather than per-project.
 
 	// Project-scoped tokens
-	const tokenBg = (await api.createToken(proj.id, 'colors.bg', s('#ffffff')))!;
-	const tokenText = (await api.createToken(proj.id, 'colors.text', s('#1a1a1a')))!;
-	const tokenPrimary = (await api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
-	const tokenSecondary = (await api.createToken(proj.id, 'colors.secondary', s('#64748b')))!;
-	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', s('#e2e8f0')))!;
-	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', s('#22c55e')))!;
-	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', s('#ef4444')))!;
+	const tokenBg = (await api.createToken(proj.id, 'colors.bg', s('oklch(100% 0 0)')))!;
+	const tokenText = (await api.createToken(proj.id, 'colors.text', s('oklch(21.8% 0 0)')))!;
+	const tokenPrimary = (await api.createToken(proj.id, 'colors.primary', s('oklch(62.3% 0.188 259.8)')))!;
+	const tokenSecondary = (await api.createToken(proj.id, 'colors.secondary', s('oklch(55.4% 0.0407 257.4)')))!;
+	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', s('oklch(92.9% 0.0126 255.5)')))!;
+	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', s('oklch(72.3% 0.192 149.6)')))!;
+	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', s('oklch(63.7% 0.2078 25.3)')))!;
 	// Distinct from colors.bg — this is text-on-a-colored-surface, not the neutral page
 	// background. They happen to share a value today, but changing colors.bg (a warmer
 	// off-white, say) shouldn't also silently retint every button's label.
-	const tokenOnColor = (await api.createToken(proj.id, 'colors.onColor', s('#ffffff')))!;
+	const tokenOnColor = (await api.createToken(proj.id, 'colors.onColor', s('oklch(100% 0 0)')))!;
 
 	// Axes
 	const themeAxis = (await api.createAxis(proj.id, 'Theme', 'Light or dark mode', 'categorical'))!;
@@ -130,8 +130,8 @@ export async function seedDemoProject(
 	const btnDark = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnDark.id, themeDark.id);
 	const btnDarkSnip = (await api.createRenderSnippet(btnDark.id))!;
-	await api.createRenderEntry(btnDarkSnip.id, 'background', '#1a1a2e');
-	await api.createRenderEntry(btnDarkSnip.id, 'color', '#e0e0e0');
+	await api.createRenderEntry(btnDarkSnip.id, 'background', 'oklch(22.8% 0.0384 282.9)');
+	await api.createRenderEntry(btnDarkSnip.id, 'color', 'oklch(90.7% 0 0)');
 
 	// {density: compact}
 	const btnCompact = (await api.createLayer(buttonKit.id))!;
@@ -168,12 +168,10 @@ export async function seedDemoProject(
 	await api.createRenderEntry(btnTertiarySnip.id, 'color', null, tokenText.id);
 
 	// {emphasis: ghost}
-	// 'transparent' is not a color parse_color understands (only hex/rgb) — it falls through
-	// to opaque black. Use an explicit 8-digit hex with a zero alpha channel instead.
 	const btnGhost = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnGhost.id, emphasisGhost.id);
 	const btnGhostSnip = (await api.createRenderSnippet(btnGhost.id))!;
-	await api.createRenderEntry(btnGhostSnip.id, 'background', '#00000000');
+	await api.createRenderEntry(btnGhostSnip.id, 'background', 'transparent');
 	await api.createRenderEntry(btnGhostSnip.id, 'border', 'none');
 
 	// {sentiment: positive}
@@ -195,7 +193,7 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnHover.id, stateHover.id);
 	const btnHoverSnip = (await api.createRenderSnippet(btnHover.id))!;
 	await api.createRenderEntry(btnHoverSnip.id, 'cursor', 'pointer');
-	await api.createRenderEntry(btnHoverSnip.id, 'background', '#e2e8f0');
+	await api.createRenderEntry(btnHoverSnip.id, 'background', 'oklch(92.9% 0.0126 255.5)');
 
 	// {state: click}
 	const btnClick = (await api.createLayer(buttonKit.id))!;
@@ -234,21 +232,21 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnPrimaryHover.id, emphasisPrimary.id);
 	await api.addAxisValueToLayer(btnPrimaryHover.id, stateHover.id);
 	const btnPrimaryHoverSnip = (await api.createRenderSnippet(btnPrimaryHover.id))!;
-	await api.createRenderEntry(btnPrimaryHoverSnip.id, 'background', '#2563eb');
+	await api.createRenderEntry(btnPrimaryHoverSnip.id, 'background', 'oklch(54.6% 0.2152 262.9)');
 
 	// {emphasis: primary, state: click}
 	const btnPrimaryClick = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnPrimaryClick.id, emphasisPrimary.id);
 	await api.addAxisValueToLayer(btnPrimaryClick.id, stateClick.id);
 	const btnPrimaryClickSnip = (await api.createRenderSnippet(btnPrimaryClick.id))!;
-	await api.createRenderEntry(btnPrimaryClickSnip.id, 'background', '#1d4ed8');
+	await api.createRenderEntry(btnPrimaryClickSnip.id, 'background', 'oklch(48.8% 0.2172 264.4)');
 
 	// {emphasis: primary, state: disabled}
 	const btnPrimaryDisabled = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnPrimaryDisabled.id, emphasisPrimary.id);
 	await api.addAxisValueToLayer(btnPrimaryDisabled.id, stateDisabled.id);
 	const btnPrimaryDisabledSnip = (await api.createRenderSnippet(btnPrimaryDisabled.id))!;
-	await api.createRenderEntry(btnPrimaryDisabledSnip.id, 'background', '#93c5fd');
+	await api.createRenderEntry(btnPrimaryDisabledSnip.id, 'background', 'oklch(80.9% 0.0956 251.8)');
 	await api.createRenderEntry(btnPrimaryDisabledSnip.id, 'opacity', '0.4');
 
 	// {sentiment: positive, state: hover}
@@ -256,21 +254,21 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnPositiveHover.id, sentimentPositive.id);
 	await api.addAxisValueToLayer(btnPositiveHover.id, stateHover.id);
 	const btnPositiveHoverSnip = (await api.createRenderSnippet(btnPositiveHover.id))!;
-	await api.createRenderEntry(btnPositiveHoverSnip.id, 'background', '#16a34a');
+	await api.createRenderEntry(btnPositiveHoverSnip.id, 'background', 'oklch(62.7% 0.1699 149.2)');
 
 	// {sentiment: positive, state: click}
 	const btnPositiveClick = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnPositiveClick.id, sentimentPositive.id);
 	await api.addAxisValueToLayer(btnPositiveClick.id, stateClick.id);
 	const btnPositiveClickSnip = (await api.createRenderSnippet(btnPositiveClick.id))!;
-	await api.createRenderEntry(btnPositiveClickSnip.id, 'background', '#15803d');
+	await api.createRenderEntry(btnPositiveClickSnip.id, 'background', 'oklch(52.7% 0.1371 150.1)');
 
 	// {sentiment: positive, state: disabled}
 	const btnPositiveDisabled = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnPositiveDisabled.id, sentimentPositive.id);
 	await api.addAxisValueToLayer(btnPositiveDisabled.id, stateDisabled.id);
 	const btnPositiveDisabledSnip = (await api.createRenderSnippet(btnPositiveDisabled.id))!;
-	await api.createRenderEntry(btnPositiveDisabledSnip.id, 'background', '#86efac');
+	await api.createRenderEntry(btnPositiveDisabledSnip.id, 'background', 'oklch(87.1% 0.1363 154.4)');
 	await api.createRenderEntry(btnPositiveDisabledSnip.id, 'opacity', '0.4');
 
 	// {sentiment: danger, state: hover}
@@ -278,7 +276,7 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnDangerHover.id, sentimentDanger.id);
 	await api.addAxisValueToLayer(btnDangerHover.id, stateHover.id);
 	const btnDangerHoverSnip = (await api.createRenderSnippet(btnDangerHover.id))!;
-	await api.createRenderEntry(btnDangerHoverSnip.id, 'background', '#dc2626');
+	await api.createRenderEntry(btnDangerHoverSnip.id, 'background', 'oklch(57.7% 0.2152 27.3)');
 
 	// {sentiment: danger, state: click} — without this, any view combining
 	// sentiment:danger with emphasis:primary (or any other 2-condition emphasis/theme combo)
@@ -291,7 +289,7 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnDangerClick.id, sentimentDanger.id);
 	await api.addAxisValueToLayer(btnDangerClick.id, stateClick.id);
 	const btnDangerClickSnip = (await api.createRenderSnippet(btnDangerClick.id))!;
-	await api.createRenderEntry(btnDangerClickSnip.id, 'background', '#b91c1c');
+	await api.createRenderEntry(btnDangerClickSnip.id, 'background', 'oklch(50.5% 0.1905 27.5)');
 
 	// {sentiment: danger, state: disabled} — mirrors btnPrimaryDisabled's pale/washed-out
 	// treatment, same reasoning as click: without it, a disabled danger button falls back to
@@ -301,7 +299,7 @@ export async function seedDemoProject(
 	await api.addAxisValueToLayer(btnDangerDisabled.id, sentimentDanger.id);
 	await api.addAxisValueToLayer(btnDangerDisabled.id, stateDisabled.id);
 	const btnDangerDisabledSnip = (await api.createRenderSnippet(btnDangerDisabled.id))!;
-	await api.createRenderEntry(btnDangerDisabledSnip.id, 'background', '#fca5a5');
+	await api.createRenderEntry(btnDangerDisabledSnip.id, 'background', 'oklch(80.8% 0.1035 19.6)');
 	await api.createRenderEntry(btnDangerDisabledSnip.id, 'opacity', '0.4');
 
 	// Button label kit — text child rendered inside each button box
@@ -896,33 +894,33 @@ export async function seedDemoProject(
 	const h1Kit = await textKit('Heading', {
 		'font-size': '40px',
 		'font-weight': '700',
-		color: '#0f172a'
+		color: 'oklch(20.8% 0.0398 265.8)'
 	});
 	const h2Kit = await textKit('Subheading', {
 		'font-size': '19px',
 		'font-weight': '700',
-		color: '#0f172a'
+		color: 'oklch(20.8% 0.0398 265.8)'
 	});
 	const bodyKit = await textKit('Body', {
 		'font-size': '15px',
 		'font-weight': '400',
-		color: '#64748b'
+		color: 'oklch(55.4% 0.0407 257.4)'
 	});
 	const ctaLabelKit = await textKit('CTA Label', {
 		'font-size': '15px',
 		'font-weight': '600',
-		color: '#ffffff'
+		color: 'oklch(100% 0 0)'
 	});
 	const footerTextKit = await textKit('Footer Text', {
 		'font-size': '13px',
 		'font-weight': '400',
-		color: '#cbd5e1'
+		color: 'oklch(86.9% 0.0198 252.9)'
 	});
 
 	// --- Layout kits ---
 	const pageKit = await boxKit('Page', {
 		'flex-direction': 'column',
-		background: '#ffffff',
+		background: 'oklch(100% 0 0)',
 		width: '900px',
 		gap: '0px',
 		padding: '0px'
@@ -933,14 +931,14 @@ export async function seedDemoProject(
 		'align-items': 'center',
 		padding: '20px',
 		gap: '16px',
-		background: '#ffffff'
+		background: 'oklch(100% 0 0)'
 	});
 	const heroKit = await boxKit('Hero', {
 		'flex-direction': 'row',
 		'align-items': 'center',
 		gap: '18px',
 		padding: '64px',
-		background: '#f8fafc'
+		background: 'oklch(98.4% 0.0034 247.9)'
 	});
 	const featuresKit = await boxKit('Features', {
 		'flex-direction': 'row',
@@ -952,14 +950,14 @@ export async function seedDemoProject(
 		'align-items': 'stretch',
 		gap: '24px',
 		padding: '48px',
-		background: '#ffffff'
+		background: 'oklch(100% 0 0)'
 	});
 	const cardKit = await boxKit('Card', {
 		'flex-direction': 'column',
 		gap: '8px',
 		padding: '24px',
-		background: '#ffffff',
-		border: '#e2e8f0',
+		background: 'oklch(100% 0 0)',
+		border: 'oklch(92.9% 0.0126 255.5)',
 		'border-radius': '12px',
 		width: '230px'
 	});
@@ -971,14 +969,14 @@ export async function seedDemoProject(
 		// kit from silently depending on Charter's Stack default if it ever gains a sibling.
 		'align-items': 'stretch',
 		padding: '28px',
-		background: '#0f172a'
+		background: 'oklch(20.8% 0.0398 265.8)'
 	});
 	const ctaKit = await boxKit('CTA', {
 		'flex-direction': 'row',
 		'align-items': 'center',
 		'justify-content': 'center',
 		padding: '13px',
-		background: '#3b82f6',
+		background: 'oklch(62.3% 0.188 259.8)',
 		'border-radius': '8px'
 	});
 	const heroContentKit = await boxKit('Hero Content', {
@@ -1065,8 +1063,8 @@ export async function seedDemoProject(
 	const chipKit = await textKit('Chip', {
 		'font-size': '13px',
 		'font-weight': '600',
-		color: '#3730a3',
-		background: '#e0e7ff',
+		color: 'oklch(39.8% 0.1773 277.4)',
+		background: 'oklch(93% 0.0334 272.8)',
 		'border-radius': '999px',
 		padding: '6px 12px'
 	});
@@ -1074,8 +1072,8 @@ export async function seedDemoProject(
 		arrange: 'cluster',
 		gap: '8px',
 		padding: '16px',
-		background: '#ffffff',
-		border: '#e2e8f0',
+		background: 'oklch(100% 0 0)',
+		border: 'oklch(92.9% 0.0126 255.5)',
 		'border-radius': '12px',
 		width: '300px'
 	});
@@ -1092,16 +1090,16 @@ export async function seedDemoProject(
 	const statusPillKit = await textKit('Status Pill', {
 		'font-size': '13px',
 		'font-weight': '600',
-		color: '#166534',
-		background: '#dcfce7',
+		color: 'oklch(44.8% 0.1083 151.3)',
+		background: 'oklch(96.2% 0.0434 156.7)',
 		'border-radius': '999px',
 		padding: '6px 12px'
 	});
 	const splitRowKit = await boxKit('Split Row', {
 		arrange: 'split',
 		padding: '16px',
-		background: '#ffffff',
-		border: '#e2e8f0',
+		background: 'oklch(100% 0 0)',
+		border: 'oklch(92.9% 0.0126 255.5)',
 		'border-radius': '12px',
 		width: '300px'
 	});
@@ -1116,7 +1114,7 @@ export async function seedDemoProject(
 	// --- Grid: auto-fit tiles (Cell Min + Gap -> repeat(auto-fit, minmax(80px, 1fr))) ---
 	// 300px card - 32px padding = 268px content -> three ~83px columns, six tiles, two rows.
 	const tileKit = await boxKit('Tile', {
-		background: '#e2e8f0',
+		background: 'oklch(92.9% 0.0126 255.5)',
 		'border-radius': '8px',
 		height: '64px'
 	});
@@ -1125,8 +1123,8 @@ export async function seedDemoProject(
 		'grid-cell-min': '80px',
 		gap: '10px',
 		padding: '16px',
-		background: '#ffffff',
-		border: '#e2e8f0',
+		background: 'oklch(100% 0 0)',
+		border: 'oklch(92.9% 0.0126 255.5)',
 		'border-radius': '12px',
 		width: '300px'
 	});

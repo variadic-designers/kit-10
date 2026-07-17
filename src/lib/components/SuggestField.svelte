@@ -245,7 +245,7 @@
 			background: var(--color-pure);
 			border: 1px solid var(--color-panel-header-border);
 			border-radius: 4px;
-			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+			box-shadow: 0 4px 12px oklch(0% 0 0 / 0.15);
 
 			input {
 				all: unset;
@@ -263,7 +263,7 @@
 			font-size: 0.85em;
 
 			&--error {
-				color: var(--color-danger, #ef4444);
+				color: var(--color-danger, oklch(63.7% 0.2078 25.3));
 			}
 		}
 

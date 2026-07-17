@@ -12,8 +12,7 @@ export function tokenIcon(v: TokenValue | null | undefined): string {
 	if (v?.type === 'view-list') return 'fa-square-binary';
 	const str = tokenStr(v);
 	if (!str) return 'fa-question';
-	if (str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl'))
-		return 'fa-square-full';
+	if (isColorScalar(str)) return 'fa-square-full';
 	if (
 		/^\d/.test(str) &&
 		(str.includes('px') || str.includes('rem') || str.includes('em') || str.includes('%'))
@@ -23,9 +22,7 @@ export function tokenIcon(v: TokenValue | null | undefined): string {
 }
 
 export function isColorValue(v: TokenValue | null | undefined): boolean {
-	const str = tokenStr(v);
-	if (!str) return false;
-	return str.startsWith('#') || str.startsWith('rgb') || str.startsWith('hsl');
+	return isColorScalar(tokenStr(v));
 }
 
 // For the Render panel's StyleField: takes the already-resolved scalar string
@@ -33,7 +30,7 @@ export function isColorValue(v: TokenValue | null | undefined): boolean {
 // string's lexical shape. No TokenValue indirection — the Render panel never has one.
 export function iconFromResolvedScalar(s: string | null | undefined): string {
 	if (!s) return 'fa-question';
-	if (s.startsWith('#') || s.startsWith('rgb') || s.startsWith('hsl')) return 'fa-square-full';
+	if (isColorScalar(s)) return 'fa-square-full';
 	if (
 		/^\d/.test(s) &&
 		(s.includes('px') || s.includes('rem') || s.includes('em') || s.includes('%'))
@@ -43,5 +40,12 @@ export function iconFromResolvedScalar(s: string | null | undefined): string {
 }
 
 export function isColorScalar(s: string | null | undefined): boolean {
-	return !!s && (s.startsWith('#') || s.startsWith('rgb') || s.startsWith('hsl'));
+	return (
+		!!s &&
+		(s.startsWith('#') ||
+			s.startsWith('rgb') ||
+			s.startsWith('hsl') ||
+			s.startsWith('oklch') ||
+			s.startsWith('oklab'))
+	);
 }

@@ -117,10 +117,10 @@ export function createPluginManager(api: Api) {
 					const { level, message }: { level: string; message: string } = JSON.parse(rawJson);
 
 					const colors: Record<string, string> = {
-						debug: 'color: #6b7280;',
-						info: 'color: #3b82f6;',
-						warn: 'color: #f59e0b;',
-						error: 'color: #ef4444;'
+						debug: 'color: oklch(55.1% 0.0234 264.4);',
+						info: 'color: oklch(62.3% 0.188 259.8);',
+						warn: 'color: oklch(76.9% 0.1647 70.1);',
+						error: 'color: oklch(63.7% 0.2078 25.3);'
 					};
 
 					const color = colors[level] ?? colors.info;

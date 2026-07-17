@@ -297,7 +297,7 @@ struct BoxShadow {
     offset_y: f32,
     blur_radius: f32,
     spread_radius: f32,
-    color: [f32; 4],
+    color: OklabColor,
     inset: bool,
 }
 
@@ -313,10 +313,10 @@ struct BoxData {
     max_width: Extent,
     max_height: Extent,
     padding: [f32; 4],
-    bg_color: [f32; 4],
+    bg_color: OklabColor,
     flex_direction: String,
     show_border: bool,
-    border_color: [f32; 4],
+    border_color: OklabColor,
     border_width: f32,
     corner_radius: f32,
     opacity: f32,
@@ -345,9 +345,9 @@ struct TextData {
     width: Extent,
     height: Extent,
     padding: [f32; 4],
-    bg_color: [f32; 4],
+    bg_color: OklabColor,
     show_border: bool,
-    border_color: [f32; 4],
+    border_color: OklabColor,
     border_width: f32,
     corner_radius: f32,
     opacity: f32,
@@ -356,7 +356,7 @@ struct TextData {
     font_family: String,
     font_weight: u16,
     font_style: String,
-    text_color: [f32; 4],
+    text_color: OklabColor,
     // Wire values are Vellum's TextAlign/TextDecorationKind enum variant names verbatim
     // ("Left"/"Center"/"Right"/"Justify", "None"/"Underline"/"LineThrough") -- see
     // parse_text_align/parse_text_decoration. Plain String like font_style, not a Rust enum on
@@ -770,45 +770,266 @@ fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
     ids
 }
 
-fn parse_color(s: &str) -> [f32; 4] {
+// Oklab is Charter's/Vellum's internal and wire color representation -- see kit10's
+// resources/oklch.md. `parse_color` (below) parses OKLCH/Oklab first-class, and hex/rgb/hsl as
+// legacy INPUT formats only (accepted, converted on ingest, never round-tripped). Own copy of
+// the conversion math, manually synced against Vellum's `taf_can_do/src/color.rs` -- no shared
+// crate between these two repos today (see the "Charter/Vellum Wire Types Plan" memory note).
+// Matrices are Björn Ottosson's published Oklab constants, operating on linear sRGB.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+struct OklabColor {
+    l: f32,
+    a: f32,
+    b: f32,
+    alpha: f32,
+}
+
+impl OklabColor {
+    const fn new(l: f32, a: f32, b: f32, alpha: f32) -> Self {
+        Self { l, a, b, alpha }
+    }
+
+    /// Legacy sRGB-encoded `[r, g, b, a]` (each `0.0..=1.0`, gamma-encoded) -> Oklab. The single
+    /// on-ramp for hex/rgb/hsl input.
+    fn from_srgb(rgba: [f32; 4]) -> Self {
+        let linear = [
+            srgb_to_linear(rgba[0]),
+            srgb_to_linear(rgba[1]),
+            srgb_to_linear(rgba[2]),
+        ];
+        let (l, a, b) = linear_srgb_to_oklab(linear);
+        Self { l, a, b, alpha: rgba[3] }
+    }
+}
+
+/// A clearly-wrong, saturated marker color for genuinely unparseable input -- deliberately NOT
+/// black, so a bad value is visually obvious in the preview rather than silently blending in
+/// (see parse_color's fallback below; the doc's own "panel marker" affordance is editor-scope,
+/// not built yet -- this is the plugin-side stand-in until then).
+fn unparseable_marker() -> OklabColor {
+    OklabColor::from_srgb([1.0, 0.0, 1.0, 1.0])
+}
+
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn linear_srgb_to_oklab(rgb: [f32; 3]) -> (f32, f32, f32) {
+    let [r, g, b] = rgb;
+
+    let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+
+    let l_ = l.cbrt();
+    let m_ = m.cbrt();
+    let s_ = s.cbrt();
+
+    (
+        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+    )
+}
+
+/// Polar OKLCH `(l, chroma, hue_degrees)` -> cartesian Oklab `(l, a, b)`.
+fn oklch_to_oklab(l: f32, c: f32, h_degrees: f32) -> (f32, f32, f32) {
+    let h = h_degrees.to_radians();
+    (l, c * h.cos(), c * h.sin())
+}
+
+/// CSS `hsl(h, s%, l%)` -> sRGB `[r, g, b]` (each `0.0..=1.0`, gamma-encoded). Standard HSL->RGB
+/// conversion (h in degrees, s/l as fractions).
+fn hsl_to_srgb(h: f32, s: f32, l: f32) -> [f32; 3] {
+    if s <= 0.0 {
+        return [l, l, l];
+    }
+    let h = h.rem_euclid(360.0) / 360.0;
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let hue_to_rgb = |p: f32, q: f32, mut t: f32| -> f32 {
+        if t < 0.0 {
+            t += 1.0;
+        }
+        if t > 1.0 {
+            t -= 1.0;
+        }
+        if t < 1.0 / 6.0 {
+            return p + (q - p) * 6.0 * t;
+        }
+        if t < 1.0 / 2.0 {
+            return q;
+        }
+        if t < 2.0 / 3.0 {
+            return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+        }
+        p
+    };
+    [
+        hue_to_rgb(p, q, h + 1.0 / 3.0),
+        hue_to_rgb(p, q, h),
+        hue_to_rgb(p, q, h - 1.0 / 3.0),
+    ]
+}
+
+/// Parses a percentage (`"70%"`) or bare number (`"0.7"`) into a `0.0..=1.0` fraction. Used for
+/// OKLCH's `L` and HSL's `s`/`l` components, which both accept either form in CSS.
+fn parse_percent_or_fraction(s: &str) -> Option<f32> {
     let s = s.trim();
+    if let Some(pct) = s.strip_suffix('%') {
+        pct.trim().parse::<f32>().ok().map(|v| v / 100.0)
+    } else {
+        s.parse::<f32>().ok()
+    }
+}
+
+/// Splits an OKLCH/OKLAB/HSL functional color's argument list on whitespace and/or commas, and
+/// splits off an optional `/ alpha` suffix (alpha itself may be a bare fraction or a percentage).
+fn split_color_args(inner: &str) -> (Vec<String>, f32) {
+    let (main, alpha_part) = match inner.split_once('/') {
+        Some((m, a)) => (m, Some(a)),
+        None => (inner, None),
+    };
+    let parts = main
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect();
+    let alpha = alpha_part
+        .and_then(|a| parse_percent_or_fraction(a.trim()))
+        .unwrap_or(1.0);
+    (parts, alpha)
+}
+
+/// Parses a color from OKLCH/Oklab (first-class, no legacy detour) or hex/`rgb()`/`hsl()`
+/// (legacy input formats, accepted and converted to Oklab on ingest -- never the storage or
+/// interpolation form, per resources/oklch.md). Anything genuinely unparseable warns via the
+/// host's log channel and returns a visually-obvious marker color instead of silently
+/// defaulting to black -- a bad value should be discoverable, not invisible.
+fn parse_color(s: &str) -> OklabColor {
+    let s = s.trim();
+
+    if let Some(inner) = s.strip_prefix("oklch(").and_then(|v| v.strip_suffix(')')) {
+        let (parts, alpha) = split_color_args(inner);
+        if parts.len() >= 3 {
+            if let (Some(l), Some(c), Some(h)) = (
+                parse_percent_or_fraction(&parts[0]),
+                parts[1].parse::<f32>().ok(),
+                parts[2].parse::<f32>().ok(),
+            ) {
+                let (l, a, b) = oklch_to_oklab(l, c, h);
+                return OklabColor::new(l, a, b, alpha);
+            }
+        }
+        return warn_unparseable(s);
+    }
+
+    if let Some(inner) = s.strip_prefix("oklab(").and_then(|v| v.strip_suffix(')')) {
+        let (parts, alpha) = split_color_args(inner);
+        if parts.len() >= 3 {
+            if let (Some(l), Some(a), Some(b)) = (
+                parse_percent_or_fraction(&parts[0]),
+                parts[1].parse::<f32>().ok(),
+                parts[2].parse::<f32>().ok(),
+            ) {
+                return OklabColor::new(l, a, b, alpha);
+            }
+        }
+        return warn_unparseable(s);
+    }
+
+    if s.eq_ignore_ascii_case("transparent") {
+        return OklabColor::new(0.0, 0.0, 0.0, 0.0);
+    }
+
     if s.starts_with('#') {
         let hex = &s[1..];
-        match hex.len() {
+        return match hex.len() {
             6 => {
                 let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32 / 255.0;
                 let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32 / 255.0;
                 let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32 / 255.0;
-                [r, g, b, 1.0]
+                OklabColor::from_srgb([r, g, b, 1.0])
             }
             8 => {
                 let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32 / 255.0;
                 let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32 / 255.0;
                 let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32 / 255.0;
                 let a = u8::from_str_radix(&hex[6..8], 16).unwrap_or(255) as f32 / 255.0;
-                [r, g, b, a]
+                OklabColor::from_srgb([r, g, b, a])
             }
-            _ => [0.0, 0.0, 0.0, 1.0],
-        }
-    } else if s.starts_with("rgb(") {
-        let inner = s.trim_start_matches("rgb(").trim_end_matches(')');
-        let parts: Vec<&str> = inner.split(',').collect();
+            _ => warn_unparseable(s),
+        };
+    }
+
+    if let Some(inner) = s
+        .strip_prefix("rgba(")
+        .or_else(|| s.strip_prefix("rgb("))
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        let (parts, slash_alpha) = split_color_args(inner);
         if parts.len() >= 3 {
             let r = parts[0].trim().parse::<f32>().unwrap_or(0.0) / 255.0;
             let g = parts[1].trim().parse::<f32>().unwrap_or(0.0) / 255.0;
             let b = parts[2].trim().parse::<f32>().unwrap_or(0.0) / 255.0;
-            let a = if parts.len() >= 4 {
-                parts[3].trim().parse::<f32>().unwrap_or(1.0)
-            } else {
-                1.0
-            };
-            [r, g, b, a]
-        } else {
-            [0.0, 0.0, 0.0, 1.0]
+            // A 4th comma-separated arg (legacy `rgba(r,g,b,a)`) is already a 0-1 fraction, not
+            // a `/ alpha` suffix -- `split_color_args` only extracts a `/`-form alpha, so a comma
+            // form lands as parts[3] instead and wins over the (default 1.0) slash-parsed value.
+            let a = parts
+                .get(3)
+                .and_then(|p| p.parse::<f32>().ok())
+                .unwrap_or(slash_alpha);
+            return OklabColor::from_srgb([r, g, b, a]);
         }
-    } else {
-        [0.0, 0.0, 0.0, 1.0]
+        return warn_unparseable(s);
     }
+
+    if let Some(inner) = s
+        .strip_prefix("hsla(")
+        .or_else(|| s.strip_prefix("hsl("))
+        .and_then(|v| v.strip_suffix(')'))
+    {
+        let (parts, slash_alpha) = split_color_args(inner);
+        if parts.len() >= 3 {
+            if let (Some(h), Some(sat), Some(lig)) = (
+                parts[0].trim().trim_end_matches("deg").parse::<f32>().ok(),
+                parse_percent_or_fraction(&parts[1]),
+                parse_percent_or_fraction(&parts[2]),
+            ) {
+                let [r, g, b] = hsl_to_srgb(h, sat, lig);
+                let a = parts
+                    .get(3)
+                    .and_then(|p| parse_percent_or_fraction(p))
+                    .unwrap_or(slash_alpha);
+                return OklabColor::from_srgb([r, g, b, a]);
+            }
+        }
+        return warn_unparseable(s);
+    }
+
+    warn_unparseable(s)
+}
+
+fn warn_unparseable(s: &str) -> OklabColor {
+    // The Extism host-log import only exists in the real wasm32 plugin runtime -- calling it from
+    // `parse_color` (exercised extensively by native `cargo test`) would otherwise fail to link
+    // natively, since these symbols are host imports satisfied by the Extism runtime, not libc.
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Ok(mem) = Memory::from_bytes(&format!(
+            "parse_color: unparseable color value {s:?}, using marker color instead of black"
+        )) {
+            mem.log(LogLevel::Warn);
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = s;
+    unparseable_marker()
 }
 
 fn parse_px(s: Option<&str>) -> f32 {
@@ -944,9 +1165,9 @@ fn get_prop(
 // unstyled box now shows only its border, if any -- Vellum still draws the selection/hover overlay
 // so it stays selectable.)
 struct PaintProps {
-    bg_color: [f32; 4],
+    bg_color: OklabColor,
     show_border: bool,
-    border_color: [f32; 4],
+    border_color: OklabColor,
     border_width: f32,
     corner_radius: f32,
     padding: [f32; 4],
@@ -972,7 +1193,7 @@ fn parse_padding_shorthand(s: Option<&str>) -> [f32; 4] {
 
 fn extract_paint_props(
     props: &std::collections::HashMap<String, ResolvedProperty>,
-    default_bg: [f32; 4],
+    default_bg: OklabColor,
 ) -> PaintProps {
     let bg = get_prop(props, "background").unwrap_or_default();
     let border = get_prop(props, "border").unwrap_or_default();
@@ -991,7 +1212,7 @@ fn extract_paint_props(
         border_color: if has_border {
             parse_color(&border)
         } else {
-            [0.0; 4]
+            OklabColor::default()
         },
         border_width: if border_width > 0.0 {
             border_width
@@ -1227,7 +1448,7 @@ fn build_box_node(
     parent_id: Option<usize>,
     parent_main_horizontal: Option<bool>,
 ) -> UiNode {
-    let paint = extract_paint_props(props, [0.0; 4]);
+    let paint = extract_paint_props(props, OklabColor::default());
     let width_str = get_prop(props, "width");
     let height_str = get_prop(props, "height");
     let width_kw = resize_keyword(width_str.as_deref());
@@ -1419,7 +1640,7 @@ fn build_text_node(
     let line_height = compile_line_height(resolved_font_size, get_prop(props, "line-height").as_deref());
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
-    let paint = extract_paint_props(props, [0.0; 4]);
+    let paint = extract_paint_props(props, OklabColor::default());
 
     UiNode::Text(UiTextNode {
         text_data: TextData {
@@ -1441,7 +1662,7 @@ fn build_text_node(
             text_color: if !color.is_empty() {
                 parse_color(&color)
             } else {
-                [0.2, 0.2, 0.2, 1.0]
+                OklabColor::from_srgb([0.2, 0.2, 0.2, 1.0])
             },
             text_align,
             text_decoration,
@@ -1603,8 +1824,8 @@ fn box_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "box".to_string(),
             fields: vec![
-                FieldDef::new("background", Some("Fill")),
-                FieldDef::new("border", None),
+                FieldDef::new("background", Some("Fill")).with_input_type("color"),
+                FieldDef::new("border", None).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius")),
                 FieldDef::new("outline", None),
             ],
@@ -1625,7 +1846,7 @@ fn text_categories() -> Vec<FieldCategory> {
             name: "text".to_string(),
             fields: vec![
                 FieldDef::new("content", Some("Content")),
-                FieldDef::new("color", Some("Fill")),
+                FieldDef::new("color", Some("Fill")).with_input_type("color"),
                 FieldDef::new("font-family", Some("Family")).with_input_type("font"),
                 FieldDef::new("font-size", Some("Size")),
                 // Options are enumerated editor-side from the font-facts channel (the currently
@@ -1656,8 +1877,8 @@ fn text_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "highlight".to_string(),
             fields: vec![
-                FieldDef::new("background", Some("Highlight")),
-                FieldDef::new("border", Some("Border")),
+                FieldDef::new("background", Some("Highlight")).with_input_type("color"),
+                FieldDef::new("border", Some("Border")).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius")),
                 FieldDef::new("padding", Some("Padding")),
             ],
@@ -1680,8 +1901,8 @@ fn image_categories() -> Vec<FieldCategory> {
             fields: vec![
                 FieldDef::new("width", None),
                 FieldDef::new("height", None),
-                FieldDef::new("background", Some("Fill")),
-                FieldDef::new("border", None),
+                FieldDef::new("background", Some("Fill")).with_input_type("color"),
+                FieldDef::new("border", None).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius")),
                 FieldDef::new("padding", Some("Padding")),
             ],
@@ -1700,10 +1921,10 @@ fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32
             min_width: Extent::Auto,
             min_height: Extent::Auto,
             padding,
-            bg_color: [0.0; 4],
+            bg_color: OklabColor::default(),
             flex_direction: flex_direction.to_string(),
             show_border: false,
-            border_color: [0.0; 4],
+            border_color: OklabColor::default(),
             border_width: 0.0,
             corner_radius: 0.0,
             opacity: 1.0,
@@ -1728,10 +1949,10 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
             min_width: Extent::Auto,
             min_height: Extent::Auto,
             padding: [0.0; 4],
-            bg_color: [0.0; 4],
+            bg_color: OklabColor::default(),
             flex_direction: flex_direction.to_string(),
             show_border: false,
-            border_color: [0.0; 4],
+            border_color: OklabColor::default(),
             border_width: 0.0,
             corner_radius: 0.0,
             opacity: 1.0,
@@ -3494,9 +3715,9 @@ mod text_paint_properties_tests {
         let UiNode::Text(UiTextNode { text_data }) = node else {
             panic!("expected a Text node");
         };
-        assert_eq!(text_data.bg_color, [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(text_data.bg_color, OklabColor::from_srgb([1.0, 0.0, 0.0, 1.0]));
         assert!(text_data.show_border);
-        assert_eq!(text_data.border_color, [0.0, 1.0, 0.0, 1.0]);
+        assert_eq!(text_data.border_color, OklabColor::from_srgb([0.0, 1.0, 0.0, 1.0]));
         assert_eq!(text_data.corner_radius, 4.0);
         assert_eq!(text_data.padding, [8.0; 4]);
         // Still always auto-measured -- paint properties never affect sizing.
@@ -3513,7 +3734,7 @@ mod text_paint_properties_tests {
         let UiNode::Text(UiTextNode { text_data }) = node else {
             panic!("expected a Text node");
         };
-        assert_eq!(text_data.bg_color, [0.0; 4]);
+        assert_eq!(text_data.bg_color, OklabColor::default());
         assert!(!text_data.show_border);
     }
 
@@ -3527,7 +3748,7 @@ mod text_paint_properties_tests {
             panic!("expected a Box node");
         };
         assert_eq!(
-            box_data.bg_color, [0.0; 4],
+            box_data.bg_color, OklabColor::default(),
             "unstyled box must be transparent"
         );
     }
@@ -3571,10 +3792,10 @@ mod text_paint_properties_tests {
                 min_width: Extent::Auto,
                 min_height: Extent::Auto,
                 padding: [16.0; 4],
-                bg_color: [0.9, 0.9, 0.9, 1.0],
+                bg_color: OklabColor::from_srgb([0.9, 0.9, 0.9, 1.0]),
                 flex_direction: "Column".to_string(),
                 show_border: true,
-                border_color: [0.8, 0.8, 0.8, 1.0],
+                border_color: OklabColor::from_srgb([0.8, 0.8, 0.8, 1.0]),
                 border_width: 1.0,
                 corner_radius: 8.0,
                 opacity: 1.0,
@@ -3627,6 +3848,133 @@ mod text_paint_properties_tests {
             !json2.contains("viewport_data_binary"),
             "OnResolveResult JSON should omit viewport_data_binary when None, got: {json2}"
         );
+    }
+}
+
+#[cfg(test)]
+mod parse_color_tests {
+    use super::*;
+
+    const EPS: f32 = 1e-3;
+
+    fn approx(a: f32, b: f32) -> bool {
+        (a - b).abs() < EPS
+    }
+
+    fn approx_color(a: OklabColor, b: OklabColor) -> bool {
+        approx(a.l, b.l) && approx(a.a, b.a) && approx(a.b, b.b) && approx(a.alpha, b.alpha)
+    }
+
+    #[test]
+    fn oklch_parses_first_class_no_legacy_detour() {
+        // oklch(L C H) with L as a bare fraction.
+        let got = parse_color("oklch(0.7 0.15 30)");
+        let (l, a, b) = oklch_to_oklab(0.7, 0.15, 30.0);
+        let want = OklabColor::new(l, a, b, 1.0);
+        assert!(approx_color(got, want), "got {got:?} want {want:?}");
+    }
+
+    #[test]
+    fn oklch_accepts_percent_lightness_and_slash_alpha() {
+        let got = parse_color("oklch(70% 0.15 30 / 0.5)");
+        let (l, a, b) = oklch_to_oklab(0.7, 0.15, 30.0);
+        let want = OklabColor::new(l, a, b, 0.5);
+        assert!(approx_color(got, want), "got {got:?} want {want:?}");
+    }
+
+    #[test]
+    fn oklab_parses_direct_cartesian_no_conversion() {
+        let got = parse_color("oklab(0.6 0.1 -0.05)");
+        let want = OklabColor::new(0.6, 0.1, -0.05, 1.0);
+        assert!(approx_color(got, want), "got {got:?} want {want:?}");
+    }
+
+    #[test]
+    fn hex_still_converts_through_srgb_to_oklab() {
+        let got = parse_color("#ff0000");
+        let want = OklabColor::from_srgb([1.0, 0.0, 0.0, 1.0]);
+        assert!(approx_color(got, want), "got {got:?} want {want:?}");
+    }
+
+    #[test]
+    fn rgb_and_rgba_are_legacy_srgb_input() {
+        let got_rgb = parse_color("rgb(255, 0, 0)");
+        let got_rgba = parse_color("rgba(255, 0, 0, 0.5)");
+        let want_opaque = OklabColor::from_srgb([1.0, 0.0, 0.0, 1.0]);
+        let want_half = OklabColor::from_srgb([1.0, 0.0, 0.0, 0.5]);
+        assert!(approx_color(got_rgb, want_opaque));
+        assert!(approx_color(got_rgba, want_half));
+    }
+
+    #[test]
+    fn hsl_and_hsla_are_now_supported_not_black() {
+        // Closes the documented CLAUDE.md pitfall: hsl() used to fall through to black.
+        let red_hsl = parse_color("hsl(0, 100%, 50%)");
+        let red_hex = parse_color("#ff0000");
+        assert!(
+            approx_color(red_hsl, red_hex),
+            "hsl(0,100%,50%) should equal #ff0000, got {red_hsl:?} vs {red_hex:?}"
+        );
+
+        let translucent = parse_color("hsla(0, 100%, 50%, 0.25)");
+        assert!(approx(translucent.alpha, 0.25));
+    }
+
+    #[test]
+    fn transparent_keyword_is_zero_alpha_not_black() {
+        // Closes the other documented CLAUDE.md pitfall: `transparent` used to fall through to
+        // opaque black.
+        let got = parse_color("transparent");
+        assert_eq!(got, OklabColor::new(0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn genuinely_unparseable_value_warns_and_returns_marker_not_black() {
+        let got = parse_color("not-a-real-color");
+        assert_ne!(
+            got,
+            OklabColor::default(),
+            "unparseable input must not silently become black/transparent"
+        );
+        assert_eq!(got, unparseable_marker());
+    }
+}
+
+#[cfg(test)]
+mod color_input_type_tests {
+    use super::*;
+
+    // Every paint FieldDef (background/border/color) reports inputType: "color" -- the editor's
+    // ColorField.svelte dispatches on exactly this string (src/lib/editor/panels/Styles.svelte).
+    fn assert_color_input_type(fields: &[FieldDef], key: &str) {
+        let f = fields.iter().find(|f| f.key == key).unwrap_or_else(|| panic!("{key} field"));
+        assert_eq!(f.input_type.as_deref(), Some("color"), "{key} should be inputType: color");
+    }
+
+    #[test]
+    fn box_categories_declares_background_and_border_as_color_fields() {
+        let categories = box_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let fields: Vec<FieldDef> = fields.into_iter().cloned().collect();
+        assert_color_input_type(&fields, "background");
+        assert_color_input_type(&fields, "border");
+    }
+
+    #[test]
+    fn text_categories_declares_color_and_highlight_paint_fields_as_color_fields() {
+        let categories = text_categories();
+        let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
+        assert_color_input_type(&fields, "color");
+        assert_color_input_type(&fields, "background");
+        assert_color_input_type(&fields, "border");
+    }
+
+    #[test]
+    fn image_categories_declares_background_and_border_as_color_fields() {
+        let categories = image_categories();
+        let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
+        assert_color_input_type(&fields, "background");
+        assert_color_input_type(&fields, "border");
     }
 }
 

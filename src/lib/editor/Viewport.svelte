@@ -464,7 +464,7 @@
 			clip-path: url(#logoClip);
 			width: min(50%, 12rem);
 			aspect-ratio: 622.31 / 476;
-			background: radial-gradient(circle, #93c5fd 30%, #3b82f6 65%, var(--color-bg) 10%);
+			background: radial-gradient(circle, oklch(80.9% 0.0956 251.8) 30%, oklch(62.3% 0.188 259.8) 65%, var(--color-bg) 10%);
 			background-size: 200% 200%;
 			animation: walk-background 5s ease-in-out infinite;
 		}

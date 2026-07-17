@@ -61,23 +61,23 @@
 				>
 					<path
 						d="M622.31,238c0,131.44-106.56,238-238,238V444.82C384.31,330.6,476.91,238,591.13,238Z"
-						fill="#93c5fd"
+						fill="oklch(80.9% 0.0956 251.8)"
 					/>
 					<path
 						d="M384.31,444.82V476c-131.44,0-238-106.56-238-238h31.18C291.71,238,384.31,330.6,384.31,444.82Z"
-						fill="#3b82f6"
+						fill="oklch(62.3% 0.188 259.8)"
 					/>
 					<path
 						d="M384.31,0V31.18C384.31,145.4,291.71,238,177.49,238H146.31C146.31,106.56,252.87,0,384.31,0Z"
-						fill="#3b82f6"
+						fill="oklch(62.3% 0.188 259.8)"
 					/>
 					<path
 						d="M622.31,238H591.13c-114.22,0-206.82-92.6-206.82-206.82V0C515.75,0,622.31,106.56,622.31,238Z"
-						fill="#93c5fd"
+						fill="oklch(80.9% 0.0956 251.8)"
 					/>
 					<path
 						d="M147.1,0h0a0,0,0,0,1,0,0V328.9A147.1,147.1,0,0,1,0,476H0a0,0,0,0,1,0,0V147.1A147.1,147.1,0,0,1,147.1,0Z"
-						fill="#3b82f6"
+						fill="oklch(62.3% 0.188 259.8)"
 					/>
 				</svg>
 			</div>
@@ -194,45 +194,45 @@
 	@use '_index' as *;
 
 	$light: (
-		pure: '#FFF',
-		pure-alt: '#000',
-		bg: '#f8fafc',
-		surface: '#ffffff',
-		surface-alt: '#f1f5f9',
-		text: '#1e293b',
-		text-muted: '#64748b',
-		primary: '#3b82f6',
-		primary-hover: '#2563eb',
-		focus-ring: '#93c5fd',
-		border: '#e2e8f0',
-		heading: '#0f172a',
-		donate-text: '#e11d48',
-		donate-border: '#fecdd3',
-		donate-icon: '#fb7185',
-		donate-hover-bg: '#fff1f2',
-		donate-hover-border: '#fda4af',
-		donate-hover-text: '#be123c'
+		pure: 'oklch(100% 0 0)',
+		pure-alt: 'oklch(0% 0 0)',
+		bg: 'oklch(98.4% 0.0034 247.9)',
+		surface: 'oklch(100% 0 0)',
+		surface-alt: 'oklch(96.8% 0.0069 247.9)',
+		text: 'oklch(27.9% 0.0368 260)',
+		text-muted: 'oklch(55.4% 0.0407 257.4)',
+		primary: 'oklch(62.3% 0.188 259.8)',
+		primary-hover: 'oklch(54.6% 0.2152 262.9)',
+		focus-ring: 'oklch(80.9% 0.0956 251.8)',
+		border: 'oklch(92.9% 0.0126 255.5)',
+		heading: 'oklch(20.8% 0.0398 265.8)',
+		donate-text: 'oklch(58.6% 0.222 17.6)',
+		donate-border: 'oklch(89.2% 0.0559 10)',
+		donate-icon: 'oklch(71.9% 0.169 13.4)',
+		donate-hover-bg: 'oklch(96.9% 0.0152 12.4)',
+		donate-hover-border: 'oklch(81% 0.1061 11.6)',
+		donate-hover-text: 'oklch(51.4% 0.1978 16.9)'
 	);
 
 	$dark: (
-		pure: '#0a0f1c',
-		pure-alt: '#f8fafc',
-		bg: '#0a0f1c',
-		surface: '#1e293b',
-		surface-alt: '#334155',
-		text: '#e2e8f0',
-		text-muted: '#94a3b8',
-		primary: '#60a5fa',
-		primary-hover: '#93c5fd',
-		focus-ring: '#1d4ed8',
-		border: '#475569',
-		heading: '#f8fafc',
-		donate-text: '#f43f5e',
-		donate-border: '#9f1239',
-		donate-icon: '#fb7185',
-		donate-hover-bg: '#881337',
-		donate-hover-border: '#e11d48',
-		donate-hover-text: '#fda4af'
+		pure: 'oklch(17.1% 0.0284 267.4)',
+		pure-alt: 'oklch(98.4% 0.0034 247.9)',
+		bg: 'oklch(17.1% 0.0284 267.4)',
+		surface: 'oklch(27.9% 0.0368 260)',
+		surface-alt: 'oklch(37.2% 0.0392 257.3)',
+		text: 'oklch(92.9% 0.0126 255.5)',
+		text-muted: 'oklch(71.1% 0.0351 256.8)',
+		primary: 'oklch(71.4% 0.1434 254.6)',
+		primary-hover: 'oklch(80.9% 0.0956 251.8)',
+		focus-ring: 'oklch(48.8% 0.2172 264.4)',
+		border: 'oklch(44.6% 0.0374 257.3)',
+		heading: 'oklch(98.4% 0.0034 247.9)',
+		donate-text: 'oklch(64.5% 0.2154 16.4)',
+		donate-border: 'oklch(45.5% 0.1713 13.7)',
+		donate-icon: 'oklch(71.9% 0.169 13.4)',
+		donate-hover-bg: 'oklch(41% 0.1502 10.3)',
+		donate-hover-border: 'oklch(58.6% 0.222 17.6)',
+		donate-hover-text: 'oklch(81% 0.1061 11.6)'
 	);
 
 	@include theming-declare-schemes-basic($light, $dark);

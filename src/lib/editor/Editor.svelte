@@ -622,7 +622,7 @@
 		display: grid;
 		place-items: center;
 		padding: 1.5rem;
-		background: rgba(0, 0, 0, 0.55);
+		background: oklch(0% 0 0 / 0.55);
 		backdrop-filter: blur(2px);
 	}
 
@@ -631,10 +631,10 @@
 		width: 100%;
 		padding: 1.5rem;
 		border-radius: 12px;
-		background: var(--color-surface, #1f1f1f);
-		color: var(--color-text, #dcdcdc);
-		border: 1px solid var(--color-bg, #121212);
-		box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+		background: var(--color-surface, oklch(23.9% 0 0));
+		color: var(--color-text, oklch(89.4% 0 0));
+		border: 1px solid var(--color-bg, oklch(18.2% 0 0));
+		box-shadow: 0 12px 40px oklch(0% 0 0 / 0.45);
 		font-family: sans-serif;
 		letter-spacing: 0.3px;
 
@@ -650,7 +650,7 @@
 		}
 
 		.purge-warn {
-			color: var(--color-danger, #e5645a);
+			color: var(--color-danger, oklch(66.1% 0.1627 26.9));
 			font-weight: 600;
 		}
 	}
@@ -676,13 +676,13 @@
 
 		&.secondary {
 			background: transparent;
-			color: var(--color-text, #dcdcdc);
-			border-color: var(--color-text-muted, #606a78);
+			color: var(--color-text, oklch(89.4% 0 0));
+			border-color: var(--color-text-muted, oklch(52.1% 0.0253 256.8));
 		}
 
 		&.danger {
-			background: var(--color-danger, #e5645a);
-			color: #fff;
+			background: var(--color-danger, oklch(66.1% 0.1627 26.9));
+			color: oklch(100% 0 0);
 		}
 	}
 </style>

@@ -1,190 +1,190 @@
 // ----- 🎨 COLORS ----- //
 // Raw colors (never use directly in components)
-$white: #ffffff;
-$black: #000000;
+$white: oklch(100% 0 0);
+$black: oklch(0% 0 0);
 
-$gray-50: #f9fafb;
-$gray-100: #f3f4f6;
-$gray-200: #e5e7eb;
-$gray-300: #d1d5db;
-$gray-400: #9ca3af;
-$gray-500: #6b7280;
-$gray-600: #4b5563;
-$gray-700: #374151;
-$gray-800: #1f2937;
-$gray-900: #111827;
-$gray-950: #0a0f1c;
+$gray-50: oklch(98.5% 0.0017 247.8);
+$gray-100: oklch(96.7% 0.0029 264.5);
+$gray-200: oklch(92.8% 0.0058 264.5);
+$gray-300: oklch(87.2% 0.0093 258.3);
+$gray-400: oklch(71.4% 0.0192 261.3);
+$gray-500: oklch(55.1% 0.0234 264.4);
+$gray-600: oklch(44.6% 0.0263 256.8);
+$gray-700: oklch(37.3% 0.0306 259.7);
+$gray-800: oklch(27.8% 0.0296 256.8);
+$gray-900: oklch(21% 0.0318 264.7);
+$gray-950: oklch(17.1% 0.0284 267.4);
 
 // 🔵 Blue (Primary)
-$blue-50: #eff6ff;
-$blue-100: #dbeafe;
-$blue-200: #bfdbfe;
-$blue-300: #93c5fd;
-$blue-400: #60a5fa;
-$blue-500: #3b82f6; // 💠
-$blue-600: #2563eb;
-$blue-700: #1d4ed8; // 💠
-$blue-800: #1e40af;
-$blue-900: #1e3a8a; // 💠
+$blue-50: oklch(97% 0.0142 254.6);
+$blue-100: oklch(93.2% 0.0316 255.6);
+$blue-200: oklch(88.2% 0.0571 254.1);
+$blue-300: oklch(80.9% 0.0956 251.8);
+$blue-400: oklch(71.4% 0.1434 254.6);
+$blue-500: oklch(62.3% 0.188 259.8); // 💠
+$blue-600: oklch(54.6% 0.2152 262.9);
+$blue-700: oklch(48.8% 0.2172 264.4); // 💠
+$blue-800: oklch(42.4% 0.1809 265.6);
+$blue-900: oklch(37.9% 0.1378 265.5); // 💠
 
 // 🔴 Red (Danger)
-$red-50: #fef2f2;
-$red-100: #fee2e2;
-$red-200: #fecaca;
-$red-300: #fca5a5;
-$red-400: #f87171;
-$red-500: #ef4444; // 💠
-$red-600: #dc2626;
-$red-700: #b91c1c;
-$red-800: #991b1b;
-$red-900: #7f1d1d;
+$red-50: oklch(97.1% 0.0129 17.4);
+$red-100: oklch(93.6% 0.0309 17.7);
+$red-200: oklch(88.5% 0.0593 18.3);
+$red-300: oklch(80.8% 0.1035 19.6);
+$red-400: oklch(71.1% 0.1661 22.2);
+$red-500: oklch(63.7% 0.2078 25.3); // 💠
+$red-600: oklch(57.7% 0.2152 27.3);
+$red-700: oklch(50.5% 0.1905 27.5);
+$red-800: oklch(44.4% 0.1613 26.9);
+$red-900: oklch(39.6% 0.1331 25.7);
 
 // 🟢 Green (Success)
-$green-50: #ecfdf5;
-$green-100: #d1fae5;
-$green-200: #a7f3d0;
-$green-300: #6ee7b7;
-$green-400: #34d399;
-$green-500: #10b981; // 💠
-$green-600: #059669;
-$green-700: #047857;
-$green-800: #065f46;
-$green-900: #064e3b;
+$green-50: oklch(97.9% 0.0207 166.1);
+$green-100: oklch(95% 0.0507 163.1);
+$green-200: oklch(90.5% 0.0895 164.2);
+$green-300: oklch(84.5% 0.1299 165);
+$green-400: oklch(77.3% 0.1535 163.2);
+$green-500: oklch(69.6% 0.1491 162.5); // 💠
+$green-600: oklch(59.6% 0.1274 163.2);
+$green-700: oklch(50.8% 0.1049 165.6);
+$green-800: oklch(43.2% 0.0865 166.9);
+$green-900: oklch(37.8% 0.073 168.9);
 
 // 🟡 Yellow
-$yellow-50: #fefce8;
-$yellow-100: #fef9c3;
-$yellow-200: #fef08a;
-$yellow-300: #fde047;
-$yellow-400: #facc15;
-$yellow-500: #f59e0b; // 💠
-$yellow-600: #d97706;
-$yellow-700: #b45309;
-$yellow-800: #92400e;
-$yellow-900: #78350f;
+$yellow-50: oklch(98.7% 0.0262 102.2);
+$yellow-100: oklch(97.3% 0.0693 103.2);
+$yellow-200: oklch(94.5% 0.1243 101.5);
+$yellow-300: oklch(90.5% 0.1657 98.1);
+$yellow-400: oklch(86.1% 0.1731 91.9);
+$yellow-500: oklch(76.9% 0.1647 70.1); // 💠
+$yellow-600: oklch(66.6% 0.1574 58.3);
+$yellow-700: oklch(55.5% 0.1455 49);
+$yellow-800: oklch(47.3% 0.1247 46.2);
+$yellow-900: oklch(41.4% 0.1054 45.9);
 
 // 🟡 Amber (Warning)
-$amber-50: #fffbeb;
-$amber-100: #fef3c7;
-$amber-200: #fde68a;
-$amber-300: #fcd34d;
-$amber-400: #fbbf24;
-$amber-500: #f59e0b;
-$amber-600: #d97706;
-$amber-700: #b45309;
-$amber-800: #92400e;
-$amber-900: #78350f;
+$amber-50: oklch(98.7% 0.0214 95.3);
+$amber-100: oklch(96.2% 0.058 95.6);
+$amber-200: oklch(92.4% 0.1151 95.7);
+$amber-300: oklch(87.9% 0.1534 91.6);
+$amber-400: oklch(83.7% 0.1644 84.4);
+$amber-500: oklch(76.9% 0.1647 70.1);
+$amber-600: oklch(66.6% 0.1574 58.3);
+$amber-700: oklch(55.5% 0.1455 49);
+$amber-800: oklch(47.3% 0.1247 46.2);
+$amber-900: oklch(41.4% 0.1054 45.9);
 
 // 🟣 Pink (Accent)
-$pink-50: #fdf2f8;
-$pink-100: #fce7f3;
-$pink-200: #fbcfe8;
-$pink-300: #f9a8d4;
-$pink-400: #f472b6;
-$pink-500: #ec4899; // 💠
-$pink-600: #db2777;
-$pink-700: #be185d;
-$pink-800: #9d174d;
-$pink-900: #831843;
+$pink-50: oklch(97.1% 0.0141 343.2);
+$pink-100: oklch(94.8% 0.0276 342.3);
+$pink-200: oklch(89.9% 0.0589 343.2);
+$pink-300: oklch(82.3% 0.1095 346);
+$pink-400: oklch(72.5% 0.1752 349.8);
+$pink-500: oklch(65.6% 0.2118 354.3); // 💠
+$pink-600: oklch(59.2% 0.218 0.6);
+$pink-700: oklch(52.5% 0.199 4);
+$pink-800: oklch(45.9% 0.1697 3.8);
+$pink-900: oklch(40.8% 0.1442 2.4);
 
 // 🟣 Purple
-$purple-50: #f5f3ff;
-$purple-100: #ede9fe;
-$purple-200: #ddd6fe;
-$purple-300: #c4b5fd;
-$purple-400: #a78bfa;
-$purple-500: #8b5cf6; // 💠
-$purple-600: #7c3aed;
-$purple-700: #6d28d9;
-$purple-800: #5b21b6;
-$purple-900: #4c1d95;
+$purple-50: oklch(96.9% 0.0161 293.8);
+$purple-100: oklch(94.3% 0.0284 294.6);
+$purple-200: oklch(89.4% 0.0549 293.3);
+$purple-300: oklch(81.1% 0.1013 293.6);
+$purple-400: oklch(70.9% 0.1592 293.5);
+$purple-500: oklch(60.6% 0.2189 292.7); // 💠
+$purple-600: oklch(54.1% 0.2466 293);
+$purple-700: oklch(49.1% 0.2412 292.6);
+$purple-800: oklch(43.2% 0.2106 292.8);
+$purple-900: oklch(38% 0.1783 293.7);
 
 // 🟦 Indigo
-$indigo-50: #eef2ff;
-$indigo-100: #e0e7ff;
-$indigo-200: #c7d2fe;
-$indigo-300: #a5b4fc;
-$indigo-400: #818cf8;
-$indigo-500: #6366f1; // 💠
-$indigo-600: #4f46e5;
-$indigo-700: #4338ca;
-$indigo-800: #3730a3;
-$indigo-900: #312e81;
+$indigo-50: oklch(96.2% 0.0179 272.3);
+$indigo-100: oklch(93% 0.0334 272.8);
+$indigo-200: oklch(87% 0.0622 274);
+$indigo-300: oklch(78.5% 0.1041 274.7);
+$indigo-400: oklch(68% 0.1583 276.9);
+$indigo-500: oklch(58.5% 0.2041 277.1); // 💠
+$indigo-600: oklch(51.1% 0.2301 277);
+$indigo-700: oklch(45.7% 0.2146 277);
+$indigo-800: oklch(39.8% 0.1773 277.4);
+$indigo-900: oklch(35.9% 0.1354 278.7);
 
 // 🐬 Cyan
-$cyan-50: #ecfeff;
-$cyan-100: #cffafe;
-$cyan-200: #a5f3fc;
-$cyan-300: #67e8f9;
-$cyan-400: #22d3ee;
-$cyan-500: #06b6d4; // 💠
-$cyan-600: #0891b2;
-$cyan-700: #0e7490;
-$cyan-800: #155e75;
-$cyan-900: #164e63;
+$cyan-50: oklch(98.4% 0.0189 200.9);
+$cyan-100: oklch(95.6% 0.0443 203.4);
+$cyan-200: oklch(91.7% 0.0772 205);
+$cyan-300: oklch(86.5% 0.1153 207.1);
+$cyan-400: oklch(79.7% 0.1339 211.5);
+$cyan-500: oklch(71.5% 0.1257 215.2); // 💠
+$cyan-600: oklch(60.9% 0.1109 221.7);
+$cyan-700: oklch(52% 0.0936 223.1);
+$cyan-800: oklch(45% 0.0771 224.3);
+$cyan-900: oklch(39.8% 0.0664 227.4);
 
 // 🐢 Teal
-$teal-50: #f0fdfa;
-$teal-100: #ccfbf1;
-$teal-200: #99f6e4;
-$teal-300: #5eead4;
-$teal-400: #2dd4bf;
-$teal-500: #14b8a6; // 💠
-$teal-600: #0d9488;
-$teal-700: #0f766e;
-$teal-800: #115e59;
-$teal-900: #134e4a;
+$teal-50: oklch(98.4% 0.0142 180.7);
+$teal-100: oklch(95.3% 0.0498 180.8);
+$teal-200: oklch(91% 0.0927 180.4);
+$teal-300: oklch(85.5% 0.1251 181.1);
+$teal-400: oklch(78.5% 0.1325 181.9);
+$teal-500: oklch(70.4% 0.123 182.5); // 💠
+$teal-600: oklch(60% 0.1038 184.7);
+$teal-700: oklch(51.1% 0.0861 186.4);
+$teal-800: oklch(43.7% 0.0705 188.2);
+$teal-900: oklch(38.6% 0.059 188.4);
 
 // Box-shadow variables (copied because you asked, instead of copying yourself)
-$bs-soft-gray: rgba(149, 157, 165, 0.2) 0 8px 24px;
-$bs-deep-shadow: 0 7px 29px 0 rgba(100, 100, 111, 0.2);
-$bs-subtle: rgba(0, 0, 0, 0.15) 1.95px 1.95px 2.6px;
-$bs-mood: 0px 5px 15px rgba(0, 0, 0, 0.35);
-$bs-3drops: rgba(0, 0, 0, 0.16) 0 1px 4px; // “3drops” credit
-$bs-soft-medium: rgba(0, 0, 0, 0.24) 0 3px 8px;
-$bs-neutral: 0 2px 8px 0 rgba(99, 99, 99, 0.2);
+$bs-soft-gray: oklch(69.2% 0.0149 248 / 0.2) 0 8px 24px;
+$bs-deep-shadow: 0 7px 29px 0 oklch(50.7% 0.0173 285.8 / 0.2);
+$bs-subtle: oklch(0% 0 0 / 0.15) 1.95px 1.95px 2.6px;
+$bs-mood: 0px 5px 15px oklch(0% 0 0 / 0.35);
+$bs-3drops: oklch(0% 0 0 / 0.16) 0 1px 4px; // “3drops” credit
+$bs-soft-medium: oklch(0% 0 0 / 0.24) 0 3px 8px;
+$bs-neutral: 0 2px 8px 0 oklch(50% 0 0 / 0.2);
 $bs-layered:
-	rgba(0, 0, 0, 0.16) 0 1px 4px,
-	#333 0 0 0 3px;
+	oklch(0% 0 0 / 0.16) 0 1px 4px,
+	oklch(32.1% 0 0) 0 0 0 3px;
 $bs-light-detail:
-	rgba(0, 0, 0, 0.02) 0 1px 3px 0,
-	rgba(27, 31, 35, 0.15) 0 0 0 1px;
-$bs-sketch-soft: rgba(0, 0, 0, 0.1) 0 4px 12px; // “Sketch” credit
+	oklch(0% 0 0 / 0.02) 0 1px 3px 0,
+	oklch(23.7% 0.0097 248.2 / 0.15) 0 0 0 1px;
+$bs-sketch-soft: oklch(0% 0 0 / 0.1) 0 4px 12px; // “Sketch” credit
 $bs-ultra-deep:
-	rgba(0, 0, 0, 0.25) 0px 54px 55px,
-	rgba(0, 0, 0, 0.12) 0px -12px 30px,
-	rgba(0, 0, 0, 0.12) 0px 4px 6px,
-	rgba(0, 0, 0, 0.17) 0px 12px 13px,
-	rgba(0, 0, 0, 0.09) 0px -3px 5px;
+	oklch(0% 0 0 / 0.25) 0px 54px 55px,
+	oklch(0% 0 0 / 0.12) 0px -12px 30px,
+	oklch(0% 0 0 / 0.12) 0px 4px 6px,
+	oklch(0% 0 0 / 0.17) 0px 12px 13px,
+	oklch(0% 0 0 / 0.09) 0px -3px 5px;
 $bs-sketch-falloff:
-	rgba(0, 0, 0, 0.05) 0 6px 24px 0,
-	rgba(0, 0, 0, 0.08) 0 0 0 1px; // “Sketch” credit
+	oklch(0% 0 0 / 0.05) 0 6px 24px 0,
+	oklch(0% 0 0 / 0.08) 0 0 0 1px; // “Sketch” credit
 $bs-sketch-depth:
-	rgba(0, 0, 0, 0.16) 0 10px 36px 0,
-	rgba(0, 0, 0, 0.06) 0 0 0 1px; // “Sketch” credit
-$bs-ambient: rgba(17, 12, 46, 0.15) 0 48px 100px 0;
+	oklch(0% 0 0 / 0.16) 0 10px 36px 0,
+	oklch(0% 0 0 / 0.06) 0 0 0 1px; // “Sketch” credit
+$bs-ambient: oklch(18.6% 0.0653 284.8 / 0.15) 0 48px 100px 0;
 $bs-cozy:
-	0px 1px 0px rgba(17, 17, 26, 0.05),
-	0px 0px 8px rgba(17, 17, 26, 0.1); // “box-shadows.co”
-$bs-subtle-glow: 0px 0px 16px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+	0px 1px 0px oklch(18.2% 0.0184 284.4 / 0.05),
+	0px 0px 8px oklch(18.2% 0.0184 284.4 / 0.1); // “box-shadows.co”
+$bs-subtle-glow: 0px 0px 16px oklch(18.2% 0.0184 284.4 / 0.1); // “box-shadows.co”
 $bs-dual-depth:
-	0px 4px 16px rgba(17, 17, 26, 0.05),
-	0px 8px 32px rgba(17, 17, 26, 0.05); // “box-shadows.co”
+	0px 4px 16px oklch(18.2% 0.0184 284.4 / 0.05),
+	0px 8px 32px oklch(18.2% 0.0184 284.4 / 0.05); // “box-shadows.co”
 $bs-layered-depth:
-	0px 4px 16px rgba(17, 17, 26, 0.1),
-	0px 8px 32px rgba(17, 17, 26, 0.05); // “box-shadows.co”
+	0px 4px 16px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 8px 32px oklch(18.2% 0.0184 284.4 / 0.05); // “box-shadows.co”
 $bs-multi-level-soft:
-	0px 1px 0px rgba(17, 17, 26, 0.1),
-	0px 8px 24px rgba(17, 17, 26, 0.1),
-	0px 16px 48px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+	0px 1px 0px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 8px 24px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 16px 48px oklch(18.2% 0.0184 284.4 / 0.1); // “box-shadows.co”
 $bs-multi-level-medium:
-	0px 4px 16px rgba(17, 17, 26, 0.1),
-	0px 8px 24px rgba(17, 17, 26, 0.1),
-	0px 16px 56px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+	0px 4px 16px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 8px 24px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 16px 56px oklch(18.2% 0.0184 284.4 / 0.1); // “box-shadows.co”
 $bs-multi-level-heavy:
-	0px 8px 24px rgba(17, 17, 26, 0.1),
-	0px 16px 56px rgba(17, 17, 26, 0.1),
-	0px 24px 80px rgba(17, 17, 26, 0.1); // “box-shadows.co”
+	0px 8px 24px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 16px 56px oklch(18.2% 0.0184 284.4 / 0.1),
+	0px 24px 80px oklch(18.2% 0.0184 284.4 / 0.1); // “box-shadows.co”
 
 // ----- 🔤 TYPOGRAPHY ----- //
 $font-size-base: 1rem; // 16px baseline
@@ -328,7 +328,7 @@ $button-font-size: $font-size-sm;
 
 $card-padding: $space-6;
 $card-radius: 0.5rem; // 8px
-$card-shadow: 0 2px 8px rgba($black, 0.1);
+$card-shadow: 0 2px 8px oklch(0% 0 0 / 0.1);
 
 // Example usage:
 // .card {

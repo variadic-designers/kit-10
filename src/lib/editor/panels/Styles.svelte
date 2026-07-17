@@ -5,6 +5,7 @@
 	import ArrangeField from './ArrangeField.svelte';
 	import ResizeField from './ResizeField.svelte';
 	import WeightField from './WeightField.svelte';
+	import ColorField from './ColorField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
 	import type { FamilyFacts, FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
@@ -240,6 +241,14 @@
 										{track}
 										{resolvedMap}
 										{fontFacts}
+										{onFieldUpdate}
+									/>
+								{:else if field.inputType === 'color'}
+									<ColorField
+										{field}
+										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{track}
+										{resolvedMap}
 										{onFieldUpdate}
 									/>
 								{:else}

@@ -347,8 +347,8 @@
 			top: 4px;
 			right: 4px;
 			border: none;
-			background: rgba(0, 0, 0, 0.5);
-			color: #fff;
+			background: oklch(0% 0 0 / 0.5);
+			color: oklch(100% 0 0);
 			cursor: pointer;
 			padding: 4px;
 			border-radius: calc($x-space-xs / 2);
@@ -361,7 +361,7 @@
 			}
 
 			&:hover {
-				background: rgba(200, 0, 0, 0.7);
+				background: oklch(52.3% 0.2146 29.2 / 0.7);
 			}
 		}
 	}

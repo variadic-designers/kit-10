@@ -186,7 +186,7 @@
 		&__track {
 			position: relative;
 			height: 6px;
-			background: var(--color-surface-alt, #e5e5e5);
+			background: var(--color-surface-alt, oklch(92.2% 0 0));
 			border-radius: 3px;
 			cursor: pointer;
 		}
@@ -195,7 +195,7 @@
 			position: absolute;
 			top: 0;
 			bottom: 0;
-			background: var(--color-primary, #3b82f6);
+			background: var(--color-primary, oklch(62.3% 0.188 259.8));
 			border-radius: 3px;
 		}
 
@@ -204,7 +204,7 @@
 			top: -2px;
 			width: 2px;
 			height: 10px;
-			background: var(--color-text-muted, #999);
+			background: var(--color-text-muted, oklch(68.3% 0 0));
 			transform: translateX(-1px);
 		}
 
@@ -214,25 +214,25 @@
 			width: 18px;
 			height: 18px;
 			border-radius: 50%;
-			background: var(--color-primary, #3b82f6);
-			border: 2px solid var(--color-bg, #fff);
+			background: var(--color-primary, oklch(62.3% 0.188 259.8));
+			border: 2px solid var(--color-bg, oklch(100% 0 0));
 			transform: translate(-50%, -50%);
 			cursor: grab;
 			transition: box-shadow 100ms ease;
 			touch-action: none;
 
 			&:focus-visible {
-				box-shadow: 0 0 0 3px var(--color-primary-hover, #60a5fa);
+				box-shadow: 0 0 0 3px var(--color-primary-hover, oklch(71.4% 0.1434 254.6));
 				outline: none;
 			}
 
 			&--active {
 				cursor: grabbing;
-				box-shadow: 0 0 0 3px var(--color-primary-hover, #60a5fa);
+				box-shadow: 0 0 0 3px var(--color-primary-hover, oklch(71.4% 0.1434 254.6));
 			}
 
 			&--infinity {
-				background: var(--color-text-muted, #999);
+				background: var(--color-text-muted, oklch(68.3% 0 0));
 				border-style: dashed;
 			}
 		}
@@ -244,7 +244,7 @@
 			transform: translateX(-50%);
 			font-size: 0.7rem;
 			font-weight: 600;
-			color: var(--color-text, #333);
+			color: var(--color-text, oklch(32.1% 0 0));
 			white-space: nowrap;
 			pointer-events: none;
 		}
@@ -258,15 +258,15 @@
 		&__reset {
 			font-size: 0.65rem;
 			padding: 2px 6px;
-			border: 1px solid var(--color-surface-alt, #e5e5e5);
+			border: 1px solid var(--color-surface-alt, oklch(92.2% 0 0));
 			border-radius: 3px;
-			background: var(--color-bg, #fff);
-			color: var(--color-text-muted, #999);
+			background: var(--color-bg, oklch(100% 0 0));
+			color: var(--color-text-muted, oklch(68.3% 0 0));
 			cursor: pointer;
 
 			&:hover {
-				border-color: var(--color-primary, #3b82f6);
-				color: var(--color-primary, #3b82f6);
+				border-color: var(--color-primary, oklch(62.3% 0.188 259.8));
+				color: var(--color-primary, oklch(62.3% 0.188 259.8));
 			}
 
 			&:disabled {

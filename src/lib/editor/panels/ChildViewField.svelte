@@ -399,7 +399,7 @@
 		background: var(--color-pure);
 		border: 1px solid var(--color-panel-header-border);
 		border-radius: 4px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+		box-shadow: 0 4px 12px oklch(0% 0 0 / 0.15);
 		min-width: 14rem;
 		// Without a cap, the panel grows to fit its widest row (checkbox + full view name)
 		// instead of letting __name's own text-overflow:ellipsis do its job -- on a project with

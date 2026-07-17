@@ -87,50 +87,50 @@
 		@use 'style' as *;
 
 		$light: (
-			pure: '#FFF',
-			pure-alt: '#000',
-			bg: '#ddd',
-			text: '#3f3a3a',
-			text-muted: '#606a78',
-			surface: '#FFF',
-			surface-alt: '#e8f2fb',
+			pure: 'oklch(100% 0 0)',
+			pure-alt: 'oklch(0% 0 0)',
+			bg: 'oklch(89.8% 0 0)',
+			text: 'oklch(35.4% 0.007 17.5)',
+			text-muted: 'oklch(52.1% 0.0253 256.8)',
+			surface: 'oklch(100% 0 0)',
+			surface-alt: 'oklch(95.6% 0.0162 245.1)',
 
-			add-var-bg: '#f5f5f5',
-			add-var-border: 1px solid #dedede,
-			add-var-text: '#3f3a3a',
+			add-var-bg: 'oklch(97% 0 0)',
+			add-var-border: 1px solid oklch(90.1% 0 0),
+			add-var-text: 'oklch(35.4% 0.007 17.5)',
 
-			diamond-border--tracked: '#3f3a3a',
-			diamond-border--tracked--empty: '#3f3a3a',
-			diamond-color--tracked--empty: '#f5f5f5',
+			diamond-border--tracked: 'oklch(35.4% 0.007 17.5)',
+			diamond-border--tracked--empty: 'oklch(35.4% 0.007 17.5)',
+			diamond-color--tracked--empty: 'oklch(97% 0 0)',
 
-			diamond-border--untracked: '#3f3a3a',
-			diamond-color--untracked: '#dedede',
+			diamond-border--untracked: 'oklch(35.4% 0.007 17.5)',
+			diamond-color--untracked: 'oklch(90.1% 0 0)',
 
-			panel-header-border: '#E5E5E5',
-			panel-header-fill: '#f5f5f5'
+			panel-header-border: 'oklch(92.2% 0 0)',
+			panel-header-fill: 'oklch(97% 0 0)'
 		);
 
 		$dark: (
-			pure: '#000',
-			pure-alt: '#FFF',
-			bg: '#121212',
-			surface: '#1f1f1f',
-			surface-alt: '#2f2f2f',
-			text: '#dcdcdc',
+			pure: 'oklch(0% 0 0)',
+			pure-alt: 'oklch(100% 0 0)',
+			bg: 'oklch(18.2% 0 0)',
+			surface: 'oklch(23.9% 0 0)',
+			surface-alt: 'oklch(30.5% 0 0)',
+			text: 'oklch(89.4% 0 0)',
 
-			add-var-bg: '#111',
-			add-var-border: 1px solid #000,
-			add-var-text: '#f1f1f1',
+			add-var-bg: 'oklch(17.8% 0 0)',
+			add-var-border: 1px solid oklch(0% 0 0),
+			add-var-text: 'oklch(95.8% 0 0)',
 
-			panel-header-border: '#000',
-			panel-header-fill: '#0f0f0f',
+			panel-header-border: 'oklch(0% 0 0)',
+			panel-header-fill: 'oklch(16.8% 0 0)',
 
-			diamond-border--tracked: '#000',
-			diamond-color--tracked--empty: '#f1f1f1',
-			diamond-border--tracked--empty: '#2f2f2f',
+			diamond-border--tracked: 'oklch(0% 0 0)',
+			diamond-color--tracked--empty: 'oklch(95.8% 0 0)',
+			diamond-border--tracked--empty: 'oklch(30.5% 0 0)',
 
-			diamond-border--untracked: '#f1f1f1',
-			diamond-color--untracked: '#3f3a3a'
+			diamond-border--untracked: 'oklch(95.8% 0 0)',
+			diamond-color--untracked: 'oklch(35.4% 0.007 17.5)'
 		);
 
 		@include theming-declare-schemes-basic($light, $dark);

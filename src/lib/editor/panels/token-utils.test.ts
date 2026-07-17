@@ -30,6 +30,11 @@ describe('tokenIcon', () => {
 		expect(tokenIcon(v)).toBe('fa-square-full');
 	});
 
+	it('returns fa-square-full for oklch color scalars', () => {
+		const v: TokenValue = { type: 'scalar', value: 'oklch(70.9% 0.195 47.025)' };
+		expect(tokenIcon(v)).toBe('fa-square-full');
+	});
+
 	it('returns fa-arrows-left-right-to-line for px spacing scalars', () => {
 		const v: TokenValue = { type: 'scalar', value: '16px' };
 		expect(tokenIcon(v)).toBe('fa-arrows-left-right-to-line');
@@ -86,6 +91,16 @@ describe('isColorValue', () => {
 		expect(isColorValue(v)).toBe(true);
 	});
 
+	it('returns true for oklch scalars', () => {
+		const v: TokenValue = { type: 'scalar', value: 'oklch(70.9% 0.195 47.025)' };
+		expect(isColorValue(v)).toBe(true);
+	});
+
+	it('returns true for oklab scalars', () => {
+		const v: TokenValue = { type: 'scalar', value: 'oklab(0.6 0.1 -0.05)' };
+		expect(isColorValue(v)).toBe(true);
+	});
+
 	it('returns false for spacing scalars', () => {
 		const v: TokenValue = { type: 'scalar', value: '16px' };
 		expect(isColorValue(v)).toBe(false);
@@ -108,6 +123,14 @@ describe('iconFromResolvedScalar', () => {
 
 	it('returns fa-square-full for hsl colors', () => {
 		expect(iconFromResolvedScalar('hsl(217, 83%, 53%)')).toBe('fa-square-full');
+	});
+
+	it('returns fa-square-full for oklch colors', () => {
+		expect(iconFromResolvedScalar('oklch(70.9% 0.195 47.025)')).toBe('fa-square-full');
+	});
+
+	it('returns fa-square-full for oklab colors', () => {
+		expect(iconFromResolvedScalar('oklab(0.6 0.1 -0.05)')).toBe('fa-square-full');
 	});
 
 	it('returns fa-arrows-left-right-to-line for px spacing', () => {
@@ -154,6 +177,14 @@ describe('isColorScalar', () => {
 
 	it('returns true for hsl', () => {
 		expect(isColorScalar('hsl(217, 83%, 53%)')).toBe(true);
+	});
+
+	it('returns true for oklch', () => {
+		expect(isColorScalar('oklch(70.9% 0.195 47.025)')).toBe(true);
+	});
+
+	it('returns true for oklab', () => {
+		expect(isColorScalar('oklab(0.6 0.1 -0.05)')).toBe(true);
 	});
 
 	it('returns false for px strings', () => {
