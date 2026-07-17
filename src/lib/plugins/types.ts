@@ -197,6 +197,21 @@ export interface FontRequest {
 	style: string;
 }
 
+// Per-family visibility into Editor.svelte's font scan (see the `fontStatus` note there) --
+// replaces "check the console" / "open devtools IndexedDB" as the only way to tell a font
+// actually loaded. 'loading': at least one variant fetch is in flight and none has succeeded
+// yet. 'ready': at least one variant has loaded -- a later miss for a DIFFERENT weight of the
+// same family (the documented "not every weight exists" case) never downgrades this; that's
+// expected, not an error. 'error': every attempted variant for this family has failed and none
+// has ever loaded -- a real problem (bad catalogue entry, unreachable CDN, cache fault), not
+// the normal missing-weight case.
+export type FontLoadState = 'loading' | 'ready' | 'error';
+
+export interface FontLoadStatus {
+	state: FontLoadState;
+	detail?: string;
+}
+
 export interface OnResolveResult {
 	categories: FieldCategory[];
 	viewport_data: UiNode[];

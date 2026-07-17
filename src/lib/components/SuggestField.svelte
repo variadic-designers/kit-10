@@ -146,10 +146,14 @@
 				)) as CallOutput | undefined;
 				fetched = result?.bytes();
 			}
+			// Only apply *this* session's pick -- if the user has since reopened the picker and
+			// picked something else (this pick's fetch took a while to land), a stale pick used to
+			// still fire onPick after the newer one, silently reverting the field to the older
+			// value. Discarding it here, not just skipping the open/loading/error settle below, is
+			// the actual fix -- this used to be the one place gen wasn't checked.
+			if (gen !== sessionGen) return;
 			onPick?.(entryValue, fetched);
-			// Only close/settle *this* session -- if the user has since reopened the picker
-			// (this pick's fetch took a while), don't yank the freshly reopened one shut.
-			if (gen === sessionGen) open = false;
+			open = false;
 		} catch (err) {
 			if (gen === sessionGen) error = String(err);
 		} finally {

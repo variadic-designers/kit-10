@@ -8,7 +8,13 @@
 	import ColorField from './ColorField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
 	import type { EditorSelection } from '../Editor.svelte';
-	import type { FamilyFacts, FieldCategory, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
+	import type {
+		FamilyFacts,
+		FieldCategory,
+		FieldDef,
+		FieldUpdate,
+		FontLoadStatus
+	} from '$lib/plugins/types.js';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { shapeIcon } from './layer-color.ts';
 
@@ -19,6 +25,7 @@
 		fieldCategories?: FieldCategory[];
 		activeProjectId?: string | null;
 		fontFacts?: Record<string, FamilyFacts>;
+		fontStatus?: Record<string, FontLoadStatus>;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
 		onSelectView?: (viewId: string) => void;
@@ -31,6 +38,7 @@
 		fieldCategories,
 		activeProjectId,
 		fontFacts,
+		fontStatus,
 		onFieldUpdate,
 		callUtilityPlugin,
 		onSelectView
@@ -265,6 +273,7 @@
 											field.inputType,
 											field.suggestionsFrom
 										)}
+										{fontStatus}
 										{api}
 										projectId={activeProjectId}
 										{onFieldUpdate}
