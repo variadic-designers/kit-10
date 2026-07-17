@@ -135,10 +135,7 @@
 				displayText: 'New Project',
 				icon: 'fa-solid fa-diagram-project',
 				onClick: () => {
-					if (!editorActivity.activeWorkspaceId) {
-						console.log('No active Workspace');
-						return;
-					}
+					if (!editorActivity.activeWorkspaceId) return;
 
 					api.createProjectInWorkspace(editorActivity.activeWorkspaceId, 'Untitled').then((p) => {
 						if (p) {

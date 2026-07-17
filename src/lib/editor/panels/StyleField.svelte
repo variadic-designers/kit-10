@@ -181,10 +181,7 @@
 		editValue.now = false;
 		const trimmed = editValue.content.trim();
 
-		if (!onFieldUpdate) {
-			console.log(`Update ${key}: ${trimmed} on layer ${sourceLayerId} (no callback)`);
-			return;
-		}
+		if (!onFieldUpdate) return;
 
 		if (!sourceLayerId) {
 			console.warn(`Cannot update ${key}: no source layer`);
@@ -228,10 +225,7 @@
 			requestVellumRender();
 		}
 
-		if (!onFieldUpdate) {
-			console.log(`Update ${key}: ${picked} on layer ${sourceLayerId} (no callback)`);
-			return;
-		}
+		if (!onFieldUpdate) return;
 		if (!sourceLayerId) {
 			console.warn(`Cannot update ${key}: no source layer`);
 			return;
@@ -250,10 +244,7 @@
 	);
 
 	function writeValue(v: string) {
-		if (!onFieldUpdate) {
-			console.log(`Update ${key}: ${v} on layer ${sourceLayerId} (no callback)`);
-			return;
-		}
+		if (!onFieldUpdate) return;
 		if (!sourceLayerId) {
 			console.warn(`Cannot update ${key}: no source layer`);
 			return;

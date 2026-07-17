@@ -71,7 +71,7 @@
 	// The current child views, in order, resolved to { id, name } rows for display. A referenced
 	// id with no matching candidate (e.g. mid-delete) still gets a row, labelled '?'.
 	const childRows = $derived(
-		childViewIds.map((id) => ({
+		[...new Set(childViewIds)].map((id) => ({
 			id,
 			name: candidateViews.find((v) => v.viewId === id)?.viewName ?? '?'
 		}))

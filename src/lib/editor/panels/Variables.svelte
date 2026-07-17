@@ -316,7 +316,7 @@
 							{#if token.tokenValue.view_ids.length === 0}
 								<span class="token__view-list-empty">empty</span>
 							{:else}
-								{#each token.tokenValue.view_ids as vid (vid)}
+								{#each [...new Set(token.tokenValue.view_ids)] as vid (vid)}
 									<span class="token__view-list-item">
 										<i class="fa-regular fa-window-maximize"></i>
 										<span class="token__view-list-name">{viewNameById.get(vid) ?? '?'}</span>

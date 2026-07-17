@@ -358,17 +358,6 @@
 	import Layout from './Layout.svelte';
 
 	$effect(() => {
-		const activity = {
-			activeWorkspaceId: editorActivity.activeWorkspaceId,
-			activeProjectId: editorActivity.activeProjectId,
-			activeViewId: editorActivity.activeViewId,
-			activeKitId: editorActivity.activeKitId
-		};
-
-		console.table(activity);
-	});
-
-	$effect(() => {
 		if (!pluginManager) return;
 		pluginManager.setData(
 			resolvedKits,

@@ -46,7 +46,6 @@
 			height: r.assetHeight,
 			createdAt: r.assetCreatedAt
 		}));
-		console.log('[Assets] live query synced', records.length, 'assets');
 		assetRegister.set(records);
 	});
 
