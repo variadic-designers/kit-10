@@ -19,6 +19,7 @@ import type {
 	WriteRenderEntryResult
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
+import { getCachedFont, putCachedFont } from './font-cache.js';
 
 function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	if (!kits) return null;
@@ -145,6 +146,30 @@ export function createPluginManager(api: Api) {
 					const { key, value } = JSON.parse(rawJson);
 					localKV.set(key, value);
 					return cp.store(JSON.stringify(true));
+				},
+
+				// Persistent font-byte cache (IndexedDB). A plugin (Fontavious's fetch_font) checks
+				// this before hitting a vendor CDN, and stores after a miss, so reloads are
+				// network-free/offline. Safe for all tiers -- a private per-user cache, same as the
+				// browser's HTTP cache (see font-cache.ts + resources/nature-of-fonts.md §7).
+				// GET: url in -> bytes out (empty Uint8Array on miss).
+				async kit10_font_cache_get(cp: any, urlOffs: bigint) {
+					const url = cp.read(urlOffs).text();
+					const bytes = await getCachedFont(url);
+					return cp.store(bytes ?? new Uint8Array(0));
+				},
+
+				// PUT: (metaJson, bytes) -> void. metaJson carries url + licenseTier + family etc.
+				// (the licenseTier is stored for a future export-only-OFL guard, §7.3). Bytes are
+				// the raw WOFF2 the plugin just fetched.
+				async kit10_font_cache_put(cp: any, metaOffs: bigint, bytesOffs: bigint) {
+					try {
+						const meta = JSON.parse(cp.read(metaOffs).text());
+						const bytes = cp.read(bytesOffs).bytes();
+						await putCachedFont(meta, bytes);
+					} catch {
+						/* best-effort: a cache-write fault must never break font fetching */
+					}
 				},
 
 				kit10_get_resolution(cp: any, _inputOffs: bigint) {

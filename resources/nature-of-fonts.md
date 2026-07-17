@@ -2,7 +2,7 @@
 
 > Research doc. Grounds KIT•10's font strategy (Fontavious + Vellum's
 > `load_font`) in how fonts actually work, what the licenses actually say,
-> and where fonts sit in a *build pipeline* once KIT•10 exports to real
+> and where fonts sit in a _build pipeline_ once KIT•10 exports to real
 > frameworks. Written to answer three practical questions: **(1)** can we
 > legally render a given font, **(2)** where do we get its bytes reliably,
 > and **(3)** how does Fontavious grow from ~40 families to something a
@@ -21,9 +21,9 @@ that matter to us:
 - **Outline format.** Two dialects live inside the OpenType wrapper:
   - `glyf` — TrueType quadratic Bézier outlines (`.ttf`).
   - `CFF`/`CFF2` — PostScript cubic Bézier outlines (`.otf`).
-  Both are "OpenType" (`.otf`/`.ttf` are historical extensions, not a hard
-  format boundary). Vellum doesn't care which — `swash`/`cosmic-text` rasterize
-  either to a coverage bitmap for the glyph atlas.
+    Both are "OpenType" (`.otf`/`.ttf` are historical extensions, not a hard
+    format boundary). Vellum doesn't care which — `swash`/`cosmic-text` rasterize
+    either to a coverage bitmap for the glyph atlas.
 
 - **Web containers.** `WOFF` and `WOFF2` are not new outline formats — they
   wrap an OpenType font with compression. WOFF2 uses Brotli tuned for font
@@ -40,8 +40,8 @@ that matter to us:
 - **Variable fonts.** A single file carrying one or more continuous **axes**
   (`wght`, `wdth`, `opsz`, `slnt`, `ital`, plus custom axes) interpolated
   from named masters. One variable file at `wght 400..700` replaces what used
-  to be four static weight files — *this is the fact Fontavious's
-  `weightMin`/`weightMax` range models* (CLAUDE.md's catalogue note). A true
+  to be four static weight files — _this is the fact Fontavious's
+  `weightMin`/`weightMax` range models_ (CLAUDE.md's catalogue note). A true
   variable font serves **any** weight in its range from **one URL**; a
   static-only family (Lato, Poppins from Google) is the degenerate case:
   one file per discrete weight, `weightMin == weightMax`.
@@ -59,8 +59,8 @@ sandbox the user never touches. **KIT•10 fetches the raw font bytes into
 memory and rasterizes them itself** (Vellum's GPU glyph atlas via
 swash/cosmic-text). We hold the actual font file, however briefly. That is a
 materially different act from a browser's `@font-face` load, and it is the
-crux of the licensing analysis in §3 — we are closer to an *application
-embedding a font* than to a *website linking one*.
+crux of the licensing analysis in §3 — we are closer to an _application
+embedding a font_ than to a _website linking one_.
 
 ---
 
@@ -75,13 +75,13 @@ as redistribution?"**
 - **SIL Open Font License (OFL 1.1)** — the dominant open font license
   (most of Google Fonts, all of Fontshare's open tier). Key facts:
   - Free to use, study, modify, embed, bundle, and **redistribute** —
-    including in commercial products and *sold* software.
+    including in commercial products and _sold_ software.
   - The one real restriction: you may **not sell the fonts by themselves**,
     and derivatives may not use the original's **Reserved Font Name**.
   - Crucially, **the OFL explicitly does not treat embedding a font in a
     document/file as "distribution"** — so a KIT•10 project that embeds an
     OFL font, or a browser rendering it via `@font-face`, is unambiguously
-    fine. Bundling the WOFF2 into an exported build is *also* fine (that's
+    fine. Bundling the WOFF2 into an exported build is _also_ fine (that's
     the sanctioned case), as long as we don't ship it as a standalone
     "download this font" product and we carry the OFL text alongside.
   - OFL fonts are **license-perpetual**: an OFL font can't be relicensed
@@ -92,7 +92,7 @@ as redistribution?"**
   name mechanic. Same practical bottom line: bundle freely, keep the notice.
 
 **Bottom line for open fonts:** we may fetch them, cache them, render them,
-*and* bake them into an exported build. The only obligations are attribution
+_and_ bake them into an exported build. The only obligations are attribution
 (ship the license file) and not selling the font in isolation. This covers
 ~100% of Google Fonts and Fontshare's catalogue.
 
@@ -100,8 +100,8 @@ as redistribution?"**
 
 Fontshare's **closed-source** fonts are proprietary freeware under ITF's
 **Free Font License (FFL)**: free for commercial and personal use, but the
-foundry retains ownership and the file is *not* OFL — modification and
-standalone redistribution are constrained even though *use* is free. For our
+foundry retains ownership and the file is _not_ OFL — modification and
+standalone redistribution are constrained even though _use_ is free. For our
 purposes these behave like open fonts **for rendering and web delivery** but
 you should not assume the right to modify/subset-and-republish them; fetch
 from the vendor, don't fork.
@@ -110,7 +110,7 @@ from the vendor, don't fork.
 
 Real commercial type (Monotype, Hoefler&Co, Klim, Commercial Type, most of
 what a Framer/Webflow pro pays for) is licensed **per use-type**, and the
-use-types are *separately priced and separately restricted*:
+use-types are _separately priced and separately restricted_:
 
 - **Desktop license** — install on N machines, create artwork. Does **not**
   grant web embedding.
@@ -125,7 +125,7 @@ use-types are *separately priced and separately restricted*:
 
 The redistribution clause is the sharp edge: **a commercial EULA almost
 always forbids handing the font file to a third party.** If KIT•10 fetches a
-commercial font's bytes and then *serves them onward* to a user's browser, or
+commercial font's bytes and then _serves them onward_ to a user's browser, or
 bakes them into an exported project the user redistributes, we've likely
 redistributed — the thing the EULA forbids.
 
@@ -133,13 +133,13 @@ redistributed — the thing the EULA forbids.
 
 Adobe Fonts is worth calling out because it defines the boundary precisely:
 you **cannot download, extract, convert, or self-host** an Adobe Font. Web use
-is *only* via Adobe's embed code (a `<link>` to Adobe's CDN + a project token
+is _only_ via Adobe's embed code (a `<link>` to Adobe's CDN + a project token
 that meters usage against your Creative Cloud subscription). Any attempt to
 pull the file out violates the ToS. So Adobe Fonts is architecturally
 **incompatible with Fontavious's fetch-the-bytes model** — there is no legal
 URL that returns the raw WOFF2. If a user wants an Adobe font in KIT•10, the
 only lawful paths are (a) they buy a self-hosting license from the underlying
-foundry and *upload* the file (the deferred upload path in CLAUDE.md), or
+foundry and _upload_ the file (the deferred upload path in CLAUDE.md), or
 (b) we never touch it. **Do not add Adobe/Typekit families to the catalogue.**
 
 ---
@@ -153,7 +153,7 @@ CDN.** Why that specific shape is defensible, and where its edges are:
 
 ### 3.1 The principle: fetch, render, don't rehost
 
-The one operation that is broadly safe across *both* open and free-proprietary
+The one operation that is broadly safe across _both_ open and free-proprietary
 fonts is: **pull the bytes from the vendor's authorized delivery endpoint at
 the moment of rendering, hold them only in memory, and never re-serve them to
 anyone else.** This is close to what a browser does with `@font-face`, and it
@@ -169,16 +169,16 @@ repo/app" approach:
 
 For **OFL/Apache** fonts this is belt-and-suspenders — we'd be allowed to
 bundle them outright. For **free-proprietary** (Fontshare FFL) fonts it's the
-*correct* posture: use is free, redistribution is not, so we use-without-
+_correct_ posture: use is free, redistribution is not, so we use-without-
 rehosting. For **paid commercial** fonts it is **still not enough on its own**
 — fetching a commercial WOFF2 you have no license for, even without rehosting,
 is unlicensed use. The fetch model is necessary but not sufficient for the
-commercial tier; that tier needs an actual license the *user* holds.
+commercial tier; that tier needs an actual license the _user_ holds.
 
 ### 3.2 The three lawful lanes for KIT•10, concretely
 
 1. **Catalogue fonts (OFL + free-proprietary).** Fetch from the vendor CDN at
-   runtime, exactly as today. Safe to also *bundle into an exported build*
+   runtime, exactly as today. Safe to also _bundle into an exported build_
    for the OFL/Apache subset (ship the license file); for the free-proprietary
    subset, prefer keeping them as a CDN `@font-face` link in the export rather
    than a bundled file, to stay clear of the redistribution clause.
@@ -187,13 +187,13 @@ commercial tier; that tier needs an actual license the *user* holds.
    upload path. The user supplies the file; KIT•10 renders it. The license
    obligation is the user's, and we should surface (not enforce) that — a
    small "you must have the right to use this font" affirmation, the same
-   posture Figma/Framer take. This is the *only* lawful route for commercial
+   posture Figma/Framer take. This is the _only_ lawful route for commercial
    type, and it's why the Vellum `font_facts`-from-loaded-bytes oracle is on
    the roadmap (CLAUDE.md): an uploaded font has no catalogue entry, so its
    weight/axis facts must be read from the bytes.
 
 3. **Foundry-hosted, token-metered (Adobe-style).** Not fetch-the-bytes at
-   all — embed the foundry's own delivery in the *exported* project as a
+   all — embed the foundry's own delivery in the _exported_ project as a
    `<link>`, never in the KIT•10 preview canvas (Vellum can't render from a
    token'd CDN link it can't fetch as raw bytes). This is a pure export-time
    concern, likely never a preview-time one. Low priority until a user asks.
@@ -201,12 +201,12 @@ commercial tier; that tier needs an actual license the *user* holds.
 ### 3.3 Subsetting and "anti-extraction" — mostly not our problem, but know it
 
 - **Subsetting** (fontTools `pyftsubset`, `glyphhanger`, unicode-range splits)
-  trims glyphs to shrink the file. Google serves *pre-subset* WOFF2 keyed by
+  trims glyphs to shrink the file. Google serves _pre-subset_ WOFF2 keyed by
   `unicode-range` (Latin / Latin-ext / Cyrillic / Greek as separate faces).
   Fontavious today fetches whole faces; if catalogue growth makes payloads
   heavy, subsetting to the Latin range is the obvious lever. It is also a
   **rendering-correctness** concern: a subset that drops a codepoint the
-  design uses renders tofu. For a general design tool we want *full* faces,
+  design uses renders tofu. For a general design tool we want _full_ faces,
   not aggressive subsets — accept the bytes.
 - **"Webfont-only" anti-extraction** (scrambling font tables so the OTF can't
   be reverse-engineered from the WOFF2) is a thing some commercial foundries
@@ -229,28 +229,28 @@ relationship between them.
   fast, globally cached, no key. **This is what the catalogue URLs point at**
   and what `fetch_font` hits. The catch: gstatic URLs contain an **opaque,
   versioned hash** (`.../inter/v20/UcC73...woff2`) that Google mints — you
-  can't construct one by hand, and it *changes* when Google reissues the font
+  can't construct one by hand, and it _changes_ when Google reissues the font
   (note the `v20`/`v51` version segments in the current catalogue). So the
   catalogue is a **cache of resolved URLs that can go stale** if Google bumps
   a version. A dead URL is a hard 404 in `fetch_font`. This is the single
   biggest fragility in the current design (see §6.4).
-- **CSS2 API (`fonts.googleapis.com/css2?family=...`).** The *resolver*.
+- **CSS2 API (`fonts.googleapis.com/css2?family=...`).** The _resolver_.
   Request `css2?family=Inter:wght@400..700` **with a modern-browser
   User-Agent** and it returns `@font-face` blocks whose `src: url(...)` point
   at the current gstatic WOFF2 for that exact query. Change the UA and it
   serves TTF/WOFF instead — the UA is how it picks the format. **This is the
   mechanism that produced every URL in the catalogue**, and it's the
-  mechanism to *regenerate* the catalogue programmatically (§6). Keyless,
+  mechanism to _regenerate_ the catalogue programmatically (§6). Keyless,
   rate-limited-but-generous, extremely stable API shape.
 - **Developer API (`www.googleapis.com/webfonts/v1`).** JSON metadata for the
   entire library — every family, its variants, subsets, category, and
   (with `capability=WOFF2` / `&capability=VF`) direct file URLs + variable
   axis ranges. **Requires a free API key.** This is the right source for
-  *discovery* (what families exist, what axes each has) — it's how
+  _discovery_ (what families exist, what axes each has) — it's how
   fontsource's `google-font-metadata` builds its dataset.
 
 **Reliability verdict:** gstatic is the most reliable file host on the
-planet; the *fragility is our cached URLs*, not Google's uptime. Use CSS2 (UA
+planet; the _fragility is our cached URLs_, not Google's uptime. Use CSS2 (UA
 trick) or the Developer API to (re)generate URLs; never hand-author them.
 
 ### 4.2 Bunny Fonts — the GDPR-clean drop-in
@@ -261,7 +261,7 @@ family names, same query grammar; you literally swap `fonts.googleapis.com`
 no IP retention, EU-hosted, GDPR-compliant. Same open-licensed catalogue as
 Google (it re-serves the OFL corpus). **Strong candidate for a
 privacy-default vendor** in Fontavious (`vendor: "bunny"`), or as the
-recommended CDN in *exported* projects for EU-facing users — Google Fonts'
+recommended CDN in _exported_ projects for EU-facing users — Google Fonts'
 IP-transfer-to-US is a real GDPR liability (German courts have fined sites for
 it), and Bunny removes it with no code change beyond the host. The catalogue's
 `vendor` field already anticipates multi-vendor; Bunny is the easiest second
@@ -271,19 +271,19 @@ one.
 
 ITF's `api.fontshare.com` serves high-quality display/text families
 (Satoshi, General Sans, Clash Display, Cabinet Grotesk, Switzer — fonts that
-read as *paid* type but are free) via a CSS embed API **and** downloadable
+read as _paid_ type but are free) via a CSS embed API **and** downloadable
 offline kits (OTF/WOFF/WOFF2). Both open (OFL) and closed (FFL, free-for-
 commercial) tiers, all free for commercial use. **This is the highest-value
 catalogue expansion for "feels like Framer/Webflow"** — these are exactly the
 trendy geometric/grotesque families that dominate 2024–2026 startup design
-and that Google Fonts *doesn't* have. Add as `vendor: "fontshare"` with its
+and that Google Fonts _doesn't_ have. Add as `vendor: "fontshare"` with its
 own host in the allowlist. Caveat: the closed-tier FFL means fetch-and-render,
 don't-rehost (§3.1), and don't bundle-into-export as a raw file.
 
 ### 4.4 Fontsource — npm packages, not a runtime API
 
 `@fontsource/*` packages self-host the OFL corpus as **npm modules bundled at
-build time**. This is *not* a runtime fetch API and doesn't fit Fontavious's
+build time**. This is _not_ a runtime fetch API and doesn't fit Fontavious's
 model directly — but it is exactly the right model for **KIT•10's future
 export plugins** (§5), and its underlying `google-font-metadata` package is
 the best tool for regenerating Fontavious's catalogue (§6). Think of Fontsource
@@ -291,15 +291,15 @@ as "the answer for the exported build," not "the answer for the live canvas."
 
 ### 4.5 Quick reference
 
-| Source | Runtime fetch of raw bytes? | Key needed | License scope | Best use in KIT•10 |
-|---|---|---|---|---|
-| gstatic (Google) | Yes | No | OFL/Apache | Canvas fetch (today) |
-| Google CSS2 API | Resolves→gstatic | No | OFL/Apache | Regenerate catalogue URLs |
-| Google Developer API | Metadata (+URLs) | Yes (free) | OFL/Apache | Discover families/axes |
-| Bunny Fonts | Yes (drop-in) | No | OFL/Apache | GDPR default / EU export |
-| Fontshare | Yes (+kits) | No | OFL + free-proprietary | Premium-free expansion |
-| Fontsource (npm) | No (build-time) | No | OFL/Apache | **Export builds**, not canvas |
-| Adobe Fonts | **No (forbidden)** | — | Commercial | Never catalogue |
+| Source               | Runtime fetch of raw bytes? | Key needed | License scope          | Best use in KIT•10            |
+| -------------------- | --------------------------- | ---------- | ---------------------- | ----------------------------- |
+| gstatic (Google)     | Yes                         | No         | OFL/Apache             | Canvas fetch (today)          |
+| Google CSS2 API      | Resolves→gstatic            | No         | OFL/Apache             | Regenerate catalogue URLs     |
+| Google Developer API | Metadata (+URLs)            | Yes (free) | OFL/Apache             | Discover families/axes        |
+| Bunny Fonts          | Yes (drop-in)               | No         | OFL/Apache             | GDPR default / EU export      |
+| Fontshare            | Yes (+kits)                 | No         | OFL + free-proprietary | Premium-free expansion        |
+| Fontsource (npm)     | No (build-time)             | No         | OFL/Apache             | **Export builds**, not canvas |
+| Adobe Fonts          | **No (forbidden)**          | —          | Commercial             | Never catalogue               |
 
 ---
 
@@ -307,7 +307,7 @@ as "the answer for the exported build," not "the answer for the live canvas."
 
 CLAUDE.md frames Vellum as preview-only and CSS/export as "a separate plugin's
 concern." When that export plugin exists (React/Vue/Svelte/HTML output), font
-handling is a *first-class build concern*, and the ecosystem has converged on
+handling is a _first-class build concern_, and the ecosystem has converged on
 a clear answer that KIT•10 should emit.
 
 ### 5.1 The modern consensus: self-host at build time, don't hotlink, don't commit binaries
@@ -319,7 +319,7 @@ round-trip; measurable LCP hit), (3) version drift (Google silently updates a
 font under you). The replacement is **download the font at build time and
 self-host it from your own origin**, version-locked:
 
-- **`next/font`** (Next.js) — you name a Google font in code; at *build time*
+- **`next/font`** (Next.js) — you name a Google font in code; at _build time_
   it downloads the WOFF2, self-hosts it with your static assets, and generates
   a zero-layout-shift `@font-face`. No request ever reaches Google from the
   browser. This is the reference UX.
@@ -332,7 +332,7 @@ self-host it from your own origin**, version-locked:
 The common thread and the rule KIT•10's export plugin should follow:
 **fonts are a build artifact, resolved and self-hosted at build time —
 neither hotlinked at runtime nor committed as binaries to the source repo.**
-The repo declares *which* fonts (a manifest/dependency); the build *materializes*
+The repo declares _which_ fonts (a manifest/dependency); the build _materializes_
 them. This is the same "declare the fact, materialize downstream" shape KIT•10
 already uses between Charter (declares `font_requests`) and the editor's fetch
 scan.
@@ -349,7 +349,7 @@ export plugin has a menu, in rough order of preference:
    where there's no bundler — GDPR-clean without a build step.
 3. **Bundled WOFF2 + generated `@font-face`** for fonts not on any npm registry
    (Fontshare's premium tier via its offline kit, or user uploads) — ship the
-   file *plus its license file*, OFL/FFL permitting.
+   file _plus its license file_, OFL/FFL permitting.
 4. **Foundry embed code** (Adobe-style) for commercial fonts the user licenses
    through a hosted service — a `<link>` the user pastes their token into; we
    never touch the bytes.
@@ -360,7 +360,7 @@ provenance comment. This is cheap and keeps downstream users compliant.
 
 ### 5.3 The KIT•10-specific subtlety
 
-Fontavious resolves fonts to *specific gstatic URLs* for the **canvas**. The
+Fontavious resolves fonts to _specific gstatic URLs_ for the **canvas**. The
 export plugin must **not** reuse those opaque hashed URLs in generated code —
 they're a private caching detail that can 404 on version bump. Export should
 name the font by **family + weight + style** and let the target's own font
@@ -387,7 +387,7 @@ it without hand-authoring URLs or breaking the schema.
 ### 6.1 The schema is already right — don't change it, feed it
 
 `CatalogueEntry { family, vendor, variants: [{ weightMin, weightMax, style,
-url }] }` is a good shape and multi-vendor-ready. Growth is a *data* problem,
+url }] }` is a good shape and multi-vendor-ready. Growth is a _data_ problem,
 not a schema problem. Two constraints to preserve:
 
 - The `weightMin..weightMax` range **must** reflect reality per family
@@ -417,7 +417,7 @@ build step, not shipped in the WASM):
    scraping the `src: url(...)`. This yields the current WOFF2 URL for each
    variant.
 3. **Model the range correctly**: if the CSS2 response for `wght@400..700`
-   comes back as a *single* `@font-face` with `font-weight: 400 700;`, it's a
+   comes back as a _single_ `@font-face` with `font-weight: 400 700;`, it's a
    variable face → one entry, `weightMin:400, weightMax:700`. If it comes back
    as discrete single-weight faces, it's static-only → one entry per weight.
    (This is exactly the manual determination the current catalogue comments
@@ -426,7 +426,7 @@ build step, not shipped in the WASM):
    (`every_variant_has_a_gstatic_url` generalizes to "URL host ∈ allowed
    vendor hosts").
 
-This makes catalogue growth a *rerun*, not a research project, and fixes
+This makes catalogue growth a _rerun_, not a research project, and fixes
 staleness (rerun on a schedule; a version bump just changes URLs).
 
 ### 6.3 Which families to add (the "feels like home" set)
@@ -454,8 +454,8 @@ allowlist, not manual work.
 
 ### 6.4 Robustness the bigger catalogue forces
 
-- **Stale-URL handling.** A larger, generated catalogue makes 404s a *when*,
-  not *if* (Google version bumps). `fetch_font` already errors cleanly and the
+- **Stale-URL handling.** A larger, generated catalogue makes 404s a _when_,
+  not _if_ (Google version bumps). `fetch_font` already errors cleanly and the
   editor logs it as non-fatal (`console.warn`, per CLAUDE.md's font-error
   note). Consider a fallback: on a gstatic 404, re-resolve that one family via
   the CSS2 API live and retry — turns a permanent tofu into a self-heal.
@@ -479,7 +479,7 @@ allowlist, not manual work.
 No catalogue, however large, covers commercial type or a client's bespoke
 brand font. The **user-upload path** (deferred, but architecturally sketched
 in CLAUDE.md — the Vellum `font_facts`-from-loaded-bytes oracle) is what makes
-Fontavious *complete* rather than merely *large*: catalogue for the 95% case,
+Fontavious _complete_ rather than merely _large_: catalogue for the 95% case,
 upload for the long tail, and the licensing obligation for uploads sits with
 the user who holds the license (§3.2, lane 2). Catalogue breadth reduces how
 often upload is needed; it never eliminates the need.
@@ -488,27 +488,35 @@ often upload is needed; it never eliminates the need.
 
 ## 7. Caching — persisting fetched fonts without exposing proprietary ones
 
+> **Status: SHIPPED** (branch `feat/fontavious-catalogue-aliases`). Realized as
+> two host functions — `kit10_font_cache_get(url) → bytes` and
+> `kit10_font_cache_put(metaJson, bytes)` (`src/lib/plugins/manager.svelte.ts`)
+> — backed by `src/lib/plugins/font-cache.ts` (the IDB store below). Fontavious's
+> `fetch_font` checks the cache before the network and stores after a miss, so
+> the editor scan is unchanged and benefits transparently. The plugin owns "get
+> me these bytes cheaply"; the host owns the storage.
+
 Today the fetched WOFF2 bytes live only in Vellum's session memory and the
 editor's in-memory URL `Set` (CLAUDE.md); a reload drops both, so every
-family re-fetches from scratch. We want to persist the *bytes* across
+family re-fetches from scratch. We want to persist the _bytes_ across
 reloads **without** turning that cache into a redistribution/exposure vector
 for the proprietary tier. The two acts are genuinely different under every
 license tier, and the design leans on that difference:
 
-- **Caching** = storing bytes *the same user's own browser already fetched*,
-  on *their own machine*, private to *them*. This is the exact category as
+- **Caching** = storing bytes _the same user's own browser already fetched_,
+  on _their own machine_, private to _them_. This is the exact category as
   the browser's built-in HTTP cache — which already caches these files. No
   OFL/FFL/commercial term forbids it; it is "use," not "distribution."
-- **Exposure / redistribution** = serving those bytes to *someone else* (a
-  KIT•10-hosted shared mirror) or *materializing them into an artifact the
-  user ships* (bundled into an export). That is the forbidden act — and a
+- **Exposure / redistribution** = serving those bytes to _someone else_ (a
+  KIT•10-hosted shared mirror) or _materializing them into an artifact the
+  user ships_ (bundled into an export). That is the forbidden act — and a
   private client cache never performs it.
 
 **Therefore a per-user, client-side, private cache is licensing-safe for all
 tiers, proprietary included.** The proprietary-exposure risk lives entirely
-at two *other* points — server rehost and export bundling (§5.2, §3) — and
+at two _other_ points — server rehost and export bundling (§5.2, §3) — and
 neither is touched by adding a cache. What follows is the design that keeps
-it that way *by construction*, not by convention.
+it that way _by construction_, not by convention.
 
 ### 7.1 A dedicated IndexedDB object store, keyed by resolved URL
 
@@ -543,40 +551,40 @@ under storage pressure.
 
 The critical nuance: **a GPU font upload cannot survive a reload** (GPU memory
 is gone), so `vellum.load_font()` must rerun every session regardless. The
-cache does **not** persist the loaded/GPU state — it persists the *bytes that
-reconstruct it*, and feeds them to the load step locally:
+cache does **not** persist the loaded/GPU state — it persists the _bytes that
+reconstruct it_, and feeds them to the load step locally:
 
 ```
-session start → resolve scan → variant_url → URL
-  → idb.get('font-bytes', URL)?  hit  → ArrayBuffer → vellum.load_font()   (instant, offline)
-                                 miss → fetch_font → idb.put(record) → vellum.load_font()
+session start → editor scan → fetch_font(family,weight,style)          [Fontavious]
+  → kit10_font_cache_get(url)?  hit  → bytes → vellum.load_font()       (instant, offline)
+                                miss → HTTP fetch → kit10_font_cache_put(meta, bytes) → bytes
 ```
 
-So the win is scoped and honest: the per-session GPU (re)load gets an instant,
-offline, deterministic byte source instead of a network round-trip that
-otherwise depends on the vendor's cache headers. The GPU upload cost itself is
-unavoidable and cheap; the network cost and the reload flicker are what the
-cache removes. This slots directly into the existing scan (CLAUDE.md's
-"`Editor.svelte`'s resolve-time font scan asks Fontavious 'which URL'"): the
-persistent store simply backs the in-memory `Set`, consulted before
-`fetch_font`.
+As shipped, the cache check lives **inside `fetch_font`** (via the host
+functions), not in the editor scan — so the editor's own in-memory `Set` still
+avoids redundant `fetch_font` calls _within_ a session, and the IDB cache makes
+the first fetch _of each session_ network-free. The win is scoped and honest:
+the per-session GPU (re)load gets an instant, offline, deterministic byte source
+instead of a network round-trip that otherwise depends on the vendor's cache
+headers. The GPU upload cost itself is unavoidable and cheap; the network cost
+and the reload flicker are what the cache removes.
 
 ### 7.3 The `licenseTier` field makes the export guard structural
 
-The one place a cached *proprietary* font could leak is a future export plugin
+The one place a cached _proprietary_ font could leak is a future export plugin
 reading bytes out of this store to bundle them (§5.2 forbids bundling the
 free-proprietary/commercial tiers as raw files). Tagging every record with
-`licenseTier` turns that from *a convention someone could break* into a
+`licenseTier` turns that from _a convention someone could break_ into a
 **data-level filter**:
 
 - The canvas font loader queries the store freely — all tiers, because
   rendering-from-a-private-cache is safe for all tiers.
 - **An export path may only ever query `licenseTier === 'ofl'`** (the one tier
-  whose license grants bundling). Everything else is *invisible* to it. The
+  whose license grants bundling). Everything else is _invisible_ to it. The
   proprietary bytes physically live in the store (safe) but the export lane
   cannot see them, so it cannot accidentally materialize them.
 
-This requires the tier to be *known at fetch time*, which means the
+This requires the tier to be _known at fetch time_, which means the
 **catalogue must carry it** — a `licenseTier` (or `category` + `license`)
 field per `CatalogueEntry`, not present today. It's a natural companion to the
 `category` faceting §6.4 already wants for search, and the generator (§6.2) can
@@ -584,16 +592,16 @@ populate both from the Developer API's `category` + the vendor's known license
 (Google/Bunny → `ofl`, Fontshare open tier → `ofl`, Fontshare closed tier →
 `free-proprietary`, uploads → `upload`).
 
-### 7.4 What this does *not* change
+### 7.4 What this does _not_ change
 
 - **No new exposure surface.** The bytes were already on the user's machine
   (browser HTTP cache, devtools-reachable); IDB doesn't make a proprietary
-  font *more* extractable than it already is. Exposure is still exactly:
+  font _more_ extractable than it already is. Exposure is still exactly:
   server rehost + export bundling — both unchanged, both guarded elsewhere.
 - **No shared cache.** IDB is per-origin, per-user; every browser has its own.
-  It is never a cross-user mirror (which *would* be redistribution).
+  It is never a cross-user mirror (which _would_ be redistribution).
 - **Fontavious's fetch model is untouched.** `fetch_font`/`variant_url` stay as
-  they are; the cache is a host-side layer *in front of* the fetch, not a
+  they are; the cache is a host-side layer _in front of_ the fetch, not a
   change to the plugin. `variant_url` remains the pure resolver that produces
   the cache key.
 
@@ -604,7 +612,7 @@ populate both from the Developer API's `category` + the vendor's known license
 1. **Rendering-by-fetching is the right, defensible model** for the open and
    free-proprietary tiers: hold bytes transiently, never rehost, never commit
    font files to the repo. It's belt-and-suspenders for OFL, correct for FFL,
-   and *insufficient alone* for paid commercial (which needs a user-held
+   and _insufficient alone_ for paid commercial (which needs a user-held
    license via upload or a foundry embed).
 2. **gstatic is reliable; our cached URLs are the fragility.** Generate them
    from the CSS2 API / Developer API, never hand-author; consider a live
@@ -620,9 +628,9 @@ populate both from the Developer API's `category` + the vendor's known license
    the commercial/bespoke long tail.
 6. **Persist fetched fonts in a dedicated IndexedDB store keyed by resolved
    URL** (§7) so reloads are network-free and offline — a private per-user
-   cache is licensing-safe for *all* tiers. Tag each record with `licenseTier`
+   cache is licensing-safe for _all_ tiers. Tag each record with `licenseTier`
    so the export lane can only ever read the OFL tier, keeping proprietary
-   bytes cached-but-unexposed *by construction*. Requires adding a
+   bytes cached-but-unexposed _by construction_. Requires adding a
    `licenseTier`/`category` field to the catalogue.
 
 ---

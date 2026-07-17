@@ -180,14 +180,82 @@ fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
         })
 }
 
-/// Looks up the matching variant's URL in the catalogue and fetches it via Extism's built-in
-/// HTTP capability (allowed only for hosts the manifest's `allowedHosts` permits). Returns the
-/// raw WOFF2 bytes as the call's output -- no JSON wrapping -- so the caller reads them
-/// straight off via the JS SDK's `.bytes()` and hands them to `vellum.load_font()` unmodified.
+// Host-provided persistent font cache (IndexedDB, see src/lib/plugins/font-cache.ts). GET takes a
+// URL and returns the cached WOFF2 bytes (empty = miss); PUT takes a JSON metadata blob + the raw
+// bytes. These let fetch_font skip the network on a reload without the host having to wrap the
+// fetch itself -- the plugin owns "get me these bytes cheaply", the host owns the storage. String
+// and Vec<u8> params/returns marshal as raw bytes (NOT the `u64` the pdk pitfall warns against).
+#[host_fn]
+extern "ExtismHost" {
+    fn kit10_font_cache_get(url: String) -> Vec<u8>;
+    fn kit10_font_cache_put(meta_json: String, bytes: Vec<u8>);
+}
+
+// What a cached record carries alongside the bytes. `license_tier` is stored so a future export
+// path can restrict itself to the `ofl` tier (resources/nature-of-fonts.md §7.3) -- cached but
+// unexposed for proprietary. camelCase: the consumer is the JS host.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheMeta<'a> {
+    url: &'a str,
+    license_tier: &'a str,
+    family: &'a str,
+    category: Option<&'a str>,
+    weight_min: u16,
+    weight_max: u16,
+    style: &'a str,
+}
+
+// Both cache calls swallow errors to a no-op: the cache is a best-effort accelerator, never a
+// dependency of font fetching. A get fault reads as a miss (fetch from network); a put fault just
+// means it won't be cached for next session.
+fn cache_get(url: &str) -> Option<Vec<u8>> {
+    match unsafe { kit10_font_cache_get(url.to_string()) } {
+        Ok(bytes) if !bytes.is_empty() => Some(bytes),
+        _ => None,
+    }
+}
+
+fn cache_put(entry: &CatalogueEntry, variant: &FontVariant, bytes: &[u8]) {
+    let meta = CacheMeta {
+        url: &variant.url,
+        license_tier: &entry.license_tier,
+        family: &entry.family,
+        category: entry.category.as_deref(),
+        weight_min: variant.weight_min,
+        weight_max: variant.weight_max,
+        style: &variant.style,
+    };
+    if let Ok(json) = serde_json::to_string(&meta) {
+        let _ = unsafe { kit10_font_cache_put(json, bytes.to_vec()) };
+    }
+}
+
+/// Returns a variant's WOFF2 bytes. Checks the host's persistent cache first (instant, offline);
+/// on a miss, fetches via Extism's HTTP capability (allowed only for hosts `allowedHosts`
+/// permits) and stores the result for next time. Bytes are returned raw -- no JSON wrapping -- so
+/// the caller reads them via the JS SDK's `.bytes()` and hands them to `vellum.load_font()`.
 #[plugin_fn]
 pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
     let input: FetchFontInput = serde_json::from_str(&input)?;
-    let variant = find_matching_variant(&input)?;
+    // Resolve the owning entry (for cache metadata) and its matching variant together.
+    let entry = find_entry(&input.value)
+        .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
+    let variant = entry
+        .variants
+        .iter()
+        .find(|v| input.weight >= v.weight_min && input.weight <= v.weight_max && v.style == input.style)
+        .cloned()
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "no variant for {} weight={} style={}",
+                input.value, input.weight, input.style
+            ))
+        })?;
+
+    if let Some(bytes) = cache_get(&variant.url) {
+        return Ok(bytes);
+    }
 
     let req = HttpRequest::new(&variant.url);
     let res: HttpResponse = http::request::<()>(&req, None)?;
@@ -200,7 +268,9 @@ pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
         ))
         .into());
     }
-    Ok(res.body())
+    let bytes = res.body();
+    cache_put(&entry, &variant, &bytes);
+    Ok(bytes)
 }
 
 // The catalogue's variant ranges, minus the vendor URL -- the fact Charter's weight snapping
@@ -416,6 +486,25 @@ mod catalogue_tests {
         assert!(arimo.badge.is_none(), "an OFL root carries no badge");
         // And nothing in the results is literally titled with the trademark.
         assert!(!results.iter().any(|r| r.value.eq_ignore_ascii_case("Arial")));
+    }
+
+    // CacheMeta is read by the JS host (kit10_font_cache_put) -- assert the serialized KEY NAMES
+    // are camelCase, per the wire pitfall (a snake_case key reads as undefined on the JS side).
+    #[test]
+    fn cache_meta_serializes_camel_case() {
+        let meta = CacheMeta {
+            url: "https://cdn.fontshare.com/x.woff2",
+            license_tier: "free-proprietary",
+            family: "Satoshi",
+            category: Some("sans"),
+            weight_min: 400,
+            weight_max: 400,
+            style: "normal",
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("\"licenseTier\":\"free-proprietary\""), "{json}");
+        assert!(json.contains("\"weightMin\":400"), "{json}");
+        assert!(!json.contains("license_tier"), "must be camelCase: {json}");
     }
 
     // The free-proprietary (Fontshare) tier badges "free" (info) so the picker discloses it's a
