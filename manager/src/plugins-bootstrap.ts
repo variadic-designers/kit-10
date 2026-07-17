@@ -3,7 +3,11 @@ import { queryBuilder, type Api, type PluginRow } from './api/index.js';
 
 const CHARTER_MANIFEST: PluginManifest = { wasm: [{ url: '/charter.wasm' }] };
 const FONTAVIOUS_MANIFEST: PluginManifest = { wasm: [{ url: '/fontavious.wasm' }] };
-const FONTAVIOUS_OPTIONS = { allowedHosts: ['fonts.gstatic.com'] };
+// Runtime font-file hosts fetch_font is allowed to reach. gstatic serves the OFL/Google tier;
+// cdn.fontshare.com serves the free-proprietary Fontshare tier (Satoshi, Clash, etc.). The
+// Fontshare *API* host (api.fontshare.com) is deliberately NOT here -- it's only used by the
+// build-time catalogue generator, never by the plugin at runtime.
+const FONTAVIOUS_OPTIONS = { allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com'] };
 const TENNER_MANIFEST: PluginManifest = { wasm: [{ url: '/tenner.wasm' }] };
 
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that

@@ -28,7 +28,9 @@ describe('registerBuiltinPlugins', () => {
 
 		expect(fontavious.name).toBe('fontavious');
 		expect(fontavious.kind).toBe('utility');
-		expect(fontavious.options).toEqual({ allowedHosts: ['fonts.gstatic.com'] });
+		expect(fontavious.options).toEqual({
+			allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com']
+		});
 		expect(fontavious.content_hash).toMatch(/^[0-9a-f]{64}$/);
 
 		expect(tenner.name).toBe('tenner');

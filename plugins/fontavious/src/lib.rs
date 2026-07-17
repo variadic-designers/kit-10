@@ -24,23 +24,104 @@ struct FontVariant {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CatalogueEntry {
     family: String,
+    // The pre-existing ~13 Google entries carry only family/vendor/variants; `default`s below
+    // keep them valid without editing each one (they're all OFL, normal-only). Newer roots set
+    // the rest explicitly.
+    #[serde(default)]
     vendor: String,
+    #[serde(default = "default_tier")]
+    license_tier: String,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
     variants: Vec<FontVariant>,
+    // EXACT / metric-compatible alternative names that resolve to THIS entry -- including
+    // proprietary/trademarked names (Arimo carries ["Arial", "Helvetica", ...]). Search/import
+    // keys ONLY: typing "Arial" surfaces this OFL root (Arimo), and a design referencing
+    // `font-family: Arial` renders Arimo. We never present a catalogue product NAMED with a
+    // trademark -- the mark is used purely referentially ("matches Arial"), the same nominative
+    // use OS font substitution and Google Fonts' "metric-compatible with Arial" rely on.
+    // Copyright is handled by shipping no proprietary bytes; this handles the separate trademark
+    // question. See resources/fontavious-catalogue-plan.md §2-§3.
+    #[serde(default)]
+    aliases: Vec<String>,
+    // VISUAL / approximate look-alikes -- same referential-only role as `aliases`, but the match
+    // is NOT metric-identical, so text can reflow (Montserrat looksLike ["Gotham"], Inter
+    // looksLike ["SF Pro", "Helvetica Neue"]). Surfaced with an "approximates X" note + caution
+    // tone rather than "matches X", so a designer knows it's a stand-in, not a drop-in. §2.2.
+    #[serde(default)]
+    looks_like: Vec<String>,
+}
+
+fn default_tier() -> String {
+    "ofl".to_string()
 }
 
 fn catalogue() -> Vec<CatalogueEntry> {
     serde_json::from_str(CATALOGUE_JSON).unwrap_or_default()
 }
 
-// Generic contract every utility plugin's search function returns for the editor's suggestion
-// dropdown (SuggestField.svelte) -- `label` for display, `value` echoed back as the fetch
-// payload on pick. The editor never needs to know these came from a font catalogue specifically.
+// The editor-owned, plugin-agnostic suggestion contract (mirrors SuggestField.svelte's own
+// type). `value`/`label` are the base; `badge`/`tone`/`note` are GENERIC display slots the
+// editor renders without knowing what a font or a license is. Fontavious PROJECTS its own
+// font-specific facts (licenseTier, alias matches) into them here -- the words "licenseTier"/
+// "font"/"alias" never cross into the editor's type. A future Font Awesome plugin fills the
+// same slots from its own concepts. See resources/fontavious-catalogue-plan.md §5.1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SuggestionEntry {
     value: String,
     label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    badge: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+/// Build a suggestion for a root, always labelled with the root's own (OFL) family name -- never
+/// a trademarked alias. `note` (e.g. "matches Arial") is the referential disclosure of why this
+/// root surfaced; `approximate` (a visual-alias match) tints the note as a caution.
+fn suggestion_for(e: &CatalogueEntry, note: Option<String>, approximate: bool) -> SuggestionEntry {
+    let (badge, tone) = match e.license_tier.as_str() {
+        // Fontshare's closed tier: free to use, not to rehost/bundle.
+        "free-proprietary" => (Some("free".to_string()), Some("info".to_string())),
+        _ => (None, None), // ofl / default: no badge
+    };
+    // A visual (approximate) look-alike match cautions with a warn tone even on an OFL root.
+    let tone = if approximate { Some("warn".to_string()) } else { tone };
+    SuggestionEntry { value: e.family.clone(), label: e.family.clone(), badge, tone, note }
+}
+
+/// Substring-match the query against every entry's family name, exact `aliases`, AND visual
+/// `looksLike` names. Any match surfaces the OFL ROOT (value/label = root family, never a
+/// trademark): an exact-alias match notes "matches Arial"; a visual match notes "approximates
+/// Gotham" with a caution tone; a direct family match has no note. Empty query returns the whole
+/// catalogue (roots only). Precedence: family > exact alias > visual, so a real name always wins.
+fn search_catalogue(query: &str) -> Vec<SuggestionEntry> {
+    let q = query.trim().to_lowercase();
+    let contains = |s: &String| s.to_lowercase().contains(&q);
+    catalogue()
+        .iter()
+        .filter_map(|e| {
+            if q.is_empty() {
+                return Some(suggestion_for(e, None, false));
+            }
+            if e.family.to_lowercase().contains(&q) {
+                return Some(suggestion_for(e, None, false));
+            }
+            if let Some(a) = e.aliases.iter().find(|a| contains(a)) {
+                return Some(suggestion_for(e, Some(format!("matches {a}")), false));
+            }
+            if let Some(a) = e.looks_like.iter().find(|a| contains(a)) {
+                return Some(suggestion_for(e, Some(format!("approximates {a}")), true));
+            }
+            None
+        })
+        .collect()
 }
 
 #[plugin_fn]
@@ -50,17 +131,11 @@ pub fn on_init(_input: String) -> FnResult<String> {
     Ok("ok".to_string())
 }
 
-/// Substring match against the catalogue's family names, for the font picker's search box.
-/// Empty query returns the full catalogue.
+/// Substring match against family names AND aliases, for the font picker's search box.
+/// Empty query returns the full catalogue. See `search_catalogue`.
 #[plugin_fn]
 pub fn search_fonts(query: String) -> FnResult<String> {
-    let q = query.trim().to_lowercase();
-    let results: Vec<SuggestionEntry> = catalogue()
-        .into_iter()
-        .filter(|e| q.is_empty() || e.family.to_lowercase().contains(&q))
-        .map(|e| SuggestionEntry { value: e.family.clone(), label: e.family })
-        .collect();
-    Ok(serde_json::to_string(&results)?)
+    Ok(serde_json::to_string(&search_catalogue(&query))?)
 }
 
 // The generic contract only ever sends `{ value }` (SuggestField.svelte doesn't know about
@@ -85,14 +160,22 @@ fn default_style() -> String {
     "normal".to_string()
 }
 
-/// Shared by `fetch_font` and `variant_url` -- finds the catalogue entry (by family, case
-/// insensitive) and the specific variant within it whose weight range covers the requested
-/// weight (a variable-font entry's range genuinely covers many weights from one URL; a static
-/// entry's `weightMin == weightMax` only ever covers its own exact weight).
+/// Find the catalogue entry a name refers to, matching the family name, an exact `aliases` name,
+/// OR a visual `looksLike` name (case-insensitive). This is how a proprietary/imported name
+/// ("Arial", "Gotham") resolves to the OFL root that owns the file -- callers ask for it and
+/// transparently get the root's variants. Precedence family > exact alias > visual, so a real
+/// family name always wins, and an exact clone wins over an approximate look-alike.
+fn find_entry(name: &str) -> Option<CatalogueEntry> {
+    let cat = catalogue();
+    cat.iter()
+        .find(|e| e.family.eq_ignore_ascii_case(name))
+        .or_else(|| cat.iter().find(|e| e.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))))
+        .or_else(|| cat.iter().find(|e| e.looks_like.iter().any(|a| a.eq_ignore_ascii_case(name))))
+        .cloned()
+}
+
 fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
-    let entry = catalogue()
-        .into_iter()
-        .find(|e| e.family.eq_ignore_ascii_case(&input.value))
+    let entry = find_entry(&input.value)
         .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
 
     entry
@@ -109,14 +192,82 @@ fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
         })
 }
 
-/// Looks up the matching variant's URL in the catalogue and fetches it via Extism's built-in
-/// HTTP capability (allowed only for hosts the manifest's `allowedHosts` permits). Returns the
-/// raw WOFF2 bytes as the call's output -- no JSON wrapping -- so the caller reads them
-/// straight off via the JS SDK's `.bytes()` and hands them to `vellum.load_font()` unmodified.
+// Host-provided persistent font cache (IndexedDB, see src/lib/plugins/font-cache.ts). GET takes a
+// URL and returns the cached WOFF2 bytes (empty = miss); PUT takes a JSON metadata blob + the raw
+// bytes. These let fetch_font skip the network on a reload without the host having to wrap the
+// fetch itself -- the plugin owns "get me these bytes cheaply", the host owns the storage. String
+// and Vec<u8> params/returns marshal as raw bytes (NOT the `u64` the pdk pitfall warns against).
+#[host_fn]
+extern "ExtismHost" {
+    fn kit10_font_cache_get(url: String) -> Vec<u8>;
+    fn kit10_font_cache_put(meta_json: String, bytes: Vec<u8>);
+}
+
+// What a cached record carries alongside the bytes. `license_tier` is stored so a future export
+// path can restrict itself to the `ofl` tier (resources/nature-of-fonts.md §7.3) -- cached but
+// unexposed for proprietary. camelCase: the consumer is the JS host.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheMeta<'a> {
+    url: &'a str,
+    license_tier: &'a str,
+    family: &'a str,
+    category: Option<&'a str>,
+    weight_min: u16,
+    weight_max: u16,
+    style: &'a str,
+}
+
+// Both cache calls swallow errors to a no-op: the cache is a best-effort accelerator, never a
+// dependency of font fetching. A get fault reads as a miss (fetch from network); a put fault just
+// means it won't be cached for next session.
+fn cache_get(url: &str) -> Option<Vec<u8>> {
+    match unsafe { kit10_font_cache_get(url.to_string()) } {
+        Ok(bytes) if !bytes.is_empty() => Some(bytes),
+        _ => None,
+    }
+}
+
+fn cache_put(entry: &CatalogueEntry, variant: &FontVariant, bytes: &[u8]) {
+    let meta = CacheMeta {
+        url: &variant.url,
+        license_tier: &entry.license_tier,
+        family: &entry.family,
+        category: entry.category.as_deref(),
+        weight_min: variant.weight_min,
+        weight_max: variant.weight_max,
+        style: &variant.style,
+    };
+    if let Ok(json) = serde_json::to_string(&meta) {
+        let _ = unsafe { kit10_font_cache_put(json, bytes.to_vec()) };
+    }
+}
+
+/// Returns a variant's WOFF2 bytes. Checks the host's persistent cache first (instant, offline);
+/// on a miss, fetches via Extism's HTTP capability (allowed only for hosts `allowedHosts`
+/// permits) and stores the result for next time. Bytes are returned raw -- no JSON wrapping -- so
+/// the caller reads them via the JS SDK's `.bytes()` and hands them to `vellum.load_font()`.
 #[plugin_fn]
 pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
     let input: FetchFontInput = serde_json::from_str(&input)?;
-    let variant = find_matching_variant(&input)?;
+    // Resolve the owning entry (for cache metadata) and its matching variant together.
+    let entry = find_entry(&input.value)
+        .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
+    let variant = entry
+        .variants
+        .iter()
+        .find(|v| input.weight >= v.weight_min && input.weight <= v.weight_max && v.style == input.style)
+        .cloned()
+        .ok_or_else(|| {
+            Error::msg(format!(
+                "no variant for {} weight={} style={}",
+                input.value, input.weight, input.style
+            ))
+        })?;
+
+    if let Some(bytes) = cache_get(&variant.url) {
+        return Ok(bytes);
+    }
 
     let req = HttpRequest::new(&variant.url);
     let res: HttpResponse = http::request::<()>(&req, None)?;
@@ -129,7 +280,9 @@ pub fn fetch_font(input: String) -> FnResult<Vec<u8>> {
         ))
         .into());
     }
-    Ok(res.body())
+    let bytes = res.body();
+    cache_put(&entry, &variant, &bytes);
+    Ok(bytes)
 }
 
 // The catalogue's variant ranges, minus the vendor URL -- the fact Charter's weight snapping
@@ -156,9 +309,9 @@ struct FamilyFactsOutput {
 #[plugin_fn]
 pub fn family_facts(input: String) -> FnResult<String> {
     let input: FetchFontInput = serde_json::from_str(&input)?;
-    let entry = catalogue()
-        .into_iter()
-        .find(|e| e.family.eq_ignore_ascii_case(&input.value))
+    // Report the ROOT's real weights (Arial's facts are Arimo's), so Charter's weight snapping
+    // decides against what actually renders.
+    let entry = find_entry(&input.value)
         .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
     let variants = entry
         .variants
@@ -198,14 +351,22 @@ mod catalogue_tests {
         assert!(entries.iter().any(|e| e.family == "Inter"));
     }
 
+    // Every variant URL must be an https font file on a KNOWN vendor host (kept in lockstep with
+    // Fontavious's `allowedHosts` in manager/src/plugins-bootstrap.ts -- a URL on a host we can't
+    // fetch from is a dead entry). google -> gstatic, fontshare -> cdn.fontshare.com.
     #[test]
-    fn every_variant_has_a_gstatic_url() {
+    fn every_variant_url_is_on_an_allowed_vendor_host() {
         for entry in catalogue() {
-            for variant in entry.variants {
+            let allowed_host = match entry.vendor.as_str() {
+                "fontshare" => "https://cdn.fontshare.com/",
+                _ => "https://fonts.gstatic.com/", // google + default
+            };
+            for variant in &entry.variants {
                 assert!(
-                    variant.url.starts_with("https://fonts.gstatic.com/"),
-                    "unexpected URL for {}: {}",
+                    variant.url.starts_with(allowed_host),
+                    "{} ({}) has a URL off its vendor host: {}",
                     entry.family,
+                    entry.vendor,
                     variant.url
                 );
             }
@@ -228,7 +389,10 @@ mod catalogue_tests {
     fn variable_entry_serves_any_weight_in_range_from_one_url() {
         let entries = catalogue();
         let inter = entries.iter().find(|e| e.family == "Inter").expect("Inter should be catalogued");
-        assert_eq!(inter.variants.len(), 1, "a variable font needs only one entry to cover 400-700");
+        // Per STYLE, a variable font covers its whole range from one file (Inter now also ships
+        // an italic variant, so we assert the per-style invariant, not a total variant count).
+        let normal: Vec<_> = inter.variants.iter().filter(|v| v.style == "normal").collect();
+        assert_eq!(normal.len(), 1, "a variable font needs only one NORMAL entry to cover 400-700");
 
         let at_400 = find_variant(inter, 400, "normal").expect("400 should match the variable range");
         let at_550 = find_variant(inter, 550, "normal").expect("550 (not a discrete point) should still match a real variable range");
@@ -241,7 +405,10 @@ mod catalogue_tests {
     fn static_only_family_still_requires_an_exact_weight_match() {
         let entries = catalogue();
         let lato = entries.iter().find(|e| e.family == "Lato").expect("Lato should be catalogued");
-        assert_eq!(lato.variants.len(), 2, "static-only: one file per weight, confirmed against the live API");
+        // Static-only: one file per weight (Lato ships 400 + 700 normal, plus italics now). The
+        // invariant is that an in-between weight has NO file, not the exact variant count.
+        let normal: Vec<_> = lato.variants.iter().filter(|v| v.style == "normal").collect();
+        assert_eq!(normal.len(), 2, "static-only: one NORMAL file per discrete weight (400, 700)");
 
         assert!(find_variant(lato, 400, "normal").is_some());
         assert!(find_variant(lato, 700, "normal").is_some());
@@ -277,6 +444,131 @@ mod catalogue_tests {
     fn find_matching_variant_errors_on_uncatalogued_weight() {
         let input = FetchFontInput { value: "Lato".to_string(), weight: 600, style: "normal".to_string() };
         assert!(find_matching_variant(&input).is_err());
+    }
+
+    // --- aliases (catalogue-expansion Phase 0, trademark-safe framing) ---
+
+    // A proprietary NAME we ship no bytes for still resolves -- find_entry matches it as an
+    // alias of the OFL root and returns that root's real file. No entry is ever *named* "Arial".
+    #[test]
+    fn proprietary_name_resolves_to_ofl_root_file() {
+        let arial = FetchFontInput { value: "Arial".to_string(), weight: 400, style: "normal".to_string() };
+        let arimo = FetchFontInput { value: "Arimo".to_string(), weight: 400, style: "normal".to_string() };
+        let via_alias = find_matching_variant(&arial).expect("Arial should resolve to Arimo");
+        let direct = find_matching_variant(&arimo).expect("Arimo should resolve directly");
+        assert_eq!(via_alias.url, direct.url, "Arial must render Arimo's actual file");
+        assert!(via_alias.url.starts_with("https://fonts.gstatic.com/s/arimo/"));
+
+        // The catalogue must never contain a product literally named with the trademark.
+        assert!(
+            !catalogue().iter().any(|e| e.family.eq_ignore_ascii_case("Arial")),
+            "no catalogue entry may be NAMED 'Arial' -- it's an alias only"
+        );
+    }
+
+    // find_entry resolves an alias to the root that owns the file; the root keeps its own name.
+    #[test]
+    fn find_entry_matches_alias_and_returns_named_root() {
+        let e = find_entry("Times New Roman").expect("resolves via alias");
+        assert_eq!(e.family, "Tinos", "returns the OFL root, keeping its real name");
+        assert!(!e.variants.is_empty());
+
+        let at_700 = FetchFontInput { value: "Times New Roman".to_string(), weight: 700, style: "normal".to_string() };
+        let v = find_matching_variant(&at_700).expect("TNR@700 resolves via Tinos");
+        assert!(v.url.contains("/tinos/"));
+
+        assert!(find_entry("Not A Real Font").is_none());
+    }
+
+    // A real family name wins over another family's alias (defensive: no alias shadows a family).
+    #[test]
+    fn family_name_beats_alias() {
+        // "Arimo" is a family; make sure it never resolves to something else via a stray alias.
+        assert_eq!(find_entry("Arimo").unwrap().family, "Arimo");
+    }
+
+    // Search surfaces the OFL ROOT for a proprietary-name query, labelled with the root's own
+    // name, with a referential "matches Arial" note -- never a row branded with the trademark.
+    #[test]
+    fn typing_a_proprietary_name_surfaces_the_ofl_root() {
+        let results = search_catalogue("arial");
+        let arimo = results.iter().find(|r| r.value == "Arimo").expect("Arimo surfaces for 'arial'");
+        assert_eq!(arimo.label, "Arimo", "labelled with the OFL name, not the trademark");
+        assert_eq!(arimo.note.as_deref(), Some("matches Arial"));
+        assert!(arimo.badge.is_none(), "an OFL root carries no badge");
+        // And nothing in the results is literally titled with the trademark.
+        assert!(!results.iter().any(|r| r.value.eq_ignore_ascii_case("Arial")));
+    }
+
+    // CacheMeta is read by the JS host (kit10_font_cache_put) -- assert the serialized KEY NAMES
+    // are camelCase, per the wire pitfall (a snake_case key reads as undefined on the JS side).
+    #[test]
+    fn cache_meta_serializes_camel_case() {
+        let meta = CacheMeta {
+            url: "https://cdn.fontshare.com/x.woff2",
+            license_tier: "free-proprietary",
+            family: "Satoshi",
+            category: Some("sans"),
+            weight_min: 400,
+            weight_max: 400,
+            style: "normal",
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        assert!(json.contains("\"licenseTier\":\"free-proprietary\""), "{json}");
+        assert!(json.contains("\"weightMin\":400"), "{json}");
+        assert!(!json.contains("license_tier"), "must be camelCase: {json}");
+    }
+
+    // The free-proprietary (Fontshare) tier badges "free" (info) so the picker discloses it's a
+    // different license lane than the OFL default -- the only tier that currently draws a badge.
+    #[test]
+    fn free_proprietary_root_is_badged_free() {
+        let sat = find_entry("Satoshi").expect("Satoshi catalogued");
+        assert_eq!(sat.vendor, "fontshare");
+        assert_eq!(sat.license_tier, "free-proprietary");
+        let s = suggestion_for(&sat, None, false);
+        assert_eq!(s.badge.as_deref(), Some("free"));
+        assert_eq!(s.tone.as_deref(), Some("info"));
+    }
+
+    // A VISUAL look-alike (Phase 5): typing a proprietary display/brand name surfaces the OFL
+    // root labelled with its own name, noted "approximates X" (not "matches") with a caution
+    // tone -- signalling it's an approximate stand-in that may reflow, not a metric drop-in.
+    #[test]
+    fn typing_a_visual_lookalike_surfaces_the_root_as_approximate() {
+        let results = search_catalogue("gotham");
+        let m = results.iter().find(|r| r.value == "Montserrat").expect("Gotham -> Montserrat");
+        assert_eq!(m.label, "Montserrat", "labelled with the OFL name, not the trademark");
+        assert_eq!(m.note.as_deref(), Some("approximates Gotham"));
+        assert_eq!(m.tone.as_deref(), Some("warn"), "visual matches caution");
+        assert!(!results.iter().any(|r| r.value.eq_ignore_ascii_case("Gotham")));
+
+        // And it resolves for rendering/import, just like an exact alias.
+        let e = find_entry("SF Pro").expect("SF Pro resolves via looksLike");
+        assert!(!e.variants.is_empty());
+    }
+
+    // A direct family-name query has no note (it didn't match via an alias).
+    #[test]
+    fn typing_the_root_name_has_no_alias_note() {
+        let results = search_catalogue("arimo");
+        let arimo = results.iter().find(|r| r.value == "Arimo").expect("Arimo surfaces");
+        assert!(arimo.note.is_none());
+    }
+
+    // The generic slots serialize under their exact key names (the editor reads them verbatim)
+    // and are OMITTED when absent, so a plain family hit stays `{value,label}` as before.
+    #[test]
+    fn suggestion_serializes_generic_slots_and_omits_empty() {
+        let hit = search_catalogue("arial").into_iter().find(|r| r.value == "Arimo").unwrap();
+        let json = serde_json::to_string(&hit).unwrap();
+        assert!(json.contains("\"note\":\"matches Arial\""));
+        assert!(!json.contains("badge"), "no badge on an OFL root: {json}");
+
+        let plain = search_catalogue("arimo").into_iter().find(|r| r.value == "Arimo").unwrap();
+        let json = serde_json::to_string(&plain).unwrap();
+        assert!(!json.contains("note"), "empty slots must be omitted: {json}");
+        assert!(!json.contains("badge"), "empty slots must be omitted: {json}");
     }
 
     // family_facts feeds Charter's weight snapping via the host-assembled fontFacts map --
