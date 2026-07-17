@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { layerDotColor } from './layer-color.ts';
+	import { factsForFamily } from '$lib/plugins/font-weight.js';
 	import type { FamilyFacts, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 	import type { ResolvedProperty } from 'manager';
 
@@ -62,10 +63,7 @@
 	// no file for. No facts for this family (uncatalogued, or not fetched yet) -> the full
 	// standard set, unfiltered, exactly Charter's own "no facts, no opinion" fallback.
 	const availableWeights = $derived.by(() => {
-		if (!currentFamily) return STANDARD_WEIGHTS;
-		const facts = Object.entries(fontFacts).find(
-			([family]) => family.toLowerCase() === currentFamily.toLowerCase()
-		)?.[1];
+		const facts = factsForFamily(fontFacts, currentFamily);
 		if (!facts || facts.variants.length === 0) return STANDARD_WEIGHTS;
 		return STANDARD_WEIGHTS.filter((w) =>
 			facts.variants.some((v) => w.weight >= v.weightMin && w.weight <= v.weightMax)
