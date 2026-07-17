@@ -373,6 +373,12 @@ the URL cache is the canvas's supply chain, not a portable fact.
 
 ## 6. Expanding Fontavious's catalogue
 
+> The concrete, phased expansion plan — including the two-layer
+> roots-vs-aliases model, proprietary-name handling, and the
+> metric-clone/visual-substitute dedup strategy — now lives in
+> `resources/fontavious-catalogue-plan.md`. This section is the background
+> that plan builds on.
+
 The catalogue is ~40 families (95 lines of hand-maintained JSON). That's far
 too small for a designer arriving from Figma (~1000+ Google fonts one click
 away), Framer, or Webflow (Google Fonts + Adobe + uploads). Here's how to grow
