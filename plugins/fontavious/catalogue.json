@@ -1,95 +1,368 @@
 [
-  {
-    "family": "Inter",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2" }
-    ]
-  },
-  {
-    "family": "Roboto",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2" }
-    ]
-  },
-  {
-    "family": "Open Sans",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/opensans/v44/memvYaGs126MiZpBA-UvWbX2vVnXBbObj2OVTS-muw.woff2" }
-    ]
-  },
-  {
-    "family": "Lato",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 400, "style": "normal", "url": "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHjx4wXg.woff2" },
-      { "weightMin": 700, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVSwiPGQ.woff2" }
-    ]
-  },
-  {
-    "family": "Poppins",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 400, "style": "normal", "url": "https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrJJfecg.woff2" },
-      { "weightMin": 700, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2" }
-    ]
-  },
-  {
-    "family": "Montserrat",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2" }
-    ]
-  },
-  {
-    "family": "Nunito",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2" }
-    ]
-  },
-  {
-    "family": "Source Sans 3",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/sourcesans3/v19/nwpStKy2OAdR1K-IwhWudF-R3w8aZQ.woff2" }
-    ]
-  },
-  {
-    "family": "Work Sans",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/worksans/v24/QGYsz_wNahGAdqQ43Rh_fKDp.woff2" }
-    ]
-  },
-  {
-    "family": "DM Sans",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2" }
-    ]
-  },
-  {
-    "family": "Playfair Display",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTzYgA.woff2" }
-    ]
-  },
-  {
-    "family": "Merriweather",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/merriweather/v33/u-4e0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiSeqqJ-k.woff2" }
-    ]
-  },
-  {
-    "family": "JetBrains Mono",
-    "vendor": "google",
-    "variants": [
-      { "weightMin": 400, "weightMax": 700, "style": "normal", "url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2" }
-    ]
-  }
+	{
+		"family": "Inter",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2"
+			}
+		]
+	},
+	{
+		"family": "Roboto",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/roboto/v51/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2"
+			}
+		]
+	},
+	{
+		"family": "Open Sans",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/opensans/v44/memvYaGs126MiZpBA-UvWbX2vVnXBbObj2OVTS-muw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Lato",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHjx4wXg.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/lato/v25/S6u9w4BMUTPHh6UVSwiPGQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Poppins",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrJJfecg.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1xlFQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Montserrat",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Nunito",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/nunito/v32/XRXV3I6Li01BKofINeaB.woff2"
+			}
+		]
+	},
+	{
+		"family": "Source Sans 3",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sourcesans3/v19/nwpStKy2OAdR1K-IwhWudF-R3w8aZQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Work Sans",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/worksans/v24/QGYsz_wNahGAdqQ43Rh_fKDp.woff2"
+			}
+		]
+	},
+	{
+		"family": "DM Sans",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Yp2ywxg089UriI5-g4vlH9VoD8Cmcqbu0-K4.woff2"
+			}
+		]
+	},
+	{
+		"family": "Playfair Display",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFiD-vYSZviVYUb_rj3ij__anPXDTzYgA.woff2"
+			}
+		]
+	},
+	{
+		"family": "Merriweather",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/merriweather/v33/u-4e0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiSeqqJ-k.woff2"
+			}
+		]
+	},
+	{
+		"family": "JetBrains Mono",
+		"vendor": "google",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbv2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKwBNntkaToggR7BYRbKPxDcwg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Arimo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/arimo/v36/P5sMzZCDf9_T_10ZxCE.woff2"
+			}
+		]
+	},
+	{
+		"family": "Tinos",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/tinos/v26/buE4poGnedXvwjX7fmQ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/tinos/v26/buE1poGnedXvwj1AW3Fu0C8.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cousine",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lIkaiiRdih4SpP_SQvzA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lNkaiiRdih4SpP9Z8K2TnM0g.woff2"
+			}
+		]
+	},
+	{
+		"family": "Carlito",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn9SDPw3m-pk039DDeBTA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn4SDPw3m-pk039BIykWXolUw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Caladea",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/caladea/v10/kJEzBugZ7AAjhybUvRh9-g.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/caladea/v10/kJE2BugZ7AAjhybUtaNY790SqQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Gelasio",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/gelasio/v14/cIf9MaFfvUQxTTqS9C6hYQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Arial",
+		"licenseTier": "proprietary",
+		"category": "sans",
+		"aliasOf": "Arimo",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Helvetica",
+		"licenseTier": "proprietary",
+		"category": "sans",
+		"aliasOf": "Arimo",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Times New Roman",
+		"licenseTier": "proprietary",
+		"category": "serif",
+		"aliasOf": "Tinos",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Times",
+		"licenseTier": "proprietary",
+		"category": "serif",
+		"aliasOf": "Tinos",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Courier New",
+		"licenseTier": "proprietary",
+		"category": "mono",
+		"aliasOf": "Cousine",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Calibri",
+		"licenseTier": "proprietary",
+		"category": "sans",
+		"aliasOf": "Carlito",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Cambria",
+		"licenseTier": "proprietary",
+		"category": "serif",
+		"aliasOf": "Caladea",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Georgia",
+		"licenseTier": "proprietary",
+		"category": "serif",
+		"aliasOf": "Gelasio",
+		"substitute": {
+			"reason": "metric"
+		}
+	},
+	{
+		"family": "Liberation Sans",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"aliasOf": "Arimo"
+	},
+	{
+		"family": "Liberation Serif",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"aliasOf": "Tinos"
+	},
+	{
+		"family": "Liberation Mono",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"aliasOf": "Cousine"
+	}
 ]

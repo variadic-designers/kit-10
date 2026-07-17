@@ -23,11 +23,39 @@ struct FontVariant {
     url: String,
 }
 
+// A cross-family substitution's nature, badged in the picker. "metric" = a layout-safe
+// metric-compatible clone (Arial -> Arimo); "visual" = an approximate look-alike that may
+// reflow (SF Pro -> Inter). See resources/fontavious-catalogue-plan.md §2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct Substitute {
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CatalogueEntry {
     family: String,
+    // The pre-existing ~13 Google entries carry only family/vendor/variants; `default`s below
+    // keep them valid without editing each one (they're all OFL, normal-only). New roots and
+    // alias entries set the rest explicitly.
+    #[serde(default)]
     vendor: String,
+    #[serde(default = "default_tier")]
+    license_tier: String,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
     variants: Vec<FontVariant>,
+    // Present on alias / proprietary-name entries: "render me via this root family". Such an
+    // entry carries no `variants` of its own -- `resolve_root` follows this to the real file.
+    #[serde(default)]
+    alias_of: Option<String>,
+    #[serde(default)]
+    substitute: Option<Substitute>,
+}
+
+fn default_tier() -> String {
+    "ofl".to_string()
 }
 
 fn catalogue() -> Vec<CatalogueEntry> {
@@ -37,10 +65,47 @@ fn catalogue() -> Vec<CatalogueEntry> {
 // Generic contract every utility plugin's search function returns for the editor's suggestion
 // dropdown (SuggestField.svelte) -- `label` for display, `value` echoed back as the fetch
 // payload on pick. The editor never needs to know these came from a font catalogue specifically.
+// The editor-owned, plugin-agnostic suggestion contract (mirrors SuggestField.svelte's own
+// type). `value`/`label` are the base; `badge`/`tone`/`note` are GENERIC display slots the
+// editor renders without knowing what a font or a license is. Fontavious PROJECTS its own
+// font-specific facts (licenseTier, substitute) into them here -- the words "licenseTier"/
+// "proprietary"/"font" never cross into the editor's type. A future Font Awesome plugin fills
+// the same slots from its own concepts. See resources/fontavious-catalogue-plan.md §5.1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SuggestionEntry {
     value: String,
     label: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    badge: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+/// Project a catalogue entry's font-specific facts into the generic badge/tone/note slots.
+fn suggestion_for(e: &CatalogueEntry) -> SuggestionEntry {
+    // "rendering <root>" whenever this name is served by a different family's file.
+    let rendered_via = e
+        .alias_of
+        .as_ref()
+        .filter(|root| !root.eq_ignore_ascii_case(&e.family))
+        .map(|root| format!("rendering {root}"));
+    let visual = matches!(e.substitute.as_ref().map(|s| s.reason.as_str()), Some("visual"));
+
+    let (badge, tone) = match e.license_tier.as_str() {
+        "proprietary" => (Some("proprietary".to_string()), Some("warn".to_string())),
+        "free-proprietary" => (Some("free".to_string()), Some("info".to_string())),
+        _ => (None, None), // ofl / default: no badge
+    };
+    // A visual (non-metric) substitution can reflow, so flag it approximate.
+    let note = match (visual, rendered_via) {
+        (true, Some(via)) => Some(format!("≈ {via}")),
+        (true, None) => Some("≈ approximate".to_string()),
+        (false, via) => via,
+    };
+
+    SuggestionEntry { value: e.family.clone(), label: e.family.clone(), badge, tone, note }
 }
 
 #[plugin_fn]
@@ -56,9 +121,9 @@ pub fn on_init(_input: String) -> FnResult<String> {
 pub fn search_fonts(query: String) -> FnResult<String> {
     let q = query.trim().to_lowercase();
     let results: Vec<SuggestionEntry> = catalogue()
-        .into_iter()
+        .iter()
         .filter(|e| q.is_empty() || e.family.to_lowercase().contains(&q))
-        .map(|e| SuggestionEntry { value: e.family.clone(), label: e.family })
+        .map(suggestion_for)
         .collect();
     Ok(serde_json::to_string(&results)?)
 }
@@ -89,10 +154,31 @@ fn default_style() -> String {
 /// insensitive) and the specific variant within it whose weight range covers the requested
 /// weight (a variable-font entry's range genuinely covers many weights from one URL; a static
 /// entry's `weightMin == weightMax` only ever covers its own exact weight).
-fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
-    let entry = catalogue()
+fn find_entry(family: &str) -> Option<CatalogueEntry> {
+    catalogue()
         .into_iter()
-        .find(|e| e.family.eq_ignore_ascii_case(&input.value))
+        .find(|e| e.family.eq_ignore_ascii_case(family))
+}
+
+/// Resolve a family name to the catalogue entry that actually owns the font file, following
+/// `alias_of` (Arial -> Arimo, Liberation Sans -> Arimo). Substitution is entirely a catalogue
+/// concern: callers ask for "Arial" and get Arimo's variants, never learning a swap happened.
+/// Bounded hop count guards against an accidental alias cycle in the data.
+fn resolve_root(family: &str) -> Option<CatalogueEntry> {
+    let mut current = find_entry(family)?;
+    for _ in 0..8 {
+        match &current.alias_of {
+            Some(target) if !target.eq_ignore_ascii_case(&current.family) => {
+                current = find_entry(target)?;
+            }
+            _ => return Some(current),
+        }
+    }
+    Some(current)
+}
+
+fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
+    let entry = resolve_root(&input.value)
         .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
 
     entry
@@ -156,9 +242,9 @@ struct FamilyFactsOutput {
 #[plugin_fn]
 pub fn family_facts(input: String) -> FnResult<String> {
     let input: FetchFontInput = serde_json::from_str(&input)?;
-    let entry = catalogue()
-        .into_iter()
-        .find(|e| e.family.eq_ignore_ascii_case(&input.value))
+    // Report the ROOT's real weights (Arial's facts are Arimo's), so Charter's weight snapping
+    // decides against what actually renders.
+    let entry = resolve_root(&input.value)
         .ok_or_else(|| Error::msg(format!("font family not in catalogue: {}", input.value)))?;
     let variants = entry
         .variants
@@ -277,6 +363,87 @@ mod catalogue_tests {
     fn find_matching_variant_errors_on_uncatalogued_weight() {
         let input = FetchFontInput { value: "Lato".to_string(), weight: 600, style: "normal".to_string() };
         assert!(find_matching_variant(&input).is_err());
+    }
+
+    // --- alias / substitution (catalogue-expansion Phase 0) ---
+
+    // The whole point of the two-layer model: a proprietary name we ship NO bytes for still
+    // resolves, by following alias_of to the OFL clone's real file.
+    #[test]
+    fn proprietary_alias_resolves_to_root_file() {
+        let arial = FetchFontInput { value: "Arial".to_string(), weight: 400, style: "normal".to_string() };
+        let arimo = FetchFontInput { value: "Arimo".to_string(), weight: 400, style: "normal".to_string() };
+        let via_alias = find_matching_variant(&arial).expect("Arial should resolve via Arimo");
+        let direct = find_matching_variant(&arimo).expect("Arimo should resolve directly");
+        assert_eq!(via_alias.url, direct.url, "Arial must render Arimo's actual file");
+        assert!(via_alias.url.starts_with("https://fonts.gstatic.com/s/arimo/"));
+    }
+
+    // A static-clone alias (Times New Roman -> Tinos) must match per discrete weight, and the
+    // proprietary entry itself carries zero variants (it's name-only, no bytes).
+    #[test]
+    fn static_clone_alias_matches_per_weight_and_has_no_own_variants() {
+        let entry = find_entry("Times New Roman").expect("Times New Roman catalogued");
+        assert!(entry.variants.is_empty(), "a proprietary alias must ship no font files of its own");
+        assert_eq!(entry.license_tier, "proprietary");
+
+        let at_700 = FetchFontInput { value: "Times New Roman".to_string(), weight: 700, style: "normal".to_string() };
+        let v = find_matching_variant(&at_700).expect("TNR@700 should resolve via Tinos");
+        assert!(v.url.contains("/tinos/"));
+    }
+
+    // Aliases never introduce a cycle in practice, but resolve_root must terminate regardless.
+    #[test]
+    fn resolve_root_terminates() {
+        assert!(resolve_root("Arial").is_some());
+        assert!(resolve_root("Not A Real Font").is_none());
+    }
+
+    // The generic badge/tone/note projection -- the "marked as such" surface. A proprietary
+    // metric clone badges "proprietary" (warn) and discloses "rendering <root>"; an OFL root
+    // gets no badge at all.
+    #[test]
+    fn proprietary_alias_is_badged_and_discloses_substitution() {
+        let arial = find_entry("Arial").expect("Arial catalogued");
+        let s = suggestion_for(&arial);
+        assert_eq!(s.badge.as_deref(), Some("proprietary"));
+        assert_eq!(s.tone.as_deref(), Some("warn"));
+        assert_eq!(s.note.as_deref(), Some("rendering Arimo"));
+    }
+
+    #[test]
+    fn ofl_root_has_no_badge() {
+        let arimo = find_entry("Arimo").expect("Arimo catalogued");
+        let s = suggestion_for(&arimo);
+        assert!(s.badge.is_none(), "an OFL root is the default free case -- no badge");
+        assert!(s.note.is_none());
+    }
+
+    // An OFL metric sibling (Liberation Sans -> Arimo) is free, so no badge, but still honestly
+    // discloses that it renders via Arimo.
+    #[test]
+    fn ofl_sibling_alias_discloses_without_badging() {
+        let lib = find_entry("Liberation Sans").expect("Liberation Sans catalogued");
+        let s = suggestion_for(&lib);
+        assert!(s.badge.is_none());
+        assert_eq!(s.note.as_deref(), Some("rendering Arimo"));
+    }
+
+    // The generic slots must serialize as their exact camelCase-neutral key names (value/label/
+    // badge/tone/note) -- the editor's SuggestionEntry reads these verbatim -- and must be
+    // OMITTED when absent so a plain OFL root stays `{value,label}` as before.
+    #[test]
+    fn suggestion_serializes_generic_slots_and_omits_empty() {
+        let arial = suggestion_for(&find_entry("Arial").unwrap());
+        let json = serde_json::to_string(&arial).unwrap();
+        assert!(json.contains("\"badge\":\"proprietary\""));
+        assert!(json.contains("\"note\":\"rendering Arimo\""));
+        assert!(json.contains("\"tone\":\"warn\""));
+
+        let arimo = suggestion_for(&find_entry("Arimo").unwrap());
+        let json = serde_json::to_string(&arimo).unwrap();
+        assert!(!json.contains("badge"), "empty slots must be omitted: {json}");
+        assert!(!json.contains("note"), "empty slots must be omitted: {json}");
     }
 
     // family_facts feeds Charter's weight snapping via the host-assembled fontFacts map --

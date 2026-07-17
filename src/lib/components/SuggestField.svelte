@@ -3,7 +3,18 @@
 	// this component has no knowledge of fonts, Fontavious, or any other specific plugin. It
 	// only ever calls callUtilityPlugin(pluginName, searchFn/fetchFn, ...) and reports back
 	// whatever it got. See VISION.md's 1st Principle: no lock-in to a specific tool for a job.
-	type SuggestionEntry = { value: string; label?: string };
+	// The plugin-agnostic suggestion contract. `value`/`label` are the base; `badge`/`tone`/
+	// `note` are GENERIC display slots a provider plugin may fill (Fontavious projects font
+	// licensing/substitution into them -- see resources/fontavious-catalogue-plan.md §5.1).
+	// This component renders them without knowing what they mean domain-wise; a future icon
+	// plugin would fill the same slots from its own concepts.
+	type SuggestionEntry = {
+		value: string;
+		label?: string;
+		badge?: string;
+		tone?: 'neutral' | 'info' | 'warn';
+		note?: string;
+	};
 
 	type SuggestFieldProps = {
 		value?: string | null;
@@ -213,7 +224,12 @@
 								onmousedown={() => pick(entry.value)}
 								onmouseenter={() => (highlighted = i)}
 							>
-								{entry.label ?? entry.value}
+								<span class="suggest-field__label">{entry.label ?? entry.value}</span>
+								{#if entry.note}<span class="suggest-field__note">{entry.note}</span>{/if}
+								{#if entry.badge}<span
+										class="suggest-field__badge suggest-field__badge--{entry.tone ?? 'neutral'}"
+										>{entry.badge}</span
+									>{/if}
 							</button>
 						</li>
 					{/each}
@@ -276,7 +292,9 @@
 
 			button {
 				all: unset;
-				display: block;
+				display: flex;
+				align-items: baseline;
+				gap: 0.5em;
 				width: 100%;
 				box-sizing: border-box;
 				padding: 0.4em 0.6em;
@@ -286,6 +304,47 @@
 				&.suggest-field__option--highlighted {
 					background: var(--color-surface-alt);
 				}
+			}
+		}
+
+		&__label {
+			flex: 1 1 auto;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		// Generic secondary line (e.g. "rendering Arimo", "≈ approximate"). Muted, right-aligned.
+		&__note {
+			flex: 0 0 auto;
+			font-size: 0.8em;
+			opacity: 0.55;
+		}
+
+		// Generic tag. `tone` maps to emphasis only -- no domain meaning lives here.
+		&__badge {
+			flex: 0 0 auto;
+			font-size: 0.68em;
+			text-transform: uppercase;
+			letter-spacing: 0.03em;
+			padding: 0.1em 0.4em;
+			border-radius: 3px;
+			background: var(--color-surface-alt);
+			opacity: 0.75;
+
+			&--warn {
+				background: color-mix(
+					in oklab,
+					var(--color-danger, oklch(63.7% 0.2078 25.3)) 22%,
+					transparent
+				);
+				opacity: 0.9;
+			}
+
+			&--info {
+				background: color-mix(in oklab, var(--color-accent, oklch(63% 0.17 250)) 22%, transparent);
+				opacity: 0.9;
 			}
 		}
 	}
