@@ -169,14 +169,61 @@ happened.
   dedup, same as variable-weight dedup).
 - **`family_facts`** reports the **root's** real weight ranges, so Charter's
   weight-snapping is correct for what actually renders.
-- **`search_fonts`** includes alias names, each carrying `licenseTier` +
-  `substitute.reason`, so `SuggestField.svelte` can badge them
-  ("proprietary · rendering Arimo", "≈ approximate"). This is the "marked as
-  such" surface the user sees. `SuggestionEntry` gains optional `tier`/`note`
-  fields for it.
+- **`search_fonts`** projects each alias's `licenseTier` + `substitute.reason`
+  into the editor's **generic** suggestion contract so `SuggestField.svelte`
+  can badge them ("proprietary · rendering Arimo", "≈ approximate"). This is
+  the "marked as such" surface the user sees — see §5.1 for why it's generic.
 
 Everything above is additive to the existing exports; no caller outside
 Fontavious changes shape.
+
+### 5.1 Two shapes — keep the editor contract plugin-agnostic
+
+There are two distinct shapes here, and only one is a cross-plugin contract.
+This matters because a future provider plugin (e.g. a **Font Awesome** icon
+plugin) must be able to feed the same editor UI without inheriting any of
+Fontavious's font-specific vocabulary (VISION.md 1st Principle; the
+`feedback-editor-plugin-agnosticism` memory).
+
+- **Fontavious's internal catalogue shape** (`licenseTier`, `aliasOf`,
+  `substitute`, `weightMin/Max`, `variants`, `url` — §4) is the plugin's
+  **private data**. The editor never reads `catalogue.json`; it only ever
+  sees the *outputs* of `search_fonts`/`fetch_font`/`variant_url`. A Font
+  Awesome plugin would have its own unrelated internal shape (icon names,
+  `brands`/`solid`/`regular` styles). These never collide, because they are
+  never a shared contract — so this half staying Fontavious-defined is
+  correct, not a leak.
+
+- **The editor-facing suggestion contract** (`SuggestionEntry`) is
+  **editor-owned and must stay generic.** It already lives in
+  `SuggestField.svelte` (`{ value, label? }`), and `resolveSuggestionSource`
+  (the editor-owned `inputType → plugin` registry in
+  `suggestion-providers.ts`) already dispatches agnostically — adding a Font
+  Awesome provider is one line there (`icon: { plugin: 'fontAwesome', … }`),
+  no editor recompile of anything else.
+
+The badge/disclosure surface must therefore be expressed in **generic display
+slots the editor defines**, which each plugin *projects into* — never
+font-specific fields on the shared type:
+
+```ts
+// editor-owned, plugin-agnostic (SuggestField.svelte)
+type SuggestionEntry = {
+  value: string; label?: string;
+  badge?: string;                        // "PROPRIETARY", "BRANDS", "PRO"… — a short opaque tag
+  tone?: 'neutral' | 'info' | 'warn';    // generic emphasis, no domain meaning
+  note?: string;                         // "rendering Arimo", "≈ approximate"
+};
+```
+
+Fontavious maps `licenseTier: proprietary` + `substitute.reason: "metric"` →
+`{ badge: "proprietary", tone: "warn", note: "rendering Arimo" }`. A Font
+Awesome plugin maps `style: "brands"` → `{ badge: "brands" }`. **The editor
+renders `badge`/`tone`/`note` without knowing what a font, a license, or an
+icon is** — the words `licenseTier`/`substitute`/`font` never appear in the
+generic contract. (This corrects an earlier draft of this plan that put a
+`tier`/`note` pair directly on `SuggestionEntry` — `tier` is a font word and
+does not belong on the shared type.)
 
 ---
 
