@@ -299,7 +299,10 @@ mod catalogue_tests {
     fn variable_entry_serves_any_weight_in_range_from_one_url() {
         let entries = catalogue();
         let inter = entries.iter().find(|e| e.family == "Inter").expect("Inter should be catalogued");
-        assert_eq!(inter.variants.len(), 1, "a variable font needs only one entry to cover 400-700");
+        // Per STYLE, a variable font covers its whole range from one file (Inter now also ships
+        // an italic variant, so we assert the per-style invariant, not a total variant count).
+        let normal: Vec<_> = inter.variants.iter().filter(|v| v.style == "normal").collect();
+        assert_eq!(normal.len(), 1, "a variable font needs only one NORMAL entry to cover 400-700");
 
         let at_400 = find_variant(inter, 400, "normal").expect("400 should match the variable range");
         let at_550 = find_variant(inter, 550, "normal").expect("550 (not a discrete point) should still match a real variable range");
@@ -312,7 +315,10 @@ mod catalogue_tests {
     fn static_only_family_still_requires_an_exact_weight_match() {
         let entries = catalogue();
         let lato = entries.iter().find(|e| e.family == "Lato").expect("Lato should be catalogued");
-        assert_eq!(lato.variants.len(), 2, "static-only: one file per weight, confirmed against the live API");
+        // Static-only: one file per weight (Lato ships 400 + 700 normal, plus italics now). The
+        // invariant is that an in-between weight has NO file, not the exact variant count.
+        let normal: Vec<_> = lato.variants.iter().filter(|v| v.style == "normal").collect();
+        assert_eq!(normal.len(), 2, "static-only: one NORMAL file per discrete weight (400, 700)");
 
         assert!(find_variant(lato, 400, "normal").is_some());
         assert!(find_variant(lato, 700, "normal").is_some());

@@ -2,7 +2,15 @@
 	{
 		"family": "Inter",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/inter/v20/UcC53FwrK3iLTcvneQg7Ca725JhhKnNqk6L5UUM.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -14,7 +22,15 @@
 	{
 		"family": "Roboto",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/roboto/v51/KFO5CnqEu92Fr1Mu53ZEC9_Vu3r1gIhOszmkBnka.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -26,7 +42,15 @@
 	{
 		"family": "Open Sans",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/opensans/v44/memtYaGs126MiZpBA-UFUIcVXSCEkx2cmqvXlWqWuU6F.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -38,7 +62,21 @@
 	{
 		"family": "Lato",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/lato/v25/S6u8w4BMUTPHjxsAXC-q.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/lato/v25/S6u_w4BMUTPHjxsI5wq_Gwft.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -54,9 +92,43 @@
 		]
 	},
 	{
+		"family": "Montserrat",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/montserrat/v31/JTUQjIg1_i6t8kCHKm459WxRyS7m.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2"
+			}
+		]
+	},
+	{
 		"family": "Poppins",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/poppins/v24/pxiGyp8kv8JHgFVrJJLucHtA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/poppins/v24/pxiDyp8kv8JHgFVrJJLmy15VF9eO.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -72,21 +144,17 @@
 		]
 	},
 	{
-		"family": "Montserrat",
+		"family": "Nunito",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
 			{
 				"weightMin": 400,
 				"weightMax": 700,
-				"style": "normal",
-				"url": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2"
-			}
-		]
-	},
-	{
-		"family": "Nunito",
-		"vendor": "google",
-		"variants": [
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/nunito/v32/XRXX3I6Li01BKofIMNaDRs4.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -96,9 +164,37 @@
 		]
 	},
 	{
+		"family": "Nunito Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/nunitosans/v19/pe0RMImSLYBIv1o4X1M8cce4OdVisMz5nZRqy6cmmmU3t2FQWEAEOvV9wNvrwlNstMKW3Y6K5WMwd-laLQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/nunitosans/v19/pe0TMImSLYBIv1o4X1M8ce2xCx3yop4tQpF_MeTm0lfGWVpNn64CL7U8upHZIbMV51Q42ptCp7t1R-s.woff2"
+			}
+		]
+	},
+	{
 		"family": "Source Sans 3",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/sourcesans3/v19/nwpMtKy2OAdR1K-IwhWudF-R3woqZ-LY.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -110,7 +206,15 @@
 	{
 		"family": "Work Sans",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/worksans/v24/QGYqz_wNahGAdqQ43Rh_eZDrv_0.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -122,7 +226,15 @@
 	{
 		"family": "DM Sans",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/dmsans/v17/rP2Wp2ywxg089UriCZaSExd86J3t9jz86MvyyKy58Q.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -132,9 +244,1009 @@
 		]
 	},
 	{
+		"family": "Manrope",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/manrope/v20/xn7gYHE41ni1AdIRggexSg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Raleway",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/raleway/v37/1Ptsg8zYS_SKggPNyCg4TYFq.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/raleway/v37/1Ptug8zYS_SKggPNyC0ITw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Rubik",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/rubik/v31/iJWEBXyIfDnIV7nEnX661A.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/rubik/v31/iJWKBXyIfDnIV7nBrXw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Karla",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/karla/v33/qkB_XvYC6trAT7RQNNK2EG7SIwPWMNlCVytER0IPh7KX59Z0CnSKbGkv.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/karla/v33/qkB9XvYC6trAT55ZBi1ueQVIjQTD-JrIH2G7nytkHRyQ8p4wUje6bg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Mulish",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/mulish/v18/1Pttg83HX_SGhgqk2jovaqQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/mulish/v18/1Ptvg83HX_SGhgqk3wot.woff2"
+			}
+		]
+	},
+	{
+		"family": "Figtree",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/figtree/v9/_Xmu-HUzqDCFdgfMm4GND65o.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/figtree/v9/_Xms-HUzqDCFdgfMm4S9DQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Space Grotesk",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/spacegrotesk/v22/V8mDoQDjQSkFtoMM3T6r8E7mPbF4Cw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Sora",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lfiQwV6-x.woff2"
+			}
+		]
+	},
+	{
+		"family": "Outfit",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/outfit/v15/QGYvz_MVcBeNP4NJtEtq.woff2"
+			}
+		]
+	},
+	{
+		"family": "Plus Jakarta Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIuaomQNQcsA88c7O9yZ4KMCoOg4Koz4y6qhA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/plusjakartasans/v12/LDIoaomQNQcsA88c7O9yZ4KMCoOg4Ko20yw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Archivo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/archivo/v25/k3kBo8UDI-1M0wlSfdzyIEkpwTM29hr-8mTYCxCmuA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/archivo/v25/k3kPo8UDI-1M0wlSV9XAw6lQkqWY8Q82sLydOxI.woff2"
+			}
+		]
+	},
+	{
+		"family": "Libre Franklin",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/librefranklin/v20/jizBREVItHgc8qDIbSTKq4XkRiUa6zUTjg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/librefranklin/v20/jizDREVItHgc8qDIbSTKq4XkRiUf2zc.woff2"
+			}
+		]
+	},
+	{
+		"family": "IBM Plex Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ibmplexsans/v23/zYXxKVElMYYaJe8bpLHnCwDKhdTEG46kmUZQCX598fQbGYTYAA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ibmplexsans/v23/zYXzKVElMYYaJe8bpLHnCwDKr932-G7dytD-Dmu1syxeKYY.woff2"
+			}
+		]
+	},
+	{
+		"family": "Noto Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/notosans/v42/o-0ZIpQlx3QUlC5A4PNr4C5OaxRsfNNlKbCePevtuXOm.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/notosans/v42/o-0bIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjc5a7duw.woff2"
+			}
+		]
+	},
+	{
+		"family": "PT Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ptsans/v18/jizYRExUiTo99u79D0e0x8mI.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ptsans/v18/jizdRExUiTo99u79D0e8fOydLxUd.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ptsans/v18/jizaRExUiTo99u79D0KExQ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ptsans/v18/jizfRExUiTo99u79B_mh0O6tLQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Barlow",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/barlow/v13/7cHrv4kjgoGqM7E_Cfs7wH8.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/barlow/v13/7cHsv4kjgoGqM7E_CfOA5WouvTo.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/barlow/v13/7cHpv4kjgoGqM7E_DMs5.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/barlow/v13/7cHqv4kjgoGqM7E3t-4s51os.woff2"
+			}
+		]
+	},
+	{
+		"family": "Oswald",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/oswald/v57/TK3IWkUHHAIjg75cFRf3bXL8LICs1_Fv40pKlN4NNSeSASz7FmlWHYg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Josefin Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/josefinsans/v34/Qw3EZQNVED7rKGKxtqIqX5EUCEx6XHg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/josefinsans/v34/Qw3aZQNVED7rKGKxtqIqX5EUDXx4.woff2"
+			}
+		]
+	},
+	{
+		"family": "Quicksand",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/quicksand/v37/6xKtdSZaM9iE8KbpRA_hK1QN.woff2"
+			}
+		]
+	},
+	{
+		"family": "Comfortaa",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/comfortaa/v47/1PtCg8LJRfWJmhDAuUsSQamb1W0lwk4S4WjMXL830efAesmwYSFoxBEP_I0.woff2"
+			}
+		]
+	},
+	{
+		"family": "Hind",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/hind/v18/5aU69_a8oxmIdGl4BA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/hind/v18/5aU19_a8oxmIfNJdERySjQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cabin",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cabin/v35/u-4g0qWljRw-Pd815fNqc8T_wAFcX-c37OnuHXg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cabin/v35/u-4i0qWljRw-PfU81xCKCpdpbgZJl6Xvqdns.woff2"
+			}
+		]
+	},
+	{
+		"family": "Titillium Web",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/titilliumweb/v19/NaPAcZTIAOhVxoMyOr9n_E7fdMbWD6xW.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/titilliumweb/v19/NaPFcZTIAOhVxoMyOr9n_E7fdMbetIlDYZyc.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/titilliumweb/v19/NaPecZTIAOhVxoMyOr9n_E7fdMPmDQ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/titilliumweb/v19/NaPDcZTIAOhVxoMyOr9n_E7ffHjDGItzYw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Kanit",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/kanit/v17/nKKX-Go6G5tXcraQKwKAcA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/kanit/v17/nKKS-Go6G5tXcraQI7mlZaNhMQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/kanit/v17/nKKZ-Go6G5tXcraVGwA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/kanit/v17/nKKU-Go6G5tXcr4uPhWnVaE.woff2"
+			}
+		]
+	},
+	{
+		"family": "Heebo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/heebo/v28/NGS6v5_NC0k9P9H2TbE.woff2"
+			}
+		]
+	},
+	{
+		"family": "Assistant",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/assistant/v24/2sDcZGJYnIjSi6H75xkzaGW5.woff2"
+			}
+		]
+	},
+	{
+		"family": "Overpass",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/overpass/v19/qFdB35WCmI96Ajtm81GgY9nqxw.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/overpass/v19/qFdH35WCmI96Ajtm81GlU9s.woff2"
+			}
+		]
+	},
+	{
+		"family": "Red Hat Display",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/redhatdisplay/v21/8vIS7wUr0m80wwYf0QCXZzYzUoTg-A6jTY8.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/redhatdisplay/v21/8vIQ7wUr0m80wwYf0QCXZzYzUoTg_T6h.woff2"
+			}
+		]
+	},
+	{
+		"family": "Red Hat Text",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/redhattext/v19/RrQJbohi_ic6B3yVSzGBrMxQbZcvO8g.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/redhattext/v19/RrQXbohi_ic6B3yVSzGBrMxQaKct.woff2"
+			}
+		]
+	},
+	{
+		"family": "Public Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/publicsans/v21/ijwTs572Xtc6ZYQws9YVwnNDTJzaxw.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/publicsans/v21/ijwRs572Xtc6ZYQws9YVwnNGfJ4.woff2"
+			}
+		]
+	},
+	{
+		"family": "Hanken Grotesk",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/hankengrotesk/v12/ieVl2YZDLWuGJpnzaiwFXS9tYtpY19K7DQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/hankengrotesk/v12/ieVn2YZDLWuGJpnzaiwFXS9tYtpd59A.woff2"
+			}
+		]
+	},
+	{
+		"family": "Albert Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/albertsans/v4/i7dMIFdwYjGaAMFtZd_QA1ZeUFWaHg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/albertsans/v4/i7dOIFdwYjGaAMFtZd_QA1ZbYFc.woff2"
+			}
+		]
+	},
+	{
+		"family": "Lexend",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/lexend/v26/wlpwgwvFAVdoq2_v-6QU.woff2"
+			}
+		]
+	},
+	{
+		"family": "Urbanist",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/urbanist/v18/L0x4DF02iFML4hGCyMqgXS9sjg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/urbanist/v18/L0x-DF02iFML4hGCyMqlbS0.woff2"
+			}
+		]
+	},
+	{
+		"family": "Epilogue",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/epilogue/v20/O4ZXFGj5hxF0EhjimlIhggoykg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/epilogue/v20/O4ZRFGj5hxF0EhjimlIksgg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Be Vietnam Pro",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/bevietnampro/v12/QdVNSTAyLFyeg_IDWvOJmVES_HwyNXgSYA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/bevietnampro/v12/QdVKSTAyLFyeg_IDWvOJmVES_HwyPcM3db8Ddw.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bevietnampro/v12/QdVPSTAyLFyeg_IDWvOJmVES_Hw3BXo.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bevietnampro/v12/QdVMSTAyLFyeg_IDWvOJmVES_HSMIG81Rb0.woff2"
+			}
+		]
+	},
+	{
+		"family": "Jost",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/jost/v20/92zUtBhPNqw73oHt4D4h.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/jost/v20/92zatBhPNqw73oTd4g.woff2"
+			}
+		]
+	},
+	{
+		"family": "Questrial",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/questrial/v19/QdVUSTchPBm7nuUeVf70viFl.woff2"
+			}
+		]
+	},
+	{
+		"family": "Signika",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/signika/v29/vEFO2_JTCgwQ5ejvMV0Ox_Kg1UwJ0tKfX6bBjM4.woff2"
+			}
+		]
+	},
+	{
+		"family": "Saira",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/saira/v23/memhYa2wxmKQyNkiV50dulWP7s95AqZTzbvQfS0.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/saira/v23/memjYa2wxmKQyPMrZX79wwYZQMhsyuSLiIvS.woff2"
+			}
+		]
+	},
+	{
+		"family": "Chivo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/chivo/v21/va9G4kzIxd1KFrBtceFflQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/chivo/v21/va9I4kzIxd1KFrBoQeM.woff2"
+			}
+		]
+	},
+	{
+		"family": "Exo 2",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/exo2/v26/7cHov4okm5zmbtYtG-wc5Q.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/exo2/v26/7cHmv4okm5zmbtYoK-4.woff2"
+			}
+		]
+	},
+	{
+		"family": "Prompt",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/prompt/v12/-W_9XJnvUD7dzB2KZeofTkY.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/prompt/v12/-W_6XJnvUD7dzB2KZeKka1MsW5A.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/prompt/v12/-W__XJnvUD7dzB2KYNod.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/prompt/v12/-W_8XJnvUD7dzB2C2_8IaWMu.woff2"
+			}
+		]
+	},
+	{
+		"family": "Sarabun",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/sarabun/v17/DtVhJx26TKEr37c9aBB5nXwJ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/sarabun/v17/DtVkJx26TKEr37c9aBBxJlkc6SjT.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sarabun/v17/DtVjJx26TKEr37c9aBVJnw.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sarabun/v17/DtVmJx26TKEr37c9YK5silss6w.woff2"
+			}
+		]
+	},
+	{
+		"family": "Maven Pro",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/mavenpro/v40/7Au9p_AqnyWWAxW2Wk3GzWQI.woff2"
+			}
+		]
+	},
+	{
+		"family": "Mukta",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/mukta/v17/iJWKBXyXfDDVXbnBrXw.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/mukta/v17/iJWHBXyXfDDVXbF6iGmd8WA.woff2"
+			}
+		]
+	},
+	{
+		"family": "Dosis",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dosis/v34/HhyaU5sn9vOmLzloC_U.woff2"
+			}
+		]
+	},
+	{
+		"family": "Fira Sans",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/firasans/v18/va9C4kDNxMZdWfMOD5VvkrjJYTI.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/firasans/v18/va9f4kDNxMZdWfMOD5VvkrByRCf4VFk.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/firasans/v18/va9E4kDNxMZdWfMOD5Vvl4jL.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/firasans/v18/va9B4kDNxMZdWfMOD5VnLK3eRhf6.woff2"
+			}
+		]
+	},
+	{
+		"family": "Schibsted Grotesk",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/schibstedgrotesk/v7/Jqz_5SSPQuCQF3t8uOwiUL-taUTtap9DWygpcg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/schibstedgrotesk/v7/Jqz55SSPQuCQF3t8uOwiUL-taUTtap9Gayo.woff2"
+			}
+		]
+	},
+	{
 		"family": "Playfair Display",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFkD-vYSZviVYUb_rj3ij__anPXDTnogkk7.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -146,7 +1258,15 @@
 	{
 		"family": "Merriweather",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/merriweather/v33/u-4c0qyriQwlOrhSvowK_l5-eTxCVx0ZbwLvKH2Gk9hLmp0v5yA-xXPqCzLvF-udrA.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -156,9 +1276,639 @@
 		]
 	},
 	{
+		"family": "Lora",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/lora/v37/0QIhMX1D_JOuMw_LIftL.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/lora/v37/0QIvMX1D_JOuMwr7Iw.woff2"
+			}
+		]
+	},
+	{
+		"family": "EB Garamond",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ebgaramond/v33/SlGWmQSNjdsmc35JDF1K5GRweDs1Zw.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ebgaramond/v33/SlGUmQSNjdsmc35JDF1K5GR1SDk.woff2"
+			}
+		]
+	},
+	{
+		"family": "Fraunces",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/fraunces/v38/6NUs8FyLNQOQZAnv9ZwNjucMHVn85Ni7emAe9lKqZTnbB-gzTK0K1ChJdt9vIVYX9G37lvd9mv0iQg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/fraunces/v38/6NUu8FyLNQOQZAnv9bYEvDiIdE9Ea92uemAk_WBq8U_9v0c2Wa0K7iN7hzFUPJH58nib14c7qv8.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cormorant",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cormorant/v24/H4cjBXOCl9bbnla_nHIq6qu_oqM.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cormorant/v24/H4clBXOCl9bbnla_nHIq75u9.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cormorant Garamond",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3ZmX5slCNuHLi8bLeY9MK7whWMhyjYrEtImSo.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYqXtK.woff2"
+			}
+		]
+	},
+	{
+		"family": "Bitter",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/bitter/v42/rax-HiqOu8IVPmn7erxrJD0.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bitter/v42/rax8HiqOu8IVPmn7f4xp.woff2"
+			}
+		]
+	},
+	{
+		"family": "Crimson Pro",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/crimsonpro/v28/q5uBsoa5M_tv7IihmnkabARekYNwDQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/crimsonpro/v28/q5uDsoa5M_tv7IihmnkabARboYE.woff2"
+			}
+		]
+	},
+	{
+		"family": "Crimson Text",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/crimsontext/v19/wlpogwHKFkZgtmSR3NB0oRJfajhRK_Y.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/crimsontext/v19/wlprgwHKFkZgtmSR3NB0oRJfajDqDuNS_LU.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/crimsontext/v19/wlp2gwHKFkZgtmSR3NB0oRJfbwhT.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/crimsontext/v19/wlppgwHKFkZgtmSR3NB0oRJX1C1GDNNQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Spectral",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/spectral/v15/rnCt-xNNww_2s0amA9M8onrmTA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/spectral/v15/rnCu-xNNww_2s0amA9M8qsHDWfSFXQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/spectral/v15/rnCs-xNNww_2s0amA9uCt23BafY.woff2"
+			}
+		]
+	},
+	{
+		"family": "Newsreader",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/newsreader/v26/cY9XfjOCX1hbuyalUrK439vogqC9yFZCYg7oRZaLFYYzbA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/newsreader/v26/cY9VfjOCX1hbuyalUrK49dLac06G1ZGsZBtoBAbNJYQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Libre Baskerville",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/librebaskerville/v24/kmKhZrc3Hgbbcjq75U4uslyuy4kn0qNcWxEQDA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/librebaskerville/v24/kmKnZrc3Hgbbcjq75U4uslyuy4kn0qNZaxM.woff2"
+			}
+		]
+	},
+	{
+		"family": "Source Serif 4",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/sourceserif4/v14/vEFH2_tTDB4M7-auWDN0ahZJW1ge6NmXpVAHV83Bfb_US0r6aX0.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sourceserif4/v14/vEFF2_tTDB4M7-auWDN0ahZJW3IX2ih5nk3AucvUHf6kDXr4.woff2"
+			}
+		]
+	},
+	{
+		"family": "PT Serif",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ptserif/v19/EJRTQgYoZZY2vCFuvAFT_r21cg.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ptserif/v19/EJRQQgYoZZY2vCFuvAFT9gaQZynfoA.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ptserif/v19/EJRVQgYoZZY2vCFuvAFWzr8.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ptserif/v19/EJRSQgYoZZY2vCFuvAnt66qSVys.woff2"
+			}
+		]
+	},
+	{
+		"family": "Noto Serif",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/notoserif/v33/ga6faw1J5X9T9RW6j9bNfFIMZhhWnFTyNZIQD1-_P3_ctw.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/notoserif/v33/ga6daw1J5X9T9RW6j9bNVls-hfgvz8JcMofYTYf6D30.woff2"
+			}
+		]
+	},
+	{
+		"family": "IBM Plex Serif",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ibmplexserif/v20/jizBREVNn1dOx-zrZ2X3pZvkTiUa6zUTjg.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ibmplexserif/v20/jizGREVNn1dOx-zrZ2X3pZvkTiUa4442m1npjQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ibmplexserif/v20/jizDREVNn1dOx-zrZ2X3pZvkTiUf2zc.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ibmplexserif/v20/jizAREVNn1dOx-zrZ2X3pZvkTi2k_iI0q1s.woff2"
+			}
+		]
+	},
+	{
+		"family": "Roboto Slab",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/robotoslab/v36/BngMUXZYTXPIvIBgJJSb6ufN5qU.woff2"
+			}
+		]
+	},
+	{
+		"family": "Zilla Slab",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/zillaslab/v12/dFa4ZfeM_74wlPZtksIFaj8K_1SM.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/zillaslab/v12/dFanZfeM_74wlPZtksIFaj8CRHGZWXB3.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/zillaslab/v12/dFa6ZfeM_74wlPZtksIFajo6_Q.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/zillaslab/v12/dFa5ZfeM_74wlPZtksIFYoEf6HOpWw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Domine",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/domine/v25/L0x8DFMnlVwD4h3hu_qn.woff2"
+			}
+		]
+	},
+	{
+		"family": "Frank Ruhl Libre",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/frankruhllibre/v23/j8_w6_fAw7jrcalD7oKYNX0QfAnPW7Dl4Q.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cardo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cardo/v21/wlpxgwjKBV1pqhv97IMx3A.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cardo/v21/wlp_gwjKBV1pqhv43IE.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cardo/v21/wlpygwjKBV1pqhND-ZQW-WM.woff2"
+			}
+		]
+	},
+	{
+		"family": "Alegreya",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/alegreya/v41/4UaHrEBBsBhlBjvfkSLk96rp5w.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/alegreya/v41/4UaBrEBBsBhlBjvfkSLhx6g.woff2"
+			}
+		]
+	},
+	{
+		"family": "Vollkorn",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/vollkorn/v30/0yb7GDoxxrvAnPhYGxksWE8eqQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/vollkorn/v30/0yb9GDoxxrvAnPhYGxkpaE0.woff2"
+			}
+		]
+	},
+	{
+		"family": "Arvo",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/arvo/v23/tDbN2oWUg0MKqSIg75Tv.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/arvo/v23/tDbO2oWUg0MKqSIoVLH68dr_.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/arvo/v23/tDbD2oWUg0MKqScQ7Q.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/arvo/v23/tDbM2oWUg0MKoZw1-LPK8w.woff2"
+			}
+		]
+	},
+	{
+		"family": "Rokkitt",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/rokkitt/v39/qFdG35qfgYFjGy5hkEOydP7P.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/rokkitt/v39/qFdE35qfgYFjGy5hkEaCdg.woff2"
+			}
+		]
+	},
+	{
+		"family": "DM Serif Display",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/dmserifdisplay/v17/-nFhOHM81r4j6k0gjAW3mujVU2B2G_VB0PD2.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dmserifdisplay/v17/-nFnOHM81r4j6k0gjAW3mujVU2B2G_Bx0g.woff2"
+			}
+		]
+	},
+	{
+		"family": "DM Serif Text",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/dmseriftext/v13/rnCw-xZa_krGokauCeNq1wWyWfG1X1oN.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dmseriftext/v13/rnCu-xZa_krGokauCeNq1wWyWfSFXQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Marcellus",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/marcellus/v14/wEO_EBrOk8hQLDvIAF81VvoK.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cinzel",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/cinzel/v26/8vIJ7ww63mVu7gt79mT7.woff2"
+			}
+		]
+	},
+	{
+		"family": "Bree Serif",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/breeserif/v18/4UaHrEJCrhhnVA3DgluA96rp5w.woff2"
+			}
+		]
+	},
+	{
 		"family": "JetBrains Mono",
 		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbp2o-flEEny0FZhsfKu5WU4xD-IQ-PuZJJXxfpAO-LfjGbsVNLG7DGdF6OZ1PswAMg.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
@@ -168,26 +1918,639 @@
 		]
 	},
 	{
+		"family": "Fira Code",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/firacode/v27/uU9NCBsR6Z2vfE9aq3bh3dSD.woff2"
+			}
+		]
+	},
+	{
+		"family": "IBM Plex Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6pfjptAgt5VM-kVkqdyU8n1ioa1Xdg.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6sfjptAgt5VM-kVkqdyU8n1ioSblJ1gMoQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ibmplexmono/v20/-F63fjptAgt5VM-kVkqdyU8n1i8q1w.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ibmplexmono/v20/-F6qfjptAgt5VM-kVkqdyU8n3pQPwlBFgg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Space Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/spacemono/v17/i7dNIFZifjKcF5UAWdDRYERMR3K_.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/spacemono/v17/i7dSIFZifjKcF5UAWdDRYERE_FeqHCSR.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/spacemono/v17/i7dPIFZifjKcF5UAWdDRYEF8RQ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/spacemono/v17/i7dMIFZifjKcF5UAWdDRaPpZUFWaHg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Roboto Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/robotomono/v31/L0x7DF4xlVMF-BfR8bXMIjhOm32WWg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/robotomono/v31/L0x5DF4xlVMF-BfR8bXMIjhLq38.woff2"
+			}
+		]
+	},
+	{
+		"family": "Source Code Pro",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/sourcecodepro/v31/HI_QiYsKILxRpg3hIP6sJ7fM7PqlONvUlMI.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sourcecodepro/v31/HI_SiYsKILxRpg3hIP6sJ7fM7PqlPevW.woff2"
+			}
+		]
+	},
+	{
+		"family": "Inconsolata",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/inconsolata/v37/QlddNThLqRwH-OJ1UHjlKENVzkWGVkL3GZQmAwLyya15.woff2"
+			}
+		]
+	},
+	{
+		"family": "Ubuntu Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ubuntumono/v19/KFOhCneDtsqEr0keqCMhbCc_OsbSkA.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/ubuntumono/v19/KFO8CneDtsqEr0keqCMhbCc_Mn33hY9ufg.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ubuntumono/v19/KFOjCneDtsqEr0keqCMhbCc6CsQ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ubuntumono/v19/KFO-CneDtsqEr0keqCMhbC-BL9H1tY0.woff2"
+			}
+		]
+	},
+	{
+		"family": "DM Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/dmmono/v16/aFTW7PB1QTsUX8KYth-gBqSI.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dmmono/v16/aFTU7PB1QTsUX8KYthqQBA.woff2"
+			}
+		]
+	},
+	{
+		"family": "Overpass Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/overpassmono/v21/_Xmq-H86tzKDdAPa-KPQZ-AC1i-0tg.woff2"
+			}
+		]
+	},
+	{
+		"family": "PT Mono",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "mono",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/ptmono/v14/9oRONYoBnWILk-9AnC8zMw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Bebas Neue",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bebasneue/v16/JTUSjIg69CK48gW7PXoo9Wlhyw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Righteous",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/righteous/v18/1cXxaUPXBpj2rGoU7C9WiHGF.woff2"
+			}
+		]
+	},
+	{
+		"family": "Lobster",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/lobster/v32/neILzCirqoswsqX9zoKmMw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Abril Fatface",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/abrilfatface/v25/zOL64pLDlL1D99S8g8PtiKchq-dmjQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Bungee",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bungee/v17/N0bU2SZBIuF2PU_0DXR1.woff2"
+			}
+		]
+	},
+	{
+		"family": "Alfa Slab One",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/alfaslabone/v21/6NUQ8FmMKwSEKjnm5-4v-4Jh2dJhew.woff2"
+			}
+		]
+	},
+	{
+		"family": "Staatliches",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/staatliches/v15/HI_OiY8KO6hCsQSoAPmtMYebvpA.woff2"
+			}
+		]
+	},
+	{
+		"family": "Bangers",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/bangers/v25/FeVQS0BTqb0h60ACH55Q2A.woff2"
+			}
+		]
+	},
+	{
+		"family": "Fredoka",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/fredoka/v17/X7n64b87HvSqjb_WIi2yDCRwoQ_k7367_DWu89U.woff2"
+			}
+		]
+	},
+	{
+		"family": "Titan One",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/titanone/v17/mFTzWbsGxbbS_J5cQcjClDgm.woff2"
+			}
+		]
+	},
+	{
+		"family": "Anton",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/anton/v27/1Ptgg87LROyAm3Kz-C8.woff2"
+			}
+		]
+	},
+	{
+		"family": "Teko",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/teko/v23/LYjNdG7kmE0gfaN9pQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Fjalla One",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/fjallaone/v16/Yq6R-LCAWCX3-6Ky7FAFrOF6kg.woff2"
+			}
+		]
+	},
+	{
+		"family": "Passion One",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/passionone/v20/PbynFmL8HhTPqbjUzux3JEuR9ls.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/passionone/v20/Pby6FmL8HhTPqbjUzux3JEMq007vyJc.woff2"
+			}
+		]
+	},
+	{
+		"family": "Pacifico",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/pacifico/v23/FwZY7-Qmy14u9lezJ-6H6Mk.woff2"
+			}
+		]
+	},
+	{
+		"family": "Caveat",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/caveat/v23/Wnz6HAc5bAfYB2Q7ZjYY.woff2"
+			}
+		]
+	},
+	{
+		"family": "Dancing Script",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/dancingscript/v29/If2RXTr6YS-zF4S-kcSWSVi_szLgiuE.woff2"
+			}
+		]
+	},
+	{
+		"family": "Satisfy",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/satisfy/v22/rP2Hp2yn6lkG50LoCZOIHQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Great Vibes",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/greatvibes/v21/RWmMoKWR9v4ksMfaWd_JN9XFiaQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Shadows Into Light",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/shadowsintolight/v22/UqyNK9UOIntux_czAvDQx_ZcHqZXBNQzdcD5.woff2"
+			}
+		]
+	},
+	{
+		"family": "Permanent Marker",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/permanentmarker/v16/Fh4uPib9Iyv2ucM6pGQMWimMp004La2Cfw.woff2"
+			}
+		]
+	},
+	{
+		"family": "Sacramento",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/sacramento/v17/buEzpo6gcdjy0EiZMBUG4C0f_Q.woff2"
+			}
+		]
+	},
+	{
+		"family": "Kalam",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/kalam/v18/YA9dr0Wd4kDdMthROCc.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/kalam/v18/YA9Qr0Wd4kDdMtDqHTLMkiQ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Indie Flower",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/indieflower/v24/m8JVjfNVeKWVnh3QMuKkFcZVaUuH.woff2"
+			}
+		]
+	},
+	{
+		"family": "Amatic SC",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/amaticsc/v28/TUZyzwprpvBS1izr_vOECuSf.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/amaticsc/v28/TUZ3zwprpvBS1izr_vOMscGKfrUC.woff2"
+			}
+		]
+	},
+	{
+		"family": "Courgette",
+		"vendor": "google",
+		"licenseTier": "ofl",
+		"category": "handwriting",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://fonts.gstatic.com/s/courgette/v19/wEO_EBrAnc9BLjLQAUk1VvoK.woff2"
+			}
+		]
+	},
+	{
 		"family": "Arimo",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"aliases": ["Arial", "Helvetica", "Liberation Sans", "Nimbus Sans"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/arimo/v36/P5sCzZCDf9_T_10c9CNkiA.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/arimo/v36/P5sMzZCDf9_T_10ZxCE.woff2"
 			}
-		],
-		"aliases": ["Arial", "Helvetica", "Liberation Sans"]
+		]
 	},
 	{
 		"family": "Tinos",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "serif",
+		"aliases": ["Times New Roman", "Times", "Liberation Serif"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/tinos/v26/buE2poGnedXvwjX-TmZJ9Q.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/tinos/v26/buEzpoGnedXvwjX-Rt1s4C0f_Q.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -200,15 +2563,27 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/tinos/v26/buE1poGnedXvwj1AW3Fu0C8.woff2"
 			}
-		],
-		"aliases": ["Times New Roman", "Times", "Liberation Serif"]
+		]
 	},
 	{
 		"family": "Cousine",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "mono",
+		"aliases": ["Courier New", "Liberation Mono"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lKkaiiRdih4SpP_SEfzh7p.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lPkaiiRdih4SpP_SEXdTv80Phh.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -221,15 +2596,27 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/cousine/v31/d6lNkaiiRdih4SpP9Z8K2TnM0g.woff2"
 			}
-		],
-		"aliases": ["Courier New", "Liberation Mono"]
+		]
 	},
 	{
 		"family": "Carlito",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"aliases": ["Calibri"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn_SDPw3m-pk039DDKxTl0A.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn6SDPw3m-pk039DDK59XgVUcBG.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -242,15 +2629,27 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/carlito/v4/3Jn4SDPw3m-pk039BIykWXolUw.woff2"
 			}
-		],
-		"aliases": ["Calibri"]
+		]
 	},
 	{
 		"family": "Caladea",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "serif",
+		"aliases": ["Cambria"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/caladea/v10/kJExBugZ7AAjhybUvR1N-Po3.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/caladea/v10/kJE0BugZ7AAjhybUvR1FQ98iq8Zy.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 400,
@@ -263,22 +2662,27 @@
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/caladea/v10/kJE2BugZ7AAjhybUtaNY790SqQ.woff2"
 			}
-		],
-		"aliases": ["Cambria"]
+		]
 	},
 	{
 		"family": "Gelasio",
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "serif",
+		"aliases": ["Georgia"],
 		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://fonts.gstatic.com/s/gelasio/v14/cIf_MaFfvUQxTTqS9CuRY0ED.woff2"
+			},
 			{
 				"weightMin": 400,
 				"weightMax": 700,
 				"style": "normal",
 				"url": "https://fonts.gstatic.com/s/gelasio/v14/cIf9MaFfvUQxTTqS9C6hYQ.woff2"
 			}
-		],
-		"aliases": ["Georgia"]
+		]
 	}
 ]
