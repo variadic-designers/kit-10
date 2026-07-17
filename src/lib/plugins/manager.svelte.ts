@@ -368,7 +368,7 @@ export function createPluginManager(api: Api) {
 	}
 
 	async function loadPlugin(manifest: ManifestLike | PromiseLike<ManifestLike>, name: string) {
-		plugins = [...plugins, { name, status: 'loading' }];
+		plugins = [...plugins.filter((p) => p.name !== name), { name, status: 'loading' }];
 
 		try {
 			const plugin = await createPlugin(manifest, {
@@ -399,7 +399,7 @@ export function createPluginManager(api: Api) {
 		name: string,
 		options?: Partial<ExtismPluginOptions>
 	) {
-		plugins = [...plugins, { name, status: 'loading' }];
+		plugins = [...plugins.filter((p) => p.name !== name), { name, status: 'loading' }];
 
 		try {
 			const plugin = await createPlugin(manifest, {
