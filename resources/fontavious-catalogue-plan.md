@@ -1,14 +1,15 @@
 # Fontavious Catalogue Expansion — a plan
 
-> Status: **plan, not built.** The catalogue today is ~40 families, ~95 lines
-> of hand-authored JSON (`plugins/fontavious/catalogue.json`), normal-style
-> only, Google-only, and every URL hand-pasted. This doc is the strategy to
-> grow it into something a Figma/Framer/Webflow refugee feels at home in —
-> **including proprietary font names, clearly marked as such** — without
-> growing the expensive part (font files, fetch surface, cache). Background,
-> licensing, and delivery-API detail live in `resources/nature-of-fonts.md`;
-> the schema/code that exists today is `plugins/fontavious/src/lib.rs` and
-> CLAUDE.md's Fontavious section. This doc assumes both.
+> Status: **BUILT & merged to main** (2026-07-17). All phases below shipped —
+> the catalogue is now **146 families** (was ~19), generated with italics +
+> categories (`generate-catalogue.mjs`), spanning Google (OFL) + Fontshare
+> (free-proprietary), with trademark-safe exact `aliases` + visual `looksLike`
+> name resolution and a persistent IndexedDB byte cache. Per-phase status is
+> marked in §6. This doc is kept as the design record + rerun guide; where a
+> phase says ✅ SHIPPED, the code is the source of truth
+> (`plugins/fontavious/src/lib.rs`, `catalogue.json`, `generate-catalogue.mjs`).
+> Background, licensing, and delivery-API detail live in
+> `resources/nature-of-fonts.md`.
 
 ---
 

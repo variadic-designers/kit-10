@@ -379,10 +379,16 @@ the URL cache is the canvas's supply chain, not a portable fact.
 > `resources/fontavious-catalogue-plan.md`. This section is the background
 > that plan builds on.
 
-The catalogue is ~40 families (95 lines of hand-maintained JSON). That's far
-too small for a designer arriving from Figma (~1000+ Google fonts one click
-away), Framer, or Webflow (Google Fonts + Adobe + uploads). Here's how to grow
-it without hand-authoring URLs or breaking the schema.
+> **Update:** this section motivated the expansion; it has since **shipped** —
+> the catalogue is now **146 families**, generated (`generate-catalogue.mjs`),
+> with italics, categories, aliases, and the Fontshare tier. The reasoning below
+> is preserved as the rationale; the concrete plan + per-phase status is
+> `resources/fontavious-catalogue-plan.md`.
+
+The catalogue _was_ ~40 families (95 lines of hand-maintained JSON) — far too
+small for a designer arriving from Figma (~1000+ Google fonts one click away),
+Framer, or Webflow (Google Fonts + Adobe + uploads). Here's how it grew without
+hand-authoring URLs or breaking the schema.
 
 ### 6.1 The schema is already right — don't change it, feed it
 
