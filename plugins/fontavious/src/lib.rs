@@ -269,14 +269,22 @@ mod catalogue_tests {
         assert!(entries.iter().any(|e| e.family == "Inter"));
     }
 
+    // Every variant URL must be an https font file on a KNOWN vendor host (kept in lockstep with
+    // Fontavious's `allowedHosts` in manager/src/plugins-bootstrap.ts -- a URL on a host we can't
+    // fetch from is a dead entry). google -> gstatic, fontshare -> cdn.fontshare.com.
     #[test]
-    fn every_variant_has_a_gstatic_url() {
+    fn every_variant_url_is_on_an_allowed_vendor_host() {
         for entry in catalogue() {
-            for variant in entry.variants {
+            let allowed_host = match entry.vendor.as_str() {
+                "fontshare" => "https://cdn.fontshare.com/",
+                _ => "https://fonts.gstatic.com/", // google + default
+            };
+            for variant in &entry.variants {
                 assert!(
-                    variant.url.starts_with("https://fonts.gstatic.com/"),
-                    "unexpected URL for {}: {}",
+                    variant.url.starts_with(allowed_host),
+                    "{} ({}) has a URL off its vendor host: {}",
                     entry.family,
+                    entry.vendor,
                     variant.url
                 );
             }
@@ -408,6 +416,18 @@ mod catalogue_tests {
         assert!(arimo.badge.is_none(), "an OFL root carries no badge");
         // And nothing in the results is literally titled with the trademark.
         assert!(!results.iter().any(|r| r.value.eq_ignore_ascii_case("Arial")));
+    }
+
+    // The free-proprietary (Fontshare) tier badges "free" (info) so the picker discloses it's a
+    // different license lane than the OFL default -- the only tier that currently draws a badge.
+    #[test]
+    fn free_proprietary_root_is_badged_free() {
+        let sat = find_entry("Satoshi").expect("Satoshi catalogued");
+        assert_eq!(sat.vendor, "fontshare");
+        assert_eq!(sat.license_tier, "free-proprietary");
+        let s = suggestion_for(&sat, None);
+        assert_eq!(s.badge.as_deref(), Some("free"));
+        assert_eq!(s.tone.as_deref(), Some("info"));
     }
 
     // A direct family-name query has no note (it didn't match via an alias).

@@ -266,10 +266,13 @@ type.)
    roots (Arimo/Tinos/Cousine/Carlito/Caladea/Gelasio) carry the proprietary
    system-font names as `aliases`. Entire MS/system namespace, 0 files beyond
    the 6 roots, no trademarked product names.
-4. **Fontshare premium-free tier.** Satoshi, General Sans, Clash Display/Grotesk,
-   Cabinet Grotesk, Switzer, Ranade, Sentient, etc. — `free-proprietary`,
-   `vendor: "fontshare"`, host added to the Extism `allowedHosts`. The
-   Framer/Webflow flavor Google lacks.
+4. **Fontshare premium-free tier. ✅ SHIPPED.** 12 headliners (Satoshi, General
+   Sans, Clash Display/Grotesk, Cabinet Grotesk, Switzer, Sentient, Zodiak,
+   Chillax, Supreme, Melodrama, Ranade) — `free-proprietary`,
+   `vendor: "fontshare"`, `cdn.fontshare.com` added to `allowedHosts`
+   (plugins-bootstrap.ts). The generator's `resolveFontshare` uses Fontshare's
+   no-weights CSS form (whole family incl. italics in one request); badged
+   `free`/`info` in the picker. The Framer/Webflow flavor Google lacks.
 5. **Visual look-alike aliases (§2.2).** The curated free-cousin set as
    aliases with per-entry `reason: "visual"`, noted "≈ approximates X".
 

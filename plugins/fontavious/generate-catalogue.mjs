@@ -175,19 +175,21 @@ const FAMILIES = [
 	['Gelasio', 'serif', ['Georgia']]
 ];
 
-function fetchCss(spec) {
-	const url = `https://fonts.googleapis.com/css2?family=${spec}&display=swap`;
+function curlGet(url) {
 	try {
 		const out = execFileSync('curl', ['-s', '-A', UA, '-w', '\n%{http_code}', url], {
 			encoding: 'utf8',
 			timeout: 20000
 		});
 		const nl = out.lastIndexOf('\n');
-		const code = out.slice(nl + 1).trim();
-		return { code, body: out.slice(0, nl) };
+		return { code: out.slice(nl + 1).trim(), body: out.slice(0, nl) };
 	} catch {
 		return { code: '000', body: '' };
 	}
+}
+
+function fetchCss(spec) {
+	return curlGet(`https://fonts.googleapis.com/css2?family=${spec}&display=swap`);
 }
 
 // Parse @font-face blocks -> Map keyed "style|weightspec" -> url. Last write wins = latin subset.
@@ -239,8 +241,62 @@ function resolve(name) {
 	return null;
 }
 
+// --- Fontshare tier (ITF, free-proprietary): [slug, category]. The display name comes from the
+// API's own `font-family`, so we never hand-transcribe it. Omitting weights returns the WHOLE
+// family (all weights + italics) in one request. These are `free-proprietary`: free to fetch/
+// render/cache, but NOT rehostable/bundleable -- see resources/fontavious-catalogue-plan.md §3.
+const FONTSHARE = [
+	['satoshi', 'sans'],
+	['general-sans', 'sans'],
+	['clash-display', 'display'],
+	['clash-grotesk', 'sans'],
+	['cabinet-grotesk', 'sans'],
+	['switzer', 'sans'],
+	['sentient', 'serif'],
+	['zodiak', 'serif'],
+	['chillax', 'sans'],
+	['supreme', 'sans'],
+	['melodrama', 'serif'],
+	['ranade', 'serif']
+];
+
+// Fontshare serves one discrete @font-face per (weight, style) -- no unicode-range splitting, so
+// one woff2 URL each (protocol-relative // -> https:). Returns {family, variants} or null.
+function resolveFontshare(slug) {
+	const { code, body } = curlGet(`https://api.fontshare.com/v2/css?f%5B%5D=${slug}`);
+	if (code !== '200') return null;
+	const faces = new Map();
+	let family = null;
+	for (const block of body.split('@font-face')) {
+		const fam = block.match(/font-family:\s*'([^']+)'/)?.[1];
+		const weight = block.match(/font-weight:\s*(\d+)/)?.[1];
+		const style = block.match(/font-style:\s*([a-z]+)/i)?.[1];
+		const woff2 = block.match(/url\('(\/\/[^']+\.woff2)'\)/)?.[1];
+		if (fam && weight && style && woff2) {
+			family = fam;
+			faces.set(`${style}|${weight}`, `https:${woff2}`);
+		}
+	}
+	if (!family) return null;
+	const variants = [...faces].map(([key, url]) => {
+		const [style, w] = key.split('|');
+		const n = Number(w);
+		return { weightMin: n, weightMax: n, style, url };
+	});
+	variants.sort((a, b) => a.style.localeCompare(b.style) || a.weightMin - b.weightMin);
+	return { family, variants };
+}
+
 const entries = [];
 const failed = [];
+
+function report(family, variants) {
+	const styles = new Set(variants.map((v) => v.style));
+	process.stderr.write(
+		`  ok   ${family} (${variants.length} variant${variants.length > 1 ? 's' : ''}${styles.has('italic') ? ', +italic' : ''})\n`
+	);
+}
+
 for (const [family, category, aliases] of FAMILIES) {
 	const variants = resolve(family);
 	if (!variants) {
@@ -252,10 +308,25 @@ for (const [family, category, aliases] of FAMILIES) {
 	if (aliases) entry.aliases = aliases;
 	entry.variants = variants;
 	entries.push(entry);
-	const styles = new Set(variants.map((v) => v.style));
-	process.stderr.write(
-		`  ok   ${family} (${variants.length} variant${variants.length > 1 ? 's' : ''}${styles.has('italic') ? ', +italic' : ''})\n`
-	);
+	report(family, variants);
+}
+
+process.stderr.write('  --- fontshare ---\n');
+for (const [slug, category] of FONTSHARE) {
+	const res = resolveFontshare(slug);
+	if (!res) {
+		failed.push(slug);
+		process.stderr.write(`  FAIL ${slug}\n`);
+		continue;
+	}
+	entries.push({
+		family: res.family,
+		vendor: 'fontshare',
+		licenseTier: 'free-proprietary',
+		category,
+		variants: res.variants
+	});
+	report(res.family, res.variants);
 }
 
 writeFileSync(OUT, JSON.stringify(entries, null, 2) + '\n');

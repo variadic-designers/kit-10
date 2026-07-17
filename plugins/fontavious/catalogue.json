@@ -2684,5 +2684,803 @@
 				"url": "https://fonts.gstatic.com/s/gelasio/v14/cIf9MaFfvUQxTTqS9C6hYQ.woff2"
 			}
 		]
+	},
+	{
+		"family": "Satoshi",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/3JZIFUW7KLFSPLVCIUI2DLGNIER6IFCX/MMP4RUF5LYGUAZS3DCJC3GJ6F6SAGKSN/E3NEPGEAHYCHR37DSBXHV33XCYYRE2CY.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/MPIFA4B3XXRNY2MJDGP6GOOOAF6EOCLO/W5E4ZFYPJ3V6JKMBGHB6YMITK6EWS2XA/QOMBWPST76ICDYF6WOBS7SQ7RBT67QW2.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/NID3I7RITWZSKXRCJGOCMP5NOADJK6IG/2HLHGD7OBTWCOHW64YXOE5KFXHU4KJHM/ZHME2QIRFR7UPJ47NLY27RCAFY44CKZJ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/CDEBEFT2R7XKNGXSBBLZGMY4MMHZG75P/HEVKDGQCYDZ7Z6CDVR2ZQGBCTUD6ZARH/BKWEE3VKGTFABE37K2DTH625VUSN2N35.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/5ICO57VJIN252OT5L2KLEIPW754DTLAO/ZU64SLR2IEO66N27IVY5Z6JJJRTJECJK/TCTRLNEXANFIGSFCZTGQL7PZ5362GYK6.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/NWBQYJIM7GCZ5XWD7D26ARB3VDY55ZRT/K63EV2KZIGKLE7RANQ2U42S6SVHU5RJ7/X6XYTKIVDUW7GZTZPZNN4EUM5KH54KHF.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/TTX2Z3BF3P6Y5BQT3IV2VNOK6FL22KUT/7QYRJOI3JIMYHGY6CH7SOIFRQLZOLNJ6/KFIAZD4RUMEZIYV6FQ3T3GP5PDBDB6JY.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/P2LQKHE6KA6ZP4AAGN72KDWMHH6ZH3TA/ZC32TK2P7FPS5GFTL46EU6KQJA24ZYDB/7AHDUZ4A7LFLVFUIFSARGIWCRQJHISQP.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/LAFFD4SDUCDVQEXFPDC7C53EQ4ZELWQI/PXCT3G6LO6ICM5I3NTYENYPWJAECAWDD/GHM6WVH6MILNYOOCXHXB5GTSGNTMGXZR.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/NHPGVFYUXYXE33DZ75OIT4JFGHITX5PE/PSUTMASCDJTVPERDYJZPN23BVUFUCQIF/J64QX5IPOHK56I2KYUNBQ5M2XWZEYKYX.woff2"
+			}
+		]
+	},
+	{
+		"family": "General Sans",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/RRO6TYZXO7WQBHSH4BZYSTI7E7T2HKLF/55LXPUDQQQTSLB3M2T377FIN2EKQQWJY/3HUYMY6WP3BZQYPOVGG6IZQAM476CQDC.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/HP3OLGI4FZQOEKZSBKGAS2GNVBXMQFN6/62TU7CTLGHWAIYQX4HBC5OBID4ONBIT2/NCX5HIWY7RWQAAWGBX7MHE2SYGQLFBC6.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/GQOITZI54NH6HDBP26XAMQYTXB4JQ3NQ/VY7SXNCPHYFLQTOFY72GM4OZTBH62U2D/AHPLTG2YASI4OYLGJV4CF3P25VBHPK5X.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/ST6AL2GVQRSWVDOXZNSHY2SMWYYSVFEK/WJ26NN5JS6IPLBXEKX7WHB7HACXDTAKH/H7W54QQR2V6KL5KMDA2PD2KSQRCZHPRE.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/T2VB54RK54AYH45QBSFO6FWJJBOGDZQS/WZUJLZL2KK72TQFDHQ6EV4KREZ7WEUL2/6FVUUVSLJPCCVHIJND4LQZIT4MFZBXYJ.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/IZAMKIKJNFHYAA4XTXOGUSQUJWNXQHPE/2S5HU7TKNAV6MHTRNU2NPZD7U4OT6VKE/HCZ5OQRTYQOAVSHRS6UOFWUZ5CGI6JRO.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/LHQJ5KSAL7VGAEIDSTEXCCOIUKFLT2I6/GW57XUEG4ZBVMLZZTQZTGYPROITRRQ5W/JA3IZUEMJ2J6WWT2OQVJOAWDXO3YL4YG.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/HFTXPYOBEE22ON2ZH2TDSTBQLGERA7LU/4AOH2PGTMHZO2YX5HMTOAV52ONC3WIXE/TW4KNQIPR4LNP4I6I6C6HKQ23B2EQAU5.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/MFQT7HFGCR2L5ULQTW6YXYZXXHMPKLJ3/YWQ244D6TACUX5JBKATPOW5I5MGJ3G73/7YY3ZAAE3TRV2LANYOLXNHTPHLXVWTKH.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/3RZHWSNONLLWJK3RLPEKUZOMM56GO4LJ/BPDRY7AHVI3MCDXXVXTQQ76H3UXA63S3/SB2OEB6IKZPRR6JT4GFJ2TFT6HBB6AZN.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/K46YRH762FH3QJ25IQM3VAXAKCHEXXW4/ISLWQPUZHZF33LRIOTBMFOJL57GBGQ4B/3ZLMEXZEQPLTEPMHTQDAUXP5ZZXCZAEN.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/KWXO5X3YW4X7OLUMPO4X24HQJGJU7E2Q/VOWUQZS3YLP66ZHPTXAFSH6YACY4WJHT/NIQ54PVBBIWVK3PFSOIOUJSXIJ5WTNDP.woff2"
+			}
+		]
+	},
+	{
+		"family": "Clash Display",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "display",
+		"variants": [
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/DK2FOA46SRWJ5HXWWU5TK4N4CMHYD236/FPEAXZZSH5L2K5MTJFRIWD2MC32IJMN3/THOOS4VOCKT7H2XEB27NQDYM2NYS4AAR.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/2QNEFGROUS53RDOVAHQH4CNZZUWGOWOY/XHI55XFKRZLKG77T3N3QTH2YVHMLJQ5U/KVT4BC5ZH7LF4OBHM2Q7KOOZRRZZY5ZK.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/VFMK2COV3DN37JR7JQ4CAOJPZ7KWKNY7/ODD5YJNDLHZZB2MIT3DPVH4EIHAMZ34D/BSY64LPTT3OPLVKAZKL3AHKRWZ3D74AC.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/2GQIT54GKQY3JRFTSHS4ARTRNRQISSAA/3CIP5EBHRRHE5FVQU3VFROPUERNDSTDF/JTSL5QESUXATU47LCPUNHZQBDDIWDOSW.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/FPDAZ2S6SW4QMSRIIKNNGTPM6VIXYMKO/5HNPQ453FRLIQWV2FNOBUU3FKTDZQVSG/Z3MGHFHX6DCTLQ55LJYRJ5MDCZPMFZU6.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/BFBSY7LX5W2U2EROCLVVTQP4VS7S4PC3/IIUX4FGTMD2LK2VWD3RVTAS4SSMUN7B5/53RZKGODFYDW3QHTIL7IPOWTBCSUEZK7.woff2"
+			}
+		]
+	},
+	{
+		"family": "Clash Grotesk",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/5TRO2J3HJNIQODLQ4CTSMGSLAWSE5YUY/GHXENXHZCDIOE5E73364PNNASRNO3JVW/GLZTRU2GIKPV5HYT3E6HDLWOXAWPNZDV.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/SINQ57HHHPFVR2H2M32ZNEFSVLE2LFD2/7IAKEQYNYVZZQGJW7R4Y7C5IZ7XHSFQO/DKSXVIDJANOLWNE4OACLWSGITSUTBGB3.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/O462VY6O6FTQCS72XVMTQHXAM4NN5CY3/TWF57ITZORMJ3MEWLQQIVO6BMXIB6FUR/MJQFMMOTEGNXDVM7HBBDTQHTVB2M7Y6G.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/2SAK53YLUN7RMYJU4MYLSBV6SSSJEJZB/RXS4DPGJRKOUFZMF5X5BVUGNNKJT65XZ/DJS4RYGIUYUXJQOHY5VCZPKSTXUSHTSP.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/MKEEQN57GWBZOSYWCRODNJOOZNPLMAKN/5SPTSZGHEACWWLF34DQ4WAA4OGU6PQIF/KN7DX4F6PXB74R6L2K2Y4NH3CB7FC53Q.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/P6VJ47S3OYMUC7HYSJLTK7PEIK5O2NPQ/TK62VLUWA76PMTK2XWBNDZB7QVXJGYE3/I5W5NEJGYVFUC5I4XOXVET63OE5PSVHJ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Cabinet Grotesk",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/J2PZYZURCR7HNQKXCZ4VXYA3K5FFCCLT/PZSZLWHMBCE7FFGOUYDEU33FAESUMA3X/JFDL5FBAQ2WMYL3LGKSCZKAIFCS2UQ63.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/7A2ZM26AN76BCF6P4KAJGJXKQ2WDOLCJ/LR57NCTD3SD7IIEZFNZHIXC2IWB6IGA3/7NVJZOT4VDOND7ERAOUP2CFTQCITWQFH.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/7GWNQ5AHAZORLOWZ7ELKPLOIQITAR5S5/NYLYMGXMB4RANWVNJSIHG2IKPZ44CN5E/MT4CWVHB3N2C6KFUZ75QK4JQ2FYK4J4M.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/J6PPRPKWXDUIYA47IXLEQB4R4OPVYDQH/N2ZXAXWEHVMLISD2TIXJC7EF4GOY43L4/NXM4Z4TDCMYWBZ7AVI2N6DQ5VMWNENMU.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/CKQBK2QBTCDREE7L3MXZ3PPW7LDNJCWU/OTOY7FQFSFOJVZKJWKO2EHUJLOGBDN4Q/4CO2ETY7NITKLUDKMYJ75RHJSPHOJ7XT.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/XMXWOHABYLQDJ42L65EFRYNVRY37HQCB/B2O4O6V3JMFM2WDCYQI3A47L5U4THDUL/WN5274VQ3AUBDFP74GB4EC4XYJ3EKVNE.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/ZX6AQLSFYVDPN2URWO2MQFGTYYOHIS64/TPYPKOYWFQVNJHLLRXD4KFYX4LUOUW4Z/6QH2ALVTTK7IRVO5MYOQQ3OZNXW5SSS3.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/54BYDK52GK4J6SPDN2E656FIZHUETKL3/ACYE4XDNEUAHIOQEOGPYPDVAVDI5P67Q/TZVUWRP4UW5PEJWBLXHG5VVGPODI2WLC.woff2"
+			}
+		]
+	},
+	{
+		"family": "Switzer",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/KDSQNRHYYJCWSLSNMQTKJOY7QNC2IBLM/HGYBIGJ4X7DYUETLTGW4BIVO3FCWLJUR/AFY5UJBPUVSDM77Q42DSHPT5JUNR7N4Y.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/3VAGCWMQT2A2C2GK7F5FAHGUYKLKSXPK/SYFRQABIUPT55PTOJIEEV2YMJSVV6EYS/RIR2QY5RYWK7P7XPEQY25M7LKF37GJDV.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/4VXBC3FEORAU76DL5BGHFNI55RKWXZSX/G66T76FX64HG5CN7K5FPYPNZUZ73U2XV/VIBEJS7WAALPI7YO7IOVGRTLMVQJ5RTQ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/XVUY2PHYBA6KMN4RMEMJPHQSTKCQ267G/UICOQA6KCSHFOSCPYDVVDNNCDKYFXHJB/O34WRFYO7JNWEBBA2LRV2XYRUSYXYDKH.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/QMRBNVYKDJEZ66DA22SPWH5EVVYACHCU/ZHMXHHA546NDNEHJN5RPZX5KISJY5CWF/C6VLICDGQWYKV6YT65TM5G3OVN4AOZBN.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/2UC2M25RQ2XRSGCBJRQ2G5SNXCROECQB/QJT3T33NN372363FJY5EO5D63GKDKLDK/IOAFMDAPNX3S6OL2GYQQJ2FFJIRSVB3N.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/LVPXCMXCWY3V7PSXRMGRQUJDAS2DT47E/BPEVRT2HG7PPVVUS7A67MZQQZW6LR6A5/A7AS3UPAGLC7MDVC67SBNTE5FGF2Z2RG.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/AGVRET5QOXLLPCSORPLO44GJZRG35CBJ/AYMVXN4GPC7UMERGPHSKTQ4F226GXMHG/LBVFQZO23LFQX5ZQMIZGDF6ODT2YI7T2.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/FQHNKZEV35SAMFWVFCFSORJXUNHNILL4/X4YCR4COAQTK5XB6JCDDBS7Q33AQWUAE/J7XVDQ2IJENINPUAVBDJNH3VEXVDSPQQ.woff2"
+			},
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/HJHZ26OECMTXRH7JXPFC7EVIHDSLT2RA/LJRNLR7WCPF3PY3SZ7B2LHNUTQMFNCHL/4MCJYGQDIOOXHWSIIB2OYNDBEALJSOGN.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/JXG72O2TZZZ5GVUMRFHCQDLSBYPRIWXQ/ZP6MERMWLACGBGZHTVL3PGEM4LJZTZ57/O2INHB7RBA62NQZWIAP3RS5WRI4PR4T5.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/EW5HJEX6O4L64XUWQA2XU7Q6BZ3B4JA4/ZWUP4SQYHHMMSS5LFHFFBX6DXL7C3DTU/H5EOHLIZH5K7IZK6SGYJI75L4KV6FUO7.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/BLNB4FAQFNK56DWWNF7PMGTCOTZHOEII/ST3WKSSDMBK2MIQQO3MAVYWLF4FTOLFV/6IN5WOLRCYP4G4MOCOHOMXNON6Q7MDAR.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/OYB4CXKJQXKTNSLJMTDQOIVUL2V5EL7S/WYO2P7DQVV5RNXGMCUO2HL4RJP4VFUAS/6XPIMU23OJVRY676OG5YVJMWEHWICATX.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/5SZVFDB7V52TI6ULVC6J3WQZQCIZVDV5/ODYPSTCUDMKSTYIPTV4CLQ7URIK7XYBJ/YS3VPNVO4B3TOJMEXDGFZQ4TLZGGSRZC.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/HBNTRIISA5MEXGL5WPYI7CV2HIWTDV3Q/YDPDINVT673XLXNSTMLG4JNCZZMVVNPN/Y7SCNZJOT2MW5ADSGOFLDGH4TNL4JCQY.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/ZME55SZ3XN6FJ6WZ26BVFLFSAZ5I2VWW/YETVURK7HXO34ARWAMVG6MSPWALMBOUD/SMQAIKPHV4D6DU77XSDVYN543XEEYX6R.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/A54N3N7J5AY6YOPYJKLHF5VH7G7HSSUN/ERWIWIB434FMFHQFSSBD233EP3C62HOI/TOHQHMLIEIPKVF2JPM6SVKXFYGO5G2TJ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Sentient",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/NX7NNT2RFBKC4E3YONV5GVZSXNHXNBGR/TWKNDFJUVBI2VY3NA2ECZKQB2A6HC7SM/6OP3OPKYYSIBJGHTOO5N77NQJC6ZBAAM.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/GTZTKMPRHFKE2CU7YLUCPPJT5A5B6YMQ/HFEMXKLNAASS7SAV6UBTTJ2KISDWWHAC/BMDXKMY33XDRDKC7YGRU6I6YP2NOXACO.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/4TG2NXNCK3NYD52NRNOLGWJCNXGCHXS7/AEJBCSB5ILRV44ECPQW4TDSOEVQONWSQ/VLFJG7GKGM3UAH53OH7GOU7MPNJDZTJR.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/IKNAGK7QGIRBID4C2BJXDIQSGSXNZ5FO/6YX4KG3OWFIPMUNACZUVMQWPPC4YOHIO/GEU6O3LK7Q7XNSMQGXIK5NWXA52NC3K2.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/GOPBCF2CVB3R2KOAHFQ3YLPDYDAGPEVG/T6QP5YJXYAFJAFV56GISLK6UUP6RINIE/RGTHFDFRZAEEHKG7B6QQN5PELODA53C6.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/NY2ZL3ZVCWEGOL6C3UVCNGYW5UU4EWVZ/E62VQS3OCYTBL5HEKIEGN3RTBX7KFK6F/NZPIPWPM74OTNMX6CKNACLBKCGJLJEBU.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/43OAXICAEMXK2ZL74G7H76KFIYNEDOYN/35V5DYORRU36WSBMUAXF43PXJDG6AK72/M6X7C56BMVHUUEP2JAWS7SGZ7N6BGP7I.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/RVTZPYAA57KV4AMXRX7ZIPJXSTYCRP7A/36OUS5CBIXRKI2QU7G7OUHOK7HHA53Y2/SIH66VPT4WS2HIF5PEJNDU4INNUF54LG.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/XVVLA67EPQTZD7YHR3MQPW2IQXXDTGPX/IHGNDJMSP2Y53DG23KZTPBH753PUEUB2/RNUZPHMIVMPXFHVACRGCAJ32E6WUEDVU.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/XC4UYXMVQINJJ47RSKB74CCAWSP5BUGZ/TGOWV4725NO3KHVKMWHG47SRPLMNHMOO/433XP6QWDVL6KQ5K7ZCOP524TX4LE4RJ.woff2"
+			}
+		]
+	},
+	{
+		"family": "Zodiak",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/LLJK6BA3SBYYKFUWUFGCSXX4U6FAVOZG/EI6KLD2HJRQIOCHFM4UO3UOS4HQJVMD6/MPUGY4TY2OAWTBKRTKSL7ZAFNDFL5WEU.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/DLIOQN7BAIDF52NEOLWMG25TF2G4E5BG/2SBXS5PNCQ52C2STGTCLTGD7FAKWZYER/ZRX2TEYEJEWBO7BARVINFDFGSQVQCGX6.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/YFLZBMMI3DYRSZHBNXVNB72OCINBINIT/AJUISU4RPSUOUSQPHGNMFKZ4M6TTQGWF/HUKQ64PZXOIVT5LHOHNUDCYHXBK5OR45.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/LYCAXAEFF2XH57BNLQZEKQC4MOD7UNNI/L4ENA7JL46CELJ6KARPZZ4FALWTYIGC5/I66MZ5NEPLHIFZ6EU4QHKXGSX5OCCJX3.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/2ST4EG2GFKZI7EVNHFBLH7ZDJNXSTUSF/CPAS242DK764QSMEO2TZKJHV7OYWXDUF/42EL3W5NZRHAXXEMTM2RUXW4X6ZMOWP4.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/DTTBVN23AMKABLCDL7CXYGVNQBPQ6OOF/GXBUZF6O75G4MI6U6TMQ65QRZMA7RPHO/QWFNMGHDMRUFLDMKWK4D5HWXAO25R6UY.woff2"
+			},
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/UDGW4K5KDO2WNP2256GU5CP7HQDVADLQ/LML445TYWQT7TRPDYZPCIVB3BJWX7NTD/2O5TXCJMYUDHI5FO6N4PXN6WNROSBHNU.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/IF5ZIT3FMSFNWCWOG7ZASDFHEMLSIUEE/OMOWAZNE73OKOHTUSHA6P7FH44MIVQTO/UREX64UV4XADQWU6EF6JRA5XVIEJPRP4.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/ECUEQQ5BLZLFJS3PPLWOEEVS7SQONQMH/WNTXEMDDVWUVWDURRKDXCJC6G7TMP277/TBWKTFSYABV4KN4GNIJMAOQUOTYBUWB3.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/63K42MQSJZ57SBX4XJ4J7L4M5IM6V2HQ/DTT4Y5AJV6DYRVZQST5O4K2E6SESQNV3/VGG36BIEB6ODAX4ZN7UV43FK742PFGDV.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/A6U4G5UNFS3UVTXKRHBP6I4WIG25I5P6/S43VVGQNPWABEEINYIB3HOT5WBP7JDFU/7BCVT6EXVT32KF7LTFPU7KBYLR463OET.woff2"
+			},
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/M7LM45Y7I7SGBX7VDIU2OOS2B25Z6SHP/EPCQVGBI6ODRRDJYRA7KPCH5OTK5TJVX/DXMDRQ75ZJD6EXQHKMOW3LYNEVM3GYH6.woff2"
+			}
+		]
+	},
+	{
+		"family": "Chillax",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/ZYDQ23QUC5RIWZP2XNQDB6EQIKJAJRWI/OQWULF7QT4HTMBH6W3XY6DESOSZLWT3L/7L7IIHAKMJC3Z2MTNHMMKSRMMTKZN4OJ.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/SVYQ5C47KQ7Q4A6527WD7JA6PUG6HK55/I2UFEJWWBDNRZ5HKD3V4ASSUY3YYEMOJ/JEWCW7XRBNTGIANRIQOD4DIZJG4HEHFJ.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/WSPWZKQM26GGKSLVGSP2CFUHUMS5BCYQ/UE3YJANJM3SE3IWT4TOMYQVMLCQ6GZGG/XESIRBQU62YFBC7YQZI6D2NT5CNZ4PPU.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/XASL35KKT35X3ACCBCOQKKABSR6AT3FX/6MU5BWUUPHCFUHM2F3E3QPQGKXCVBUOO/WZY5PMNTII6NKOB2TTIAX7QVAWMSY2DQ.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/2T24MWUOKZU65SZJ33GPRGNOKE4KPOBX/T6LIXZJIPB23UDPMTIKURYWSZLXZBJ3A/THF5L6EHVL4N4NNE3GYDZNZSHABL5CH5.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/UM553GIXLG5E46TUH763VYPGAQ77BPQ5/NN4EI53RUGC4BO5HP5F46SYQ4WY4U4CE/T2KA2X72VGASVXFVB7QCOIFYVH5GZJTW.woff2"
+			}
+		]
+	},
+	{
+		"family": "Supreme",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "sans",
+		"variants": [
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/QN3TIUT2GLJT6WB3XTDDWOYM5RZ3KEGB/CBLU5DRGUM4ST5QM56HEQKDBMG2XTIL7/GPZNNDUEMEWV7QFJ7WNIEFP2732UWFKR.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/SUIACSJDVCVQKZVAIOPX2J3L6HILCMC2/EKHJVGM3CNM2EHG4T7RZLE5FCJKQLVFR/GHIGKXOUZTMKP3KKZI3Q6DMEDD2MD4TD.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/PRFPYSYL6CT4G57HVB5U656NM5SXPCBT/J4MXBK25V5O6RFI3FNIRLPFRJJHEOGFK/HGC6U3MDLX3QXSN2A7PAEQ4Q4HTQA6OX.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/Y4QRUUZINRRA6MAVHWOR3TW2GODCD5RZ/R3R2UQSXQOB32GYUQ6U742TO6KF4EHU6/F6KK3SHJZ5IAQWFJ26LASNWIU5ZCMCOF.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/3CFPIHZMSNOIGBGL5MWR7YPPUZXV2E36/JLQ2QTXODGFFFT2NQAWVNP3FJ2KBUKV2/QDQ4GE7GXJOFSMNLOAAL7EH2TTUIOKM5.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/CMVFVNUF7QWL7YP45D3VMM5S3TR7UETH/FMPD7RZEPLQMABBCRWTSKAVYELCFFGNA/WSOULU7BZA6ZWBLKBF4DDD6R2AYE2F5X.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/ANAL57ZQ2FUKPI2YHCUF5H4EP57WIKBH/R6UY76F6L7YMTZU5NWG6MRDUJ7DCA5WJ/LK4QNLGOAJXCEBGY4UOJ4KNHDSMPJRN4.woff2"
+			},
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/DLQ4UJISF7NR5UWCRH7SSBZSGVFYEQVB/ECAFP4IWEYQWGLRGLDAA4D47EQQC2YFW/WC57ME7FJIJNRKIFOCKR52F2X2KO67EO.woff2"
+			},
+			{
+				"weightMin": 200,
+				"weightMax": 200,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/J37Y74HE4TOUVE26XAVWLEQEHH3GQXQ5/LBZGSWOPU5DQUFKTBH4LBGGXKEJRC3LC/6IG5NRG4D4MEEF77CBE44JBJS4T2YCGU.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/V3KAW2H4UCIIIUBD6S2PIWF3IF5MUSOJ/G3J6DZB2HINA35VD6CICETHD4ZJTLLPR/SPD5TGNFK2XOFPWN7JB26FTXSLXBKEAV.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/UDGUA26XVGIV6IQWMQNGGAL7FQZFY227/E6HQU6YVWTGYX3KW3DF66KAAJ224ZDU6/5ZZU4JM62PS7KOJ7BOKLPL3AEO2G76TS.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/OTYYUXNCZZI6EV6RSCAQFTGEGQ7JTD6B/45FLQUBI6DWIP6NYFVBTMKS6YPU3VYPT/GHZ524YD2KXKRX4PZ2S7DE3HKNPE2EKH.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/5T6APCD6XXAHAFTHDATQKT4RFVWRY3KR/VM6PC4PLGZYYJIHGMT63IIGYLTQKGSH6/TN7F4YNDQ3FJ6JRJV2XDS3CGMFKQRLXV.woff2"
+			},
+			{
+				"weightMin": 800,
+				"weightMax": 800,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/WXSRY43URIRE64IGP2UFEDZJJYHLYCJP/LPLI5YGMTUH4GME3PMZ7UXGVYY6S47NB/UPZ7O6SKOW5AF4XEN7NCNHHDMAAMYNSS.woff2"
+			}
+		]
+	},
+	{
+		"family": "Melodrama",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/LC7IMMWVM27SA7ALSOK4NI36ZAQ55VBY/FNO72OGA42HOJR66E5WCXLYW2ONKD6RY/YDIY5IEHM22WUOHX7EQUCQJQULHZUNOV.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/VEUKFNC77KIIUSHNOWJWAF2K4XRJIN3O/QVM7H4UBRHRYAZVIJFG42NIFQOHEU4LT/RSPG5F452B5Q23RR6KSVIVZS3KHJF6UY.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/V63VHYDAZAEU2GZUBBRXMY6QQ55K3G7S/KRLBF3QMOZHK3UT3KYCLL3BIJFQPGJBN/FOOWDQGE4VX5EPMJQI3JW5W7V7YA4JTP.woff2"
+			},
+			{
+				"weightMin": 600,
+				"weightMax": 600,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/RGK7K2PP2EWABN5ERL63PXQAGP7NCSUY/ZH4IXREE3YFPELFWVIUAZCBEHFSFDVYI/XC5RR3MD6B42AUH542IHY2IQVYBKHWES.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/FMIFUSZQKVN6G2NCRCXK5TPTKXYXKKL4/O66D3TBMFNXSQZEQQPR3PJJVE3NRVCMA/DNLDXNUKJAOEZM6YJM654QGAZ3EXZIXD.woff2"
+			}
+		]
+	},
+	{
+		"family": "Ranade",
+		"vendor": "fontshare",
+		"licenseTier": "free-proprietary",
+		"category": "serif",
+		"variants": [
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/QN7LKEQOYA5STN563TMUFXBD3K5JFPXM/4SSBT3UGWZ5VT2MUMU4AMQRL4F67YPTW/TATVWUXMC5VRJJCIQ6G5V5QV74Y64R6O.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/7OTJOHFEPKR66PMSSHSIZWFRJ2TCRAQE/ZYSSO7DGGAENCZM63EAMXVP5TK4S6MJN/V3MB2BKRGQ5JGQILJVYBNPQWQKMQBQMB.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/LAZUBAPAHSYG5SHWCGBZRPUUUO7WZFQ6/AJTKUA2DCZYQ5XAIM2WHNMD4UIQ5WK5W/5VJOD3PSYL66KPX5AB27YLMM327JTBER.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/5TTDYGFVDXZUF7R6X74O2OSFFVA3N6YD/YYCZRDZPA4XU2GCSBPFOTM3BGII35KF7/JR6TSG3PUWBCAK534CZVL2CNHLYRFXRB.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "italic",
+				"url": "https://cdn.fontshare.com/wf/2QGSL6BZYSC3EC4OGZPFSADQKME3W6ZO/264RPZRHBTQY4SM34APNXNI5GWRIQK4X/CI3H6EW3OV4QMQSOE5RRMKB4L27TFCMF.woff2"
+			},
+			{
+				"weightMin": 100,
+				"weightMax": 100,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/4I3GQ5RKI7INEN77JLE5K6MUGH3Q6XBQ/OE2GKODT24OQXFQ3ANDXIPBDXBQU4CTJ/4ISE7PRDMUTRGIOEEJAQ6FWTTIGY35CA.woff2"
+			},
+			{
+				"weightMin": 300,
+				"weightMax": 300,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/L5FIDTVUREF47ZIMK4SAWFIM3RQHGDRR/DDQOLYOU6G7WW4V2YVREV3FNKPCID7UW/L5RECMN3L4DWXPPVTDJQP3FAU32IQIX5.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/VTABUNXESC35DOCRFNLIWPSTHJEOCY4Q/GIHU5SZ7WYPXDURVYYYDCWYCQVT4M3H6/RXZ46KOEDGXL7HVIXMJIAZICDYUR5QZJ.woff2"
+			},
+			{
+				"weightMin": 500,
+				"weightMax": 500,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/L2AEEUUCQUY3W76W527KO7I3IN7WDYKB/BLGYO6PMF754OJLYL5JD33PPYVDHNGZ5/7BXN3ORLQXOR6A3D5ZRM4EDMGISGKSZ2.woff2"
+			},
+			{
+				"weightMin": 700,
+				"weightMax": 700,
+				"style": "normal",
+				"url": "https://cdn.fontshare.com/wf/ITSXUDO4IWX6YYU2XBSXOPG7LUR2PVYM/3EDCKJF5I5VL64ADFO7DBMCCYZ2CJC27/SK34EB5SQXXEEW5G524TDELGL3JO5HHF.woff2"
+			}
+		]
 	}
 ]
