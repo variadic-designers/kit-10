@@ -75,10 +75,9 @@ approximate rather than leaned on:
 | Circular, DIN                    | Manrope / Saira           | ≈ visual                          |
 
 The **metric vs. visual** distinction matters: metric aliases are layout-safe;
-visual ones can reflow. It's modelled as **two flat lists** on the root (§4):
-`aliases` (exact/metric, "matches X") and `looksLike` (visual, "approximates X"
-
-- caution tone). Both shipped.
+visual ones can reflow. It is modelled as **two flat lists** on the root (§4) —
+`aliases` (exact/metric, noted "matches X") and `looksLike` (visual, noted
+"approximates X" with a caution tone). Both shipped.
 
 ### 2.3 The judgment call: don't over-collapse
 
