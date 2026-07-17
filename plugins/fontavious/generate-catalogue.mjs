@@ -175,6 +175,21 @@ const FAMILIES = [
 	['Gelasio', 'serif', ['Georgia']]
 ];
 
+// Phase 5 -- VISUAL look-alikes: proprietary display/brand names mapped to their strongest free
+// cousin. NOT metric-identical (text can reflow), so these surface as "approximates X" with a
+// caution tone, distinct from the exact metric `aliases` above. Same trademark-safe, referential
+// role: the name is a search/import key, never a catalogue product name. Key = OFL root family
+// (must appear in FAMILIES). See resources/fontavious-catalogue-plan.md §2.2.
+const VISUAL_ALIASES = {
+	Inter: ['SF Pro', 'SF Pro Display', 'SF Pro Text', 'San Francisco', 'Helvetica Neue', 'Segoe UI'],
+	Montserrat: ['Gotham', 'Proxima Nova'],
+	Jost: ['Futura'],
+	'Nunito Sans': ['Avenir', 'Avenir Next'],
+	'Source Sans 3': ['Myriad Pro', 'Myriad'],
+	Manrope: ['Circular'],
+	Saira: ['DIN', 'DIN Next']
+};
+
 function curlGet(url) {
 	try {
 		const out = execFileSync('curl', ['-s', '-A', UA, '-w', '\n%{http_code}', url], {
@@ -306,6 +321,7 @@ for (const [family, category, aliases] of FAMILIES) {
 	}
 	const entry = { family, vendor: 'google', licenseTier: 'ofl', category };
 	if (aliases) entry.aliases = aliases;
+	if (VISUAL_ALIASES[family]) entry.looksLike = VISUAL_ALIASES[family];
 	entry.variants = variants;
 	entries.push(entry);
 	report(family, variants);

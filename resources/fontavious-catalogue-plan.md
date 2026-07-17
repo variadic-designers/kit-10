@@ -75,10 +75,10 @@ approximate rather than leaned on:
 | Circular, DIN                    | Manrope / Saira           | ≈ visual                          |
 
 The **metric vs. visual** distinction matters: metric aliases are layout-safe;
-visual ones can reflow and should be flagged approximate in the UI. (Phase 0
-ships metric aliases only — a flat `aliases` list, §4. When Phase 5 adds visual
-look-alikes, the list entry grows a per-alias `reason` so the picker can say
-"≈ approximates Gotham" instead of "matches Arial".)
+visual ones can reflow. It's modelled as **two flat lists** on the root (§4):
+`aliases` (exact/metric, "matches X") and `looksLike` (visual, "approximates X"
+
+- caution tone). Both shipped.
 
 ### 2.3 The judgment call: don't over-collapse
 
@@ -135,38 +135,34 @@ license (`nature-of-fonts.md` §3.2 lane 2 / §6.5).
 
 ## 4. Schema extension
 
-There is only ever **one** record type — the renderable root — plus two tags
-and an `aliases` list. No separate alias/proprietary record exists; a
-trademarked name never becomes a `family`.
+There is only ever **one** record type — the renderable root — plus tags and
+**two** alias lists. No separate alias/proprietary record exists; a trademarked
+name never becomes a `family`.
 
 ```jsonc
-// renderable root — today's shape + licenseTier + category + aliases
+// renderable root — licenseTier + category + aliases (+ optional looksLike)
 {
-	"family": "Arimo",
+	"family": "Montserrat",
 	"vendor": "google",
 	"licenseTier": "ofl",
 	"category": "sans",
-	"aliases": ["Arial", "Helvetica", "Liberation Sans"],
-	"variants": [
-		{
-			"weightMin": 400,
-			"weightMax": 700,
-			"style": "normal",
-			"url": "https://fonts.gstatic.com/..."
-		}
-	]
+	"aliases": [], // exact / metric-compatible names (e.g. Arimo: ["Arial", "Helvetica"])
+	"looksLike": ["Gotham", "Proxima Nova"], // visual / approximate look-alikes
+	"variants": [{ "weightMin": 400, "weightMax": 700, "style": "normal", "url": "..." }]
 }
 ```
 
-- `aliases: string[]` — alternative names that resolve to THIS entry: search
-  keys + import-match keys. Includes proprietary/trademarked names, used
-  referentially only (§3). The picker still labels the row with `family`
-  ("Arimo"), never an alias.
+- `aliases: string[]` — **exact / metric-compatible** alternative names.
+  Surfaced as "matches X". Arimo carries `["Arial", "Helvetica", …]`.
+- `looksLike: string[]` — **visual / approximate** look-alikes (Phase 5, §2.2).
+  Not metric-identical (text can reflow), so surfaced as "approximates X" with
+  a caution tone. Both lists are search + import-match keys, used referentially
+  only (§3); the picker always labels the row with `family`, never an alias.
+- Two flat lists rather than one `(string | {name, reason})[]` union: simpler
+  JSON, simpler parsing, and the exact/visual split IS the only distinction
+  that mattered. (Supersedes the earlier "per-alias `reason`" sketch.)
 - `licenseTier` (default `ofl`), `category` — on the **root**. The ~13
   pre-existing entries omit them and default correctly; new roots set them.
-- **Phase 5 forward-compat:** when visual look-alikes land, an `aliases` entry
-  may become `{ name, reason: "visual" }` so the note reads "≈ approximates X"
-  instead of "matches X". Phase 0 ships the flat string form (metric only).
 
 Preserve the existing invariants: `weightMin..weightMax` still models
 variable-range vs. static-discrete correctly per root (getting it wrong
@@ -180,17 +176,23 @@ to close**, the current catalogue is normal-only.
 
 The catalogue owner resolves aliases; callers only ever deal in the OFL root.
 
-- **`find_entry`** matches the query against a `family` OR any of its `aliases`
-  (family wins if both could match), returning the root that owns the file.
-  `find_matching_variant` / `variant_url` / `family_facts` all go through it,
-  so Charter and the editor's scan ask for "Arial" and transparently get
-  Arimo's URL/bytes/facts. The cache keys on the _root's_ URL, so "Arial",
+- **`find_entry`** matches the query against a `family`, an exact `aliases`
+  name, OR a visual `looksLike` name — precedence family > alias > looksLike, so
+  a real name always wins and an exact clone beats an approximate. It returns
+  the root that owns the file. `find_matching_variant` / `variant_url` /
+  `family_facts` all go through it, so Charter and the editor's scan ask for
+  "Arial" (or "Gotham") and transparently get the root's URL/bytes/facts. A
+  visual match resolves for rendering identically to an exact one — the
+  approximate-ness is only a _disclosure_, never a resolution difference.
+  The cache keys on the _root's_ URL, so "Arial",
   "Liberation Sans", and "Arimo" share one cached file — free dedup, same as
   variable-weight dedup.
-- **`search_catalogue`** matches family + aliases, but always emits the root's
-  own name as `value`/`label` ("Arimo"). A match that came _via_ an alias adds
-  a referential **`note: "matches Arial"`**; a direct family match has no note.
-  Nothing in the results is ever titled with a trademark.
+- **`search_catalogue`** matches family + `aliases` + `looksLike`, but always
+  emits the root's own name as `value`/`label` ("Montserrat"). An exact-alias
+  match adds **`note: "matches Arial"`**; a visual match adds
+  **`note: "approximates Gotham"` + `tone: "warn"`** (the picker tints it as a
+  caution); a direct family match has no note. Nothing in the results is ever
+  titled with a trademark.
 - **`family_facts`** reports the **root's** real weight ranges, so Charter's
   weight-snapping is correct for what actually renders.
 
@@ -273,8 +275,12 @@ type.)
    (plugins-bootstrap.ts). The generator's `resolveFontshare` uses Fontshare's
    no-weights CSS form (whole family incl. italics in one request); badged
    `free`/`info` in the picker. The Framer/Webflow flavor Google lacks.
-5. **Visual look-alike aliases (§2.2).** The curated free-cousin set as
-   aliases with per-entry `reason: "visual"`, noted "≈ approximates X".
+5. **Visual look-alike aliases (§2.2). ✅ SHIPPED.** A `looksLike` list on 7
+   roots maps the proprietary display/brand names (SF Pro, Helvetica Neue,
+   Segoe UI → Inter; Gotham, Proxima Nova → Montserrat; Futura → Jost; Avenir →
+   Nunito Sans; Myriad Pro → Source Sans 3; Circular → Manrope; DIN → Saira),
+   surfaced as "approximates X" with a caution tone. Two-field design, not the
+   per-alias `reason` union originally sketched.
 
 **Target shape:** ~200–250 **renderable files** (the only thing that grows
 fetch/cache/payload) backing **~500–600 typeable names** (the namespace, near

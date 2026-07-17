@@ -4,6 +4,14 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": [
+			"SF Pro",
+			"SF Pro Display",
+			"SF Pro Text",
+			"San Francisco",
+			"Helvetica Neue",
+			"Segoe UI"
+		],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -96,6 +104,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["Gotham", "Proxima Nova"],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -168,6 +177,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["Avenir", "Avenir Next"],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -188,6 +198,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["Myriad Pro", "Myriad"],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -248,6 +259,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["Circular"],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -968,6 +980,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["Futura"],
 		"variants": [
 			{
 				"weightMin": 400,
@@ -1016,6 +1029,7 @@
 		"vendor": "google",
 		"licenseTier": "ofl",
 		"category": "sans",
+		"looksLike": ["DIN", "DIN Next"],
 		"variants": [
 			{
 				"weightMin": 400,

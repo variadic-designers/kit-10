@@ -38,16 +38,22 @@ struct CatalogueEntry {
     category: Option<String>,
     #[serde(default)]
     variants: Vec<FontVariant>,
-    // Alternative names that resolve to THIS entry -- including proprietary/trademarked names
-    // (Arimo carries ["Arial", "Helvetica", ...]). These are search/import keys ONLY: typing
-    // "Arial" surfaces this OFL root (Arimo), and a design that references `font-family: Arial`
-    // renders Arimo. We never present a catalogue product NAMED with a trademark -- the mark is
-    // used purely referentially ("matches Arial"), the same nominative use OS font substitution
-    // and Google Fonts' own "metric-compatible with Arial" descriptions rely on. Copyright is
-    // handled by shipping no proprietary bytes; this handles the separate trademark question.
-    // See resources/fontavious-catalogue-plan.md §2-§3.
+    // EXACT / metric-compatible alternative names that resolve to THIS entry -- including
+    // proprietary/trademarked names (Arimo carries ["Arial", "Helvetica", ...]). Search/import
+    // keys ONLY: typing "Arial" surfaces this OFL root (Arimo), and a design referencing
+    // `font-family: Arial` renders Arimo. We never present a catalogue product NAMED with a
+    // trademark -- the mark is used purely referentially ("matches Arial"), the same nominative
+    // use OS font substitution and Google Fonts' "metric-compatible with Arial" rely on.
+    // Copyright is handled by shipping no proprietary bytes; this handles the separate trademark
+    // question. See resources/fontavious-catalogue-plan.md §2-§3.
     #[serde(default)]
     aliases: Vec<String>,
+    // VISUAL / approximate look-alikes -- same referential-only role as `aliases`, but the match
+    // is NOT metric-identical, so text can reflow (Montserrat looksLike ["Gotham"], Inter
+    // looksLike ["SF Pro", "Helvetica Neue"]). Surfaced with an "approximates X" note + caution
+    // tone rather than "matches X", so a designer knows it's a stand-in, not a drop-in. §2.2.
+    #[serde(default)]
+    looks_like: Vec<String>,
 }
 
 fn default_tier() -> String {
@@ -78,37 +84,42 @@ struct SuggestionEntry {
 
 /// Build a suggestion for a root, always labelled with the root's own (OFL) family name -- never
 /// a trademarked alias. `note` (e.g. "matches Arial") is the referential disclosure of why this
-/// root surfaced for a proprietary-name query; the caller decides it.
-fn suggestion_for(e: &CatalogueEntry, note: Option<String>) -> SuggestionEntry {
+/// root surfaced; `approximate` (a visual-alias match) tints the note as a caution.
+fn suggestion_for(e: &CatalogueEntry, note: Option<String>, approximate: bool) -> SuggestionEntry {
     let (badge, tone) = match e.license_tier.as_str() {
-        // Fontshare's closed tier (future): free to use, not to rehost/bundle.
+        // Fontshare's closed tier: free to use, not to rehost/bundle.
         "free-proprietary" => (Some("free".to_string()), Some("info".to_string())),
         _ => (None, None), // ofl / default: no badge
     };
+    // A visual (approximate) look-alike match cautions with a warn tone even on an OFL root.
+    let tone = if approximate { Some("warn".to_string()) } else { tone };
     SuggestionEntry { value: e.family.clone(), label: e.family.clone(), badge, tone, note }
 }
 
-/// Substring-match the query against every catalogue entry's family name AND its aliases. A
-/// match via alias surfaces the OFL ROOT (value/label = root family), with a "matches <alias>"
-/// note -- so typing "Arial" shows "Arimo · matches Arial", and we never render a row branded
-/// with the trademark. Empty query returns the whole catalogue (roots only, no notes).
+/// Substring-match the query against every entry's family name, exact `aliases`, AND visual
+/// `looksLike` names. Any match surfaces the OFL ROOT (value/label = root family, never a
+/// trademark): an exact-alias match notes "matches Arial"; a visual match notes "approximates
+/// Gotham" with a caution tone; a direct family match has no note. Empty query returns the whole
+/// catalogue (roots only). Precedence: family > exact alias > visual, so a real name always wins.
 fn search_catalogue(query: &str) -> Vec<SuggestionEntry> {
     let q = query.trim().to_lowercase();
+    let contains = |s: &String| s.to_lowercase().contains(&q);
     catalogue()
         .iter()
         .filter_map(|e| {
-            let family_hit = q.is_empty() || e.family.to_lowercase().contains(&q);
-            // The first alias containing the query, if the family itself didn't match.
-            let alias_hit = if q.is_empty() {
-                None
-            } else {
-                e.aliases.iter().find(|a| a.to_lowercase().contains(&q)).cloned()
-            };
-            if !family_hit && alias_hit.is_none() {
-                return None;
+            if q.is_empty() {
+                return Some(suggestion_for(e, None, false));
             }
-            let note = if !family_hit { alias_hit.map(|a| format!("matches {a}")) } else { None };
-            Some(suggestion_for(e, note))
+            if e.family.to_lowercase().contains(&q) {
+                return Some(suggestion_for(e, None, false));
+            }
+            if let Some(a) = e.aliases.iter().find(|a| contains(a)) {
+                return Some(suggestion_for(e, Some(format!("matches {a}")), false));
+            }
+            if let Some(a) = e.looks_like.iter().find(|a| contains(a)) {
+                return Some(suggestion_for(e, Some(format!("approximates {a}")), true));
+            }
+            None
         })
         .collect()
 }
@@ -149,16 +160,17 @@ fn default_style() -> String {
     "normal".to_string()
 }
 
-/// Find the catalogue entry a name refers to, matching the family name OR any of its aliases
-/// (case-insensitive). Aliases are how a proprietary/imported name ("Arial") resolves to the
-/// OFL root that actually owns the file (Arimo) -- callers ask for "Arial" and transparently
-/// get Arimo's variants. Family match is preferred over an alias match so a real family name
-/// always wins over another family's alias.
+/// Find the catalogue entry a name refers to, matching the family name, an exact `aliases` name,
+/// OR a visual `looksLike` name (case-insensitive). This is how a proprietary/imported name
+/// ("Arial", "Gotham") resolves to the OFL root that owns the file -- callers ask for it and
+/// transparently get the root's variants. Precedence family > exact alias > visual, so a real
+/// family name always wins, and an exact clone wins over an approximate look-alike.
 fn find_entry(name: &str) -> Option<CatalogueEntry> {
     let cat = catalogue();
     cat.iter()
         .find(|e| e.family.eq_ignore_ascii_case(name))
         .or_else(|| cat.iter().find(|e| e.aliases.iter().any(|a| a.eq_ignore_ascii_case(name))))
+        .or_else(|| cat.iter().find(|e| e.looks_like.iter().any(|a| a.eq_ignore_ascii_case(name))))
         .cloned()
 }
 
@@ -514,9 +526,26 @@ mod catalogue_tests {
         let sat = find_entry("Satoshi").expect("Satoshi catalogued");
         assert_eq!(sat.vendor, "fontshare");
         assert_eq!(sat.license_tier, "free-proprietary");
-        let s = suggestion_for(&sat, None);
+        let s = suggestion_for(&sat, None, false);
         assert_eq!(s.badge.as_deref(), Some("free"));
         assert_eq!(s.tone.as_deref(), Some("info"));
+    }
+
+    // A VISUAL look-alike (Phase 5): typing a proprietary display/brand name surfaces the OFL
+    // root labelled with its own name, noted "approximates X" (not "matches") with a caution
+    // tone -- signalling it's an approximate stand-in that may reflow, not a metric drop-in.
+    #[test]
+    fn typing_a_visual_lookalike_surfaces_the_root_as_approximate() {
+        let results = search_catalogue("gotham");
+        let m = results.iter().find(|r| r.value == "Montserrat").expect("Gotham -> Montserrat");
+        assert_eq!(m.label, "Montserrat", "labelled with the OFL name, not the trademark");
+        assert_eq!(m.note.as_deref(), Some("approximates Gotham"));
+        assert_eq!(m.tone.as_deref(), Some("warn"), "visual matches caution");
+        assert!(!results.iter().any(|r| r.value.eq_ignore_ascii_case("Gotham")));
+
+        // And it resolves for rendering/import, just like an exact alias.
+        let e = find_entry("SF Pro").expect("SF Pro resolves via looksLike");
+        assert!(!e.variants.is_empty());
     }
 
     // A direct family-name query has no note (it didn't match via an alias).

@@ -225,7 +225,10 @@
 								onmouseenter={() => (highlighted = i)}
 							>
 								<span class="suggest-field__label">{entry.label ?? entry.value}</span>
-								{#if entry.note}<span class="suggest-field__note">{entry.note}</span>{/if}
+								{#if entry.note}<span
+										class="suggest-field__note suggest-field__note--{entry.tone ?? 'neutral'}"
+										>{entry.note}</span
+									>{/if}
 								{#if entry.badge}<span
 										class="suggest-field__badge suggest-field__badge--{entry.tone ?? 'neutral'}"
 										>{entry.badge}</span
@@ -315,11 +318,22 @@
 			white-space: nowrap;
 		}
 
-		// Generic secondary line (e.g. "rendering Arimo", "≈ approximate"). Muted, right-aligned.
+		// Generic secondary line (e.g. "matches Arial", "approximates Gotham"). Muted, right-aligned.
+		// `tone` optionally tints it (a visual look-alike match cautions in warn).
 		&__note {
 			flex: 0 0 auto;
 			font-size: 0.8em;
 			opacity: 0.55;
+
+			&--warn {
+				color: var(--color-danger, oklch(63.7% 0.2078 25.3));
+				opacity: 0.85;
+			}
+
+			&--info {
+				color: var(--color-accent, oklch(63% 0.17 250));
+				opacity: 0.85;
+			}
 		}
 
 		// Generic tag. `tone` maps to emphasis only -- no domain meaning lives here.
