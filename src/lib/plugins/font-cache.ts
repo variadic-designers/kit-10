@@ -17,7 +17,10 @@
 // It never persists a GPU/loaded state (that can't survive a reload) -- only the bytes that feed
 // each session's unavoidable `vellum.load_font()`.
 
-const DB_NAME = 'fontavious';
+// Host-level, plugin-AGNOSTIC store: it's keyed by URL and reached through the generic
+// `kit10_font_cache_*` host functions, so any font-providing plugin's bytes land here -- the name
+// must NOT be tied to Fontavious (a future icon/font plugin would use the same cache).
+const DB_NAME = 'kit10-fonts';
 const STORE = 'font-bytes';
 const VERSION = 1;
 

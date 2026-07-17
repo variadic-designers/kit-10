@@ -528,7 +528,7 @@ holds `Request`/`Response` pairs, whereas an IDB record can carry the
 **metadata** that makes the exposure guard enforceable by data (see §7.3).
 
 ```
-db 'fontavious', objectStore 'font-bytes', keyPath 'url'
+db 'kit10-fonts', objectStore 'font-bytes', keyPath 'url'   // plugin-agnostic host store, not named for any one plugin
 {
   url:         'https://fonts.gstatic.com/.../inter....woff2', // primary key = the resolve dedup key
   bytes:       ArrayBuffer,        // the raw WOFF2, exactly what vellum.load_font() eats
