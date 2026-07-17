@@ -480,7 +480,120 @@ often upload is needed; it never eliminates the need.
 
 ---
 
-## 7. Summary — the decisions this doc supports
+## 7. Caching — persisting fetched fonts without exposing proprietary ones
+
+Today the fetched WOFF2 bytes live only in Vellum's session memory and the
+editor's in-memory URL `Set` (CLAUDE.md); a reload drops both, so every
+family re-fetches from scratch. We want to persist the *bytes* across
+reloads **without** turning that cache into a redistribution/exposure vector
+for the proprietary tier. The two acts are genuinely different under every
+license tier, and the design leans on that difference:
+
+- **Caching** = storing bytes *the same user's own browser already fetched*,
+  on *their own machine*, private to *them*. This is the exact category as
+  the browser's built-in HTTP cache — which already caches these files. No
+  OFL/FFL/commercial term forbids it; it is "use," not "distribution."
+- **Exposure / redistribution** = serving those bytes to *someone else* (a
+  KIT•10-hosted shared mirror) or *materializing them into an artifact the
+  user ships* (bundled into an export). That is the forbidden act — and a
+  private client cache never performs it.
+
+**Therefore a per-user, client-side, private cache is licensing-safe for all
+tiers, proprietary included.** The proprietary-exposure risk lives entirely
+at two *other* points — server rehost and export bundling (§5.2, §3) — and
+neither is touched by adding a cache. What follows is the design that keeps
+it that way *by construction*, not by convention.
+
+### 7.1 A dedicated IndexedDB object store, keyed by resolved URL
+
+Persistence belongs **host-side** (editor / plugin-manager), not in
+Fontavious's Extism KV store — that store is in-memory (CLAUDE.md host-fn
+table) and dies on reload, the very problem we're solving. Use a dedicated
+IndexedDB object store rather than the Cache Storage API: Cache Storage only
+holds `Request`/`Response` pairs, whereas an IDB record can carry the
+**metadata** that makes the exposure guard enforceable by data (see §7.3).
+
+```
+db 'fontavious', objectStore 'font-bytes', keyPath 'url'
+{
+  url:         'https://fonts.gstatic.com/.../inter....woff2', // primary key = the resolve dedup key
+  bytes:       ArrayBuffer,        // the raw WOFF2, exactly what vellum.load_font() eats
+  family:      'Inter',
+  weightMin:   400, weightMax: 700, style: 'normal',
+  vendor:      'google',
+  licenseTier: 'ofl',             // 'ofl' | 'free-proprietary' | 'upload'  (see §7.3)
+  lastUsed:    <timestamp>        // for LRU eviction
+}
+```
+
+Keying by URL means variable-font weights **dedup for free** — Inter
+400/550/700 all resolve (via `variant_url`) to one URL, so one record covers
+the whole range — matching the URL-dedup the resolve-time scan already does.
+Add a `family` index for management/eviction, and call
+`navigator.storage.persist()` so the browser doesn't evict the font cache
+under storage pressure.
+
+### 7.2 It feeds the per-session GPU load, not a persisted GPU state
+
+The critical nuance: **a GPU font upload cannot survive a reload** (GPU memory
+is gone), so `vellum.load_font()` must rerun every session regardless. The
+cache does **not** persist the loaded/GPU state — it persists the *bytes that
+reconstruct it*, and feeds them to the load step locally:
+
+```
+session start → resolve scan → variant_url → URL
+  → idb.get('font-bytes', URL)?  hit  → ArrayBuffer → vellum.load_font()   (instant, offline)
+                                 miss → fetch_font → idb.put(record) → vellum.load_font()
+```
+
+So the win is scoped and honest: the per-session GPU (re)load gets an instant,
+offline, deterministic byte source instead of a network round-trip that
+otherwise depends on the vendor's cache headers. The GPU upload cost itself is
+unavoidable and cheap; the network cost and the reload flicker are what the
+cache removes. This slots directly into the existing scan (CLAUDE.md's
+"`Editor.svelte`'s resolve-time font scan asks Fontavious 'which URL'"): the
+persistent store simply backs the in-memory `Set`, consulted before
+`fetch_font`.
+
+### 7.3 The `licenseTier` field makes the export guard structural
+
+The one place a cached *proprietary* font could leak is a future export plugin
+reading bytes out of this store to bundle them (§5.2 forbids bundling the
+free-proprietary/commercial tiers as raw files). Tagging every record with
+`licenseTier` turns that from *a convention someone could break* into a
+**data-level filter**:
+
+- The canvas font loader queries the store freely — all tiers, because
+  rendering-from-a-private-cache is safe for all tiers.
+- **An export path may only ever query `licenseTier === 'ofl'`** (the one tier
+  whose license grants bundling). Everything else is *invisible* to it. The
+  proprietary bytes physically live in the store (safe) but the export lane
+  cannot see them, so it cannot accidentally materialize them.
+
+This requires the tier to be *known at fetch time*, which means the
+**catalogue must carry it** — a `licenseTier` (or `category` + `license`)
+field per `CatalogueEntry`, not present today. It's a natural companion to the
+`category` faceting §6.4 already wants for search, and the generator (§6.2) can
+populate both from the Developer API's `category` + the vendor's known license
+(Google/Bunny → `ofl`, Fontshare open tier → `ofl`, Fontshare closed tier →
+`free-proprietary`, uploads → `upload`).
+
+### 7.4 What this does *not* change
+
+- **No new exposure surface.** The bytes were already on the user's machine
+  (browser HTTP cache, devtools-reachable); IDB doesn't make a proprietary
+  font *more* extractable than it already is. Exposure is still exactly:
+  server rehost + export bundling — both unchanged, both guarded elsewhere.
+- **No shared cache.** IDB is per-origin, per-user; every browser has its own.
+  It is never a cross-user mirror (which *would* be redistribution).
+- **Fontavious's fetch model is untouched.** `fetch_font`/`variant_url` stay as
+  they are; the cache is a host-side layer *in front of* the fetch, not a
+  change to the plugin. `variant_url` remains the pure resolver that produces
+  the cache key.
+
+---
+
+## 8. Summary — the decisions this doc supports
 
 1. **Rendering-by-fetching is the right, defensible model** for the open and
    free-proprietary tiers: hold bytes transiently, never rehost, never commit
@@ -499,6 +612,12 @@ often upload is needed; it never eliminates the need.
    CSS2 UA resolution → the existing schema, plus italics, categories, and a
    few hundred families including Fontshare's premium-free set. Upload closes
    the commercial/bespoke long tail.
+6. **Persist fetched fonts in a dedicated IndexedDB store keyed by resolved
+   URL** (§7) so reloads are network-free and offline — a private per-user
+   cache is licensing-safe for *all* tiers. Tag each record with `licenseTier`
+   so the export lane can only ever read the OFL tier, keeping proprietary
+   bytes cached-but-unexposed *by construction*. Requires adding a
+   `licenseTier`/`category` field to the catalogue.
 
 ---
 
