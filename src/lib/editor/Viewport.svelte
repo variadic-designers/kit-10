@@ -98,10 +98,17 @@
 	function applyColors(t: Theme) {
 		if (!vellum) return;
 		const effective = resolveEffective(t);
+		// set_colors takes legacy sRGB floats (grid rgba, then background rgba) and converts to
+		// Oklab internally. The grid line is drawn blended at up to 0.8 alpha over the background,
+		// so what matters is the LIGHTNESS CONTRAST between the two. Post the OKLCH/linear-blend
+		// migration the old values lost that contrast: grid black on a near-black bg was invisible
+		// in dark mode, and an 0.8 grid on white read too dark in light mode. These grays keep a
+		// deliberate, subtle-but-visible delta against each background (dark needs a higher raw
+		// value than light because perception compresses hard near black).
 		if (effective === 'dark') {
-			vellum.set_colors(0.0, 0.0, 0.0, 1.0, 0.005, 0.005, 0.005, 1.0);
+			vellum.set_colors(0.25, 0.25, 0.25, 1.0, 0.005, 0.005, 0.005, 1.0);
 		} else {
-			vellum.set_colors(0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0);
+			vellum.set_colors(0.88, 0.88, 0.88, 1.0, 1.0, 1.0, 1.0, 1.0);
 		}
 		requestRender();
 	}
