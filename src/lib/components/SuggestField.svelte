@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	// Generic search-and-pick input for any field a plugin marks with `suggestionsFrom` --
 	// this component has no knowledge of fonts, Fontavious, or any other specific plugin. It
 	// only ever calls callUtilityPlugin(pluginName, searchFn/fetchFn, ...) and reports back
@@ -58,6 +59,16 @@
 	let triggerRef: HTMLButtonElement | undefined = $state();
 	let inputRef: HTMLInputElement | undefined = $state();
 	let panelRef: HTMLDivElement | undefined = $state();
+	let listRef: HTMLUListElement | undefined = $state();
+
+	// Bring the highlighted row into view. `block: 'nearest'` so an already-visible row doesn't
+	// jump; the open path passes 'center' instead so the currently-picked value lands mid-panel
+	// with context above and below rather than flush at an edge.
+	async function scrollHighlightedIntoView(block: ScrollLogicalPosition = 'nearest') {
+		await tick();
+		const row = listRef?.children[highlighted] as HTMLElement | undefined;
+		row?.scrollIntoView({ block });
+	}
 
 	// Bumped on every open -- lets a slow-to-settle async call (a pick's fetch, a search) tell
 	// whether it's still "current" by the time it resolves, so it can't stomp on a session the
@@ -126,6 +137,18 @@
 		positionPanel();
 		await search(query);
 		inputRef?.focus();
+
+		// Land on the value that's already picked instead of the top of the (long) catalogue, so
+		// the user sees their current choice in context rather than having to scroll to find it.
+		// Only meaningful on this initial empty-query open -- once they start typing, `search`
+		// resets the highlight to the top match, which is what you want while filtering.
+		if (value) {
+			const idx = results.findIndex((r) => r.value === value);
+			if (idx >= 0) {
+				highlighted = idx;
+				await scrollHighlightedIntoView('center');
+			}
+		}
 	}
 
 	function closePicker() {
@@ -164,10 +187,16 @@
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			if (results.length > 0) highlighted = (highlighted + 1) % results.length;
+			if (results.length > 0) {
+				highlighted = (highlighted + 1) % results.length;
+				scrollHighlightedIntoView();
+			}
 		} else if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			if (results.length > 0) highlighted = (highlighted - 1 + results.length) % results.length;
+			if (results.length > 0) {
+				highlighted = (highlighted - 1 + results.length) % results.length;
+				scrollHighlightedIntoView();
+			}
 		} else if (e.key === 'Enter') {
 			// Prefer the keyboard-highlighted row; fall back to an exact (case-insensitive)
 			// match over just "the first result", since substring search can rank a longer
@@ -219,7 +248,7 @@
 			{:else if results.length === 0}
 				<div class="suggest-field__status">No matches</div>
 			{:else}
-				<ul class="suggest-field__list">
+				<ul class="suggest-field__list" bind:this={listRef}>
 					{#each results as entry, i (entry.value)}
 						<li>
 							<button
