@@ -223,14 +223,14 @@ Keeping these separate lets selection changes use the fast `on_selection_change`
 **`build_viewport` layout:** views split into two groups per view. Views with a `hints.vellum.position` each become their own independent root node (`extra.position = Absolute { x, y }` on their cell), floating at that literal world coordinate — they never join a shared flex parent, so one view's content size can never push another view around. Views without a position keep flowing through the legacy auto-grid:
 
 ```
-Root Column (padding: `grid-padding`, default 40px, all sides)
-  Row (padding-bottom: `grid-gap` gap, default 32px)
-    Cell Column (padding-right: `grid-gap` gap)  ← one per view, `grid-columns` per row (default 4)
+Root Column (padding: 40px all sides)
+  Row (padding-bottom: 32px gap)
+    Cell Column (padding-right: 32px gap)  ← one per view, max 4 per row
       View Box (width:0 auto, bg, border, radius, padding)
         [child views rendered recursively, or nothing if no content]
 ```
 
-The three grid numbers (`grid-columns`/`grid-gap`/`grid-padding`) are no longer hardcoded consts — they're Charter-declared **global preferences** (the `preferences()` export, surfaced in Settings → Plugins → charter). `build_viewport` reads them from KV (`pref:<id>`, seeded by the host before each interpreter call via `seedPluginPreferences`), falling back to the same defaults when unset. A pref change re-runs resolve (values aren't DB rows, so `rowsKey` never sees them — same forced re-resolve as `fontFacts`). See the plugin-`preferences` note in PLUGINS.md.
+These grid numbers (columns-per-row, gap, padding) are Charter's own structural opinion about canvas arrangement — plain `const`s in `build_viewport`, deliberately **not** user preferences (they're not a global setting, and the auto-grid isn't per-view data) and not surfaced anywhere.
 
 Charter can't pre-compute a packed fallback position for unpositioned views (it doesn't know their content size — Vellum measures text during its own layout pass), so the auto-grid stays the only option for views without an explicit position.
 

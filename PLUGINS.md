@@ -125,19 +125,21 @@ Called by the editor's Settings menu (opened from the profile picture) to discov
 
 Input: `"{}"` (reserved for future scoping).
 
-Output (`PreferenceDef[]`):
+Output (`PreferenceDef[]`) — the real shipped case is Fontavious's license-tier toggles:
 ```json
 [
   {
-    "id": "views_per_row",
-    "label": "Views per row",
-    "kind": "number",          // "toggle" | "select" | "number"
-    "group": "Layout",          // optional section header; defaults to the plugin name
-    "default": "4",             // string-encoded (bools as "true"/"false")
-    "min": 1, "max": 12          // number-only; "select" uses `options: [{value,label}]`
+    "id": "include-tier-ofl",
+    "label": "Include OFL fonts",
+    "kind": "toggle",          // "toggle" | "select" | "number"
+    "group": "Licensing",       // optional section header; defaults to the plugin name
+    "default": "true"           // string-encoded (bools as "true"/"false")
   }
 ]
 ```
+`"number"` may add `"min"`/`"max"`; `"select"` adds `"options": [{ "value", "label" }]`.
+
+Only declare something here if it's genuinely a **global, user-level** preference. A plugin's own structural opinions (e.g. Charter's auto-grid columns/gap) are not preferences and stay internal constants — don't surface them just because they're tunable numbers.
 
 The plugin **never stores the value** — it stays stateless (Key Invariant #3). The host persists values to `localStorage` (`src/lib/plugins/preferences.ts`) and is responsible for feeding them back to the plugin through its normal call inputs (the same pattern `fontFacts` uses to ride `on_resolve`'s input — a value change must force a re-resolve, since preference values are not DB rows and the `rowsKey` dedup never sees them). Wiring a specific preference's value back into `on_resolve` is per-preference work; the discovery/menu half is generic and already in place.
 
