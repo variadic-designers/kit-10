@@ -20,6 +20,12 @@ import type {
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
 import { getCachedFont, putCachedFont } from './font-cache.js';
+import { get } from 'svelte/store';
+import {
+	type CollectedPreference,
+	parsePreferenceDefsExport,
+	pluginPreferenceValues
+} from './preferences.js';
 
 function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	if (!kits) return null;
@@ -66,6 +72,9 @@ export function createPluginManager(api: Api) {
 	let context: PluginContext = { resolvedKits: null };
 
 	let activePlugin: Plugin | null = null;
+	// Name of the active interpreter plugin (Charter). Tracked so collectPreferences can attribute
+	// the interpreter's declared preferences and tell it apart from the utility plugins.
+	let activePluginName: string | null = null;
 
 	// Utility plugins (e.g. Fontavious) never join the viewport/resolve lifecycle above --
 	// they're called on demand, by name, whenever something needs them. Kept as a separate
@@ -108,8 +117,33 @@ export function createPluginManager(api: Api) {
 		);
 	}
 
+	// Per-plugin KV maps, hoisted out of makeHostFunctions' closure so the host can seed a plugin's
+	// stored preference values into its KV before a call (see seedPluginPreferences). Keyed by
+	// plugin name; each plugin's kit10_kv_get/set read+write its own map.
+	const kvStores = new Map<string, Map<string, string>>();
+	function kvStoreFor(pluginName: string): Map<string, string> {
+		let store = kvStores.get(pluginName);
+		if (!store) {
+			store = new Map<string, string>();
+			kvStores.set(pluginName, store);
+		}
+		return store;
+	}
+
+	// Copies a plugin's persisted preference values (stored host-side as `<plugin>:<id>`) into its KV
+	// as `pref:<id>`, so the plugin can read its own preferences via kit10_kv_get without the host
+	// changing any function signature. This is the generic "host owns storage, feeds values back"
+	// half of the plugin-preferences contract (see preferences.ts / PLUGINS.md).
+	function seedPluginPreferences(pluginName: string): void {
+		const store = kvStoreFor(pluginName);
+		const prefix = `${pluginName}:`;
+		for (const [key, value] of Object.entries(get(pluginPreferenceValues))) {
+			if (key.startsWith(prefix)) store.set(`pref:${key.slice(prefix.length)}`, value);
+		}
+	}
+
 	function makeHostFunctions(pluginName: string) {
-		const localKV = new Map<string, string>();
+		const localKV = kvStoreFor(pluginName);
 
 		return {
 			'extism:host/user': {
@@ -378,6 +412,7 @@ export function createPluginManager(api: Api) {
 			});
 
 			activePlugin = plugin;
+			activePluginName = name;
 			await plugin.call('on_init', JSON.stringify({ name }));
 			plugins = plugins.map((p) => (p.name === name ? { name, status: 'ready' } : p));
 
@@ -438,6 +473,47 @@ export function createPluginManager(api: Api) {
 		);
 	}
 
+	// Aggregates every loaded plugin's optional `preferences` export into one flat list for the
+	// Settings menu. The interpreter (Charter) is called on the same serial queue as resolve (Extism
+	// isn't re-entrant); already-ready utility plugins go through callUtilityPlugin. A plugin without
+	// a `preferences` export just contributes nothing -- its call rejects and is swallowed per-plugin.
+	async function collectPreferences(): Promise<CollectedPreference[]> {
+		const out: CollectedPreference[] = [];
+
+		if (activePlugin && activePluginName) {
+			const plugin = activePlugin;
+			const name = activePluginName;
+			const raw = await new Promise<unknown>((resolve) => {
+				pluginQueue = pluginQueue.then(async () => {
+					try {
+						resolve(await plugin.call('preferences', '{}'));
+					} catch {
+						resolve(null);
+					}
+				});
+			});
+			for (const def of parsePreferenceDefsExport(raw)) out.push({ plugin: name, def });
+		}
+
+		// Utility plugins that are actually loaded (skip lazy ones not yet instantiated -- asking for
+		// preferences shouldn't force-load a plugin the user hasn't invoked).
+		const utilityNames = plugins
+			.filter((p) => p.status === 'ready' && utilityPlugins.has(p.name))
+			.map((p) => p.name);
+		await Promise.all(
+			utilityNames.map(async (n) => {
+				try {
+					const raw = await callUtilityPlugin(n, 'preferences', '{}');
+					for (const def of parsePreferenceDefsExport(raw)) out.push({ plugin: n, def });
+				} catch {
+					// no `preferences` export
+				}
+			})
+		);
+
+		return out;
+	}
+
 	function callUtilityPlugin(name: string, fn: string, payload: string): Promise<unknown> {
 		const prior = utilityQueues.get(name) ?? Promise.resolve();
 		const next = prior
@@ -446,6 +522,8 @@ export function createPluginManager(api: Api) {
 				await ensureUtilityPluginLoaded(name);
 				const plugin = utilityPlugins.get(name);
 				if (!plugin) throw new Error(`utility plugin "${name}" failed to load`);
+				// Make the plugin's current preference values readable via kit10_kv_get during the call.
+				seedPluginPreferences(name);
 				return plugin.call(fn, payload);
 			});
 		utilityQueues.set(name, next);
@@ -564,6 +642,7 @@ export function createPluginManager(api: Api) {
 		loadPlugin,
 		loadUtilityPlugin,
 		callUtilityPlugin,
+		collectPreferences,
 		setData,
 		setSelection,
 		setHover,

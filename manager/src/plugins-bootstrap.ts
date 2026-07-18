@@ -17,7 +17,10 @@ const TENNER_MANIFEST: PluginManifest = { wasm: [{ url: '/tenner.wasm' }] };
 // graceful-degradation posture as the rest of the plugin-loading path.
 async function hashUrl(url: string): Promise<string | null> {
 	try {
-		const bytes = await fetch(url).then((r) => r.arrayBuffer());
+		// `no-store` so the hash reflects the file actually deployed right now, not a cached copy --
+		// otherwise a rebuilt plugin could hash to its old bytes and the `?v=` cache-bust (see the
+		// editor's plugin load) would keep pinning the stale wasm.
+		const bytes = await fetch(url, { cache: 'no-store' }).then((r) => r.arrayBuffer());
 		const digest = await crypto.subtle.digest('SHA-256', bytes);
 		return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 	} catch {

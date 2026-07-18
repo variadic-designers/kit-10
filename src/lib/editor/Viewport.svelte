@@ -4,6 +4,7 @@
 	import { setVellumInstance, setRenderRequester } from './vellum-instance.js';
 	import type { EditorActivity, EditorSelection } from './Editor.svelte';
 	import { selectView, deselectView } from './selection.js';
+	import { viewportInput } from './viewport-input.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -36,6 +37,8 @@
 	let resizeObserver: ResizeObserver | null = null;
 
 	let panning = false;
+	// Tracks Space held down, for the 'space' pan binding (hold-Space + left-drag pans, Figma-style).
+	let spaceHeld = false;
 	let lastX = 0;
 	let lastY = 0;
 	// Captured once on pointerdown (unlike lastX/lastY, which move continuously for pan
@@ -172,18 +175,43 @@
 		resizeObserver.observe(canvas);
 
 		window.addEventListener('keydown', onKeydown);
+		window.addEventListener('keyup', onKeyup);
 	});
 
 	// Dev A/B toggle for Tier-1 pixel snapping (crisp snap-to-grid vs. the default smooth SDF-AA
 	// look). Shift+P flips it; must request a repaint here since set_pixel_snap only sets a flag
 	// the next frame reads (rendering is on-demand).
 	let pixelSnap = false;
+
+	// True when a keyboard event originates from a text-entry surface -- Space there is typing, not
+	// a pan-modifier, so the 'space' binding must ignore it.
+	function isTextEntryTarget(t: EventTarget | null): boolean {
+		const el = t as HTMLElement | null;
+		if (!el || !el.tagName) return false;
+		const tag = el.tagName.toLowerCase();
+		return tag === 'input' || tag === 'textarea' || el.isContentEditable;
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'P' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			pixelSnap = !pixelSnap;
 			vellum?.set_pixel_snap(pixelSnap);
 			requestRender();
+			return;
 		}
+		if (
+			e.code === 'Space' &&
+			$viewportInput.panButton === 'space' &&
+			!isTextEntryTarget(e.target)
+		) {
+			spaceHeld = true;
+			// Stop the page from scrolling while Space is held as a pan modifier.
+			e.preventDefault();
+		}
+	}
+
+	function onKeyup(e: KeyboardEvent) {
+		if (e.code === 'Space') spaceHeld = false;
 	}
 
 	$effect(() => {
@@ -235,15 +263,40 @@
 		if (rafId) cancelAnimationFrame(rafId);
 		if (resizeObserver) resizeObserver.disconnect();
 		// onDestroy runs during SSR too (unlike onMount), where `window` is undefined.
-		if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
+		if (typeof window !== 'undefined') {
+			window.removeEventListener('keydown', onKeydown);
+			window.removeEventListener('keyup', onKeyup);
+		}
 	});
 
+	// Does this pointerdown start a pan, given the user's configured pan binding?
+	//   'left'   -- primary button, always
+	//   'middle' -- middle button only
+	//   'space'  -- primary button while Space is held
+	function gestureStartsPan(e: PointerEvent): boolean {
+		switch ($viewportInput.panButton) {
+			case 'middle':
+				return e.button === 1;
+			case 'space':
+				return e.button === 0 && spaceHeld;
+			case 'left':
+			default:
+				return e.button === 0;
+		}
+	}
+
 	function onPointerDown(e: PointerEvent) {
-		panning = true;
-		lastX = e.clientX;
-		lastY = e.clientY;
+		// Always record the down point so onPointerUp can tell a click (select) from a drag,
+		// even when this gesture isn't a pan under the current binding.
 		downX = e.clientX;
 		downY = e.clientY;
+		panning = gestureStartsPan(e);
+		if (panning) {
+			// Middle-button drags otherwise trigger the browser's autoscroll affordance.
+			if (e.button === 1) e.preventDefault();
+			lastX = e.clientX;
+			lastY = e.clientY;
+		}
 		canvas.setPointerCapture(e.pointerId);
 	}
 
@@ -273,6 +326,10 @@
 		panning = false;
 		canvas.releasePointerCapture(e.pointerId);
 
+		// Only the primary button selects -- a middle-button release (used for middle-drag pan)
+		// must never fall through into selection when the pan binding is 'middle'.
+		if (e.button !== 0) return;
+
 		const movedDistance = Math.hypot(e.clientX - downX, e.clientY - downY);
 		if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return; // was a drag-to-pan, not a click
 
@@ -299,7 +356,9 @@
 		const rect = canvas.getBoundingClientRect();
 		const cx = e.clientX - rect.left;
 		const cy = e.clientY - rect.top;
-		if (e.deltaY < 0) vellum.zoom_in_at(cx, cy);
+		// deltaY<0 is wheel-up = zoom in by default; zoomInvert swaps it.
+		const zoomIn = $viewportInput.zoomInvert ? e.deltaY > 0 : e.deltaY < 0;
+		if (zoomIn) vellum.zoom_in_at(cx, cy);
 		else vellum.zoom_out_at(cx, cy);
 		requestRender();
 	}

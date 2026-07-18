@@ -2,14 +2,18 @@
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 	import { queryBuilder, type EditorState } from 'manager';
 	import { type EditorActivity } from './Editor.svelte';
-	import MainMenu from './MainMenu.svelte';
+	import SettingsDialog from './settings/SettingsDialog.svelte';
+	import type { PluginManager } from '$lib/plugins/manager.svelte.js';
 
 	type NavProps = {
 		editorActivity: EditorActivity;
 		editorLoading: EditorState | undefined;
+		pluginManager: PluginManager | null;
 	};
 
-	let { editorActivity = $bindable(), editorLoading }: NavProps = $props();
+	let { editorActivity = $bindable(), editorLoading, pluginManager }: NavProps = $props();
+
+	let settingsOpen = $state(false);
 
 	let workspaces = $state();
 
@@ -45,15 +49,16 @@
 
 <div class="quick-preferences">
 	<DarkModeToggle />
-	<button popovertarget="profile" class="pfp">
+	<button class="pfp" onclick={() => (settingsOpen = true)} title="Settings">
 		<img src="https://cataas.com/cat/closeup" crossorigin="anonymous" alt="user profile" />
 	</button>
 
 	{#if editorLoading}
-		<MainMenu
-			editorReady={editorLoading}
+		<SettingsDialog
 			api={queryBuilder(editorLoading.dialect)}
-			bind:editorActivity
+			{editorActivity}
+			bind:open={settingsOpen}
+			{pluginManager}
 		/>
 	{/if}
 </div>

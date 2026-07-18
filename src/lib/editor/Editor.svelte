@@ -248,6 +248,23 @@
 
 	let pluginManager = $state<PluginManager | null>(null);
 
+	// Appends the registered content hash as a `?v=` query to each wasm URL so a rebuilt plugin is
+	// never served stale from the browser/Extism cache (the hash is computed no-store at
+	// registration, so it tracks the actually-deployed bytes). No hash → manifest unchanged.
+	function versionedManifest(
+		manifest: { wasm: { url: string }[] },
+		hash: string | null
+	): { wasm: { url: string }[] } {
+		if (!hash) return manifest;
+		return {
+			...manifest,
+			wasm: manifest.wasm.map((w) => ({
+				...w,
+				url: `${w.url}${w.url.includes('?') ? '&' : '?'}v=${hash}`
+			}))
+		};
+	}
+
 	// Loading watchdog: if `initializeEditorState` hasn't produced an editor after this long,
 	// offer to purge IndexedDB. The usual cause is an incompatible persisted database -- e.g.
 	// after the PGlite 0.4 (Postgres 17) -> 0.5 (Postgres 18) bump, an existing data dir can't
@@ -319,7 +336,7 @@
 				for (const plugin of catalogue) {
 					if (plugin.kind === 'utility' && plugin.activation === 'eager') {
 						await pluginManager.loadUtilityPlugin(
-							plugin.manifest,
+							versionedManifest(plugin.manifest, plugin.content_hash),
 							plugin.name,
 							(plugin.options ?? undefined) as Partial<ExtismPluginOptions> | undefined
 						);
@@ -350,7 +367,10 @@
 		api.getProjectInterpreter(projectId).then((interpreter) => {
 			if (interpreter && interpreter.name !== loadedInterpreterName) {
 				loadedInterpreterName = interpreter.name;
-				manager.loadPlugin(interpreter.manifest, interpreter.name);
+				manager.loadPlugin(
+					versionedManifest(interpreter.manifest, interpreter.content_hash),
+					interpreter.name
+				);
 			}
 		});
 	});
@@ -609,7 +629,7 @@
 
 <Layout state={editorLoading}>
 	{#snippet nav(editorLoading)}
-		<Nav {editorLoading} bind:editorActivity />
+		<Nav {editorLoading} bind:editorActivity {pluginManager} />
 	{/snippet}
 
 	{#snippet unloadedDash()}{/snippet}

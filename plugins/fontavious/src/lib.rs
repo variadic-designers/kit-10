@@ -82,6 +82,77 @@ struct SuggestionEntry {
     note: Option<String>,
 }
 
+// --- Global preferences (see PLUGINS.md `preferences` export + resources/nature-of-fonts.md §7) ---
+//
+// Declared as data for the editor's Settings menu. Fontavious exposes one license-tier toggle per
+// tier that ACTUALLY exists in the catalogue (derived, never a hardcoded tier list -- add a tier to
+// the catalogue and its toggle appears automatically), plus a toggle for the proprietary look-alike
+// names (Arial, Gotham, ...) surfaced referentially on OFL roots. The host owns storage; these
+// values are fed back via kit10_kv_get under `pref:<id>` and read by search_fonts.
+
+#[derive(Debug, Clone, Serialize)]
+struct PreferenceDef {
+    id: String,
+    label: String,
+    // "toggle" for all of Fontavious's prefs. Single-word key, so no camelCase concern (the wire
+    // shape the host reads -- see CLAUDE.md's snake_case/camelCase pitfall).
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    group: Option<String>,
+    // `default` is a Rust keyword; rename the field to emit the exact key the host reads.
+    #[serde(rename = "default")]
+    default_value: String,
+}
+
+fn tier_label(tier: &str) -> String {
+    match tier {
+        "ofl" => "Include OFL fonts".to_string(),
+        "free-proprietary" => "Include Fontshare (free)".to_string(),
+        other => format!("Include {other} fonts"),
+    }
+}
+
+// Pure builder (no host calls), so it's unit-testable against the real catalogue.
+fn preference_defs() -> Vec<PreferenceDef> {
+    let mut tiers: Vec<String> = catalogue().into_iter().map(|e| e.license_tier).collect();
+    tiers.sort();
+    tiers.dedup();
+
+    let mut defs: Vec<PreferenceDef> = tiers
+        .into_iter()
+        .map(|tier| PreferenceDef {
+            id: format!("include-tier-{tier}"),
+            label: tier_label(&tier),
+            kind: "toggle".to_string(),
+            group: Some("Licensing".to_string()),
+            default_value: "true".to_string(),
+        })
+        .collect();
+
+    // Proprietary trademark names (exact `aliases` + visual `looksLike`) are a search surface, not a
+    // license tier -- their own toggle. On by default (current behavior surfaces them).
+    defs.push(PreferenceDef {
+        id: "show-lookalikes".to_string(),
+        label: "Show proprietary look-alike names".to_string(),
+        kind: "toggle".to_string(),
+        group: Some("Licensing".to_string()),
+        default_value: "true".to_string(),
+    });
+
+    defs
+}
+
+// Reads a `pref:<id>` toggle the host seeded into KV. Unset/empty (user never touched it) or any
+// unexpected value falls back to `default`.
+fn pref_bool(id: &str, default: bool) -> bool {
+    let raw = unsafe { kit10_kv_get(format!("pref:{id}")) }.unwrap_or_default();
+    match raw.as_str() {
+        "true" => true,
+        "false" => false,
+        _ => default,
+    }
+}
+
 /// Build a suggestion for a root, always labelled with the root's own (OFL) family name -- never
 /// a trademarked alias. `note` (e.g. "matches Arial") is the referential disclosure of why this
 /// root surfaced; `approximate` (a visual-alias match) tints the note as a caution.
@@ -101,23 +172,44 @@ fn suggestion_for(e: &CatalogueEntry, note: Option<String>, approximate: bool) -
 /// trademark): an exact-alias match notes "matches Arial"; a visual match notes "approximates
 /// Gotham" with a caution tone; a direct family match has no note. Empty query returns the whole
 /// catalogue (roots only). Precedence: family > exact alias > visual, so a real name always wins.
+// Unfiltered convenience (allow every tier, show look-alikes) -- test-only; the plugin path
+// (search_fonts) always goes through search_catalogue_filtered with preference-driven predicates.
+#[cfg(test)]
 fn search_catalogue(query: &str) -> Vec<SuggestionEntry> {
+    search_catalogue_filtered(query, &|_| true, true)
+}
+
+/// Filtered search. `tier_allowed(license_tier)` gates an entry by its license tier (so a disabled
+/// tier's fonts never surface at all), and `show_lookalikes` gates the proprietary alias/look-alike
+/// name match paths (a direct family-name match always works regardless). Both are injected rather
+/// than read from KV here so this stays pure and unit-testable; `search_fonts` supplies the real,
+/// preference-driven predicates.
+fn search_catalogue_filtered(
+    query: &str,
+    tier_allowed: &dyn Fn(&str) -> bool,
+    show_lookalikes: bool,
+) -> Vec<SuggestionEntry> {
     let q = query.trim().to_lowercase();
     let contains = |s: &String| s.to_lowercase().contains(&q);
     catalogue()
         .iter()
         .filter_map(|e| {
+            if !tier_allowed(&e.license_tier) {
+                return None;
+            }
             if q.is_empty() {
                 return Some(suggestion_for(e, None, false));
             }
             if e.family.to_lowercase().contains(&q) {
                 return Some(suggestion_for(e, None, false));
             }
-            if let Some(a) = e.aliases.iter().find(|a| contains(a)) {
-                return Some(suggestion_for(e, Some(format!("matches {a}")), false));
-            }
-            if let Some(a) = e.looks_like.iter().find(|a| contains(a)) {
-                return Some(suggestion_for(e, Some(format!("approximates {a}")), true));
+            if show_lookalikes {
+                if let Some(a) = e.aliases.iter().find(|a| contains(a)) {
+                    return Some(suggestion_for(e, Some(format!("matches {a}")), false));
+                }
+                if let Some(a) = e.looks_like.iter().find(|a| contains(a)) {
+                    return Some(suggestion_for(e, Some(format!("approximates {a}")), true));
+                }
             }
             None
         })
@@ -135,7 +227,20 @@ pub fn on_init(_input: String) -> FnResult<String> {
 /// Empty query returns the full catalogue. See `search_catalogue`.
 #[plugin_fn]
 pub fn search_fonts(query: String) -> FnResult<String> {
-    Ok(serde_json::to_string(&search_catalogue(&query))?)
+    let show_lookalikes = pref_bool("show-lookalikes", true);
+    // Tier gating reads `pref:include-tier-<tier>` per entry -- fully catalogue-derived, so a new
+    // tier is honored the moment it appears in both the catalogue and the declared preferences.
+    let tier_allowed = |tier: &str| pref_bool(&format!("include-tier-{tier}"), true);
+    let results = search_catalogue_filtered(&query, &tier_allowed, show_lookalikes);
+    Ok(serde_json::to_string(&results)?)
+}
+
+/// Declares Fontavious's global preferences for the editor's Settings menu (license-tier toggles +
+/// proprietary look-alike visibility). Purely declarative -- the host stores the values and feeds
+/// them back via KV (read in search_fonts). See PLUGINS.md's `preferences` export.
+#[plugin_fn]
+pub fn preferences(_input: String) -> FnResult<String> {
+    Ok(serde_json::to_string(&preference_defs())?)
 }
 
 // The generic contract only ever sends `{ value }` (SuggestField.svelte doesn't know about
@@ -201,6 +306,11 @@ fn find_matching_variant(input: &FetchFontInput) -> Result<FontVariant, Error> {
 extern "ExtismHost" {
     fn kit10_font_cache_get(url: String) -> Vec<u8>;
     fn kit10_font_cache_put(meta_json: String, bytes: Vec<u8>);
+    // Per-plugin KV. The host seeds this plugin's stored preference values under `pref:<id>` before
+    // each call (see manager.svelte.ts's seedPluginPreferences), so search_fonts reads its own
+    // license-tier preferences here without any function signature carrying them. String in/out
+    // marshals as raw bytes (not the `u64` the pdk pitfall warns against).
+    fn kit10_kv_get(key: String) -> String;
 }
 
 // What a cached record carries alongside the bytes. `license_tier` is stored so a future export
@@ -589,5 +699,53 @@ mod catalogue_tests {
         assert!(json.contains("\"weightMax\":700"));
         assert!(!json.contains("weight_min"), "must be camelCase on the wire: {json}");
         assert!(!json.contains("\"url\""), "facts must not leak vendor URLs: {json}");
+    }
+
+    // --- global preferences (Settings menu license-tier toggles) ---
+
+    // Preferences are derived from the catalogue's real tiers (never a hardcoded tier list), plus
+    // the look-alike toggle. Asserts the serialized KEY NAMES too (`default`, `kind`), the shape the
+    // host reads -- per the wire pitfall.
+    #[test]
+    fn preferences_are_catalogue_derived_toggles() {
+        let defs = preference_defs();
+        let ids: Vec<&str> = defs.iter().map(|d| d.id.as_str()).collect();
+        // Both real catalogue tiers surface as toggles.
+        assert!(ids.contains(&"include-tier-ofl"), "{ids:?}");
+        assert!(ids.contains(&"include-tier-free-proprietary"), "{ids:?}");
+        assert!(ids.contains(&"show-lookalikes"), "{ids:?}");
+        assert!(defs.iter().all(|d| d.kind == "toggle"));
+
+        let json = serde_json::to_string(&defs).unwrap();
+        assert!(json.contains("\"default\":\"true\""), "emits the `default` key: {json}");
+        assert!(json.contains("\"kind\":\"toggle\""), "{json}");
+        assert!(!json.contains("default_value"), "must serialize as `default`: {json}");
+    }
+
+    // Disabling a tier removes its fonts from search entirely (family match included).
+    #[test]
+    fn disabling_a_tier_hides_its_fonts() {
+        // Satoshi is the free-proprietary tier; disabling ofl must NOT hide it, and disabling
+        // free-proprietary must.
+        let only_free = search_catalogue_filtered("", &|t| t == "free-proprietary", true);
+        assert!(only_free.iter().all(|r| r.value != "Inter"), "Inter (ofl) hidden when ofl off");
+        assert!(only_free.iter().any(|r| r.value == "Satoshi"), "Satoshi (free) still shown");
+
+        let no_free = search_catalogue_filtered("satoshi", &|t| t != "free-proprietary", true);
+        assert!(no_free.is_empty(), "Satoshi hidden when its tier is disabled");
+    }
+
+    // With look-alikes off, a proprietary-name query stops resolving, but real family names still do.
+    #[test]
+    fn hiding_lookalikes_suppresses_proprietary_name_matches() {
+        let hidden = search_catalogue_filtered("arial", &|_| true, false);
+        assert!(hidden.is_empty(), "'arial' matches nothing when look-alikes are hidden: {hidden:?}");
+
+        let visible = search_catalogue_filtered("arial", &|_| true, true);
+        assert!(visible.iter().any(|r| r.value == "Arimo"), "still resolves when shown");
+
+        // A real family name is unaffected by the look-alike toggle.
+        let family = search_catalogue_filtered("arimo", &|_| true, false);
+        assert!(family.iter().any(|r| r.value == "Arimo"));
     }
 }

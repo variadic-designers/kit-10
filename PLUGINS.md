@@ -119,6 +119,32 @@ If `on_resolve` has not been called yet in the session, this function should be 
 
 ---
 
+### `preferences(input: string) -> string`  *(optional)*
+
+Called by the editor's Settings menu (opened from the profile picture) to discover the **global editor preferences** this plugin wants surfaced. Purely declarative — the same "declare capability as data, host renders + stores it" idiom as `FieldDef.inputType` and `composition_field_keys`. Any plugin (interpreter or utility) may export it; a plugin that doesn't simply contributes nothing to the menu (the host's aggregation, `collectPreferences` in `manager.svelte.ts`, swallows the missing-function error per-plugin).
+
+Input: `"{}"` (reserved for future scoping).
+
+Output (`PreferenceDef[]`):
+```json
+[
+  {
+    "id": "views_per_row",
+    "label": "Views per row",
+    "kind": "number",          // "toggle" | "select" | "number"
+    "group": "Layout",          // optional section header; defaults to the plugin name
+    "default": "4",             // string-encoded (bools as "true"/"false")
+    "min": 1, "max": 12          // number-only; "select" uses `options: [{value,label}]`
+  }
+]
+```
+
+The plugin **never stores the value** — it stays stateless (Key Invariant #3). The host persists values to `localStorage` (`src/lib/plugins/preferences.ts`) and is responsible for feeding them back to the plugin through its normal call inputs (the same pattern `fontFacts` uses to ride `on_resolve`'s input — a value change must force a re-resolve, since preference values are not DB rows and the `rowsKey` dedup never sees them). Wiring a specific preference's value back into `on_resolve` is per-preference work; the discovery/menu half is generic and already in place.
+
+Host preferences that are **not** plugin-owned (theme, reduced motion, and canvas input mappings — pan gesture, zoom-invert — since Vellum is wasm-bindgen, not an Extism plugin) are declared the same way, as data: `editor/host-preferences.ts` is a registry of `PreferenceBinding` entries (a `PreferenceDef` joined to its store + codec). Host and plugin preferences merge into one list and render through a single generic control (`editor/PreferenceControl.svelte`) — the Settings menu has **no per-preference markup**, so adding either kind is a data entry, never a new row. Add a host preference by appending to `host-preferences.ts`; add a plugin preference by exporting it here.
+
+---
+
 ## Host functions
 
 These are callable from inside any data plugin. All are in the `extism:host/user` namespace.
