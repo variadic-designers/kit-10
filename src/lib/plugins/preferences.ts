@@ -167,8 +167,19 @@ export async function collectPluginPreferences(
 // validated PreferenceDef[]. Exported so the manager can reuse it for the interpreter plugin, which
 // isn't reachable through callUtilityPlugin.
 export function parsePreferenceDefsExport(raw: unknown): PreferenceDef[] {
-	let value = raw;
-	// callUtilityPlugin returns whatever the plugin call yields -- typically a JSON string.
+	let value: unknown = raw;
+	// Extism's plugin.call (and thus callUtilityPlugin / the interpreter call) returns a PluginOutput
+	// object with a .text() method, NOT a raw string -- the same shape every other caller decodes via
+	// `result.text()`. Missing this made the parser bail to [] for every plugin, which is exactly the
+	// "all plugins have no settings" symptom.
+	if (value && typeof (value as { text?: unknown }).text === 'function') {
+		try {
+			value = (value as { text(): string }).text();
+		} catch {
+			return [];
+		}
+	}
+	// After .text() (or if a caller already handed us a string), parse the JSON.
 	if (typeof value === 'string') {
 		try {
 			value = JSON.parse(value);
