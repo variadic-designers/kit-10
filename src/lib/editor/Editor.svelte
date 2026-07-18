@@ -388,8 +388,57 @@
 	// untouched. Reassigned (never mutated) so the setData $effect below re-fires and
 	// re-resolves once facts land -- facts aren't DB rows, so the live-query dedup never sees
 	// them.
+
+	// Only these two failure shapes are the documented, expected, permanent kind (an
+	// uncatalogued family, or a weight/style this family genuinely doesn't ship) -- see
+	// find_entry/find_matching_variant in plugins/fontavious/src/lib.rs. Retrying either of
+	// those forever would just spam the catalogue lookup for something that will never change.
+	// Anything else (a worker call rejecting, an unreachable CDN, a transient network blip) is
+	// exactly the "real bug that looks identical to a catalogue miss" case -- those ARE worth
+	// retrying, because they very plausibly succeed a moment later on their own (see CLAUDE.md's
+	// "self-correcting on the facts re-resolve" note for the specific resolve-racing-ahead case).
+	// Shared by BOTH the facts scan and the fetch scan below.
+	function isPermanentFontFailure(err: unknown): boolean {
+		const msg = String(err);
+		return msg.includes('not in catalogue') || msg.includes('no variant');
+	}
+
+	const FONT_FETCH_MAX_RETRIES = 2;
+	const FONT_FETCH_RETRY_DELAY_MS = 600;
+
 	const attemptedFactsFamilies = new Set<string>();
 	let fontFacts = $state<Record<string, FamilyFacts>>({});
+
+	// Facts are the master switch for the whole font pipeline: without them Charter can't snap a
+	// requested weight to one the family actually ships, so it emits the raw weight, the fetch
+	// scan below asks variant_url for a weight that doesn't exist ("no variant" -> a PERMANENT
+	// failure, correctly), nothing ever loads, and cosmic-text silently substitutes some other
+	// loaded family (the "falls back to the default font" bug). So a transient family_facts
+	// failure (a worker/plugin-load race on the shared utility queue) must NOT be treated as
+	// final -- it used to mark the family attempted forever and swallow the error, permanently
+	// starving that family of facts. Retry everything except a genuine catalogue miss.
+	async function loadFamilyFacts(family: string, attempt = 0): Promise<void> {
+		if (!pluginManager) return;
+		try {
+			const result = await pluginManager.callUtilityPlugin(
+				'fontavious',
+				'family_facts',
+				JSON.stringify({ value: family })
+			);
+			const facts = JSON.parse((result as { text(): string }).text()) as FamilyFacts;
+			fontFacts = { ...fontFacts, [family]: facts }; // reassign (never mutate) -> re-resolve
+		} catch (err) {
+			// A genuine catalogue miss is expected and permanent -- an uncatalogued family simply
+			// has no snapping opinion and its weights pass through untouched. Anything else is a
+			// transient plumbing failure worth retrying.
+			if (isPermanentFontFailure(err)) return;
+			if (attempt < FONT_FETCH_MAX_RETRIES) {
+				await new Promise((r) => setTimeout(r, FONT_FETCH_RETRY_DELAY_MS * (attempt + 1)));
+				return loadFamilyFacts(family, attempt + 1);
+			}
+			console.warn(`[fontavious] family_facts failed for ${family}:`, err);
+		}
+	}
 
 	$effect(() => {
 		if (!pluginManager) return;
@@ -406,17 +455,7 @@
 			const key = family.toLowerCase();
 			if (attemptedFactsFamilies.has(key)) continue;
 			attemptedFactsFamilies.add(key);
-
-			pluginManager
-				.callUtilityPlugin('fontavious', 'family_facts', JSON.stringify({ value: family }))
-				.then((result) => {
-					const facts = JSON.parse((result as { text(): string }).text()) as FamilyFacts;
-					fontFacts = { ...fontFacts, [family]: facts };
-				})
-				.catch(() => {
-					// Not in the catalogue -- expected for a genuinely unknown family. No facts
-					// means no snapping opinion; the weight passes through as typed.
-				});
+			loadFamilyFacts(family);
 		}
 	});
 
@@ -466,23 +505,6 @@
 		fontStatus = { ...fontStatus, [family]: status };
 	}
 
-	// Only these two failure shapes are the documented, expected, permanent kind (an
-	// uncatalogued family, or a weight/style this family genuinely doesn't ship) -- see
-	// find_entry/find_matching_variant in plugins/fontavious/src/lib.rs. Retrying either of
-	// those forever would just spam the catalogue lookup for something that will never change.
-	// Anything else (a worker call rejecting, an unreachable CDN, a transient network blip) is
-	// exactly the "real bug that looks identical to a catalogue miss" case the pre-existing
-	// console.warn already called out -- those ARE worth retrying, because they very plausibly
-	// succeed a moment later on their own (see CLAUDE.md's "self-correcting on the facts
-	// re-resolve" note for the specific case of a resolve racing ahead of family_facts).
-	function isPermanentFontFailure(err: unknown): boolean {
-		const msg = String(err);
-		return msg.includes('not in catalogue') || msg.includes('no variant');
-	}
-
-	const FONT_FETCH_MAX_RETRIES = 2;
-	const FONT_FETCH_RETRY_DELAY_MS = 600;
-
 	async function loadVariant(req: FontRequest, key: string, attempt = 0): Promise<void> {
 		if (!pluginManager) return;
 		const vellum = getVellumInstance();
@@ -522,6 +544,14 @@
 			}
 		} catch (err) {
 			console.warn(`[fontavious] variant_url/fetch_font failed for ${key}:`, err);
+			// "no variant" is NOT a family-level error: it's either the brief pre-facts window
+			// (Charter emitted the raw weight before family_facts landed -- the facts re-resolve
+			// will produce a real weight that loads and flips this family to `ready`) or a weight
+			// this family genuinely doesn't ship (a different, real weight covers it). Leave the
+			// status as-is (`loading` until a real weight lands) rather than flashing a red badge
+			// that self-clears a beat later. Only a genuine catalogue miss, or an exhausted
+			// transient failure, is a real "this family won't load" error.
+			if (String(err).includes('no variant')) return;
 			if (!isPermanentFontFailure(err) && attempt < FONT_FETCH_MAX_RETRIES) {
 				await new Promise((r) => setTimeout(r, FONT_FETCH_RETRY_DELAY_MS * (attempt + 1)));
 				return loadVariant(req, key, attempt + 1);

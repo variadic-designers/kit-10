@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { layerDotColor } from './layer-color.ts';
-	import { factsForFamily } from '$lib/plugins/font-weight.js';
+	import { factsForFamily, resolveFontWeight } from '$lib/plugins/font-weight.js';
 	import type { FamilyFacts, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 	import type { ResolvedProperty } from 'manager';
 
@@ -58,15 +58,27 @@
 		return Number.isFinite(n) && n > 0 ? n : 400;
 	});
 
+	const currentFacts = $derived(factsForFamily(fontFacts, currentFamily));
+
+	// The weight actually on screen. Charter's resolve_font_weight snaps a requested weight the
+	// family can't ship (Lato 600) to the nearest real one (700) at RENDER time WITHOUT rewriting
+	// the stored value -- that's the deliberate design (substitution is a render decision, see
+	// CLAUDE.md). So the panel must highlight what renders, not the raw stored value: otherwise a
+	// stored 600 against a [400,700] family highlights nothing (600 isn't a button), which reads
+	// as "the weight control is broken / nothing selected." Mirroring the exact snap here keeps
+	// the selected button in lock-step with the glyphs on the canvas -- and because the stored
+	// value stays untouched, switching back to a variable font that CAN do 600 shows 600 again,
+	// instead of a pick-time write burning 700 in permanently.
+	const displayWeight = $derived(resolveFontWeight(currentWeight, currentFacts));
+
 	// Which named weights the resolved family can actually render, from the font-facts channel
 	// (text-affordances Phase 1/2) -- "pick from what exists," not free-typed numbers Lato has
 	// no file for. No facts for this family (uncatalogued, or not fetched yet) -> the full
 	// standard set, unfiltered, exactly Charter's own "no facts, no opinion" fallback.
 	const availableWeights = $derived.by(() => {
-		const facts = factsForFamily(fontFacts, currentFamily);
-		if (!facts || facts.variants.length === 0) return STANDARD_WEIGHTS;
+		if (!currentFacts || currentFacts.variants.length === 0) return STANDARD_WEIGHTS;
 		return STANDARD_WEIGHTS.filter((w) =>
-			facts.variants.some((v) => w.weight >= v.weightMin && w.weight <= v.weightMax)
+			currentFacts.variants.some((v) => w.weight >= v.weightMin && w.weight <= v.weightMax)
 		);
 	});
 
@@ -81,7 +93,10 @@
 	}
 
 	function selectWeight(weight: number) {
-		if (weight === currentWeight) return;
+		// Compare against what's on screen: clicking the already-rendered weight is a no-op even
+		// when the raw stored value differs (e.g. stored 600 rendering as 700 -- clicking 700
+		// shouldn't rewrite). Clicking any OTHER button writes that literal weight as usual.
+		if (weight === displayWeight) return;
 		const t = track(field.key);
 		if (!onFieldUpdate || !t.sourceLayerId) return;
 		onFieldUpdate({ layerId: t.sourceLayerId, property: field.key, value: String(weight) });
@@ -111,8 +126,10 @@
 			<button
 				type="button"
 				class="weight-field__btn"
-				class:weight-field__btn--sel={currentWeight === opt.weight}
-				title="{opt.label} ({opt.weight})"
+				class:weight-field__btn--sel={displayWeight === opt.weight}
+				title={displayWeight === opt.weight && currentWeight !== opt.weight
+					? `${opt.label} (${opt.weight}) — ${currentFamily} has no ${currentWeight}, showing nearest`
+					: `${opt.label} (${opt.weight})`}
 				onclick={() => selectWeight(opt.weight)}
 			>
 				{opt.weight}
