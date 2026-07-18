@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { getTheme, initializeTheme } from '$lib/theming';
+	import { getTheme, initializeTheme } from '$lib/theming.js';
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
 
 	import '$lib/fonts/Satoshi/Satoshi.css';
 
-	import { initializeReducedMotion } from '$lib/reduced-motion';
+	import { initializeReducedMotion } from '$lib/reduced-motion.js';
 	import { page } from '$app/state';
 
 	$effect(() => {

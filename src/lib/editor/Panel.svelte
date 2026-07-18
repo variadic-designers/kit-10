@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import { collapse } from './panelStore.ts';
 
 	type PanelSection = {

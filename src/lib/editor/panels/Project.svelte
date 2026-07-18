@@ -3,7 +3,7 @@
 		contextMenu,
 		type ContextMenuContent,
 		type ContextMenuContentGenerator
-	} from '$lib/components/contextMenu';
+	} from '$lib/components/contextMenu.js';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
 	import type { EditorState } from 'manager';

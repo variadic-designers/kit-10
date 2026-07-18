@@ -48,7 +48,7 @@
 
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import { draggable } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 

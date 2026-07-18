@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { contextMenu } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import { iconFromResolvedScalar, isColorScalar } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
@@ -69,7 +69,7 @@
 		inputType === 'font' && value ? fontStatus?.[value] : undefined
 	);
 
-	const menu = () => {
+	const menu: ContextMenuContentGenerator = () => {
 		return [
 			{
 				name: 'tokenize',
@@ -762,22 +762,6 @@
 			color: var(--color-add-var-text);
 			font-size: $x-font-size-sm;
 			background: var(--color-panel-header-fill);
-
-			&--select,
-			&-select {
-				all: unset;
-				display: block;
-				width: 100%;
-				height: 100%;
-				cursor: pointer;
-				@include fonts-stack('Satoshi-Regular', sans);
-				font-size: $x-font-size-xs;
-
-				option {
-					color: var(--color-text);
-					background: var(--color-pure);
-				}
-			}
 
 			&:has(span.token-pill) {
 				background: var(--color-surface-alt);

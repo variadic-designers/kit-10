@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { EditorSelection } from '../Editor.svelte';
 	import Panel from '../Panel.svelte';
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
 	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
@@ -649,13 +649,6 @@
 			.view__icon,
 			.view__name {
 				color: var(--color-primary);
-			}
-
-			&:hover {
-				.view__icon,
-				.view__name {
-					// color: var(--color-primary-hover);
-				}
 			}
 		}
 

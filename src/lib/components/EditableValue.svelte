@@ -74,11 +74,19 @@
 		class="editable-value-input {className}"
 	/>
 {:else if children}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<span
+		role="button"
+		tabindex="0"
 		onclick={(e) => {
 			e.stopPropagation();
 			startEdit();
+		}}
+		onkeydown={(e) => {
+			if (e.key === 'Enter' || e.key === ' ') {
+				e.preventDefault();
+				e.stopPropagation();
+				startEdit();
+			}
 		}}
 		class="editable-value {className}"
 	>

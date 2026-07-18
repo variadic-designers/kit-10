@@ -146,7 +146,7 @@ export interface QueryToken {
 	instantiateKitDefaults: (viewId: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
-	getTokensByProjectId: (projectId: string) => SelectQueryBuilder<
+	getTokensByProjectId: (projectId: string | null) => SelectQueryBuilder<
 		Schema,
 		'tokens',
 		{
@@ -1813,7 +1813,18 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			]);
 	},
 
-	getTokensByProjectId: (projectId: string) => {
+	getTokensByProjectId: (projectId: string | null) => {
+		if (!projectId)
+			return db
+				.selectFrom('tokens')
+				.where('tokens.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'tokens.id as tokenId',
+					'tokens.alias as tokenAlias',
+					'tokens.value as tokenValue',
+					'tokens.kit_id as tokenKitId',
+					'tokens.view_id as tokenViewId'
+				]);
 		return db
 			.selectFrom('tokens')
 			.where('tokens.project_id', '=', projectId)

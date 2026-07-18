@@ -9,7 +9,7 @@
 	import Axis from './Axis.svelte';
 	import type { Api } from 'manager';
 	import { matchesArg } from 'manager';
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
 	import { shapeIcon } from './layer-color.ts';

@@ -2,7 +2,7 @@
 	import { type EditorState, type Api, queryBuilder } from 'manager';
 	import { liveQuery, type EditorActivity } from './Editor.svelte';
 	import Renameable from '$lib/components/Renameable.svelte';
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 
 	type MainMenuProps = {
 		editorReady: EditorState;

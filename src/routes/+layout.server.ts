@@ -1,10 +1,10 @@
-import type { LayoutServerLoad } from './$types';
+import type { LayoutServerLoad } from './$types.js';
 import { parse } from 'cookie';
 
-import { type Theme, themeOptions } from '$lib/theming';
-import { type ReducedMotion, reducedMotionOptions } from '$lib/reduced-motion';
+import { type Theme, themeOptions } from '$lib/theming.js';
+import { type ReducedMotion, reducedMotionOptions } from '$lib/reduced-motion.js';
 
-import type { LayoutData } from '$lib/types/layoutdata';
+import type { LayoutData } from '$lib/types/layoutdata.js';
 
 export const load: LayoutServerLoad = async ({ request }): Promise<LayoutData> => {
 	const cookies = parse(request.headers.get('cookie') ?? '');

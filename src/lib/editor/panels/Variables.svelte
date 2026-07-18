@@ -44,7 +44,7 @@
 </script>
 
 <script lang="ts">
-	import { contextMenu, type ContextMenuContent } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
 	import { type Api, type EditorState, type TokenValue } from 'manager';
@@ -150,7 +150,7 @@
 		await api.updateTokenAlias(tokenId, alias);
 	}
 
-	const tokenPanelContextMenu: ContextMenuContent = () => [
+	const tokenPanelContextMenu: ContextMenuContentGenerator = () => [
 		{
 			name: 'add',
 			displayText: 'Add View Token',
@@ -178,7 +178,7 @@
 		}
 	];
 
-	function tokenContextMenu(tokenId: string): ContextMenuContent {
+	function tokenContextMenu(tokenId: string): ContextMenuContentGenerator {
 		return () => {
 			const token = [...projectTokensQuery.rows, ...kitTokensQuery.rows, ...viewTokensQuery.rows].find(
 				(t: TokenRow) => t.tokenId === tokenId

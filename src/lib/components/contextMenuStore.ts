@@ -14,7 +14,11 @@ export type MenuItem = {
 	icon?: string;
 	disabled?: boolean;
 	tone?: 'neutral' | 'destructive';
-	onClick?: (target: HTMLElement | null) => void;
+	// A plain (sync or async, fire-and-forget) onClick just performs an action. Returning
+	// { link, tab } synchronously instead tells the menu to open that URL (see handleAction
+	// in ContextMenuList.svelte) -- e.g. an external donate/docs link that shouldn't be a raw
+	// <a> inside the menu's own click handling.
+	onClick?: (target: HTMLElement | null) => void | { link: string; tab?: string } | Promise<void>;
 	// A nested flyout, resolved lazily (same as the root menu's own content) when the item is
 	// opened, not when the parent menu is built -- so a submenu generator sees fresh state.
 	submenu?: ContextMenu;

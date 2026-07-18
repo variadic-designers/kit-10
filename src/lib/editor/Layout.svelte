@@ -1,8 +1,8 @@
 <script lang="ts" generics="T extends Record<string, any>">
 	import { getTheme } from '$lib/theming.js';
-	import { contextMenu } from '$lib/components/contextMenu';
+	import { contextMenu } from '$lib/components/contextMenu.js';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 
 	const navContextMenu: ContextMenuContentGenerator = () => {
 		return [

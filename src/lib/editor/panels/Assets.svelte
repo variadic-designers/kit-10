@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Panel from '../Panel.svelte';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { importAssetFile, removeAsset } from '../assetStore.ts';

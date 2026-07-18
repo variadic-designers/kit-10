@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Panel from '../Panel.svelte';
 	import type { PluginManager } from '$lib/plugins/manager.svelte.js';
 

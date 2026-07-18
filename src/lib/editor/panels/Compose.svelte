@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Panel from '../Panel.svelte';
-	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu';
+	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { liveQuery, type EditorActivity, type EditorSelection } from '../Editor.svelte';
 	import { type Api, type EditorState } from 'manager';
