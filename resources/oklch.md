@@ -38,34 +38,54 @@ authoring or storage form anywhere in the stack.
   palette, the theme maps, scattered `var(..., #fallback)` literals, two
   script files, and the brand SVGs) are all migrated to native `oklch(...)`.
 
-**Not built:** host-side gamut mapping, the panel's fallback-visibility
-affordance (oklch.com-style "here's what will actually render"), interactive
-2D graph pickers, and Display-P3 output.
+**Not built:** host-side gamut mapping and the panel's fallback-visibility
+affordance (oklch.com-style "here's what will actually render"), and
+interactive 2D graph pickers. Display-P3 output **is now shipped** (see below).
 
-## Upstream: what's blocking P3
+## Display-P3 output (shipped 2026-07-18)
 
-Display-P3 output needs a **wgpu 29→30+ upgrade** — `taf_can_do/Cargo.toml`
-still pins `wgpu = { version = "29.0" }` (`29.0.3` resolved in
-`Cargo.lock`), and that version's `SurfaceConfiguration` has no `color_space`
-field at all — there's no way to ask for anything but sRGB output on the
-version currently pinned.
+Wide-gamut output is live on the web build, gated so it only engages where it
+helps. Vellum owns the whole decision (per the ownership table below — "it
+owns the surface"); nothing in the editor/Charter changed.
 
-**wgpu 30.0.0 is already published** (confirmed against docs.rs, not
-guessed) and does add what's needed: `SurfaceConfiguration::color_space:
-SurfaceColorSpace`, an enum with `Srgb`, **`DisplayP3`** (wide-gamut SDR, P3
-primaries + sRGB transfer function — exactly what this feature wants),
-`Auto`, plus several HDR variants (`ExtendedSrgbLinear`/`ExtendedSrgb`/
-`ExtendedDisplayP3`/`Bt2100Pq`/`Bt2100Hlg`) unrelated to this use case. So the
-upgrade is available now, not hypothetically blocked on an upstream feature
-that doesn't exist yet — the remaining work is just doing the bump: `Cargo.toml`
-version pin, resolving whatever breaking API changes 29→30 brings elsewhere
-in `taf_can_do` (not yet audited), then actually setting `color_space:
-SurfaceColorSpace::DisplayP3` on the surface config plus the
-`matchMedia('(color-gamut: p3)')`-gated decision of when to request it. Still
-deliberately not bundled with the color work above — it's its own dependency
-bump with its own risk surface. Vellum's pipeline already isolates "convert
-to output format" to one final WGSL step, so wiring P3 in later is additive,
-not another refactor.
+- **wgpu 29 → 30 bump** unlocked `SurfaceConfiguration::color_space:
+  SurfaceColorSpace` (with a `DisplayP3` variant: P3 primaries, sRGB transfer
+  function, SDR). See `taf_can_do`'s git history for the mechanical breaking
+  changes (present→Queue::present, vertex-buffer `Option` wrapping,
+  `apply_limit_buckets`).
+- **Opt-in is doubly gated**, in `create_graphics_for_canvas`: the display
+  must report `matchMedia('(color-gamut: p3)')` AND the surface must actually
+  support `SurfaceColorSpaces::DISPLAY_P3` for the chosen format. Only then is
+  `color_space` set to `DisplayP3`; otherwise the path is byte-identical to
+  sRGB. On an sRGB display, requesting P3 would just lean on the OS to map it
+  back — no gain, and exactly the inconsistently-implemented color management
+  this file warns about.
+- **The transfer function is unchanged** — the render target is still an
+  `*Srgb`-format view that gamma-encodes on write; the color space only
+  changes how the surface interprets those bytes' *primaries*. So the entire
+  P3 addition is a single **linear-sRGB → linear-Display-P3 primary rotation**
+  (`color.rs::linear_srgb_to_linear_p3`, a matrix composed offline from the
+  CSS Color 4 / Color.js constants and unit-tested against them), applied at
+  each shader's final output. Grays/black/white are unchanged (matrix rows sum
+  to 1); only colors with real chroma move.
+- **Delivery is a WGSL `const OUTPUT_P3`** injected per-pipeline
+  (`pipeline.rs::wgsl`), the compiler folds it away when false. Deliberately
+  *not* a `SceneUniforms` field: several shaders declare only a short prefix of
+  that shared buffer, so a trailing uniform would be a byte-layout minefield
+  (see CLAUDE.md). Every surface-writing shader (`shader`/`grid`/`hatch`/
+  `glyph`/`image`/`composite`) applies `to_output_gamut`; `composite` is the
+  one special case — `content_tex` already holds P3, so it pulls content back
+  with `from_output_gamut`, runs its overlay math in sRGB as before, and
+  rotates the result forward at output.
+- **Images too** (`Rgba8UnormSrgb` → sampled linear sRGB) get the same
+  rotation, or they'd over-saturate on a P3 surface.
+
+**Still deferred (and the next real refinement):** proper host-side gamut
+mapping for colors beyond even the target gamut. Today those get the GPU's
+per-channel clip (hue-shifting) at the surface; the CSS Color 4 chroma
+reduction below is the fix, and it's host-owned because a shader can't do that
+search well. P3 output makes this *less* pressing (P3 holds most authored
+colors) but not moot.
 
 ## Nuances
 
