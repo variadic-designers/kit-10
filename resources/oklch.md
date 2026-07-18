@@ -44,16 +44,28 @@ affordance (oklch.com-style "here's what will actually render"), interactive
 
 ## Upstream: what's blocking P3
 
-Display-P3 output needs a **wgpu 29→30+ upgrade**, confirmed by reading the
-vendored source (not guessed): `wgpu 29.0.3`'s `SurfaceConfiguration` has no
-`color_space` field, and its WebGPU-backend `GpuCanvasConfiguration` bindings
-expose no `colorSpace` at all — there's no way to ask for anything but sRGB
-output on the version currently pinned in `taf_can_do/Cargo.lock`. A later
-wgpu release adds `SurfaceConfiguration::color_space: SurfaceColorSpace`. The
-upgrade is deliberately not bundled with the color work above — it's a
-separate, larger dependency bump (broad API surface, likely touches other
-call sites). Vellum's pipeline already isolates "convert to output format" to
-one final WGSL step, so wiring P3 in later is additive, not another refactor.
+Display-P3 output needs a **wgpu 29→30+ upgrade** — `taf_can_do/Cargo.toml`
+still pins `wgpu = { version = "29.0" }` (`29.0.3` resolved in
+`Cargo.lock`), and that version's `SurfaceConfiguration` has no `color_space`
+field at all — there's no way to ask for anything but sRGB output on the
+version currently pinned.
+
+**wgpu 30.0.0 is already published** (confirmed against docs.rs, not
+guessed) and does add what's needed: `SurfaceConfiguration::color_space:
+SurfaceColorSpace`, an enum with `Srgb`, **`DisplayP3`** (wide-gamut SDR, P3
+primaries + sRGB transfer function — exactly what this feature wants),
+`Auto`, plus several HDR variants (`ExtendedSrgbLinear`/`ExtendedSrgb`/
+`ExtendedDisplayP3`/`Bt2100Pq`/`Bt2100Hlg`) unrelated to this use case. So the
+upgrade is available now, not hypothetically blocked on an upstream feature
+that doesn't exist yet — the remaining work is just doing the bump: `Cargo.toml`
+version pin, resolving whatever breaking API changes 29→30 brings elsewhere
+in `taf_can_do` (not yet audited), then actually setting `color_space:
+SurfaceColorSpace::DisplayP3` on the surface config plus the
+`matchMedia('(color-gamut: p3)')`-gated decision of when to request it. Still
+deliberately not bundled with the color work above — it's its own dependency
+bump with its own risk surface. Vellum's pipeline already isolates "convert
+to output format" to one final WGSL step, so wiring P3 in later is additive,
+not another refactor.
 
 ## Nuances
 
