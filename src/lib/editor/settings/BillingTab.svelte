@@ -81,6 +81,21 @@
 			</article>
 		{/each}
 	</div>
+
+	<div class="support">
+		<p class="lede">
+			KIT·10 stays free and keeps getting built because of donations.
+		</p>
+		<p class="powering">By supporting, you’re powering:</p>
+		<ul class="powers">
+			<li><i class="fa-solid fa-cube"></i> KIT·10</li>
+			<li><i class="fa-solid fa-plug"></i> First-party plugins</li>
+			<li><i class="fa-solid fa-cat"></i> Cats</li>
+		</ul>
+		<a class="donate" href="https://ko-fi.com/yorqat" target="_blank" rel="noreferrer">
+			<i class="fa-solid fa-heart"></i> Support KIT·10
+		</a>
+	</div>
 </div>
 
 <style lang="scss">
@@ -212,6 +227,71 @@
 			&.primary:not(:disabled):hover {
 				background: var(--color-primary-hover);
 				color: var(--color-bg);
+			}
+		}
+	}
+
+	.support {
+		margin-top: $x-space-sm;
+		padding: $x-space-md;
+		border: 1px solid var(--color-bg);
+		border-radius: $x-space-xs;
+		background: var(--color-surface);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: $x-space-xs;
+
+		.lede {
+			@include fonts-stack('Satoshi-Regular', sans);
+			font-weight: 600;
+			color: var(--color-text);
+			font-size: $x-font-size-md;
+			max-width: 40ch;
+		}
+
+		.powering {
+			color: var(--color-text-muted);
+			font-size: $x-font-size-sm;
+		}
+
+		.powers {
+			display: flex;
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: $x-space-sm;
+			list-style: none;
+
+			li {
+				display: inline-flex;
+				align-items: center;
+				gap: calc($x-space-xs / 2);
+				color: var(--color-text);
+				font-size: $x-font-size-sm;
+				@include fonts-stack('Satoshi-Regular', sans);
+
+				i {
+					color: var(--color-primary);
+				}
+			}
+		}
+
+		.donate {
+			margin-top: calc($x-space-xs / 2);
+			display: inline-flex;
+			align-items: center;
+			gap: $x-space-xs;
+			background: var(--color-primary);
+			color: var(--color-bg);
+			border-radius: calc($x-space-xs / 2);
+			padding: calc($x-space-xs / 2) $x-space-md;
+			text-decoration: none;
+			@include fonts-stack('Satoshi-Regular', sans);
+			font-weight: 600;
+
+			&:hover {
+				background: var(--color-primary-hover);
 			}
 		}
 	}
