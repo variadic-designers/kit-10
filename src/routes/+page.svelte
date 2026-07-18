@@ -28,6 +28,7 @@
 			<img src="/favicon.svg" alt="KIT•10" />
 		</a>
 		<div class="nav-actions">
+			<a href="/store" class="nav-link">Store</a>
 			<DarkModeToggle />
 			<a href="https://ko-fi.com/yorqat" target="_blank" rel="noopener" class="btn-donate"
 				><i class="fa-solid fa-heart"></i> Donate</a
@@ -575,6 +576,26 @@
 	}
 
 	#landing {
+		// Scoped under #landing (not the top-level `nav {}` block) on purpose: `#landing a`
+		// carries an id and would otherwise out-specify a plain `nav .nav-link`, stripping the
+		// color/font back to the anchor reset. Same reason the buttons below live here.
+		.nav-link {
+			@include fonts-stack('Satoshi-Medium', sans);
+			font-size: $x-font-size-md;
+			text-decoration: none;
+			color: var(--color-text-muted);
+			padding: $x-space-1 $x-space-2;
+			border-radius: $x-space-1;
+
+			&:hover {
+				color: var(--color-text);
+			}
+
+			@include layout-respond-max('md') {
+				display: none;
+			}
+		}
+
 		.btn-primary {
 			display: inline-flex;
 			align-items: center;
