@@ -4,6 +4,19 @@
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!--
+			Font Awesome is loaded here, in the initial HTML head, rather than per-route via
+			<svelte:head>. A <svelte:head> link is only in the SSR'd head on a full page load of that
+			route; on a client-side navigation it's injected by JS after the component mounts, so the
+			icon webfont arrives late and glyph-only UI (e.g. the Settings dialog tabs) renders as
+			empty boxes until it does. In app.html it's in the head for every route and every load
+			path. preconnect warms the CDN connection before the stylesheet request.
+		-->
+		<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
+		/>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

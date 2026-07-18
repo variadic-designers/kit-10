@@ -202,10 +202,6 @@
 
 <svelte:head>
 	<title>KIT•10 — Plugin Store</title>
-	<link
-		rel="stylesheet"
-		href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
-	/>
 	<meta name="description" content="Browse and install KIT•10 plugins — interpreters, utilities, and renderers." />
 </svelte:head>
 

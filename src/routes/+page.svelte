@@ -90,10 +90,6 @@
 
 <svelte:head>
 	<title>KIT•10 — Design System Framework</title>
-	<link
-		rel="stylesheet"
-		href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
-	/>
 	<meta
 		name="description"
 		content="KIT•10 is the shared model beneath design and code. Declare intent once; every variant resolves; the code exports to match."
