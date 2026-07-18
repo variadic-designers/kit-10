@@ -142,6 +142,19 @@ export function createPluginManager(api: Api) {
 		}
 	}
 
+	// Re-resolve when any plugin preference changes. Preference values aren't DB rows, so the
+	// editor's rowsKey dedup never fires for them -- the interpreter must re-run build_viewport to
+	// pick up e.g. a new grid-column count (same reasoning as fontFacts). The first, synchronous
+	// emission is the current value (nothing changed yet), so it's skipped.
+	let prefsInitialized = false;
+	pluginPreferenceValues.subscribe(() => {
+		if (!prefsInitialized) {
+			prefsInitialized = true;
+			return;
+		}
+		if (activePlugin) enqueue(runResolve);
+	});
+
 	function makeHostFunctions(pluginName: string) {
 		const localKV = kvStoreFor(pluginName);
 
@@ -324,6 +337,9 @@ export function createPluginManager(api: Api) {
 
 	async function runResolve(): Promise<void> {
 		if (!activePlugin) return;
+		// Make the interpreter's own preference values readable via kit10_kv_get during build_viewport
+		// (same seeding callUtilityPlugin does for utility plugins).
+		if (activePluginName) seedPluginPreferences(activePluginName);
 		mark('resolve:serialize:start');
 		const payload = JSON.stringify({
 			activeViewId: _viewId,
@@ -371,6 +387,9 @@ export function createPluginManager(api: Api) {
 			// If setData fired between enqueue and execution, our project_views
 			// are stale — runResolve will produce a correct viewport instead.
 			if (capturedGen !== selectionGen || !activePlugin) return;
+
+			// on_selection_change re-runs build_viewport, which reads layout prefs from KV -- seed them.
+			if (activePluginName) seedPluginPreferences(activePluginName);
 
 			const payload = JSON.stringify({
 				primary: _selPrimary,

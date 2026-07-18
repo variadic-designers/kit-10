@@ -60,8 +60,25 @@
 		return kind === 'interpreter' ? 'fa-solid fa-diagram-project' : 'fa-solid fa-plug';
 	}
 
-	function statusLabel(name: string): string {
-		return statusByName.get(name) ?? 'not loaded';
+	// Status label + tone. A lazy plugin that isn't currently loaded isn't "not loaded" -- it's
+	// loaded on demand, one call at a time (Tenner), so it reads "On Demand" in green rather than a
+	// muted absence.
+	function statusDisplay(row: PluginRowLike): { label: string; tone: 'good' | 'muted' | 'bad' } {
+		const status = statusByName.get(row.name);
+		switch (status) {
+			case 'ready':
+				return { label: 'Loaded', tone: 'good' };
+			case 'loading':
+				return { label: 'Loading…', tone: 'muted' };
+			case 'error':
+				return { label: 'Error', tone: 'bad' };
+			case 'disabled':
+				return { label: 'Disabled', tone: 'muted' };
+			default:
+				return row.activation === 'lazy'
+					? { label: 'On Demand', tone: 'good' }
+					: { label: 'Not loaded', tone: 'muted' };
+		}
 	}
 </script>
 
@@ -72,6 +89,7 @@
 		<p class="muted">No plugins registered.</p>
 	{:else}
 		{#each rows as row (row.name)}
+			{@const st = statusDisplay(row)}
 			<article class="plugin">
 				<header>
 					<i class={kindIcon(row.kind)}></i>
@@ -79,8 +97,8 @@
 						<span class="name">{row.name}</span>
 						<span class="sub">{row.kind}{row.activation ? ` · ${row.activation}` : ''}</span>
 					</div>
-					<span class="status" class:ready={statusLabel(row.name) === 'ready'}>
-						{statusLabel(row.name)}
+					<span class="status" class:good={st.tone === 'good'} class:bad={st.tone === 'bad'}>
+						{st.label}
 					</span>
 				</header>
 				<div class="prefs">
@@ -150,8 +168,11 @@
 				text-transform: uppercase;
 				letter-spacing: 1px;
 
-				&.ready {
-					color: var(--color-primary);
+				&.good {
+					color: oklch(62.3% 0.19 145);
+				}
+				&.bad {
+					color: oklch(63.7% 0.2078 25.3);
 				}
 			}
 		}

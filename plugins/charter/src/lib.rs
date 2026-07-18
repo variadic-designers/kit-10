@@ -734,6 +734,43 @@ extern "ExtismHost" {
     // manifest keyed by `panel_id` in a Svelte `$state` map; panels derive off that map.
     // Returns true unconditionally — failure to publish is non-fatal (panel just stays empty).
     pub fn kit10_panel_publish(input: PanelPublishInput) -> bool;
+
+    // Per-plugin KV. The host seeds Charter's stored preference values under `pref:<id>` before
+    // each interpreter call (see manager.svelte.ts's seedPluginPreferences), so build_viewport
+    // reads its own layout preferences here. String in/out marshals as raw bytes.
+    pub fn kit10_kv_get(key: String) -> String;
+}
+
+// Reads a `pref:<id>` value the host seeded into KV. The host call is gated to wasm so native unit
+// tests (which run build_viewport directly, with no host) transparently fall back to defaults.
+fn pref_raw(id: &str) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        unsafe { kit10_kv_get(format!("pref:{id}")) }.unwrap_or_default()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = id;
+        String::new()
+    }
+}
+
+fn pref_num(id: &str, default: f32) -> f32 {
+    pref_raw(id)
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .unwrap_or(default)
+}
+
+fn pref_usize(id: &str, default: usize, min: usize, max: usize) -> usize {
+    pref_raw(id)
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .map(|v| v.clamp(min, max))
+        .unwrap_or(default)
 }
 
 fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, ResolvedProperty> {
@@ -2335,17 +2372,19 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
 
     // Views without a position hint keep flowing through the legacy auto-flow grid.
     if !flowing.is_empty() {
-        const COLS: usize = 4;
-        const GAP: f32 = 32.0;
-        const PAD: f32 = 40.0;
+        // Grid layout is Charter's opinion, but the exact numbers are user preferences (Settings >
+        // Plugins > charter), seeded into KV by the host. Defaults match the former hardcoded consts.
+        let cols = pref_usize("grid-columns", 4, 1, 8);
+        let gap = pref_num("grid-gap", 32.0);
+        let pad = pref_num("grid-padding", 40.0);
 
         let root_idx = viewport_data.len();
-        viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
+        viewport_data.push(transparent_box(None, "Column", [pad; 4]));
         node_view_ids.push(String::new());
 
-        for row in flowing.chunks(COLS) {
+        for row in flowing.chunks(cols) {
             let row_idx = viewport_data.len();
-            viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
+            viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, gap, 0.0]));
             node_view_ids.push(String::new());
 
             for (view, kits, _) in row {
@@ -2353,7 +2392,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
                 viewport_data.push(transparent_box(
                     Some(row_idx),
                     "Column",
-                    [0.0, GAP, 0.0, 0.0],
+                    [0.0, gap, 0.0, 0.0],
                 ));
                 node_view_ids.push(String::new());
 
@@ -2560,6 +2599,64 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
     }
 }
 
+// A global preference Charter declares for the Settings menu (Settings > Plugins > charter). The
+// host stores the value and feeds it back via KV; build_viewport reads it. Single-word wire keys, so
+// no camelCase concern -- `default` is renamed off the Rust keyword.
+#[derive(Debug, Clone, Serialize)]
+struct PrefDef {
+    id: &'static str,
+    label: &'static str,
+    kind: &'static str,
+    group: &'static str,
+    #[serde(rename = "default")]
+    default: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    min: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max: Option<f32>,
+}
+
+// Pure builder (no host calls) so it's unit-testable. These are the auto-grid layout numbers
+// build_viewport used to hardcode -- now user-tunable, defaults unchanged.
+fn charter_preference_defs() -> Vec<PrefDef> {
+    vec![
+        PrefDef {
+            id: "grid-columns",
+            label: "Views per row",
+            kind: "number",
+            group: "Layout",
+            default: "4",
+            min: Some(1.0),
+            max: Some(8.0),
+        },
+        PrefDef {
+            id: "grid-gap",
+            label: "Grid gap (px)",
+            kind: "number",
+            group: "Layout",
+            default: "32",
+            min: Some(0.0),
+            max: Some(200.0),
+        },
+        PrefDef {
+            id: "grid-padding",
+            label: "Canvas padding (px)",
+            kind: "number",
+            group: "Layout",
+            default: "40",
+            min: Some(0.0),
+            max: Some(400.0),
+        },
+    ]
+}
+
+/// Declares Charter's global preferences for the editor's Settings menu (auto-grid layout numbers).
+/// Purely declarative; the host stores values and feeds them back via KV (read in build_viewport).
+#[plugin_fn]
+pub fn preferences(_input: String) -> FnResult<String> {
+    Ok(serde_json::to_string(&charter_preference_defs())?)
+}
+
 #[plugin_fn]
 pub fn on_resolve(input: String) -> FnResult<String> {
     let parsed: OnResolveInput = if input.is_empty() {
@@ -2665,6 +2762,29 @@ mod field_update_tests {
         assert_eq!(update.property, "color");
         assert_eq!(update.value.as_deref(), Some("#ff0000"));
         assert_eq!(update.token_id, None);
+    }
+}
+
+#[cfg(test)]
+mod preferences_tests {
+    use super::charter_preference_defs;
+
+    // The Settings menu reads these keys verbatim -- assert the serialized KEY NAMES (esp. `default`
+    // off the Rust keyword), not just the values, per the camelCase/snake_case wire pitfall.
+    #[test]
+    fn charter_declares_grid_layout_number_prefs() {
+        let defs = charter_preference_defs();
+        let ids: Vec<&str> = defs.iter().map(|d| d.id).collect();
+        assert!(ids.contains(&"grid-columns"), "{ids:?}");
+        assert!(ids.contains(&"grid-gap"), "{ids:?}");
+        assert!(ids.contains(&"grid-padding"), "{ids:?}");
+        assert!(defs.iter().all(|d| d.kind == "number"));
+
+        let json = serde_json::to_string(&defs).unwrap();
+        assert!(json.contains("\"default\":\"4\""), "emits `default` key: {json}");
+        assert!(json.contains("\"kind\":\"number\""), "{json}");
+        assert!(json.contains("\"min\":1.0"), "{json}");
+        assert!(json.contains("\"group\":\"Layout\""), "{json}");
     }
 }
 
