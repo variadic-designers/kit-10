@@ -185,8 +185,10 @@
 					</div>
 					<div class="g-bridge__card g-bridge__card--code">
 						<span class="g-bridge__role"><i class="fa-solid fa-code"></i> Developer writes</span>
-						<pre><code>if (emphasis === <span class="tok-str">'primary'</span>
- && state === <span class="tok-str">'hover'</span>)</code></pre>
+						<div class="g-bridge__code">
+							if (emphasis === <span class="tok-str">'primary'</span><br />
+							&amp;&amp; state === <span class="tok-str">'hover'</span>)
+						</div>
 					</div>
 				</div>
 			</div>
@@ -305,15 +307,15 @@
 						A rule: <em>when</em> these conditions hold, <em>set</em> these values.
 					</p>
 					<div class="anatomy__ex">
-						<code class="ex-rule">
+						<div class="ex-rule">
 							<span class="ex-kw">when</span> {'{ }'} <span class="ex-arrow">→</span> background =
 							<span class="ex-tok">brand</span>
-						</code>
-						<code class="ex-rule ex-rule--win">
+						</div>
+						<div class="ex-rule ex-rule--win">
 							<span class="ex-kw">when</span> {'{ primary + hover }'}
 							<span class="ex-arrow">→</span> background = <span class="ex-tok">brand-strong</span>
 							<span class="ex-win">wins</span>
-						</code>
+						</div>
 						<span class="ex-note">more conditions = more specific = wins</span>
 					</div>
 				</div>
@@ -626,11 +628,6 @@
 		h3 {
 			@include fonts-stack('Satoshi-Regular', sans);
 		}
-
-		code,
-		pre {
-			font-family: $x-font-family-mono;
-		}
 	}
 
 	nav {
@@ -938,12 +935,13 @@
 			color: var(--color-primary);
 		}
 
-		pre {
+		&__code {
 			margin: 0;
+			font-family: $x-font-family-mono;
 			font-size: $x-font-size-sm;
 			line-height: 1.5;
 			color: var(--color-text);
-			white-space: pre-wrap;
+			overflow-wrap: anywhere;
 		}
 		.tok-str {
 			color: var(--color-primary);
@@ -1291,8 +1289,10 @@
 		padding: $x-space-2 $x-space-3;
 		border-radius: $x-space-1;
 		background: var(--color-code-bg);
-		overflow-x: auto;
-		white-space: nowrap;
+		// Wrap long rules instead of overflowing; the ex-* spans stay inline so the rule reads
+		// naturally across lines on narrow screens.
+		white-space: normal;
+		overflow-wrap: anywhere;
 
 		.ex-kw {
 			color: var(--color-text-muted);
