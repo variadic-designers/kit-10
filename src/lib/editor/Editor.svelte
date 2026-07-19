@@ -218,6 +218,8 @@
 
 	import ViewsPanel from './panels/Views.svelte';
 	import { selectView as selectViewShared } from './selection.js';
+	import { keybinds, matchKey, isTextEntryTarget } from './keybinds.js';
+	import { buildViewTree, navigate, type NavDirection } from './view-tree.js';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
 	import AxesPanel from './panels/Axes.svelte';
@@ -315,6 +317,32 @@
 	// CLAUDE.md's panel-manifest section: Charter owns panel contents, the editor's panels are
 	// generic renderers over the manifest shape.
 	const viewsPanelManifest = $derived(pluginManager?.panelManifest('views'));
+
+	// Keyboard navigation of the View composition tree ([ parent, ] child, ↑/↓ siblings). Lives here
+	// (Editor is always mounted) rather than in the Views panel (which can be collapsed), and reuses
+	// the same `buildViewTree` graph math the panel uses + the shared `selectView` funnel, so the
+	// Viewport auto-pans to the new selection via its existing ensure_index_visible effect. Guarded on
+	// isTextEntryTarget so `[`/`]`/arrows never fire while typing in a field.
+	function onNavKey(e: KeyboardEvent) {
+		if (isTextEntryTarget(e.target)) return;
+		const binds = $keybinds;
+		let dir: NavDirection | null = null;
+		if (matchKey(e, binds['nav.parent'])) dir = 'parent';
+		else if (matchKey(e, binds['nav.child'])) dir = 'child';
+		else if (matchKey(e, binds['nav.prevSibling'])) dir = 'prev';
+		else if (matchKey(e, binds['nav.nextSibling'])) dir = 'next';
+		if (!dir) return;
+
+		const compositionKeys = viewsPanelManifest?.composition_field_keys ?? [];
+		const tree = buildViewTree(resolvedViews, compositionKeys);
+		const roots = resolvedViews
+			.map((v) => v.viewId)
+			.filter((id) => !tree.referencedViewIds.has(id));
+		const target = navigate(editorActivity.activeViewId, dir, tree, roots);
+		if (!target) return;
+		e.preventDefault();
+		selectViewShared(editorActivity, selection, target);
+	}
 
 	onMount(async () => {
 		const watchdog = setTimeout(() => {
@@ -616,6 +644,8 @@
 		}
 	});
 </script>
+
+<svelte:window onkeydown={onNavKey} />
 
 <svelte:head>
 	{#if editorActivity.activeProjectName}

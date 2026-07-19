@@ -5,6 +5,7 @@
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
 	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
+	import { buildViewTree } from '../view-tree.js';
 	import type { PanelManifest, PanelItem, PanelOp, ResolvedView } from '$lib/plugins/types.js';
 	import type { MenuItem } from '$lib/components/contextMenuStore.js';
 
@@ -219,35 +220,15 @@
 	// housed in the manifest, since the manifest is the panel channel).
 	const compositionKeys = $derived(viewsPanelManifest?.composition_field_keys ?? []);
 
-	// A view's own child references, unioned across its resolved kits — the same computation
-	// Charter's `collect_child_view_ids` does per-view, done here client-side so the panel can
-	// nest views the same way `build_viewport` does. Generic graph math over already-resolved
-	// data; not Charter-specific (the plugin's only injection is `compositionKeys`).
-	const childrenByViewId = $derived.by(() => {
-		const map = new Map<string, string[]>();
-		for (const view of resolvedViews) {
-			const ids = new Set<string>();
-			for (const kit of view.resolvedKits) {
-				for (const key of compositionKeys) {
-					for (const id of (kit as any).properties?.get?.(key)?.viewRefs ?? []) ids.add(id);
-				}
-			}
-			map.set(view.viewId, [...ids]);
-		}
-		return map;
-	});
-
-	// Project-wide union of every view referenced as somebody's child — mirrors build_viewport's
-	// own `referenced` set. A view NOT in this set is a root; a view in it gets nested under
-	// whichever parent(s) reference it. Views are unique rows referenced by id, not instanced —
-	// a view referenced by more than one parent is a real DAG, rendered once per parent.
-	const referencedViewIds = $derived.by(() => {
-		const set = new Set<string>();
-		for (const ids of childrenByViewId.values()) {
-			for (const id of ids) set.add(id);
-		}
-		return set;
-	});
+	// The composition DAG (parent → children map + the referenced-id set), computed by the shared
+	// `buildViewTree` helper so the Views panel and the global navigation keybind handler in
+	// Editor.svelte walk one source of truth. Generic graph math over already-resolved data; not
+	// Charter-specific (the plugin's only injection is `compositionKeys`), mirroring build_viewport's
+	// own `referenced` set. A view referenced by more than one parent is a real DAG, rendered once
+	// per parent; a view in NO parent's child list is a root.
+	const viewTree = $derived.by(() => buildViewTree(resolvedViews, compositionKeys));
+	const childrenByViewId = $derived(viewTree.childrenByViewId);
+	const referencedViewIds = $derived(viewTree.referencedViewIds);
 
 	const rootViews = $derived(
 		viewsQuery.rows.filter(

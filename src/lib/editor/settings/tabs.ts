@@ -13,6 +13,7 @@ import WorkspacesTab from './WorkspacesTab.svelte';
 import BillingTab from './BillingTab.svelte';
 import AppearanceTab from './AppearanceTab.svelte';
 import CanvasTab from './CanvasTab.svelte';
+import KeybindsTab from './KeybindsTab.svelte';
 import PluginsTab from './PluginsTab.svelte';
 import AboutTab from './AboutTab.svelte';
 
@@ -32,6 +33,7 @@ export const SETTINGS_TABS: SettingsTab[] = [
 	{ id: 'billing', label: 'Billing', icon: 'fa-solid fa-credit-card', section: 'Account', component: BillingTab },
 	{ id: 'appearance', label: 'Appearance', icon: 'fa-solid fa-palette', section: 'Editor', component: AppearanceTab },
 	{ id: 'canvas', label: 'Canvas', icon: 'fa-solid fa-arrows-up-down-left-right', section: 'Editor', component: CanvasTab },
+	{ id: 'keybinds', label: 'Keybinds', icon: 'fa-solid fa-keyboard', section: 'Editor', component: KeybindsTab },
 	{ id: 'plugins', label: 'Plugins', icon: 'fa-solid fa-plug', section: 'System', component: PluginsTab },
 	{ id: 'about', label: 'About', icon: 'fa-solid fa-circle-info', section: 'System', component: AboutTab }
 ];

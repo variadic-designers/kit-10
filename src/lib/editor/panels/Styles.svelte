@@ -18,6 +18,7 @@
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { shapeIcon } from './layer-color.ts';
 	import { paintTarget, stopPaint } from '../pipette.svelte.ts';
+	import { keybinds, matchMouse, matchKey } from '../keybinds.js';
 
 	type StylesPanel = {
 		api: Api;
@@ -220,7 +221,7 @@
 		const key = slot?.dataset.propKey;
 		if (!key) return;
 
-		if (e.altKey) {
+		if (matchMouse(e, $keybinds['property.remove'], false)) {
 			e.preventDefault();
 			e.stopPropagation();
 			removeProperty(key);
@@ -241,7 +242,7 @@
 	}
 
 	function onPipetteKey(e: KeyboardEvent) {
-		if (held && e.key === 'Escape') {
+		if (held && matchKey(e, $keybinds['edit.cancel'])) {
 			e.preventDefault();
 			stopPaint();
 		}

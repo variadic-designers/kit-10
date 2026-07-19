@@ -16,6 +16,7 @@
 	import { dropZone } from '../dnd.svelte.ts';
 	import { AXIS_KINDS, type AxisKindId } from './axisKinds.ts';
 	import { paintKeys, paintTarget, startPaint, setPaintTarget, stopPaint } from '../pipette.svelte.ts';
+	import { keybinds, matchKey } from '../keybinds.js';
 
 	type AxesPanel = {
 		api: Api;
@@ -271,7 +272,7 @@
 		if (e.key === 'Enter') {
 			e.preventDefault();
 			commitCreateLayer();
-		} else if (e.key === 'Escape') {
+		} else if (matchKey(e, $keybinds['edit.cancel'])) {
 			e.preventDefault();
 			cancelCreateMode();
 		}

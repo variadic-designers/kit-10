@@ -16,6 +16,9 @@
 //     passing that edge to `onDrop` so a list can insert on the correct side.
 // The payload is a discriminated union keyed on `kind`; extend it as new surfaces appear.
 
+import { get } from 'svelte/store';
+import { keybinds, matchKey } from './keybinds.js';
+
 export type DragPayload =
 	| { kind: 'axis'; axisId: string; kitId: string; label?: string }
 	| { kind: 'axis-value'; axisValueId: string; axisId: string }
@@ -177,7 +180,7 @@ function onDragUp(e: PointerEvent) {
 }
 
 function onDragKey(e: KeyboardEvent) {
-	if (e.key === 'Escape') endDrag();
+	if (matchKey(e, get(keybinds)['edit.cancel'])) endDrag();
 }
 
 function endDrag() {

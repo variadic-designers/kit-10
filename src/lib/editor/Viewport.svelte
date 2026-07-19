@@ -4,7 +4,8 @@
 	import { setVellumInstance, setRenderRequester } from './vellum-instance.js';
 	import type { EditorActivity, EditorSelection } from './Editor.svelte';
 	import { selectView, deselectView } from './selection.js';
-	import { viewportInput } from './viewport-input.js';
+	import { viewportInput, updateViewportInput } from './viewport-input.js';
+	import { keybinds, matchKey, matchMouse, isTextEntryTarget } from './keybinds.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -163,6 +164,7 @@
 		setVellumInstance(vellum);
 		setRenderRequester(requestRender);
 		applyColors(getTheme());
+		vellum.set_show_box_model($viewportInput.showBoxModel);
 
 		resizeObserver = new ResizeObserver(() => {
 			if (!initialized || !canvas || !vellum) return;
@@ -179,31 +181,28 @@
 	});
 
 	// Dev A/B toggle for Tier-1 pixel snapping (crisp snap-to-grid vs. the default smooth SDF-AA
-	// look). Shift+P flips it; must request a repaint here since set_pixel_snap only sets a flag
-	// the next frame reads (rendering is on-demand).
+	// look). The `canvas.pixelSnap` keybind flips it; must request a repaint here since
+	// set_pixel_snap only sets a flag the next frame reads (rendering is on-demand).
 	let pixelSnap = false;
 
-	// True when a keyboard event originates from a text-entry surface -- Space there is typing, not
-	// a pan-modifier, so the 'space' binding must ignore it.
-	function isTextEntryTarget(t: EventTarget | null): boolean {
-		const el = t as HTMLElement | null;
-		if (!el || !el.tagName) return false;
-		const tag = el.tagName.toLowerCase();
-		return tag === 'input' || tag === 'textarea' || el.isContentEditable;
-	}
+	// True when the pan keybind is a mouse gesture that uses the held-Space modifier -- only then does
+	// a Space keydown need to arm `spaceHeld` (and swallow page scroll).
+	const panUsesSpace = $derived($keybinds['canvas.pan'].source === 'mouse' && $keybinds['canvas.pan'].space);
 
 	function onKeydown(e: KeyboardEvent) {
-		if (e.key === 'P' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+		if (isTextEntryTarget(e.target)) return;
+		if (matchKey(e, $keybinds['canvas.pixelSnap'])) {
 			pixelSnap = !pixelSnap;
 			vellum?.set_pixel_snap(pixelSnap);
 			requestRender();
 			return;
 		}
-		if (
-			e.code === 'Space' &&
-			$viewportInput.panButton === 'space' &&
-			!isTextEntryTarget(e.target)
-		) {
+		if (matchKey(e, $keybinds['canvas.toggleBoxModel'])) {
+			updateViewportInput({ showBoxModel: !$viewportInput.showBoxModel });
+			e.preventDefault();
+			return;
+		}
+		if (e.code === 'Space' && panUsesSpace) {
 			spaceHeld = true;
 			// Stop the page from scrolling while Space is held as a pan modifier.
 			e.preventDefault();
@@ -217,6 +216,16 @@
 	$effect(() => {
 		const t = $theme;
 		if (initialized && vellum) applyColors(t ?? 'auto');
+	});
+
+	// Toggle Vellum's padding/gap (box-model) hatch overlay. set_show_box_model only sets a flag the
+	// next frame reads, so request a repaint (rendering is on-demand).
+	$effect(() => {
+		const show = $viewportInput.showBoxModel;
+		if (initialized && vellum) {
+			vellum.set_show_box_model(show);
+			requestRender();
+		}
 	});
 
 	$effect(() => {
@@ -269,20 +278,10 @@
 		}
 	});
 
-	// Does this pointerdown start a pan, given the user's configured pan binding?
-	//   'left'   -- primary button, always
-	//   'middle' -- middle button only
-	//   'space'  -- primary button while Space is held
+	// Does this pointerdown start a pan, given the user's configured `canvas.pan` keybind (a mouse
+	// gesture: a button + modifiers, optionally the held-Space modifier)?
 	function gestureStartsPan(e: PointerEvent): boolean {
-		switch ($viewportInput.panButton) {
-			case 'middle':
-				return e.button === 1;
-			case 'space':
-				return e.button === 0 && spaceHeld;
-			case 'left':
-			default:
-				return e.button === 0;
-		}
+		return matchMouse(e, $keybinds['canvas.pan'], spaceHeld);
 	}
 
 	function onPointerDown(e: PointerEvent) {

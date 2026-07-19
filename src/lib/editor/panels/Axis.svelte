@@ -83,6 +83,7 @@
 	import { draggable, dropZone } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import { AXIS_KINDS } from './axisKinds.ts';
+	import { keybinds, matchMouse } from '../keybinds.js';
 
 	let {
 		axisId,
@@ -407,7 +408,8 @@
 													if (createMode || !axisValueId) return;
 													e.preventDefault();
 													e.stopPropagation();
-													if (e.altKey) onDeleteLayer?.(axisValueId, layer.keys);
+													if (matchMouse(e, $keybinds['layer.delete'], false))
+														onDeleteLayer?.(axisValueId, layer.keys);
 													else onPickLayer?.(axisValueId, layer.keys);
 												}}
 											></i>

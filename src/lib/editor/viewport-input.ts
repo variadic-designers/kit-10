@@ -1,32 +1,25 @@
-// Host-owned canvas input mappings (pan button + zoom direction).
+// Host-owned canvas rendering/input prefs (zoom direction + box-model overlay).
 //
 // Vellum is NOT an Extism plugin (it's wasm-bindgen) and exposes no input config -- pointer/wheel
-// events are interpreted in Viewport.svelte before calling set_pan/zoom_*_at. So these mappings are
-// a HOST concern, not a plugin-declared preference: Viewport.svelte reads this store and gates its
-// handlers on it. Same store-as-source-of-truth shape as theming.ts/reduced-motion.ts, but persisted
-// to localStorage (not a cookie) -- these are per-user editor prefs with no SSR anti-flicker need,
-// and cookies ride every request for no reason here (see the Settings menu's persistence choice).
+// events are interpreted in Viewport.svelte before calling set_pan/zoom_*_at. So these are a HOST
+// concern, not a plugin-declared preference: Viewport.svelte reads this store and gates its handlers
+// on it. The pan GESTURE itself now lives in the unified keybind registry (keybinds.ts, action
+// `canvas.pan`); what remains here is the wheel-zoom direction and the box-model overlay toggle.
+// Same store-as-source-of-truth shape as theming.ts/reduced-motion.ts, persisted to localStorage.
 
 import { type Writable, writable, get } from 'svelte/store';
 
-// Which mouse gesture pans the infinite canvas.
-//   'left'   -- left-drag pans (current/default behavior)
-//   'middle' -- middle-mouse-drag pans; left-drag is reserved (select only)
-//   'space'  -- hold Space + left-drag pans (Figma-style); plain left-drag is reserved
-export type PanButton = 'left' | 'middle' | 'space';
-
 export interface ViewportInput {
-	panButton: PanButton;
 	// Invert wheel zoom direction (wheel-up zooms out instead of in).
 	zoomInvert: boolean;
+	// Show Vellum's padding/gap (box-model) hatch overlay on hover.
+	showBoxModel: boolean;
 }
 
 export const VIEWPORT_INPUT_DEFAULTS: ViewportInput = {
-	panButton: 'left',
-	zoomInvert: false
+	zoomInvert: false,
+	showBoxModel: true
 };
-
-export const panButtonOptions: PanButton[] = ['left', 'middle', 'space'];
 
 const STORAGE_KEY = 'kit10:viewport-input';
 

@@ -12,7 +12,7 @@
 import { derived } from 'svelte/store';
 import { theme, updateTheme, type Theme } from '$lib/theming.js';
 import { reducedMotion, updateReducedMotion, type ReducedMotion } from '$lib/reduced-motion.js';
-import { viewportInput, updateViewportInput, type PanButton } from './viewport-input.js';
+import { viewportInput, updateViewportInput } from './viewport-input.js';
 import type { PreferenceBinding } from '$lib/plugins/preferences.js';
 
 const APPEARANCE = 'Appearance';
@@ -54,23 +54,6 @@ export const hostPreferences: PreferenceBinding[] = [
 		set: (v) => updateReducedMotion(v as ReducedMotion)
 	},
 	{
-		key: 'host:pan',
-		def: {
-			id: 'pan',
-			label: 'Pan gesture',
-			kind: 'select',
-			group: CANVAS,
-			default: 'left',
-			options: [
-				{ value: 'left', label: 'Left-drag' },
-				{ value: 'middle', label: 'Middle-drag' },
-				{ value: 'space', label: 'Space + drag' }
-			]
-		},
-		value: derived(viewportInput, (i) => i.panButton),
-		set: (v) => updateViewportInput({ panButton: v as PanButton })
-	},
-	{
 		key: 'host:zoom-invert',
 		def: {
 			id: 'zoom-invert',
@@ -81,5 +64,17 @@ export const hostPreferences: PreferenceBinding[] = [
 		},
 		value: derived(viewportInput, (i) => String(i.zoomInvert)),
 		set: (v) => updateViewportInput({ zoomInvert: v === 'true' })
+	},
+	{
+		key: 'host:box-model',
+		def: {
+			id: 'box-model',
+			label: 'Show padding/gap overlay',
+			kind: 'toggle',
+			group: CANVAS,
+			default: 'true'
+		},
+		value: derived(viewportInput, (i) => String(i.showBoxModel)),
+		set: (v) => updateViewportInput({ showBoxModel: v === 'true' })
 	}
 ];

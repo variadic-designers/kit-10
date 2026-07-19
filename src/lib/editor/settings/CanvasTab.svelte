@@ -9,7 +9,8 @@
 <div class="tab">
 	<p class="hint">
 		How the infinite canvas responds to your mouse and keyboard. Vellum renders the canvas; these
-		control how the editor interprets your input before it.
+		control how the editor interprets your input before it. Pan, navigation, and other gestures are
+		configured under <strong>Keybinds</strong>.
 	</p>
 	<PreferenceList {bindings} showGroupHeaders={false} />
 </div>
