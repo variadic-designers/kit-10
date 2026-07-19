@@ -17,6 +17,7 @@
 	} from '$lib/plugins/types.js';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { shapeIcon } from './layer-color.ts';
+	import { paintTarget, stopPaint } from '../pipette.svelte.ts';
 
 	type StylesPanel = {
 		api: Api;
@@ -184,7 +185,70 @@
 			tokenId: null
 		};
 	}
+
+	// Pipette: while a paint target is active (set up in the Axes panel), each property row becomes a
+	// paint target. The target is the layer for the CURRENT axis selection across the pinned axes --
+	// re-pick a value in Axes and this follows. Clicking a property resolve-or-creates that layer and
+	// copies the property's current value/token onto it, so the override starts from what's on screen.
+	const held = $derived(paintTarget());
+
+	async function pipetteDrop(key: string) {
+		const h = paintTarget();
+		const kitId = activeKitId;
+		if (!h || !h.ready || !kitId || !onFieldUpdate) return;
+		const layer = await api.createLayerWithConditions(kitId, h.axisValueIds);
+		if (!layer) return;
+		const prop = resolvedMap.get(key);
+		if (prop?.isToken && prop.tokenId) {
+			onFieldUpdate({ layerId: layer.layerId, property: key, tokenId: prop.tokenId });
+		} else {
+			// Copy the current value; if the property is unset, seed an empty entry so it still lands
+			// on the layer (it shows up there, ready to edit) rather than the click doing nothing.
+			onFieldUpdate({ layerId: layer.layerId, property: key, value: prop?.value ?? '' });
+		}
+	}
+
+	// Alt-click any property row removes it from the layer it's sourced from (and GCs that layer if
+	// it's left empty). Otherwise, while a layer is held, clicking a property's layer-indicator shape
+	// (the same track dot the render rows use to show which layer a value comes from) paints it onto
+	// the current target. Delegated + capture-phase so one handler covers every field component's own
+	// track without editing each; a plain click with nothing held falls through to normal editing.
+	const TRACK_SELECTOR = '.option124__track, .weight-field__track, .color-field__track';
+	function fieldClick(e: MouseEvent) {
+		const el = e.target as HTMLElement;
+		const slot = el.closest('.field-slot') as HTMLElement | null;
+		const key = slot?.dataset.propKey;
+		if (!key) return;
+
+		if (e.altKey) {
+			e.preventDefault();
+			e.stopPropagation();
+			removeProperty(key);
+			return;
+		}
+
+		if (!held || !held.ready) return;
+		if (!el.closest(TRACK_SELECTOR)) return;
+		e.preventDefault();
+		e.stopPropagation();
+		pipetteDrop(key);
+	}
+
+	async function removeProperty(key: string) {
+		const src = track(key).sourceLayerId;
+		if (!src) return;
+		await api.removePropertyFromLayer(src, key);
+	}
+
+	function onPipetteKey(e: KeyboardEvent) {
+		if (held && e.key === 'Escape') {
+			e.preventDefault();
+			stopPaint();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={onPipetteKey} />
 
 <Panel
 	contextMenuContent={stylesContextMenu}
@@ -192,6 +256,19 @@
 	tooltip="Applied styles on the current Axes set"
 >
 	{#snippet content()}
+		{#if held}
+			<div class="pipette-bar" style="--held: {held.color}">
+				<i class="fa-solid fa-eye-dropper"></i>
+				<span class="pipette-bar__text">
+					{#if held.ready}
+						Painting onto <strong>{held.label}</strong> · click a property
+					{:else}
+						Pick a value in Axes to paint onto
+					{/if}
+				</span>
+				<button class="pipette-bar__btn" onclick={() => stopPaint()}>Done</button>
+			</div>
+		{/if}
 		{#if resolvedKits}
 			<div style="display:contents">
 				{#snippet styleSection(category: string, fields: FieldDef[])}
@@ -201,8 +278,15 @@
 							<i class="fa-solid fa-angle-down style-section__collapse-icon"></i>
 						</summary>
 
-						<div class="style-section__content">
+						<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+						<div class="style-section__content" onclickcapture={fieldClick}>
 							{#each fields as field, i}
+								<div
+									class="field-slot"
+									class:field-slot--paintable={!!held && held.ready}
+									data-prop-key={field.key}
+									style={held ? `--held: ${held.color}` : undefined}
+								>
 								{#if field.inputType === 'children'}
 									<ChildViewField
 										{...track(field.key)}
@@ -280,6 +364,7 @@
 										{callUtilityPlugin}
 									/>
 								{/if}
+								</div>
 							{/each}
 						</div>
 					</details>
@@ -319,6 +404,67 @@
 
 <style lang="scss">
 	@use '_index' as *;
+
+	.pipette-bar {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		padding: $x-space-xs $x-space-sm;
+		font-size: $x-font-size-sm;
+		color: var(--color-pure-alt);
+		background: color-mix(in oklch, var(--held) 14%, var(--color-surface-alt));
+		border-left: 3px solid var(--held);
+
+		i {
+			color: var(--held);
+		}
+
+		&__text {
+			flex-grow: 1;
+
+			strong {
+				text-transform: capitalize;
+				color: var(--held);
+			}
+		}
+
+		&__btn {
+			flex-shrink: 0;
+			border: none;
+			border-radius: calc($x-space-xs / 2);
+			padding: calc($x-space-xs / 2) $x-space-sm;
+			font-size: $x-font-size-xs;
+			font-weight: 700;
+			cursor: pointer;
+			background: var(--held);
+			color: var(--color-bg, oklch(15% 0 0));
+		}
+	}
+
+	.field-slot {
+		position: relative;
+
+		// While a layer is held, the property's track shape becomes the paint target: it glows in the
+		// held layer's color and takes a crosshair, so the same dot that indicates a value's source
+		// layer is what you click to move the value onto the held one. Track classes live inside child
+		// field components, hence :global().
+		&--paintable :global(:is(.option124__track, .weight-field__track, .color-field__track)) {
+			cursor: crosshair;
+			outline: 2px solid color-mix(in oklch, var(--held) 55%, transparent);
+			outline-offset: 1px;
+			border-radius: 50%;
+			transition: scale 120ms ease-out;
+		}
+
+		&--paintable :global(:is(.option124__track, .weight-field__track, .color-field__track)):hover {
+			outline-color: var(--held);
+			background: color-mix(in oklch, var(--held) 22%, transparent);
+			scale: 1.2;
+		}
+	}
 
 	.style-section {
 		user-select: none;

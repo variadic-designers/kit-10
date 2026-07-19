@@ -161,6 +161,7 @@ export interface AxisValuesTable {
 	axis_id: string;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	value: JSONColumnType<AxisValueType>;
+	priority_index: Generated<number>;
 }
 
 export interface AxesConsumedTable {
@@ -299,6 +300,7 @@ export async function up(dialect: DAny) {
 		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('cascade'))
 		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('value', 'jsonb', (col) => col.notNull())
+		.addColumn('priority_index', 'integer', (col) => col.notNull().defaultTo(0))
 		.execute();
 
 	await dialect.schema

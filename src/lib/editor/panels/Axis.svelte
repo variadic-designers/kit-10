@@ -43,14 +43,46 @@
 		// the "Delete Axis" menu item; when false only "Remove" is offered.
 		deletable?: boolean;
 		onDelete?: () => void;
+		// Opens the axis name straight into Renameable's edit mode -- set true right after creation
+		// so a freshly-created axis is immediately nameable instead of stuck as "New Axis".
+		autoEdit?: boolean;
+		onRename?: (name: string) => void;
+		// Value ids currently forced into their own Renameable's edit mode (keyed by axisValueId,
+		// not the value's literal -- renaming changes the literal, so the id is the stable key).
+		valueEditing?: Record<string, boolean>;
+		// Categorical-only value CRUD/reorder -- undefined/no-op for kinds that don't have a
+		// discrete value list to manage (range/number, once they exist).
+		onValueAdd?: () => void;
+		onValueRename?: (axisValueId: string, text: string) => void;
+		onValueDelete?: (axisValueId: string) => void;
+		onValueReorder?: (draggedValueId: string, targetValueId: string, edge?: 'before' | 'after') => void;
+		// Hovering a layer-combo dot reports the axis-id set of the layer it belongs to (null on
+		// leave). The parent broadcasts it back down as `highlightColor` on every axis in that set,
+		// so a multi-axis layer's dot lights up every axis it spans, not just the one you're over.
+		onLayerHover?: (keys: string[] | null) => void;
+		highlightColor?: string | null;
+		// Create-layer mode: while active, clicking a value toggles it into the pending condition set
+		// (parent owns the set) instead of selecting the current arg. pendingValueIds marks which of
+		// this axis's values are picked; pendingColor previews the new layer's dot color on them.
+		createMode?: boolean;
+		pendingValueIds?: Set<string>;
+		pendingColor?: string | null;
+		onToggleCondition?: (axisId: string, axisValueId: string) => void;
+		// Clicking a combo dot picks up the real layer behind it (pipette). Reports this value's id
+		// plus the dot's axis-id set; the parent resolves the exact layer and holds it.
+		onPickLayer?: (axisValueId: string, keys: string[]) => void;
+		// Alt-clicking a dot deletes the layer it represents.
+		onDeleteLayer?: (axisValueId: string, keys: string[]) => void;
 	};
 </script>
 
 <script lang="ts">
 	import RangeSlider from '$lib/components/RangeSlider.svelte';
+	import Renameable from '$lib/components/Renameable.svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
-	import { draggable } from '../dnd.svelte.ts';
+	import { draggable, dropZone } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
+	import { AXIS_KINDS } from './axisKinds.ts';
 
 	let {
 		axisId,
@@ -70,7 +102,22 @@
 		onArgChange,
 		onRemove,
 		deletable = false,
-		onDelete
+		onDelete,
+		autoEdit = false,
+		onRename,
+		valueEditing = {},
+		onValueAdd,
+		onValueRename,
+		onValueDelete,
+		onValueReorder,
+		onLayerHover,
+		highlightColor = null,
+		createMode = false,
+		pendingValueIds,
+		pendingColor = null,
+		onToggleCondition,
+		onPickLayer,
+		onDeleteLayer
 	}: AxisProps = $props();
 
 	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
@@ -147,6 +194,19 @@
 			icon: 'fa-solid fa-tower-broadcast',
 			onClick: () => {}
 		},
+		// Categorical-only (see axisKinds.ts) -- range/number have no discrete value list to add to.
+		...(kind === 'categorical' && onValueAdd
+			? [
+					'hr' as const,
+					{
+						name: 'add-value',
+						description: 'Add a value to this axis',
+						displayText: 'Add Value',
+						icon: 'fa-solid fa-plus',
+						onClick: () => onValueAdd?.()
+					}
+				]
+			: []),
 		'hr',
 		{
 			name: 'remove-axis',
@@ -170,6 +230,24 @@
 				]
 			: [])
 	];
+
+	// Per-value context menu -- mirrors axisContextMenu's shape (destructive delete, generator so it
+	// can close over the current axisValueId). Rename has no menu entry, same as the axis's own
+	// name: double-clicking the Renameable is the rename affordance at both levels.
+	function valueContextMenu(axisValueId: string | undefined): ContextMenuContentGenerator {
+		return () => [
+			{
+				name: 'delete-value',
+				description: 'Delete this value from the axis',
+				displayText: 'Delete',
+				icon: 'fa-solid fa-trash',
+				tone: 'destructive',
+				onClick: () => {
+					if (axisValueId) onValueDelete?.(axisValueId);
+				}
+			}
+		];
+	}
 
 	function selectVariant(variantId: string) {
 		if (disabled) return;
@@ -230,10 +308,20 @@
 	<summary
 		title={axisDescription}
 		class="axis__name"
+		class:axis__name--highlighted={!!highlightColor}
+		style={highlightColor ? `--axis-highlight: ${highlightColor}` : undefined}
 		use:contextMenu={axisContextMenu}
 		use:draggable={{ payload: dragPayload ?? (() => null), preview: dragPreview }}
 	>
-		<h3>{axisName}</h3>
+		<h3>
+			<Renameable
+				editing={autoEdit}
+				value={axisName}
+				onCommit={(name) => onRename?.(name)}
+			>
+				{axisName}
+			</Renameable>
+		</h3>
 		<div class="axis__name__value" class:axis__name__value--unset={!isSet}>
 			{displayValue}
 		</div>
@@ -245,10 +333,44 @@
 			<ul class="axis__variants">
 				{#each categoricalValues as variant}
 					{@const variantId = variant.value}
-					<li>
+					{@const axisValueId = axisValueIds[variantId]}
+					{@const pending = createMode && !!axisValueId && !!pendingValueIds?.has(axisValueId)}
+					<li
+						use:dropZone={{
+							accepts: 'axis-value',
+							mode: 'reorder',
+							canDrop: (p) => p.kind === 'axis-value' && p.axisId === axisId && p.axisValueId !== axisValueId,
+							onDrop: (p, { position }) => {
+								if (p.kind === 'axis-value' && axisValueId)
+									onValueReorder?.(p.axisValueId, axisValueId, position === 'after' ? 'after' : 'before');
+							}
+						}}
+					>
+						<!-- The onclick only repurposes the wrapped radio in create mode; the label is
+						     already interactive via that radio, hence the a11y ignores below. -->
+						<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
 						<label
 							class="axis-field"
 							class:axis-field--selected={currentArg?.type === 'literal' && currentArg.value === variantId}
+							class:axis-field--pending={pending}
+							style={pending && pendingColor ? `--pending: ${pendingColor}` : undefined}
+							use:contextMenu={valueContextMenu(axisValueId)}
+							use:draggable={{
+								payload: () => (axisValueId ? { kind: 'axis-value', axisValueId, axisId } : null),
+								preview: variant.value
+							}}
+							onclick={(e) => {
+								if (createMode) {
+									e.preventDefault();
+									if (axisValueId) onToggleCondition?.(axisId, axisValueId);
+								} else if (currentArg?.type === 'literal' && currentArg.value === variantId) {
+									// Re-clicking the active value deselects it. A radio doesn't fire change when you
+									// click the already-checked one, so this click handler is what enables it.
+									e.preventDefault();
+									selectVariant(variantId);
+								}
+							}}
 						>
 							<input
 								class="axis-field__radio"
@@ -259,17 +381,35 @@
 								onchange={() => selectVariant(variantId)}
 								{disabled}
 							/>
-							<span class="axis-field__name">{variant.value}</span>
+							<span class="axis-field__name">
+								<Renameable
+									editing={axisValueId ? valueEditing[axisValueId] === true : false}
+									value={AXIS_KINDS.categorical.valueLabel(variant)}
+									onCommit={(text) => axisValueId && onValueRename?.(axisValueId, text)}
+								>
+									{variant.value}
+								</Renameable>
+							</span>
 							<span class="axis-field__layers">
 								{#each keySetColumns as [columnId] (columnId)}
 									{@const layer = dotForColumn(variantId, columnId)}
 									<span class="axis-field__layer-slot">
 										{#if layer}
+											<!-- svelte-ignore a11y_no_static_element_interactions -->
 											<i
-												class="fa-solid {kitShape} axis-field__layer-shape"
+												class="fa-solid {kitShape} axis-field__layer-shape axis-field__layer-shape--pick"
 												class:axis-field__layer-shape--active={layer.active}
 												style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
 												title={dotTitle(layer)}
+												onmouseenter={() => onLayerHover?.(layer.keys)}
+												onmouseleave={() => onLayerHover?.(null)}
+												onclick={(e) => {
+													if (createMode || !axisValueId) return;
+													e.preventDefault();
+													e.stopPropagation();
+													if (e.altKey) onDeleteLayer?.(axisValueId, layer.keys);
+													else onPickLayer?.(axisValueId, layer.keys);
+												}}
 											></i>
 										{/if}
 									</span>
@@ -345,6 +485,14 @@
 			&:global(.dnd-dragging) {
 				cursor: grabbing;
 				opacity: 0.5;
+			}
+
+			// Lit when a layer dot is hovered anywhere in the panel and this axis is part of that
+			// layer's span -- the tint is the dot's own key-set color, so a multi-axis layer visibly
+			// connects every axis it conditions on. --axis-highlight is set inline from the dot.
+			&--highlighted {
+				box-shadow: inset 3px 0 0 var(--axis-highlight);
+				background: color-mix(in oklch, var(--axis-highlight) 14%, transparent);
 			}
 
 			h3 {
@@ -436,6 +584,17 @@
 			}
 		}
 
+		// Picked into the pending condition set while in create-layer mode. Tinted in the color the
+		// new layer's dots will be, so the combination you're assembling previews as one family.
+		&--pending {
+			background: color-mix(in oklch, var(--pending) 18%, transparent);
+			box-shadow: inset 0 0 0 1.5px var(--pending);
+
+			.axis-field__name {
+				color: var(--pending);
+			}
+		}
+
 		&__radio {
 			opacity: 0;
 			position: absolute;
@@ -479,6 +638,17 @@
 				opacity: 1;
 				-webkit-text-stroke: 2px var(--color-text);
 			}
+
+			// The dot is a pipette handle -- click to pick up the layer behind it.
+			&--pick {
+				cursor: pointer;
+
+				&:hover {
+					opacity: 1;
+					scale: 1.25;
+				}
+			}
 		}
+
 	}
 </style>

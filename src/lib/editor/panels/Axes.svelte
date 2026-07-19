@@ -12,8 +12,10 @@
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import type { EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
-	import { shapeIcon } from './layer-color.ts';
+	import { shapeIcon, layerDotColor } from './layer-color.ts';
 	import { dropZone } from '../dnd.svelte.ts';
+	import { AXIS_KINDS, type AxisKindId } from './axisKinds.ts';
+	import { paintKeys, paintTarget, startPaint, setPaintTarget, stopPaint } from '../pipette.svelte.ts';
 
 	type AxesPanel = {
 		api: Api;
@@ -52,31 +54,16 @@
 				description: 'Create a new axis in this kit',
 				displayText: 'New Axis',
 				icon: 'fa-solid fa-plus',
-				submenu: [
-					{
-						name: 'new-axis-categorical',
-						description: 'Discrete named variants (e.g. theme: light/dark)',
-						displayText: 'Categorical',
-						icon: 'fa-solid fa-list',
-						onClick: () => createNewAxis('categorical')
-					},
-					{
-						name: 'new-axis-range',
-						description: 'Not yet available',
-						displayText: 'Range (exclusive)',
-						icon: 'fa-solid fa-arrow-right-arrow-left',
-						disabled: true,
-						onClick: () => {}
-					},
-					{
-						name: 'new-axis-number',
-						description: 'Not yet available',
-						displayText: 'Number (continuous)',
-						icon: 'fa-solid fa-arrow-down-1-9',
-						disabled: true,
-						onClick: () => {}
-					}
-				]
+				// Driven entirely off the AXIS_KINDS registry -- adding a new kind (or flipping
+				// Range/Number on once they're implemented) is a change to axisKinds.ts, not here.
+				submenu: Object.values(AXIS_KINDS).map((k) => ({
+					name: `new-axis-${k.id}`,
+					description: k.description,
+					displayText: k.label,
+					icon: k.icon,
+					disabled: !k.enabled,
+					onClick: () => createNewAxis(k.id)
+				}))
 			},
 			{
 				name: 'use-axis',
@@ -93,6 +80,15 @@
 					icon: 'fa-solid fa-ruler-combined',
 					onClick: () => addAxisToKit(axis.axisId)
 				}))
+			},
+			'hr',
+			{
+				name: 'new-layer',
+				description: 'Pick axis values, then Enter to create a layer for that combination',
+				displayText: 'New Layer',
+				icon: 'fa-solid fa-layer-group',
+				disabled: !editorActivity.activeKitId,
+				onClick: () => enterCreateMode()
 			}
 		];
 	};
@@ -110,6 +106,177 @@
 	// panel body (consumedAxes) and this menu (unusedAxes) refresh without a kit/view change.
 	let refreshTrigger = $state(0);
 
+	// Axis/value ids currently forced into Renameable's edit mode -- set true to open, the
+	// component's onCommit sets it back to false. Mirrors Views.svelte's viewEditing pattern.
+	let axisEditing: Record<string, boolean> = $state({});
+	let valueEditing: Record<string, boolean> = $state({});
+
+	// The axis-id set of the layer dot currently hovered anywhere in the panel (null = none).
+	// Every axis whose id is in this set gets tinted in the layer's key-set color, so a multi-axis
+	// layer's dot visibly lights up all the axes it spans at once.
+	let hoveredLayerKeys = $state<string[] | null>(null);
+
+	// Create-layer mode: while active, clicking an axis value builds a pending condition set
+	// (one value per axis) instead of selecting the current arg. Enter commits it into a new layer,
+	// Esc cancels. pendingConditions maps axisId -> axisValueId (so re-picking an axis replaces).
+	let createMode = $state(false);
+	let pendingConditions = $state<Record<string, string>>({});
+	const pendingValueIds = $derived(new Set(Object.values(pendingConditions)));
+	const pendingAxisIds = $derived(Object.keys(pendingConditions));
+	// The color the new layer's dots will be -- previewed live on the picked values as you build it.
+	const pendingColor = $derived(pendingAxisIds.length ? layerDotColor(pendingAxisIds, true) : null);
+
+	function enterCreateMode() {
+		pendingConditions = {};
+		createMode = true;
+	}
+
+	function cancelCreateMode() {
+		createMode = false;
+		pendingConditions = {};
+	}
+
+	function toggleCondition(axisId: string, axisValueId: string) {
+		if (pendingConditions[axisId] === axisValueId) {
+			const { [axisId]: _drop, ...rest } = pendingConditions;
+			pendingConditions = rest;
+		} else {
+			pendingConditions = { ...pendingConditions, [axisId]: axisValueId };
+		}
+	}
+
+	// Push the current selection so it reflects a combination, then let axisArgs re-fetch drive the
+	// paint-target recompute. Used when a layer is created or a dot is picked up, so "what you're
+	// painting on" starts aligned with what you just chose (and follows you if you re-pick after).
+	async function applySelection(conds: { axisId: string; value: string | undefined }[]) {
+		const viewId = editorActivity.activeViewId;
+		const kitId = editorActivity.activeKitId;
+		if (!viewId || !kitId) return;
+		for (const c of conds) {
+			if (c.value == null) continue;
+			await api.setAxisArg(viewId, kitId, c.axisId, { type: 'literal', value: c.value });
+		}
+		const args = await api.getAllAxisArgs(viewId, kitId).execute();
+		const argsMap: Record<string, any> = {};
+		for (const a of args) argsMap[a.axisId] = a.value;
+		axisArgs = argsMap;
+	}
+
+	async function commitCreateLayer() {
+		const kitId = editorActivity.activeKitId;
+		const ids = Object.values(pendingConditions);
+		if (!kitId || ids.length === 0) {
+			cancelCreateMode();
+			return;
+		}
+		const keys = Object.keys(pendingConditions);
+		const conds = keys.map((axisId) => ({
+			axisId,
+			value: (axisValues[axisId] ?? []).find((v) => v.axisValueId === pendingConditions[axisId])?.value
+				.value
+		}));
+		await api.createLayerWithConditions(kitId, ids);
+		cancelCreateMode();
+		// The new dot appears via the live query. Reflect the combination in the selection, then paint
+		// across its axes -- from here the specific layer follows the selection, not a frozen snapshot.
+		await applySelection(conds);
+		startPaint(keys);
+	}
+
+	// A dot is a key-set *group* (a value + an axis-set) that can cover more than one real layer
+	// (dark+compact and dark+dense both sit in dark's {theme,density} dot); prefer the one matching
+	// the current selection, else the first. Returns its condition values so we can align the
+	// selection to it -- the paint target itself is then derived from the selection, never frozen.
+	function resolveDotLayer(
+		axisValueId: string,
+		keys: string[]
+	): { layerId: string; conds: { axisId: string; value: string }[] } | null {
+		const kSorted = [...new Set(keys)].sort().join('|');
+		const candidates = layerConditionsByLayer.filter(({ conds }) => {
+			if (conds.length === 0) return false;
+			const axisSet = [...new Set(conds.map((c) => c.axisId))].sort().join('|');
+			return axisSet === kSorted && conds.some((c) => c.axisValueId === axisValueId);
+		});
+		if (candidates.length === 0) return null;
+		const active = candidates.find(({ conds }) =>
+			conds.every((c) => {
+				const arg = axisArgs[c.axisId];
+				return arg && matchesArg(c.value as any, arg as any);
+			})
+		);
+		const chosen = active ?? candidates[0]!;
+		const conds = chosen.conds.map((c) => ({ axisId: c.axisId, value: (c.value as any)?.value }));
+		return { layerId: chosen.layerId, conds };
+	}
+
+	function onPickLayer(axisValueId: string, keys: string[]) {
+		const resolved = resolveDotLayer(axisValueId, keys);
+		if (!resolved) return;
+		applySelection(resolved.conds);
+		startPaint(keys);
+	}
+
+	// Alt-click a dot deletes the whole layer it represents (cascade drops its entries + conditions).
+	async function onDeleteLayer(axisValueId: string, keys: string[]) {
+		const resolved = resolveDotLayer(axisValueId, keys);
+		if (!resolved) return;
+		await api.deleteLayer(resolved.layerId);
+	}
+
+	// Painting belongs to a specific kit/view context -- stop when either changes.
+	$effect(() => {
+		editorActivity.activeKitId;
+		editorActivity.activeViewId;
+		stopPaint();
+	});
+
+	// The live paint target: the pinned keyset with each axis resolved to its CURRENT selected value.
+	// Recomputed whenever the selection or the keyset changes, so re-picking a value in Axes moves
+	// what you paint onto -- and the Styles panel reads this straight off the pipette module.
+	$effect(() => {
+		const k = paintKeys();
+		if (!k) {
+			setPaintTarget(null);
+			return;
+		}
+		const ids: string[] = [];
+		const labels: string[] = [];
+		let ready = true;
+		for (const axisId of k) {
+			const arg = axisArgs[axisId];
+			const match = (axisValues[axisId] ?? []).find(
+				(v) => arg?.type === 'literal' && v.value?.value === arg.value
+			);
+			if (!match) {
+				ready = false;
+				labels.push('—');
+				continue;
+			}
+			ids.push(match.axisValueId);
+			labels.push(match.value.value);
+		}
+		setPaintTarget({
+			keys: k,
+			color: layerDotColor(k, true),
+			label: labels.join(' + '),
+			axisValueIds: ids,
+			ready
+		});
+	});
+
+	const held = $derived(paintTarget());
+
+	function onCreateModeKey(e: KeyboardEvent) {
+		if (!createMode) return;
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			commitCreateLayer();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			cancelCreateMode();
+		}
+	}
+
 	async function addAxisToKit(axisId: string) {
 		const kitId = editorActivity.activeKitId;
 		if (!kitId) return;
@@ -118,15 +285,82 @@
 	}
 
 	// Create a brand-new axis of `kind` in the project and consume it into the active kit so it shows
-	// up immediately. Only 'categorical' is wired for now; the other kinds are shown but disabled.
-	async function createNewAxis(kind: string) {
+	// up immediately, seeded with the kind's default value(s) (see axisKinds.ts) so it's usable on
+	// sight instead of an empty shell -- then drop it straight into rename-edit mode, matching this
+	// codebase's "create with a sane default, then edit inline" convention used everywhere else.
+	async function createNewAxis(kind: AxisKindId) {
 		const projectId = editorActivity.activeProjectId;
 		const kitId = editorActivity.activeKitId;
 		if (!projectId || !kitId) return;
-		const axis = await api.createAxis(projectId, 'New Axis', undefined, kind);
-		if (!axis) return;
-		await api.consumeAxis(kitId, axis.id);
+		const seedValues = AXIS_KINDS[kind].createSeedValues();
+		const result = await api.createAxisWithValues(projectId, 'New Axis', kind, seedValues);
+		if (!result) return;
+		await api.consumeAxis(kitId, result.axis.id);
 		refreshTrigger++;
+		axisEditing[result.axis.id] = true;
+	}
+
+	// --- Axis value CRUD/reorder, delegated down from Axis.svelte's callback props ---
+
+	async function onRenameAxis(axisId: string, name: string) {
+		await api.renameAxis(axisId, name);
+		axisEditing[axisId] = false;
+		refreshTrigger++;
+	}
+
+	async function onValueAdd(axisId: string) {
+		const kind = inferKind(axisValues[axisId] ?? []);
+		const descriptor = kind === 'categorical' ? AXIS_KINDS.categorical : null;
+		if (!descriptor) return;
+		const created = await api.createAxisValue(axisId, descriptor.createDefaultValue(axisValues[axisId] ?? []));
+		refreshTrigger++;
+		if (created) valueEditing[created.id] = true;
+	}
+
+	async function onValueRename(axisId: string, axisValueId: string, text: string) {
+		const values = axisValues[axisId] ?? [];
+		const prev = values.find((v) => v.axisValueId === axisValueId)?.value;
+		if (!prev) return;
+		const kind = inferKind(values);
+		const descriptor = kind === 'categorical' ? AXIS_KINDS.categorical : null;
+		if (!descriptor) return;
+		await api.updateAxisValue(axisValueId, descriptor.parseLabel(text, prev));
+		valueEditing[axisValueId] = false;
+		refreshTrigger++;
+	}
+
+	// Warns before deleting a value that's still referenced by a layer condition (layer_axis_values
+	// -> axis_values is ON DELETE restrict) -- deleteAxisValueSafe would silently clear those
+	// conditions otherwise, and the user should know that's about to happen.
+	async function onValueDelete(axisValueId: string) {
+		const usage = await api.getAxisValueUsage(axisValueId);
+		if (usage > 0) {
+			const noun = usage === 1 ? 'layer' : 'layers';
+			const ok = confirm(`Used by ${usage} ${noun} -- deleting will remove those conditions.`);
+			if (!ok) return;
+		}
+		await api.deleteAxisValueSafe(axisValueId);
+		refreshTrigger++;
+	}
+
+	async function onValueReorder(
+		axisId: string,
+		draggedValueId: string,
+		targetValueId: string,
+		edge: 'before' | 'after' = 'before'
+	) {
+		if (draggedValueId === targetValueId) return;
+		const ids = (axisValues[axisId] ?? []).map((v) => v.axisValueId);
+		const from = ids.indexOf(draggedValueId);
+		if (from < 0) return;
+		ids.splice(from, 1);
+
+		const ti = ids.indexOf(targetValueId);
+		if (ti < 0) return;
+		ids.splice(edge === 'after' ? ti + 1 : ti, 0, draggedValueId);
+
+		await api.setAxisValuesOrder(axisId, ids);
+		axisValues[axisId] = await api.getAxisValuesByAxisId(axisId).execute();
 	}
 
 	// Remove an axis from the active kit (unconsume) -- the inverse of addAxisToKit, mirroring the
@@ -341,15 +575,16 @@
 		consumedAxes = await api.getConsumedAxesByKitId(kitId).execute();
 	}
 
-	// Handle arg changes from Axis component
+	// Handle arg changes from Axis component. A null arg means deselect -- clear the stored selection
+	// so the axis reads as unset (re-clicking the active value toggles it off, see Axis.svelte).
 	async function handleArgChange(axisId: string, arg: AxisArgValue | null) {
 		if (!editorActivity.activeViewId || !editorActivity.activeKitId) return;
 
 		if (arg === null) {
-			return;
+			await api.clearAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId);
+		} else {
+			await api.setAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId, arg);
 		}
-
-		await api.setAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId, arg);
 
 		const args = await api
 			.getAllAxisArgs(editorActivity.activeViewId, editorActivity.activeKitId)
@@ -362,8 +597,24 @@
 	}
 </script>
 
+<svelte:window onkeydown={onCreateModeKey} />
+
 <Panel contextMenuContent={addAxisContextMenu} name="Axes" tooltip="Adjust the axes set">
 	{#snippet content()}
+		{#if createMode}
+			<div class="create-layer-bar" style={pendingColor ? `--pending: ${pendingColor}` : undefined}>
+				<span class="create-layer-bar__dot"></span>
+				<span class="create-layer-bar__text">
+					{#if pendingAxisIds.length === 0}
+						Pick axis values for the new layer…
+					{:else}
+						{pendingAxisIds.length} axis{pendingAxisIds.length === 1 ? '' : 'es'} · press Enter to create
+					{/if}
+				</span>
+				<button class="create-layer-bar__btn" onclick={() => commitCreateLayer()} disabled={pendingAxisIds.length === 0}>Create</button>
+				<button class="create-layer-bar__btn create-layer-bar__btn--ghost" onclick={() => cancelCreateMode()}>Cancel</button>
+			</div>
+		{/if}
 		{#if !editorActivity.activeKitId || !editorActivity.activeViewId}
 			<p class="axes-empty">
 				<i class="fa-solid fa-up-long"></i> Select a view and kit to adjust axes
@@ -425,6 +676,26 @@
 				onRemove={() => removeAxisFromKit(axisData.axisId)}
 				deletable={!sharedAxisIds.has(axisData.axisId)}
 				onDelete={() => deleteAxisHard(axisData.axisId)}
+				autoEdit={axisEditing[axisData.axisId] === true}
+				onRename={(name) => onRenameAxis(axisData.axisId, name)}
+				{valueEditing}
+				onValueAdd={() => onValueAdd(axisData.axisId)}
+				onValueRename={(axisValueId, text) => onValueRename(axisData.axisId, axisValueId, text)}
+				onValueDelete={(axisValueId) => onValueDelete(axisValueId)}
+				onValueReorder={(draggedId, targetId, edge) =>
+					onValueReorder(axisData.axisId, draggedId, targetId, edge)}
+				onLayerHover={(keys) => (hoveredLayerKeys = keys)}
+				highlightColor={hoveredLayerKeys?.includes(axisData.axisId)
+					? layerDotColor(hoveredLayerKeys, true)
+					: held?.keys.includes(axisData.axisId)
+						? held.color
+						: null}
+				{createMode}
+				{pendingValueIds}
+				{pendingColor}
+				onToggleCondition={toggleCondition}
+				onPickLayer={(axisValueId, keys) => onPickLayer(axisValueId, keys)}
+				onDeleteLayer={(axisValueId, keys) => onDeleteLayer(axisValueId, keys)}
 				/>
 				</div>
 			{/each}
@@ -460,6 +731,53 @@
 		}
 		&:global(.dnd-insert-after)::after {
 			bottom: -1px;
+		}
+	}
+
+	.create-layer-bar {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		padding: $x-space-xs $x-space-sm;
+		margin-bottom: $x-space-xs;
+		font-size: $x-font-size-sm;
+		background: color-mix(in oklch, var(--pending, var(--color-primary)) 12%, var(--color-surface-alt));
+		border-left: 3px solid var(--pending, var(--color-primary));
+		border-radius: calc($x-space-xs / 2);
+
+		&__dot {
+			width: 0.7em;
+			height: 0.7em;
+			flex-shrink: 0;
+			border-radius: 50%;
+			background: var(--pending, var(--color-text-muted));
+		}
+
+		&__text {
+			flex-grow: 1;
+			color: var(--color-pure-alt);
+		}
+
+		&__btn {
+			flex-shrink: 0;
+			border: none;
+			border-radius: calc($x-space-xs / 2);
+			padding: calc($x-space-xs / 2) $x-space-sm;
+			font-size: $x-font-size-xs;
+			font-weight: 700;
+			cursor: pointer;
+			background: var(--color-primary);
+			color: var(--color-on-primary, oklch(100% 0 0));
+
+			&:disabled {
+				opacity: 0.4;
+				cursor: default;
+			}
+
+			&--ghost {
+				background: transparent;
+				color: var(--color-text-muted);
+			}
 		}
 	}
 

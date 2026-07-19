@@ -45,7 +45,7 @@ interface AxisValueDiscrete {
 	value: string;
 }
 
-type AxisValueType = AxisValueLiteral | AxisValueBoundary | AxisValueDiscrete;
+export type AxisValueType = AxisValueLiteral | AxisValueBoundary | AxisValueDiscrete;
 
 // --- Axis arg types (input side) ---
 
@@ -78,13 +78,13 @@ export interface PluginManifest {
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
-// the DB2026_07_11 interface below is renamed for an actual schema change (not for every minor
+// the DB2026_07_19 interface below is renamed for an actual schema change (not for every minor
 // edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
-export const CURRENT_SCHEMA_VERSION = '2026-07-11';
+export const CURRENT_SCHEMA_VERSION = '2026-07-19';
 
 // --- Schema tables ---
 
-export interface DB2026_07_11 {
+export interface DB2026_07_19 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
@@ -174,6 +174,7 @@ export interface AxisValuesTable {
 	axis_id: string;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	value: JSONColumnType<AxisValueType>;
+	priority_index: Generated<number>;
 }
 
 export interface AxesConsumedTable {
@@ -260,8 +261,8 @@ export interface AssetsTable {
 }
 
 // Current version of db
-export type SchemaTS = Kysely<DB2026_07_11>;
-export type Schema = DB2026_07_11;
+export type SchemaTS = Kysely<DB2026_07_19>;
+export type Schema = DB2026_07_19;
 export type SchemaDialect = Kysely<Schema>;
 
 export type SchemaQueryBuilder<O, Tb extends keyof Schema = keyof Schema> = SelectQueryBuilder<

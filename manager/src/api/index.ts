@@ -5,7 +5,8 @@ import {
 	type TokenValue,
 	type PluginKind,
 	type PluginActivation,
-	type PluginManifest
+	type PluginManifest,
+	type AxisValueType
 } from '../schema.js';
 import { sql, type SelectQueryBuilder } from 'kysely';
 
@@ -221,6 +222,32 @@ export interface QueryAxis {
 		  }
 		| undefined
 	>;
+	// Batched axis + initial axis_values in one transaction -- avoids the N+1 write pattern of a
+	// createAxis followed by N createAxisValue calls, and closes the "axis created with zero
+	// values" gap createAxis alone leaves (see createNewAxis in Axes.svelte).
+	createAxisWithValues: (
+		projectId: string,
+		name: string,
+		kind: string,
+		values: AxisValueType[],
+		description?: string,
+		hint?: string[],
+		defaultValue?: any
+	) => Promise<
+		| {
+				axis: {
+					id: string;
+					project_id: string;
+					name: string | null;
+					description: string | null;
+					kind: string | null;
+					hint: any;
+					default_value: any;
+				};
+				values: { id: string; axis_id: string; value: any; priority_index: number }[];
+		  }
+		| undefined
+	>;
 	renameAxis: (axisId: string, newName: string) => Promise<void>;
 	deleteAxis: (axisId: string) => Promise<void>;
 	// Hard-delete an axis and everything tying it down, in one transaction. Plain deleteAxis
@@ -260,7 +287,26 @@ export interface QueryAxisValue {
 		axisId: string,
 		value: any
 	) => Promise<{ id: string; axis_id: string; value: any } | undefined>;
+	// Update an existing value's content in place, propagating a literal/discrete rename into
+	// any axis_args / axes.default_value rows that currently hold the old literal string --
+	// axis_args stores a denormalized copy of the literal (matchesArg compares by string, not by
+	// axis_value_id), so without this a rename silently orphans every view's current selection
+	// for that axis. See CLAUDE.md's "in-place value editing" note for the full reasoning.
+	updateAxisValue: (axisValueId: string, value: AxisValueType) => Promise<void>;
+	// Count of layer_axis_values rows referencing this value -- used by the UI to warn before a
+	// delete that would otherwise detach live layer conditions (see deleteAxisValueSafe).
+	getAxisValueUsage: (axisValueId: string) => Promise<number>;
 	deleteAxisValue: (axisValueId: string) => Promise<void>;
+	// UI-facing delete: layer_axis_values -> axis_values is ON DELETE restrict, so a plain
+	// deleteAxisValue throws a DB error the instant the value is referenced by any layer
+	// condition. This clears those references first, in the same transaction, mirroring
+	// deleteAxisCascade's per-axis version but scoped to one value. The UI must warn the user
+	// (via getAxisValueUsage) BEFORE calling this, since it's destructive to those conditions.
+	deleteAxisValueSafe: (axisValueId: string) => Promise<void>;
+	// Renumber one axis's values to exactly `orderedValueIds` (ascending priority_index, matching
+	// getAxisValuesByAxisId's own `asc` order). Unlike setConsumedAxesOrder, axis_values has no
+	// unique constraint on priority_index, so a single-pass CASE update is enough -- no park phase.
+	setAxisValuesOrder: (axisId: string, orderedValueIds: string[]) => Promise<void>;
 	getAxisValuesByAxisId: (
 		axisId: string
 	) => SelectQueryBuilder<Schema, 'axis_values', { axisValueId: string; value: any }>;
@@ -300,6 +346,9 @@ export interface QueryAxisArgs {
 		axisId: string,
 		value: any
 	) => Promise<{ view_id: string; kit_id: string; axis_id: string; value: any } | undefined>;
+	// Clear a view+kit's selection for one axis (deselect) -- the row is dropped, so the axis reads
+	// as unset and no layer conditioned on it is active.
+	clearAxisArg: (viewId: string, kitId: string, axisId: string) => Promise<void>;
 	getAllAxisArgs: (
 		viewId: string,
 		kitId: string
@@ -315,6 +364,20 @@ export interface QueryLayer {
 		kitId: string
 	) => Promise<{ id: string; kit_id: string; last_modified: Date } | undefined>;
 	deleteLayer: (layerId: string) => Promise<void>;
+	// Find-or-create the kit's layer whose condition set is EXACTLY `axisValueIds`, guaranteeing it
+	// has a render snippet (the write host-fn rejects a snippet-less layer). Duplicate-guarded: an
+	// existing layer with the same exact condition set is reused, never duplicated. Backs both the
+	// Axes-panel "create layer" mode and the pipette's write target. `created` distinguishes the two.
+	createLayerWithConditions: (
+		kitId: string,
+		axisValueIds: string[]
+	) => Promise<{ layerId: string; created: boolean } | undefined>;
+	// Delete a property's render entry from a layer (alt-click in the Render panel). Then garbage-
+	// collect: a *conditioned* layer left with no render entries is dead weight, so it's deleted
+	// (cascade drops its snippet + conditions, and its dot disappears from the Axes panel). The
+	// null/base layer (zero conditions) is never GC'd -- it's the fallback write target and may
+	// legitimately be empty. Returns whether the layer itself was removed.
+	removePropertyFromLayer: (layerId: string, property: string) => Promise<{ layerDeleted: boolean }>;
 	addAxisValueToLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	removeAxisValueFromLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	getLayersByKitId: (
@@ -1366,6 +1429,50 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.executeTakeFirst();
 	},
 
+	createAxisWithValues: async (
+		projectId: string,
+		name: string,
+		kind: string,
+		values: AxisValueType[],
+		description?: string,
+		hint?: string[],
+		defaultValue?: any
+	) => {
+		return await db.transaction().execute(async (trx) => {
+			const axis = await trx
+				.insertInto('axes')
+				.values({
+					project_id: projectId,
+					name,
+					description: description ?? null,
+					kind,
+					hint: hint ?? null,
+					default_value: defaultValue ?? null
+				} as any)
+				.returningAll()
+				.executeTakeFirst();
+			if (!axis) return undefined;
+
+			if (values.length === 0) {
+				return { axis, values: [] };
+			}
+
+			const inserted = await trx
+				.insertInto('axis_values')
+				.values(
+					values.map((value, i) => ({
+						axis_id: axis.id,
+						value,
+						priority_index: (i + 1) * 1000
+					})) as any
+				)
+				.returningAll()
+				.execute();
+
+			return { axis, values: inserted };
+		});
+	},
+
 	renameAxis: async (axisId: string, newName: string) => {
 		await db.updateTable('axes').set({ name: newName }).where('axes.id', '=', axisId).execute();
 	},
@@ -1401,21 +1508,104 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	createAxisValue: async (axisId: string, value: any) => {
-		return await db
-			.insertInto('axis_values')
-			.values({ axis_id: axisId, value } as any)
-			.returningAll()
+		return await db.transaction().execute(async (trx) => {
+			const last = await trx
+				.selectFrom('axis_values')
+				.select('priority_index')
+				.where('axis_id', '=', axisId)
+				.orderBy('priority_index', 'desc')
+				.executeTakeFirst();
+			const idx = last ? last.priority_index + 1000 : 1000;
+			return await trx
+				.insertInto('axis_values')
+				.values({ axis_id: axisId, value, priority_index: idx } as any)
+				.returningAll()
+				.executeTakeFirst();
+		});
+	},
+
+	updateAxisValue: async (axisValueId: string, value: AxisValueType) => {
+		await db.transaction().execute(async (trx) => {
+			const prev = await trx
+				.selectFrom('axis_values')
+				.select(['axis_id', 'value'])
+				.where('id', '=', axisValueId)
+				.executeTakeFirst();
+
+			await trx
+				.updateTable('axis_values')
+				.set({ value } as any)
+				.where('id', '=', axisValueId)
+				.execute();
+
+			if (!prev) return;
+			const prevValue = prev.value as AxisValueType;
+			const nextValue = value as AxisValueType;
+			// Only literal/discrete values are ever matched by a denormalized string in axis_args
+			// (see matchesArg) -- a range value's identity isn't stored that way, so there's
+			// nothing to propagate for it.
+			const oldLiteral =
+				prevValue.type === 'literal' || prevValue.type === 'discrete' ? prevValue.value : null;
+			const newLiteral =
+				nextValue.type === 'literal' || nextValue.type === 'discrete' ? nextValue.value : null;
+			if (oldLiteral === null || newLiteral === null || oldLiteral === newLiteral) return;
+
+			const newArg = { type: 'literal', value: newLiteral };
+			await trx
+				.updateTable('axis_args')
+				.set({ value: newArg } as any)
+				.where('axis_id', '=', prev.axis_id)
+				.where(sql`axis_args.value ->> 'value'`, '=', oldLiteral)
+				.execute();
+			await trx
+				.updateTable('axes')
+				.set({ default_value: newArg } as any)
+				.where('id', '=', prev.axis_id)
+				.where(sql`axes.default_value ->> 'value'`, '=', oldLiteral)
+				.execute();
+		});
+	},
+
+	getAxisValueUsage: async (axisValueId: string) => {
+		const row = await db
+			.selectFrom('layer_axis_values')
+			.select(({ fn }) => fn.countAll<number>().as('count'))
+			.where('axis_value_id', '=', axisValueId)
 			.executeTakeFirst();
+		return Number(row?.count ?? 0);
 	},
 
 	deleteAxisValue: async (axisValueId: string) => {
 		await db.deleteFrom('axis_values').where('axis_values.id', '=', axisValueId).execute();
 	},
 
+	deleteAxisValueSafe: async (axisValueId: string) => {
+		await db.transaction().execute(async (trx) => {
+			await trx
+				.deleteFrom('layer_axis_values')
+				.where('layer_axis_values.axis_value_id', '=', axisValueId)
+				.execute();
+			await trx.deleteFrom('axis_values').where('axis_values.id', '=', axisValueId).execute();
+		});
+	},
+
+	setAxisValuesOrder: async (axisId: string, orderedValueIds: string[]) => {
+		if (orderedValueIds.length === 0) return;
+		const finals = sql.join(
+			orderedValueIds.map((id, i) => sql`when ${id} then ${(i + 1) * 1000}`),
+			sql` `
+		);
+		await sql`
+			update axis_values set priority_index = case id ${finals} else priority_index end
+			where axis_id = ${axisId} and id in (${sql.join(orderedValueIds)})
+		`.execute(db);
+	},
+
 	getAxisValuesByAxisId: (axisId: string) => {
 		return db
 			.selectFrom('axis_values')
 			.where('axis_values.axis_id', '=', axisId)
+			.orderBy('axis_values.priority_index', 'asc')
 			.select(['axis_values.id as axisValueId', 'axis_values.value']);
 	},
 
@@ -1496,6 +1686,15 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.executeTakeFirst();
 	},
 
+	clearAxisArg: async (viewId: string, kitId: string, axisId: string) => {
+		await db
+			.deleteFrom('axis_args')
+			.where('view_id', '=', viewId)
+			.where('kit_id', '=', kitId)
+			.where('axis_id', '=', axisId)
+			.execute();
+	},
+
 	createLayer: async (kitId: string) => {
 		return await db
 			.insertInto('layers')
@@ -1506,6 +1705,112 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteLayer: async (layerId: string) => {
 		await db.deleteFrom('layers').where('layers.id', '=', layerId).execute();
+	},
+
+	removePropertyFromLayer: async (layerId: string, property: string) => {
+		return await db.transaction().execute(async (trx) => {
+			// Drop the entry(ies) for this property on the layer's snippet(s).
+			const entries = await trx
+				.selectFrom('render_entries')
+				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+				.where('render_snippets.layer_id', '=', layerId)
+				.where('render_entries.property', '=', property)
+				.select('render_entries.id as id')
+				.execute();
+			if (entries.length > 0) {
+				await trx
+					.deleteFrom('render_entries')
+					.where(
+						'id',
+						'in',
+						entries.map((e) => e.id)
+					)
+					.execute();
+			}
+
+			// GC only conditioned layers -- the null/base layer (0 conditions) stays even when empty.
+			const conds = await trx
+				.selectFrom('layer_axis_values')
+				.select('axis_value_id')
+				.where('layer_id', '=', layerId)
+				.limit(1)
+				.execute();
+			if (conds.length === 0) return { layerDeleted: false };
+
+			const remaining = await trx
+				.selectFrom('render_entries')
+				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+				.where('render_snippets.layer_id', '=', layerId)
+				.select('render_entries.id')
+				.limit(1)
+				.execute();
+			if (remaining.length > 0) return { layerDeleted: false };
+
+			await trx.deleteFrom('layers').where('id', '=', layerId).execute();
+			return { layerDeleted: true };
+		});
+	},
+
+	createLayerWithConditions: async (kitId: string, axisValueIds: string[]) => {
+		const target = new Set(axisValueIds);
+		return await db.transaction().execute(async (trx) => {
+			// Existing layers of this kit + their condition sets, to reuse an exact match.
+			const layers = await trx
+				.selectFrom('layers')
+				.select('id')
+				.where('kit_id', '=', kitId)
+				.execute();
+			const conds = await trx
+				.selectFrom('layer_axis_values')
+				.select(['layer_id', 'axis_value_id'])
+				.where(
+					'layer_id',
+					'in',
+					layers.map((l) => l.id)
+				)
+				.execute();
+			const byLayer = new Map<string, Set<string>>();
+			for (const l of layers) byLayer.set(l.id, new Set());
+			for (const c of conds) byLayer.get(c.layer_id)?.add(c.axis_value_id);
+
+			let layerId: string | undefined;
+			let created = false;
+			for (const [id, set] of byLayer) {
+				if (set.size === target.size && [...target].every((v) => set.has(v))) {
+					layerId = id;
+					break;
+				}
+			}
+
+			if (!layerId) {
+				const layer = await trx
+					.insertInto('layers')
+					.values({ kit_id: kitId })
+					.returningAll()
+					.executeTakeFirst();
+				if (!layer) return undefined;
+				layerId = layer.id;
+				created = true;
+				if (axisValueIds.length > 0) {
+					await trx
+						.insertInto('layer_axis_values')
+						.values(axisValueIds.map((axis_value_id) => ({ layer_id: layerId!, axis_value_id })))
+						.execute();
+				}
+			}
+
+			// The write host-fn needs a snippet to exist; ensure one whether reused or fresh.
+			const snippet = await trx
+				.selectFrom('render_snippets')
+				.select('id')
+				.where('layer_id', '=', layerId)
+				.executeTakeFirst();
+			if (!snippet) {
+				await trx.insertInto('render_snippets').values({ layer_id: layerId }).execute();
+			}
+
+			return { layerId, created };
+		});
 	},
 
 	setLayerChildren: async (layerId: string, viewIds: string[]) => {

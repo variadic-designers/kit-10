@@ -18,6 +18,7 @@
 
 export type DragPayload =
 	| { kind: 'axis'; axisId: string; kitId: string; label?: string }
+	| { kind: 'axis-value'; axisValueId: string; axisId: string }
 	| { kind: 'token'; tokenId: string; alias: string; valueType?: string }
 	| { kind: 'view'; viewId: string; viewName: string; parentViewId: string | null };
 

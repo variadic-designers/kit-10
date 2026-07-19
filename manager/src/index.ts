@@ -79,6 +79,7 @@ export { jsonArrayFrom } from 'kysely/helpers/postgres';
 export { type Api, type PluginRow, type AssetRow } from './api/index.js';
 export { registerBuiltinPlugins, type BuiltinPlugins } from './plugins-bootstrap.js';
 export { type TokenValue, type TokenValueScalar, type TokenValueView } from './schema.js';
+export { type AxisValueType } from './schema.js';
 export {
 	resolve,
 	resolveManySlowPath,
