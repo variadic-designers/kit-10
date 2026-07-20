@@ -29,6 +29,12 @@
 
 	/* Default font */
 	import '$fonts/Satoshi/Satoshi.css';
+
+	/* Font Awesome, self-hosted (was cdnjs.cloudflare.com). Imported here in the root layout so
+	   Vite bundles the CSS + its webfonts same-origin and SvelteKit hoists the stylesheet into the
+	   SSR'd <head> on every route -- present before first paint on both full loads and client-side
+	   navigations, which is the late-icon problem the old app.html <link> was placed to avoid. */
+	import '@fortawesome/fontawesome-free/css/all.min.css';
 </script>
 
 {#key getTheme()}

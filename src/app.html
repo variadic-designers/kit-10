@@ -5,18 +5,12 @@
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<!--
-			Font Awesome is loaded here, in the initial HTML head, rather than per-route via
-			<svelte:head>. A <svelte:head> link is only in the SSR'd head on a full page load of that
-			route; on a client-side navigation it's injected by JS after the component mounts, so the
-			icon webfont arrives late and glyph-only UI (e.g. the Settings dialog tabs) renders as
-			empty boxes until it does. In app.html it's in the head for every route and every load
-			path. preconnect warms the CDN connection before the stylesheet request.
+			Font Awesome is self-hosted (imported in src/routes/+layout.svelte), not loaded from a
+			CDN. SvelteKit hoists the layout's bundled stylesheet into the SSR'd <head> on every route,
+			so the icon webfont is present before first paint on both full loads and client-side
+			navigations -- the late-icon problem the old cdnjs <link> here was placed to avoid, now
+			solved same-origin with no external CDN dependency (also keeps us within COEP isolation).
 		-->
-		<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
-		<link
-			rel="stylesheet"
-			href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css"
-		/>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
