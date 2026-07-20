@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { layerDotColor } from './layer-color.ts';
 	import { factsForFamily, resolveFontWeight } from '$lib/plugins/font-weight.js';
+	import { dropZone } from '../dnd.svelte.ts';
+	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
+	import TokenBadge from './TokenBadge.svelte';
 	import type { FamilyFacts, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
-	import type { ResolvedProperty } from 'manager';
+	import type { Api, ResolvedProperty } from 'manager';
 
 	// Same shape ArrangeField/ResizeField take -- Styles.svelte's `track()` passed down so this
 	// component can resolve the source layer/kit/keys for its own key ("font-weight").
@@ -26,6 +29,7 @@
 		// weight-snapping note). Absent/uncatalogued family means no filtering opinion -- same
 		// "no facts, no opinion" rule Charter's resolve_font_weight applies to rendering.
 		fontFacts?: Record<string, FamilyFacts>;
+		api?: Api;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
@@ -35,8 +39,11 @@
 		track,
 		resolvedMap,
 		fontFacts = {},
+		api,
 		onFieldUpdate
 	}: WeightFieldProps = $props();
+
+	const info = $derived(track(field.key));
 
 	const STANDARD_WEIGHTS: { weight: number; label: string }[] = [
 		{ weight: 100, label: 'Thin' },
@@ -95,11 +102,28 @@
 	function selectWeight(weight: number) {
 		// Compare against what's on screen: clicking the already-rendered weight is a no-op even
 		// when the raw stored value differs (e.g. stored 600 rendering as 700 -- clicking 700
-		// shouldn't rewrite). Clicking any OTHER button writes that literal weight as usual.
+		// shouldn't rewrite). Clicking any OTHER button writes that weight -- token-aware, so a
+		// token-backed weight edits the shared token rather than detaching to a literal.
 		if (weight === displayWeight) return;
-		const t = track(field.key);
-		if (!onFieldUpdate || !t.sourceLayerId) return;
-		onFieldUpdate({ layerId: t.sourceLayerId, property: field.key, value: String(weight) });
+		commitFieldValue(track(field.key), field.key, String(weight), { onFieldUpdate, api });
+	}
+
+	function canDropWeightToken(payload: { kind: string; valueType?: string }): boolean {
+		return (
+			payload.kind === 'token' &&
+			payload.valueType !== 'view-list' &&
+			!!info.sourceLayerId &&
+			!!onFieldUpdate
+		);
+	}
+
+	function handleWeightTokenDrop(payload: { kind: string; tokenId?: string }) {
+		if (payload.kind !== 'token' || !payload.tokenId) return;
+		attachToken(track(field.key), field.key, payload.tokenId, onFieldUpdate);
+	}
+
+	function detach() {
+		detachToken(track(field.key), field.key, resolvedMap.get(field.key)?.value ?? '', onFieldUpdate);
 	}
 </script>
 
@@ -108,7 +132,14 @@
 	class:weight-field--top={position === 'top'}
 	class:weight-field--bottom={position === 'bottom'}
 >
-	<div class="weight-field__header">
+	<div
+		class="weight-field__header"
+		use:dropZone={{ accepts: 'token', canDrop: canDropWeightToken, onDrop: handleWeightTokenDrop }}
+	>
+		<span class="weight-field__label">{field.displayText ?? field.key}</span>
+		{#if info.isToken}
+			<TokenBadge alias={info.tokenAlias} value={resolvedMap.get(field.key)?.value ?? null} onDetach={detach} />
+		{/if}
 		<button
 			class="weight-field__track"
 			style="--track-color: {trackColor(track(field.key).keys)}"
@@ -118,7 +149,6 @@
 		>
 			<i class="fa-solid {track(field.key).kitIcon}"></i>
 		</button>
-		<span class="weight-field__label">{field.displayText ?? field.key}</span>
 	</div>
 
 	<div class="weight-field__options" role="group" aria-label="Font weight">
@@ -162,6 +192,11 @@
 			gap: $x-space-xs;
 			padding-inline: $x-space-sm;
 			font-weight: 600;
+
+			&:global(.dnd-over) {
+				outline: 1px dashed var(--color-primary);
+				outline-offset: -1px;
+			}
 		}
 
 		&__track {

@@ -47,6 +47,21 @@
 
 	let viewEditing: Record<string, boolean> = $state({});
 
+	// A freshly created Box view starts with zero kit compositions, which means
+	// `resolved_kits` is empty for it: Charter's `build_categories` shows no Styles panel
+	// fields at all, and `applySelfDeclaredViewRefs` (manager/src/resolve/resolve.ts) has
+	// nowhere to attach a self-declared `children` token if the user tries to add a child to
+	// it. Auto-attaching a blank kit (same "New Kit" pattern Compose.svelte's `attachKit` uses:
+	// createKitInProject + attachKitToComposition) makes a new Box immediately functional —
+	// it gets real Styles panel fields and somewhere for the first `children` write to land.
+	// Text/Image are untouched: they don't declare a `children` field, so there's nothing to
+	// provision for them yet.
+	async function provisionBoxKit(projectId: string, viewId: string, name: string) {
+		const kit = await api.createKitInProject(projectId, `${name} Kit`);
+		if (!kit) return;
+		await api.attachKitToComposition(kit.id, viewId);
+	}
+
 	// Op dispatch — the manifest declares which ops exist + their label/icon; the editor switches
 	// on `op.name` to actually execute. Adding a new op name requires editor support here, but the
 	// plugin still owns *availability* (which items get which ops in their context menu) — the
@@ -94,6 +109,8 @@
 				// common path minimal.
 				if (kind !== 'box') {
 					await api.updateViewHints(created.id, { charter: { primitive: kind } });
+				} else {
+					await provisionBoxKit(projectId, created.id, created.name);
 				}
 				if (viewId) {
 					const alias = item?.write_alias ?? 'children';
@@ -187,6 +204,8 @@
 				if (!created) return;
 				if (kind !== 'box') {
 					await api.updateViewHints(created.id, { charter: { primitive: kind } });
+				} else {
+					await provisionBoxKit(projectId, created.id, created.name);
 				}
 				selectView(created.id, created.name);
 			}

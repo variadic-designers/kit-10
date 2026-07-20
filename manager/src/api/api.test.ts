@@ -128,6 +128,28 @@ describe('api', () => {
 		expect(after).toHaveLength(0);
 	});
 
+	it('bulk-reorders composed kits without a unique-priority collision', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const k1 = (await ctx.api.createKitInProject(proj.id, 'base'))!;
+		const k2 = (await ctx.api.createKitInProject(proj.id, 'theme'))!;
+		const k3 = (await ctx.api.createKitInProject(proj.id, 'overrides'))!;
+		await ctx.api.attachKitToComposition(k1.id, view.id); // 1000
+		await ctx.api.attachKitToComposition(k2.id, view.id); // 2000
+		await ctx.api.attachKitToComposition(k3.id, view.id); // 3000
+
+		// Move theme (currently top, priority_index desc) to the bottom -- the intermediate
+		// priorities it and its neighbours would pass through overlap, so a per-row sequence would
+		// trip the unique_priority_per_view constraint. The single transaction must not.
+		await ctx.api.setKitCompositionOrder(view.id, [k1.id, k3.id, k2.id]);
+
+		const list = await ctx.api.getKitCompositionByViewId(view.id).execute();
+		expect(list.map((e) => e.kitName)).toEqual(['base', 'overrides', 'theme']);
+		expect(list.map((e) => e.kitIndex)).toEqual([3000, 2000, 1000]);
+	});
+
 	it('renames and deletes a kit', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;

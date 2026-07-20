@@ -2,6 +2,7 @@
 	import StyleField from './StyleField.svelte';
 	import { layerDotColor } from './layer-color.ts';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
+	import { commitFieldValue } from './field-commit.ts';
 	import type { Api, ResolvedProperty } from 'manager';
 	import type { ArrangeKeys, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 
@@ -103,9 +104,7 @@
 
 	function selectTab(kind: ArrangeKind) {
 		if (kind === activeKind) return;
-		const t = track(field.key);
-		if (!onFieldUpdate || !t.sourceLayerId) return;
-		onFieldUpdate({ layerId: t.sourceLayerId, property: field.key, value: kind });
+		commitFieldValue(track(field.key), field.key, kind, { onFieldUpdate, api });
 	}
 
 	// Raw "flex-direction" value, unresolved -- absent reads as each active tab's own default
@@ -116,10 +115,11 @@
 	);
 
 	function writeDirection(v: 'row' | 'column') {
-		const t = track(arrangeKeys.directionKey);
-		if (!onFieldUpdate || !t.sourceLayerId) return;
 		if (rawDirection === v) return;
-		onFieldUpdate({ layerId: t.sourceLayerId, property: arrangeKeys.directionKey, value: v });
+		commitFieldValue(track(arrangeKeys.directionKey), arrangeKeys.directionKey, v, {
+			onFieldUpdate,
+			api
+		});
 	}
 
 	function anyFieldHasValue(fields: FieldDef[]): boolean {
@@ -163,6 +163,7 @@
 	class:arrange-field--bottom={position === 'bottom'}
 >
 	<div class="arrange-field__header">
+		<span class="arrange-field__label">{field.displayText ?? field.key}</span>
 		<button
 			class="arrange-field__track"
 			style="--track-color: {trackColor(track(field.key).keys)}"
@@ -172,7 +173,6 @@
 		>
 			<i class="fa-solid {track(field.key).kitIcon}"></i>
 		</button>
-		<span class="arrange-field__label">{field.displayText ?? field.key}</span>
 	</div>
 
 	<div class="arrange-field__tabs" role="tablist" aria-label="Arrangement pattern">

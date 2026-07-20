@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { layerDotColor } from './layer-color.ts';
 	import { parseCssColorToOklch, formatOklch } from '$lib/color/oklch.js';
+	import { dropZone } from '../dnd.svelte.ts';
+	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
+	import TokenBadge from './TokenBadge.svelte';
 	import type { FieldDef, FieldUpdate } from '$lib/plugins/types.js';
-	import type { ResolvedProperty } from 'manager';
+	import type { Api, ResolvedProperty } from 'manager';
 
 	// Same shape WeightField/ArrangeField/ResizeField take -- Styles.svelte's `track()` passed
 	// down so this component can resolve the source layer/kit/keys for its own key.
@@ -22,10 +25,15 @@
 		position?: 'top' | 'bottom' | 'mid';
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
+		api?: Api;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
-	let { field, position = 'mid', track, resolvedMap, onFieldUpdate }: ColorFieldProps = $props();
+	let { field, position = 'mid', track, resolvedMap, api, onFieldUpdate }: ColorFieldProps = $props();
+
+	// Token/layer facts for this field's key, re-derived reactively. Drives both the write path
+	// (edit the shared token vs. write a literal) and the token badge.
+	const info = $derived(track(field.key));
 
 	// Phase 1 (see resources/oklch.md): real L/C/H/alpha sliders + a live swatch + a collapsible
 	// raw-text escape hatch for pasting a legacy hex/rgb/hsl value. Every commit writes back
@@ -65,10 +73,37 @@
 
 	const swatch = $derived(formatOklch(l, c, h, alpha));
 
+	// "No color set" is a distinct state from a real gray: the property has no render entry at all,
+	// so the sliders are sitting at FALLBACK (mid-gray) purely as a starting point, not because
+	// gray was authored. Surface it (dashed "+" swatch + muted sliders) instead of rendering an
+	// indistinguishable gray. A token-backed color always resolves to a value, so this is only ever
+	// true for literal, value-less colors -- never collides with the token badge. transparent /
+	// alpha-0 is a real value (non-null currentRaw), so it is NOT unset.
+	const isUnset = $derived(currentRaw === null);
+
 	function commit() {
-		const t = track(field.key);
-		if (!onFieldUpdate || !t.sourceLayerId) return;
-		onFieldUpdate({ layerId: t.sourceLayerId, property: field.key, value: formatOklch(l, c, h, alpha) });
+		// Token-aware: if this color is token-backed, editing the sliders edits the shared token
+		// (propagates to every use) rather than silently detaching to a one-off literal.
+		commitFieldValue(track(field.key), field.key, formatOklch(l, c, h, alpha), { onFieldUpdate, api });
+	}
+
+	function canDropColorToken(payload: { kind: string; valueType?: string }): boolean {
+		return (
+			payload.kind === 'token' &&
+			payload.valueType !== 'view-list' &&
+			!!info.sourceLayerId &&
+			!!onFieldUpdate
+		);
+	}
+
+	function handleColorTokenDrop(payload: { kind: string; tokenId?: string }) {
+		if (payload.kind !== 'token' || !payload.tokenId) return;
+		attachToken(track(field.key), field.key, payload.tokenId, onFieldUpdate);
+	}
+
+	function detach() {
+		// Explicit: freeze the token's current resolved value onto this property as a literal.
+		detachToken(track(field.key), field.key, currentRaw ?? formatOklch(l, c, h, alpha), onFieldUpdate);
 	}
 
 	function commitRaw() {
@@ -100,8 +135,16 @@
 	class="color-field"
 	class:color-field--top={position === 'top'}
 	class:color-field--bottom={position === 'bottom'}
+	class:color-field--unset={isUnset}
 >
-	<div class="color-field__header">
+	<div
+		class="color-field__header"
+		use:dropZone={{ accepts: 'token', canDrop: canDropColorToken, onDrop: handleColorTokenDrop }}
+	>
+		<span class="color-field__label">{field.displayText ?? field.key}</span>
+		{#if info.isToken}
+			<TokenBadge alias={info.tokenAlias} value={currentRaw} onDetach={detach} />
+		{/if}
 		<button
 			class="color-field__track"
 			style="--track-color: {trackColor(track(field.key).keys)}"
@@ -111,8 +154,17 @@
 		>
 			<i class="fa-solid {track(field.key).kitIcon}"></i>
 		</button>
-		<span class="color-field__label">{field.displayText ?? field.key}</span>
-		<span class="color-field__swatch" style="background: {swatch}" aria-hidden="true"></span>
+		{#if isUnset}
+			<span
+				class="color-field__swatch color-field__swatch--unset"
+				title="No color set — drag a slider or click to add"
+				aria-label="No color set"
+			>
+				<i class="fa-solid fa-plus"></i>
+			</span>
+		{:else}
+			<span class="color-field__swatch" style="background: {swatch}" aria-hidden="true"></span>
+		{/if}
 	</div>
 
 	<div class="color-field__sliders">
@@ -209,6 +261,13 @@
 			gap: $x-space-xs;
 			padding-inline: $x-space-sm;
 			font-weight: 600;
+
+			// dnd-over is applied at runtime by the dnd controller (dropping a token onto the field)
+			// -- :global() so Svelte's scoped-CSS pass doesn't prune it as unused.
+			&:global(.dnd-over) {
+				outline: 1px dashed var(--color-primary);
+				outline-offset: -1px;
+			}
 		}
 
 		&__track {
@@ -233,6 +292,26 @@
 			height: 1.1em;
 			border-radius: 3px;
 			border: 1px solid var(--color-panel-header-border);
+
+			// "No color set": no fill, dashed outline + a muted "+" -- the panel's own "add value"
+			// idiom (StyleField's option124__value--new), so an unset color never masquerades as a
+			// deliberately-authored gray.
+			&--unset {
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				background: transparent;
+				border-style: dashed;
+				color: var(--color-add-var-text);
+				font-size: 0.6em;
+			}
+		}
+
+		// Mute the sliders while unset so their FALLBACK mid-gray positions don't read as an active
+		// gray. Opacity only -- never pointer-events:none, since dragging a slider is exactly how you
+		// add the color (commit() writes a real value, isUnset flips false, full styling returns).
+		&--unset &__sliders {
+			opacity: 0.5;
 		}
 
 		&__sliders {

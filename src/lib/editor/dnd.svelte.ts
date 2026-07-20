@@ -23,7 +23,8 @@ export type DragPayload =
 	| { kind: 'axis'; axisId: string; kitId: string; label?: string }
 	| { kind: 'axis-value'; axisValueId: string; axisId: string }
 	| { kind: 'token'; tokenId: string; alias: string; valueType?: string }
-	| { kind: 'view'; viewId: string; viewName: string; parentViewId: string | null };
+	| { kind: 'view'; viewId: string; viewName: string; parentViewId: string | null }
+	| { kind: 'composition'; kitId: string; viewId: string };
 
 export type DragKind = DragPayload['kind'];
 // Where a drop lands relative to the hovered node. `reorder` zones only ever yield before/after;

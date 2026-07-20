@@ -334,6 +334,7 @@
 										{track}
 										{resolvedMap}
 										{fontFacts}
+										{api}
 										{onFieldUpdate}
 									/>
 								{:else if field.inputType === 'color'}
@@ -342,6 +343,7 @@
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{track}
 										{resolvedMap}
+										{api}
 										{onFieldUpdate}
 									/>
 								{:else}

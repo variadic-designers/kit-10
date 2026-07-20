@@ -94,6 +94,12 @@ export interface QueryOrdering {
 		viewId: string
 	) => Promise<{ priority_index: number; kit_id: string; view_id: string } | undefined>;
 	detachKitFromComposition: (kitId: string, viewId: string) => Promise<void>;
+	// Persist a full reorder of a view's composed kits in one collision-safe transaction — mirrors
+	// setConsumedAxesOrder's park-then-stamp shape, since `compositions` carries the same
+	// unique_priority_per_view(view_id, priority_index) constraint axes_consumed has for kit_id.
+	// `orderedKitIds` is top-to-bottom as the Compose panel displays it (priority_index desc, so
+	// index 0 = highest priority = last-composed/wins).
+	setKitCompositionOrder: (viewId: string, orderedKitIds: string[]) => Promise<void>;
 }
 
 export interface QueryToken {
@@ -1332,6 +1338,30 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.where('compositions.kit_id', '=', kitId)
 			.where('compositions.view_id', '=', viewId)
 			.execute();
+	},
+
+	setKitCompositionOrder: async (viewId: string, orderedKitIds: string[]) => {
+		if (orderedKitIds.length === 0) return;
+		const n = orderedKitIds.length;
+		await db.transaction().execute(async (trx) => {
+			const park = sql.join(
+				orderedKitIds.map((kitId, i) => sql`when ${kitId} then ${-(i + 1)}`),
+				sql` `
+			);
+			await sql`
+				update compositions set priority_index = case kit_id ${park} else priority_index end
+				where view_id = ${viewId} and kit_id in (${sql.join(orderedKitIds)})
+			`.execute(trx);
+
+			const finals = sql.join(
+				orderedKitIds.map((kitId, i) => sql`when ${kitId} then ${(n - i) * 1000}`),
+				sql` `
+			);
+			await sql`
+				update compositions set priority_index = case kit_id ${finals} else priority_index end
+				where view_id = ${viewId} and kit_id in (${sql.join(orderedKitIds)})
+			`.execute(trx);
+		});
 	},
 
 	createToken: async (

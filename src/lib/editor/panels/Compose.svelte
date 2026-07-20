@@ -4,6 +4,7 @@
 	import Renameable from '$lib/components/Renameable.svelte';
 	import { liveQuery, type EditorActivity, type EditorSelection } from '../Editor.svelte';
 	import { type Api, type EditorState } from 'manager';
+	import { draggable, dropZone } from '../dnd.svelte.ts';
 
 	type ComposePanelProps = {
 		editorReady: EditorState;
@@ -31,6 +32,30 @@
 			return;
 		}
 		await api.instantiateKitDefaults(viewId);
+	}
+
+	// Drop-to-reorder: place the dragged kit on the target's before/after edge, then persist the
+	// whole new order in one collision-safe call — mirrors Axes.svelte's handleAxisReorder.
+	// kitsQuery is a live query, so no manual refetch is needed after the write (unlike
+	// Axes.svelte's consumedAxes, which is a one-shot fetch).
+	async function handleKitReorder(
+		draggedKitId: string,
+		targetKitId: string,
+		edge: 'before' | 'after' = 'before'
+	) {
+		const viewId = editorActivity.activeViewId;
+		if (!viewId || draggedKitId === targetKitId) return;
+
+		const ids = kitsQuery.rows.map((k) => k.kitId);
+		const from = ids.indexOf(draggedKitId);
+		if (from < 0) return;
+		ids.splice(from, 1);
+
+		const ti = ids.indexOf(targetKitId);
+		if (ti < 0) return;
+		ids.splice(edge === 'after' ? ti + 1 : ti, 0, draggedKitId);
+
+		await api.setKitCompositionOrder(viewId, ids);
 	}
 
 	const composeContextMenuContent: ContextMenuContentGenerator = $derived(() => {
@@ -156,6 +181,19 @@
 						class="kit-field"
 						class:selected={editorActivity.activeKitId === k.kitId}
 						title={k.kitId}
+						use:draggable={{
+							payload: () => ({ kind: 'composition', kitId: k.kitId, viewId: k.kitView }),
+							preview: k.kitName
+						}}
+						use:dropZone={{
+							accepts: 'composition',
+							mode: 'reorder',
+							canDrop: (p) => p.kind === 'composition' && p.viewId === k.kitView && p.kitId !== k.kitId,
+							onDrop: (p, { position }) => {
+								if (p.kind === 'composition')
+									handleKitReorder(p.kitId, k.kitId, position === 'after' ? 'after' : 'before');
+							}
+						}}
 					>
 						<button
 							type="button"
@@ -240,6 +278,30 @@
 	.kit-field {
 		@include layout-flex-column();
 		user-select: none;
+		position: relative;
+
+		// The dnd-* classes are applied at runtime by the dnd controller, not present in this
+		// component's markup, so they must be :global() -- otherwise Svelte's scoped-CSS pass prunes
+		// them as "unused" and the indicator never renders. Same bar treatment as Axes.svelte's
+		// .axis-row and Views.svelte's .view-field, kept visually identical across all three panels.
+		&:global(.dnd-insert-before)::before,
+		&:global(.dnd-insert-after)::after {
+			content: '';
+			position: absolute;
+			left: 0;
+			right: 0;
+			height: 2px;
+			background: var(--color-primary);
+			box-shadow: 0 0 0 1px var(--color-primary);
+			z-index: 3;
+			pointer-events: none;
+		}
+		&:global(.dnd-insert-before)::before {
+			top: -1px;
+		}
+		&:global(.dnd-insert-after)::after {
+			bottom: -1px;
+		}
 
 		button {
 			all: unset;

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
-	import { iconFromResolvedScalar, isColorScalar } from './token-utils.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import SuggestField from '$lib/components/SuggestField.svelte';
+	import TokenBadge from './TokenBadge.svelte';
+	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
 	import { dropZone } from '../dnd.svelte.ts';
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
 	import { assetRegister } from '../assetStore.ts';
@@ -20,6 +21,7 @@
 		conditionValues?: { axisId: string; value: string }[];
 		isToken?: boolean;
 		tokenAlias?: string | null;
+		tokenId?: string | null;
 		value?: string | null;
 		highlighted?: boolean;
 		position?: 'top' | 'bottom' | 'mid';
@@ -50,6 +52,7 @@
 		conditionValues = [],
 		isToken,
 		tokenAlias,
+		tokenId,
 		value,
 		highlighted = $bindable(false),
 		position = 'mid',
@@ -81,10 +84,11 @@
 			},
 			{
 				name: 'unwrap',
-				description: '',
+				description: 'Detach the token, keeping its current value as a literal',
 				displayText: 'Unwrap',
 				icon: 'fa-solid fa-box-open',
-				disabled: true
+				disabled: !isToken,
+				onClick: () => detach()
 			},
 			'hr',
 			{
@@ -185,24 +189,18 @@
 		onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: token.id });
 	}
 
+	// The token/layer facts a commit needs, in the shape field-commit.ts expects. Built from the
+	// flat props Styles.svelte spreads in from track(). When token-backed, commitFieldValue edits
+	// the shared token instead of silently clearing the token link (the old bug).
+	const commitTarget = $derived({
+		sourceLayerId: sourceLayerId ?? null,
+		isToken: !!isToken,
+		tokenId: tokenId ?? null
+	});
+
 	function confirmUpdateStyle() {
 		editValue.now = false;
-		const trimmed = editValue.content.trim();
-
-		if (!onFieldUpdate) return;
-
-		if (!sourceLayerId) {
-			console.warn(`Cannot update ${key}: no source layer`);
-			return;
-		}
-
-		if (trimmed !== value) {
-			onFieldUpdate({
-				layerId: sourceLayerId,
-				property: key,
-				value: trimmed
-			});
-		}
+		writeValue(editValue.content.trim());
 	}
 
 	// Drop a token (from the Tokens panel) onto this row to point its render entry at that token.
@@ -220,8 +218,13 @@
 
 	function handleTokenDrop(payload: { kind: string; tokenId?: string }) {
 		if (payload.kind !== 'token' || !payload.tokenId) return;
-		if (!onFieldUpdate || !sourceLayerId) return;
-		onFieldUpdate({ layerId: sourceLayerId, property: key, tokenId: payload.tokenId });
+		attachToken(commitTarget, key, payload.tokenId, onFieldUpdate);
+	}
+
+	// Explicit detach: freeze the token's current resolved value onto this property as a literal,
+	// leaving the token itself (and every other reference) untouched.
+	function detach() {
+		detachToken(commitTarget, key, value ?? '', onFieldUpdate);
 	}
 
 	function confirmSuggestionPick(picked: string, fetched?: Uint8Array) {
@@ -233,14 +236,7 @@
 			requestVellumRender();
 		}
 
-		if (!onFieldUpdate) return;
-		if (!sourceLayerId) {
-			console.warn(`Cannot update ${key}: no source layer`);
-			return;
-		}
-		if (picked !== value) {
-			onFieldUpdate({ layerId: sourceLayerId, property: key, value: picked });
-		}
+		if (picked !== value) writeValue(picked);
 	}
 
 	// --- Resize control (inputType === 'resize'): Figma-style Fixed / Hug / Fill ---
@@ -252,12 +248,9 @@
 	);
 
 	function writeValue(v: string) {
-		if (!onFieldUpdate) return;
-		if (!sourceLayerId) {
-			console.warn(`Cannot update ${key}: no source layer`);
-			return;
-		}
-		if (v !== value) onFieldUpdate({ layerId: sourceLayerId, property: key, value: v });
+		if (v === value) return;
+		// Token-aware: a token-backed property edits its shared token; a literal writes the entry.
+		commitFieldValue(commitTarget, key, v, { onFieldUpdate, api });
 	}
 
 	// Picking "Fixed" opens the inline number/length editor (reusing editValue/inputRef). Seed it
@@ -272,15 +265,24 @@
 		}
 	}
 
-	// --- Spacing control (inputType === 'spacing'): numeric stepper, with a 1<->4-value
-	// expand/collapse affordance for `spacingMode === 'box'` (padding's CSS shorthand). The
-	// stored value IS the shorthand string Charter's parse_padding_shorthand understands ("12" or
-	// "8 16" / "4 8 12" / "1 2 3 4"). Whether the widget shows one stepper or four is DERIVED from
-	// the value itself (how many space-separated numbers it currently holds), not separate
-	// component state -- so a value written elsewhere (Advanced, another session) always renders
-	// correctly. Token-scale-aware snapping is a natural extension once KIT•10 has a spacing-scale
-	// token type; there isn't one yet, so this is a plain numeric stepper for now.
-	type SpacingSlot = 'scalar' | 0 | 1 | 2 | 3;
+	// --- Spacing control (inputType === 'spacing'): numeric stepper, with a progressive
+	// expand/collapse ladder for `spacingMode === 'box'` (CSS box-model shorthand -- padding
+	// today, and any future field sharing the same T/R/B/L shape, e.g. margin/border-width, for
+	// free the moment Charter tags its FieldDef spacingMode:'box'; never keyed on the property
+	// name). The stored value IS the shorthand string Charter's parse_padding_shorthand
+	// understands, and the widget's shape is DERIVED from how many space-separated numbers it
+	// holds -- CSS's own 1/2/3/4-value token counts double as the four progressive-disclosure
+	// levels, not separate component state, so a value written elsewhere (Advanced, another
+	// session) always renders at the right level:
+	//   1 value  "12"       -> uniform (all sides)
+	//   2 values "8 16"     -> block (T/B) / inline (L/R)
+	//   3 values "4 8 12"   -> block split into T/B independently, inline still merged
+	//   4 values "1 2 3 4"  -> fully independent T/R/B/L
+	// A structurally different multi-value shape (e.g. border-radius's diagonal corner pairing)
+	// must get its own spacingMode, not be folded into this T/R/B/L ladder. Token-scale-aware
+	// snapping is a natural extension once KIT•10 has a spacing-scale token type; there isn't one
+	// yet, so this is a plain numeric stepper for now.
+	type SpacingSlot = 'scalar' | 'block' | 'inline' | 0 | 1 | 2 | 3;
 	const SPACING_STEP = 4; // matches the codebase's own 4px spacing rhythm
 
 	function expandShorthand(parts: number[]): [number, number, number, number] {
@@ -300,9 +302,17 @@
 					.map((n) => parseFloat(n) || 0)
 			: []
 	);
-	const spacingIsExpanded = $derived(spacingMode === 'box' && spacingParts.length > 1);
+	// Clamped to the four rungs this widget knows about -- an empty value (0 parts) reads as
+	// level 1, same as a single part.
+	const spacingLevel = $derived(
+		spacingMode === 'box' ? (Math.min(Math.max(spacingParts.length, 1), 4) as 1 | 2 | 3 | 4) : 1
+	);
 	const spacingScalar = $derived(spacingParts[0] ?? 0);
 	const spacingTRBL = $derived(expandShorthand(spacingParts));
+	// Level 2/3's virtual block/inline pair -- block = T/B, inline = L/R -- read straight off the
+	// same TRBL expansion so it always agrees with the 4-value form's own T/R/B/L values.
+	const spacingBlock = $derived(spacingTRBL[0]);
+	const spacingInline = $derived(spacingTRBL[1]);
 	const spacingSides: [string, 0 | 1 | 2 | 3][] = [
 		['T', 0],
 		['R', 1],
@@ -310,9 +320,24 @@
 		['L', 3]
 	];
 
+	function spacingSlotValue(slot: SpacingSlot): number {
+		if (slot === 'scalar') return spacingScalar;
+		if (slot === 'block') return spacingBlock;
+		if (slot === 'inline') return spacingInline;
+		return spacingTRBL[slot];
+	}
+
 	function nudgeSpacing(slot: SpacingSlot, delta: number) {
 		if (slot === 'scalar') {
 			writeValue(String(Math.max(0, spacingScalar + delta)));
+			return;
+		}
+		if (slot === 'block') {
+			writeValue(`${Math.max(0, spacingBlock + delta)} ${spacingInline}`);
+			return;
+		}
+		if (slot === 'inline') {
+			writeValue(`${spacingBlock} ${Math.max(0, spacingInline + delta)}`);
 			return;
 		}
 		const next = [...spacingTRBL] as [number, number, number, number];
@@ -320,13 +345,38 @@
 		writeValue(next.join(' '));
 	}
 
-	function expandSpacingToBox() {
+	// Level transitions -- each writes the exact shorthand string CSS itself would use for that
+	// token count, so the next render re-derives the right level purely from spacingParts.length.
+	function expandScalarToBlockInline() {
+		// 1 -> 2: lossless, block = inline = the old uniform value.
 		const v = spacingScalar;
-		writeValue(`${v} ${v} ${v} ${v}`);
+		writeValue(`${v} ${v}`);
 	}
 
-	function collapseSpacingToScalar() {
-		writeValue(String(spacingTRBL[0]));
+	function collapseBlockInlineToScalar() {
+		// 2 -> 1
+		writeValue(String(spacingBlock));
+	}
+
+	function splitBlock() {
+		// 2 -> 3: Top/Bottom become independently editable; Inline (L/R) stays merged.
+		writeValue(`${spacingBlock} ${spacingInline} ${spacingBlock}`);
+	}
+
+	function mergeBlockBack() {
+		// 3 -> 2: Top/Bottom collapse back to one block value (keep Top).
+		writeValue(`${spacingTRBL[0]} ${spacingTRBL[1]}`);
+	}
+
+	function splitInline() {
+		// -> 4: CSS has no 3-token form for "inline split, block merged", so from either level 2
+		// or level 3 this always lands on the full T/R/B/L form (L=R=inline to start).
+		writeValue(spacingTRBL.join(' '));
+	}
+
+	function collapseBoxToBlockInline() {
+		// 4 -> 2: Top and Left become the new representative block/inline pair.
+		writeValue(`${spacingTRBL[0]} ${spacingTRBL[3]}`);
 	}
 
 	let spacingEditingSlot = $state<SpacingSlot | null>(null);
@@ -335,7 +385,7 @@
 
 	async function startEditingSpacingSlot(slot: SpacingSlot) {
 		spacingEditingSlot = slot;
-		spacingEditContent = String(slot === 'scalar' ? spacingScalar : spacingTRBL[slot]);
+		spacingEditContent = String(spacingSlotValue(slot));
 		await tick();
 		spacingInputRef?.focus();
 		spacingInputRef?.select();
@@ -356,6 +406,14 @@
 			writeValue(String(num));
 			return;
 		}
+		if (slot === 'block') {
+			writeValue(`${num} ${spacingInline}`);
+			return;
+		}
+		if (slot === 'inline') {
+			writeValue(`${spacingBlock} ${num}`);
+			return;
+		}
 		const next = [...spacingTRBL] as [number, number, number, number];
 		next[slot] = num;
 		writeValue(next.join(' '));
@@ -367,6 +425,7 @@
 	class:option124--top={position === 'top'}
 	class:option124--bottom={position === 'bottom'}
 	class:option124--mid={position !== 'top' && position !== 'bottom'}
+	class:option124--token={isToken}
 	use:dropZone={{ accepts: 'token', canDrop: canDropToken, onDrop: handleTokenDrop }}
 >
 	<button
@@ -403,6 +462,14 @@
 		>
 			<i class="fa-solid {kitIcon}"></i>
 		</button>
+	{/if}
+
+	<!-- One shared token badge for EVERY inputType (spacing/resize/align/decoration/plain/...),
+	     not just the plain fallback branch below -- so a token-backed value reads as a token no
+	     matter which widget renders it. Hidden mid-tokenize (isToken is false while converting a
+	     literal). -->
+	{#if isToken && !tokenizeState.now}
+		<TokenBadge alias={tokenAlias ?? null} value={value ?? null} onDetach={detach} />
 	{/if}
 
 	{#if tokenizeState.now}
@@ -511,7 +578,7 @@
 			</div>
 		</div>
 	{:else if inputType === 'spacing'}
-		{#snippet spacingStepper(slot: 'scalar' | 0 | 1 | 2 | 3, num: number)}
+		{#snippet spacingStepper(slot: SpacingSlot, num: number)}
 			<div class="spacing-stepper">
 				<button
 					type="button"
@@ -557,7 +624,7 @@
 			</div>
 		{/snippet}
 		<div class="option124__value option124__value--spacing">
-			{#if spacingIsExpanded}
+			{#if spacingLevel === 4}
 				<div class="spacing-box" role="group" aria-label="{displayText} per side">
 					{#each spacingSides as [label, idx] (idx)}
 						<div class="spacing-box__side">
@@ -568,8 +635,80 @@
 					<button
 						type="button"
 						class="spacing-toggle"
+						title="Merge to Block/Inline"
+						onclick={() => collapseBoxToBlockInline()}
+					>
+						<i class="fa-solid fa-compress"></i>
+					</button>
+				</div>
+			{:else if spacingLevel === 3}
+				<div class="spacing-box" role="group" aria-label="{displayText} block split, inline merged">
+					<div class="spacing-box__side">
+						<span class="spacing-box__label">T</span>
+						{@render spacingStepper(0, spacingTRBL[0])}
+					</div>
+					<div class="spacing-box__side">
+						<span class="spacing-box__label">B</span>
+						{@render spacingStepper(2, spacingTRBL[2])}
+					</div>
+					<button
+						type="button"
+						class="spacing-toggle"
+						title="Merge Top/Bottom"
+						onclick={() => mergeBlockBack()}
+					>
+						<i class="fa-solid fa-compress"></i>
+					</button>
+					<div class="spacing-box__side">
+						<span class="spacing-box__label" title="Inline (left/right)">
+							<i class="fa-solid fa-arrows-left-right"></i>
+						</span>
+						{@render spacingStepper('inline', spacingInline)}
+					</div>
+					<button
+						type="button"
+						class="spacing-toggle"
+						title="Split Left/Right"
+						onclick={() => splitInline()}
+					>
+						<i class="fa-solid fa-expand"></i>
+					</button>
+				</div>
+			{:else if spacingLevel === 2}
+				<div class="spacing-box" role="group" aria-label="{displayText} block/inline">
+					<div class="spacing-box__side">
+						<span class="spacing-box__label" title="Block (top/bottom)">
+							<i class="fa-solid fa-arrows-up-down"></i>
+						</span>
+						{@render spacingStepper('block', spacingBlock)}
+						<button
+							type="button"
+							class="spacing-toggle"
+							title="Split Top/Bottom"
+							onclick={() => splitBlock()}
+						>
+							<i class="fa-solid fa-expand"></i>
+						</button>
+					</div>
+					<div class="spacing-box__side">
+						<span class="spacing-box__label" title="Inline (left/right)">
+							<i class="fa-solid fa-arrows-left-right"></i>
+						</span>
+						{@render spacingStepper('inline', spacingInline)}
+						<button
+							type="button"
+							class="spacing-toggle"
+							title="Split Left/Right"
+							onclick={() => splitInline()}
+						>
+							<i class="fa-solid fa-expand"></i>
+						</button>
+					</div>
+					<button
+						type="button"
+						class="spacing-toggle"
 						title="Collapse to one value"
-						onclick={() => collapseSpacingToScalar()}
+						onclick={() => collapseBlockInlineToScalar()}
 					>
 						<i class="fa-solid fa-compress"></i>
 					</button>
@@ -580,8 +719,8 @@
 					<button
 						type="button"
 						class="spacing-toggle"
-						title="Expand to per-side"
-						onclick={() => expandSpacingToBox()}
+						title="Expand to Block/Inline"
+						onclick={() => expandScalarToBlockInline()}
 					>
 						<i class="fa-solid fa-expand"></i>
 					</button>
@@ -648,22 +787,17 @@
 		/>
 	{:else}
 		<button
-			title={isToken ? `Token: ${tokenAlias}` : (value ?? 'Add value')}
+			title={isToken ? `${tokenAlias}: ${value ?? ''} (click to edit the token value)` : (value ?? 'Add value')}
 			class="option124__value"
-			class:option124__value--new={!value}
+			class:option124__value--new={!value && !isToken}
 			class:option124__value--token={isToken}
 			onclick={() => startEditing()}
 			use:contextMenu={menu}
 		>
-			{#if isToken}
-				<span class="token-pill" style="--color-icon: {value ?? 'transparent'}">
-					<i
-						class="fa-solid {iconFromResolvedScalar(value)} token-pill__icon"
-						class:token-pill__icon--color={isColorScalar(value)}
-					></i>
-					{tokenAlias ?? 'token'}
-				</span>
-			{:else if value}
+			<!-- The token alias now lives in the shared TokenBadge above; this box shows the
+			     resolved scalar value for token-backed rows too, so a designer sees BOTH the
+			     token name (badge) and what it currently resolves to (here). -->
+			{#if value}
 				<span>{value}</span>
 			{:else}
 				+
@@ -682,6 +816,13 @@
 
 	.option124 {
 		display: flex;
+		// Rows may wrap to a second line rather than cramming everything into one: a token-backed
+		// row (see &--token below) always drops its value control to its own full-width line so the
+		// label + source dot + token badge have room; any other over-tight row (long label + wide
+		// composite control) wraps gracefully instead of overflowing the panel. Wide, roomy rows
+		// stay single-line untouched.
+		flex-wrap: wrap;
+		row-gap: calc($x-space-xs / 2);
 		justify-content: space-between;
 		align-items: stretch;
 		user-select: none;
@@ -696,6 +837,14 @@
 
 		@include layout-respond-max('xl') {
 			font-size: $x-font-size-sm;
+		}
+
+		// Token-backed rows are deliberately two lines: label + source dot + token badge on line 1,
+		// the value control full-width on line 2. A flat rule, not a pixel threshold -- "slap a
+		// token, get a second line for its value" -- so it's predictable in any panel width and
+		// nothing gets stuffed into one line (font-weight/color/spacing/… all benefit identically).
+		&--token .option124__value {
+			flex-basis: 100%;
 		}
 
 		&:global(.dnd-over) {
@@ -762,22 +911,6 @@
 			color: var(--color-add-var-text);
 			font-size: $x-font-size-sm;
 			background: var(--color-panel-header-fill);
-
-			&:has(span.token-pill) {
-				background: var(--color-surface-alt);
-			}
-
-			span.token-pill {
-				color: var(--color-primary);
-				display: inline-flex;
-				align-items: center;
-				gap: $x-space-xs;
-			}
-
-			.token-pill__icon--color {
-				-webkit-text-stroke: 1px black;
-				color: var(--color-icon, var(--color-text));
-			}
 
 			&--token {
 				color: var(--color-primary);

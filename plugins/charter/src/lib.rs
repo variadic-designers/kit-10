@@ -569,18 +569,51 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
         &buf,
     ))
 }
+struct CreatablePrimitive {
+    kind: &'static str,
+    item_label: &'static str,
+    header_label: &'static str,
+    icon: &'static str,
+}
+
+// Charter's single canonical opinion on which view primitives can be created from the Views
+// panel. container_item_ops()/views_header_ops() both derive from this instead of hand-typing
+// the box/text/image trio twice. `kind` must match the vocabulary detect_primitive()/
+// CharterHints.primitive use elsewhere in this file.
+const CREATABLE_PRIMITIVES: &[CreatablePrimitive] = &[
+    CreatablePrimitive {
+        kind: "box",
+        item_label: "Add Box",
+        header_label: "Box",
+        icon: "fa-regular fa-window-maximize",
+    },
+    CreatablePrimitive {
+        kind: "text",
+        item_label: "Add Text",
+        header_label: "Text",
+        icon: "fa-solid fa-italic",
+    },
+    CreatablePrimitive {
+        kind: "image",
+        item_label: "Add Image",
+        header_label: "Image",
+        icon: "fa-solid fa-image",
+    },
+];
+
 // Convention mapping from a view primitive to its FA icon class — authoritative for what
-// `hints.view_icon` values the seed sets. `#[cfg(test)]` because production code no longer
-// calls it (Phase 3 moved icon authoring to the seed's `hints.view_icon`), but the test
+// `hints.view_icon` values the seed sets. Derived from `CREATABLE_PRIMITIVES` so it can't drift
+// from the real add-child table. `#[cfg(test)]` because production code no longer calls it
+// (Phase 3 moved icon authoring to the seed's `hints.view_icon`), but the test
 // (`primitive_icon_maps_text_to_italic_and_box_to_window`) still references it as the
 // documented convention that seed.ts follows, guarding against drift.
 #[cfg(test)]
 fn primitive_icon(primitive: &str) -> &'static str {
-    match primitive {
-        "text" => "fa-solid fa-italic",
-        "image" => "fa-solid fa-image",
-        _ => "fa-regular fa-window-maximize",
-    }
+    CREATABLE_PRIMITIVES
+        .iter()
+        .find(|p| p.kind == primitive)
+        .map(|p| p.icon)
+        .unwrap_or("fa-regular fa-window-maximize")
 }
 
 // Charter's composition fields, across all primitives -- the fields it declares with the
@@ -1880,7 +1913,9 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("background", Some("Highlight")).with_input_type("color"),
                 FieldDef::new("border", Some("Border")).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius")),
-                FieldDef::new("padding", Some("Padding")),
+                FieldDef::new("padding", Some("Padding"))
+                    .with_input_type("spacing")
+                    .with_spacing_mode("box"),
             ],
         },
     ]
@@ -1904,7 +1939,9 @@ fn image_categories() -> Vec<FieldCategory> {
                 FieldDef::new("background", Some("Fill")).with_input_type("color"),
                 FieldDef::new("border", None).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius")),
-                FieldDef::new("padding", Some("Padding")),
+                FieldDef::new("padding", Some("Padding"))
+                    .with_input_type("spacing")
+                    .with_spacing_mode("box"),
             ],
         },
     ]
@@ -2466,26 +2503,15 @@ fn common_item_ops() -> Vec<PanelOp> {
 // `children` field (no kit declares it) doesn't get an "add child" affordance that would have
 // nowhere to write.
 fn container_item_ops() -> Vec<PanelOp> {
-    vec![
-        PanelOp {
+    CREATABLE_PRIMITIVES
+        .iter()
+        .map(|p| PanelOp {
             name: "add-child".to_string(),
-            label: "Add Box".to_string(),
-            icon: "fa-regular fa-window-maximize".to_string(),
-            kind: Some("box".to_string()),
-        },
-        PanelOp {
-            name: "add-child".to_string(),
-            label: "Add Text".to_string(),
-            icon: "fa-solid fa-italic".to_string(),
-            kind: Some("text".to_string()),
-        },
-        PanelOp {
-            name: "add-child".to_string(),
-            label: "Add Image".to_string(),
-            icon: "fa-solid fa-image".to_string(),
-            kind: Some("image".to_string()),
-        },
-    ]
+            label: p.item_label.to_string(),
+            icon: p.icon.to_string(),
+            kind: Some(p.kind.to_string()),
+        })
+        .collect()
 }
 
 // Ops for the panel header's affordance menu (the "+" menu in the Views panel). Today this is
@@ -2493,26 +2519,15 @@ fn container_item_ops() -> Vec<PanelOp> {
 // they create top-level orphans (the editor's resolve loop will pick them up and the next
 // manifest publish will mark them `is_root: true`).
 fn views_header_ops() -> Vec<PanelOp> {
-    vec![
-        PanelOp {
+    CREATABLE_PRIMITIVES
+        .iter()
+        .map(|p| PanelOp {
             name: "add-child".to_string(),
-            label: "Box".to_string(),
-            icon: "fa-regular fa-window-maximize".to_string(),
-            kind: Some("box".to_string()),
-        },
-        PanelOp {
-            name: "add-child".to_string(),
-            label: "Text".to_string(),
-            icon: "fa-solid fa-italic".to_string(),
-            kind: Some("text".to_string()),
-        },
-        PanelOp {
-            name: "add-child".to_string(),
-            label: "Image".to_string(),
-            icon: "fa-solid fa-image".to_string(),
-            kind: Some("image".to_string()),
-        },
-    ]
+            label: p.header_label.to_string(),
+            icon: p.icon.to_string(),
+            kind: Some(p.kind.to_string()),
+        })
+        .collect()
 }
 
 fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
@@ -2521,22 +2536,27 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
         .iter()
         .map(|view| {
             // The write alias is the token alias on this view's `children` property, if any kit
-            // layer declares one. None when no kit declares children for this view (e.g. a Text
-            // primitive) — the editor hides the DnD-nest affordance in that case. The alias
-            // itself comes from the resolved property's `token_alias`, which is what the editor's
-            // `api.upsertViewToken` already targets (see CLAUDE.md's View-token override
-            // pitfalls); Charter only surfaces the value here, it doesn't invent or remap it.
+            // layer already declares one. `None` when no children write has happened yet (a
+            // freshly composed Box) — the editor's `write_alias ?? 'children'` fallback (see
+            // Views.svelte) writes the canonical alias name on first use. The alias itself, when
+            // present, comes from the resolved property's `token_alias`, which is what the
+            // editor's `api.upsertViewToken` already targets (see CLAUDE.md's View-token
+            // override pitfalls); Charter only surfaces the value here, it doesn't invent or
+            // remap it.
             let write_alias = view.resolved_kits.iter().find_map(|k| {
                 k.properties
                     .get(CHILDREN_FIELD)
                     .and_then(|p| p.token_alias.clone())
             });
 
-            // Per-item op set: common ops always, container ops only when this item has a
-            // `children` field (write_alias.is_some()). A Text/Image primitive gets the common
-            // ops only — no "Add Box/Text/Image" sub-menu, since it has nowhere to attach them.
+            // Per-item op set: common ops always, container ops only for a Box primitive. Gated
+            // on primitive rather than write_alias.is_some() — a Box that has never had a child
+            // added yet has no live `children` token, but it can still get one (the editor
+            // upserts on first use), so it must still show the "Add Box/Text/Image" affordance.
+            // A Text/Image primitive gets the common ops only — no add-child sub-menu, since it
+            // has nowhere to attach them.
             let mut ops = common_item_ops();
-            if write_alias.is_some() {
+            if primitive_for_view(view) == "box" {
                 // Prepend container ops so "Add Box/Text/Image" groups appear above the generic
                 // rename/clone/lock/... — visual grouping the original hardcoded menu had.
                 let mut container = container_item_ops();
@@ -3214,6 +3234,42 @@ mod selection_and_hover_tests {
                 "leaf ops missing {expected}: {leaf_ops:?}"
             );
         }
+    }
+
+    // The core fix this test guards: a freshly composed Box (a kit is attached, but nobody has
+    // ever written a `children` value yet, so there's no live token/write_alias) must still get
+    // the add-child ops. Gating on write_alias.is_some() regressed this — a brand-new Box would
+    // never show "Add Child" until some other write happened to seed the token first. Gating on
+    // primitive instead means the affordance is available the moment a view is a Box, and the
+    // editor's `write_alias ?? 'children'` fallback (Views.svelte) writes the canonical alias on
+    // first use.
+    #[test]
+    fn build_views_panel_manifest_container_gets_add_child_ops_before_first_child_write() {
+        let mut box_kit_props = std::collections::HashMap::new();
+        box_kit_props.insert("width".to_string(), box_prop("width", "100px"));
+        let box_no_children_yet = ViewMeta {
+            view_id: "fresh-box".to_string(),
+            view_name: "fresh-box".to_string(),
+            hints: std::collections::HashMap::new(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: box_kit_props,
+            }],
+        };
+
+        let manifest = build_views_panel_manifest(&input(vec![box_no_children_yet], None, None));
+        let item = manifest.items.iter().find(|i| i.id == "fresh-box").unwrap();
+
+        assert!(
+            item.write_alias.is_none(),
+            "no children write has happened yet, so there's no live token"
+        );
+        assert!(
+            item.ops.iter().any(|o| o.name == "add-child"),
+            "a Box with no children field yet still gets add-child ops, got: {:?}",
+            item.ops.iter().map(|o| &o.name).collect::<Vec<_>>()
+        );
     }
 
     // Header ops are populated — the "+" menu in the Views panel header renders straight off this
