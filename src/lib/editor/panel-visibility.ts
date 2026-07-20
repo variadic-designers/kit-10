@@ -11,8 +11,13 @@ export interface PanelVisibility {
 	showLayersPanel: boolean;
 }
 
+// Defaults to OFF: the console drawer's row is a fixed 40vh while expanded, so starting expanded
+// by default means every fresh session (no stored preference yet) opens with that space already
+// reserved before the user ever asked for it -- reads as a layout shift once the editor actually
+// finishes loading into it. Starting collapsed means expansion only ever happens as a direct result
+// of the user's own toggle/keybind action, never as a surprise on load.
 export const PANEL_VISIBILITY_DEFAULTS: PanelVisibility = {
-	showLayersPanel: true
+	showLayersPanel: false
 };
 
 const STORAGE_KEY = 'kit10:panel-visibility';

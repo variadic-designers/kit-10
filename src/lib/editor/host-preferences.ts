@@ -89,7 +89,7 @@ export const hostPreferences: PreferenceBinding[] = [
 			label: 'Show Layers panel',
 			kind: 'toggle',
 			group: CANVAS,
-			default: 'true'
+			default: 'false'
 		},
 		value: derived(panelVisibility, (p) => String(p.showLayersPanel)),
 		set: (v) => updatePanelVisibility({ showLayersPanel: v === 'true' })

@@ -30,8 +30,9 @@
 		// as before the console slot existed. A caller-supplied flag rather than inferring it from
 		// DOM shape (e.g. a :has(:not(*)) empty check) -- that's indirect and depends on exactly what
 		// the snippet happens to render; the caller (Editor.svelte) already knows definitively whether
-		// its console content (the Layers panel) is toggled on, so it just says so. Defaults to true
-		// so any other consumer of Layout.svelte that doesn't pass it keeps today's behavior.
+		// its console content (the Layers panel) is toggled on, so it just says so. Defaults to false
+		// (collapsed) -- starting expanded would reserve 40vh before any caller/user asked for it,
+		// which reads as a layout shift the moment real content actually shows up.
 		consoleExpanded: boolean;
 		nav: Snippet<[T | undefined]>;
 		configurable: Snippet<[T]>;
@@ -44,7 +45,7 @@
 		unloadedDash,
 		dash,
 		console,
-		consoleExpanded = true,
+		consoleExpanded = false,
 		nav
 	}: Partial<LayoutProps> = $props();
 </script>
