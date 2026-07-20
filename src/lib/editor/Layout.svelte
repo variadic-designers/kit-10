@@ -26,6 +26,13 @@
 		unloadedDash: Snippet;
 		dash: Snippet<[T]>;
 		console: Snippet<[T]>;
+		// Whether the console drawer should reserve its full (40vh) row, vs a humble 1fr sliver same
+		// as before the console slot existed. A caller-supplied flag rather than inferring it from
+		// DOM shape (e.g. a :has(:not(*)) empty check) -- that's indirect and depends on exactly what
+		// the snippet happens to render; the caller (Editor.svelte) already knows definitively whether
+		// its console content (the Layers panel) is toggled on, so it just says so. Defaults to true
+		// so any other consumer of Layout.svelte that doesn't pass it keeps today's behavior.
+		consoleExpanded: boolean;
 		nav: Snippet<[T | undefined]>;
 		configurable: Snippet<[T]>;
 	}
@@ -37,6 +44,7 @@
 		unloadedDash,
 		dash,
 		console,
+		consoleExpanded = true,
 		nav
 	}: Partial<LayoutProps> = $props();
 </script>
@@ -61,7 +69,7 @@
 		{/if}
 	</aside>
 
-	<aside class="console scroll-scheme" class:loaded={!!state}>
+	<aside class="console scroll-scheme" class:loaded={!!state} class:console--expanded={consoleExpanded}>
 		{#if state}
 			{@render console?.(state)}
 		{/if}
@@ -200,7 +208,12 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 			@include layout-respond('lg') {
 				display: grid;
 				grid-template-columns: 1fr 4fr 1fr;
-				grid-template-rows: 1fr 16fr 40vh;
+				// Default/collapsed state: a humble 1fr, the row's pre-console-slot size (same unit
+				// as the nav row). Overridden to 40vh by the #kit10:has(.console--expanded) rule below
+				// purely off the .console--expanded class (set from the consoleExpanded prop) -- no
+				// JS-computed style value, just a class toggle read by CSS.
+				--console-row: 1fr;
+				grid-template-rows: 1fr 16fr var(--console-row);
 				grid-column-gap: 0px;
 				grid-row-gap: 0px;
 				// padding: $x-space-sm;
@@ -208,6 +221,17 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 
 			@include layout-respond('xl') {
 				grid-template-columns: 1fr 4fr 1fr;
+			}
+		}
+
+		// Console drawer at its full 40vh only while its content is meant to be expanded -- the
+		// .console--expanded class is set straight from the consoleExpanded prop (Editor.svelte
+		// passes whether the Layers panel is currently toggled on). Its own top-level rule off
+		// #kit10, same as .console/.management/etc. below, rather than nested inside #kit10's own
+		// breakpoint block above.
+		#kit10:has(.console.console--expanded) {
+			@include layout-respond('lg') {
+				--console-row: 40vh;
 			}
 		}
 
@@ -310,6 +334,12 @@ d='m5.5 3.21v20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87a.5.5 0 0 0
 			border-top: 2px solid var(--color-bg);
 			border-left: 2px solid var(--color-bg);
 			border-right: 2px solid var(--color-bg);
+
+			// Row is a humble 1fr, not 40vh, while collapsed (see the #kit10:has() rule above); without
+			// this the borders would still frame a sliver of a row that's now barely there.
+			&:not(.console--expanded) {
+				border: none;
+			}
 		}
 
 		.management {

@@ -39,12 +39,14 @@ export type KeybindAction =
 	| 'canvas.pixelSnap'
 	| 'layer.delete'
 	| 'property.remove'
-	| 'edit.cancel';
+	| 'edit.cancel'
+	| 'panel.toggleLayers';
 
 // Grouping headers in the Keybinds tab.
 const NAV = 'Navigation';
 const CANVAS = 'Canvas';
 const AUTHORING = 'Authoring';
+const PANELS = 'Panels';
 
 function key(code: string, mods: Partial<Binding> = {}): Binding {
 	return { source: 'key', code, ctrl: false, shift: false, alt: false, meta: false, space: false, ...mods };
@@ -86,7 +88,14 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 		allow: ['mouse'],
 		default: mouse('Mouse0', { alt: true })
 	},
-	{ id: 'edit.cancel', label: 'Cancel (pipette / create / drag)', group: AUTHORING, allow: ['key'], default: key('Escape') }
+	{ id: 'edit.cancel', label: 'Cancel (pipette / create / drag)', group: AUTHORING, allow: ['key'], default: key('Escape') },
+	{
+		id: 'panel.toggleLayers',
+		label: 'Toggle Layers panel',
+		group: PANELS,
+		allow: ['key'],
+		default: key('KeyL', { shift: true })
+	}
 ];
 
 export type KeybindMap = Record<KeybindAction, Binding>;

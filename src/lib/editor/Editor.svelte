@@ -242,6 +242,7 @@
 	import ViewsPanel from './panels/Views.svelte';
 	import { selectView as selectViewShared } from './selection.js';
 	import { keybinds, matchKey, isTextEntryTarget } from './keybinds.js';
+	import { panelVisibility, updatePanelVisibility } from './panel-visibility.js';
 	import { buildViewTree, navigate, type NavDirection } from './view-tree.js';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
@@ -349,9 +350,20 @@
 	// the same `buildViewTree` graph math the panel uses + the shared `selectView` funnel, so the
 	// Viewport auto-pans to the new selection via its existing ensure_index_visible effect. Guarded on
 	// isTextEntryTarget so `[`/`]`/arrows never fire while typing in a field.
+	//
+	// Also handles panel.toggleLayers: unrelated to view-tree nav, but Svelte allows only one
+	// <svelte:window> per component, and this handler is already the global always-mounted keydown
+	// listener, so a second panel-visibility bind rides the same guard instead of adding another one.
 	function onNavKey(e: KeyboardEvent) {
 		if (isTextEntryTarget(e.target)) return;
 		const binds = $keybinds;
+
+		if (matchKey(e, binds['panel.toggleLayers'])) {
+			e.preventDefault();
+			updatePanelVisibility({ showLayersPanel: !$panelVisibility.showLayersPanel });
+			return;
+		}
+
 		let dir: NavDirection | null = null;
 		if (matchKey(e, binds['nav.parent'])) dir = 'parent';
 		else if (matchKey(e, binds['nav.child'])) dir = 'child';
@@ -683,7 +695,7 @@
 	<meta name="description" content="Yor Designs Editor Superpowered" />
 </svelte:head>
 
-<Layout state={editorLoading}>
+<Layout state={editorLoading} consoleExpanded={$panelVisibility.showLayersPanel}>
 	{#snippet nav(editorLoading)}
 		<Nav {editorLoading} bind:editorActivity {pluginManager} />
 	{/snippet}
@@ -716,7 +728,9 @@
 	{/snippet}
 
 	{#snippet console(editorReady)}
-		<LayersPanel {cascades} />
+		{#if $panelVisibility.showLayersPanel}
+			<LayersPanel {cascades} />
+		{/if}
 	{/snippet}
 
 	{#snippet dash(editorReady)}

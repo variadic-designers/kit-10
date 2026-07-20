@@ -102,27 +102,29 @@
 	}
 </script>
 
-<section class="layers">
-	<header class="layers__header">
-		<h2
-			title="Resolution inspector — matched rules for the active view, shown as a tree: kit → specificity tier → rule → property. Struck-through values were overridden by a higher rule; hover one to see which."
-		>
-			Layers
-		</h2>
-	</header>
+<!-- No root element at all when there's nothing to show (rather than a header + an empty-state
+     message) -- .console's :has() CSS in Layout.svelte collapses the drawer's grid row based on
+     literal DOM emptiness, so this panel being visually "empty" needs to mean actually empty, not
+     just content-empty inside a still-present wrapper. -->
+{#if hasContent}
+	<section class="layers">
+		<header class="layers__header">
+			<h2
+				title="Resolution inspector — matched rules for the active view, shown as a tree: kit → specificity tier → rule → property. Struck-through values were overridden by a higher rule; hover one to see which."
+			>
+				Layers
+			</h2>
+		</header>
 
-	<div class="layers__body">
-		{#if !hasContent}
-			<p class="layers__empty">No matched rules for the current selection.</p>
-		{:else}
+		<div class="layers__body">
 			{#each sections as section (section.kitId)}
 				{#if section.tiers.length > 0}
 					{@render kitNode(section)}
 				{/if}
 			{/each}
-		{/if}
-	</div>
-</section>
+		</div>
+	</section>
+{/if}
 
 {#snippet kitNode(section: DisplayKit)}
 	<details class="kit" open>
@@ -231,12 +233,6 @@
 			overflow-y: auto;
 			scrollbar-width: thin;
 			padding: $x-space-xs $x-space-sm $x-space-md;
-		}
-
-		&__empty {
-			color: var(--color-text-muted);
-			font-size: $x-font-size-sm;
-			padding: $x-space-sm;
 		}
 	}
 
