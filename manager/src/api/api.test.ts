@@ -62,6 +62,36 @@ describe('api', () => {
 		expect(projects).toHaveLength(0);
 	});
 
+	it('updateProjectHints shallow-merges into hints, preserving sibling top-level keys', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		await ctx.api.updateProjectHints(proj.id, { vellum: { panned: [10, 20] } });
+		await ctx.api.updateProjectHints(proj.id, { other: 'namespace' });
+
+		const row = await ctx.db
+			.selectFrom('projects')
+			.select('hints')
+			.where('id', '=', proj.id)
+			.executeTakeFirstOrThrow();
+		expect(row.hints).toEqual({
+			vellum: { panned: [10, 20] },
+			other: 'namespace'
+		});
+
+		await ctx.api.updateProjectHints(proj.id, { vellum: { panned: [30, 40] } });
+		const row2 = await ctx.db
+			.selectFrom('projects')
+			.select('hints')
+			.where('id', '=', proj.id)
+			.executeTakeFirstOrThrow();
+		expect(row2.hints).toEqual({
+			vellum: { panned: [30, 40] },
+			other: 'namespace'
+		});
+	});
+
 	// ---- Views ----
 
 	it('creates and renames views', async () => {

@@ -1052,6 +1052,16 @@ export async function seedDemoProject(
 		vellum: { position: [-1100, 0] }
 	});
 
+	// Camera pan memory (project.hints.vellum.panned, Viewport.svelte) -- seeds a first-open
+	// camera position roughly centered on the Landing Page view above instead of Vellum's raw
+	// (0, 0) origin (which sits well to the right of it, off the initial view entirely). Landing
+	// Page is 900px wide at world x -1100..-200 (center -650) with an estimated ~900px of stacked
+	// nav/hero/features/footer content (center ~450); offsetting that by half of a typical
+	// viewport gets a camera that lands with the page roughly in frame. Not exact -- there's no
+	// real canvas to center against at seed time (see Viewport.svelte's own runtime fallback,
+	// which does this precisely once a canvas exists, for any project that has no saved pan yet).
+	await api.updateProjectHints(proj.id, { vellum: { panned: [-1150, 150] } });
+
 	// ==========================================================================================
 	// Arrangement demos -- one small view per compile_arrange opinion beyond Stack (which the
 	// whole landing page already exercises), so every tab of the editor's Arrangement control

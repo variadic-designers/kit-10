@@ -484,6 +484,11 @@ export interface QueryAction {
 	>;
 	renameProject: (projectId: string, newName: string) => Promise<void>;
 	deleteProject: (projectId: string) => Promise<any>;
+	// Shallow top-level merge into the existing hints jsonb column (Postgres `||`), same contract
+	// as QueryView's updateViewHints -- the caller must pass an already-merged sub-object for
+	// whichever namespace it's touching (e.g. a full `{ vellum: { ...current, panned: [x, y] } }`)
+	// or it will clobber other keys within that same namespace. Manager stays hint-shape-agnostic.
+	updateProjectHints: (projectId: string, hints: Record<string, unknown>) => Promise<void>;
 	createViewInProject: (
 		projectId: string,
 		name: string,
@@ -558,6 +563,7 @@ export interface QueryBuilder {
 			projectDescription: string | null;
 			license: string;
 			author: string;
+			hints: Record<string, unknown> | null;
 		}
 	>;
 	getViewsByProjectId: (projectId: string | null) => SelectQueryBuilder<
@@ -1245,6 +1251,14 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.values([{ name, workspace_id: workspaceId, description: '', author: '', license: 'mplv2' }])
 			.returningAll()
 			.executeTakeFirst();
+	},
+
+	updateProjectHints: async (projectId: string, hints: Record<string, unknown>) => {
+		await db
+			.updateTable('projects')
+			.set({ hints: sql`hints || ${JSON.stringify(hints)}::jsonb` as any })
+			.where('projects.id', '=', projectId)
+			.execute();
 	},
 
 	renameProject: async (projectId: string, newName: string) => {
@@ -2014,7 +2028,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 					'projects.name as projectName',
 					'projects.description as projectDescription',
 					'projects.author',
-					'projects.license'
+					'projects.license',
+					'projects.hints'
 				]);
 		return db
 			.selectFrom('projects')
@@ -2025,7 +2040,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'projects.description as projectDescription',
 				'projects.id as projectId',
 				'projects.author',
-				'projects.license'
+				'projects.license',
+				'projects.hints'
 			]);
 	},
 

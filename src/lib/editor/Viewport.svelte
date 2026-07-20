@@ -6,6 +6,8 @@
 	import { selectView, deselectView } from './selection.js';
 	import { viewportInput, updateViewportInput } from './viewport-input.js';
 	import { keybinds, matchKey, matchMouse, isTextEntryTarget } from './keybinds.js';
+	import type { Api } from 'manager';
+	import type { ResolvedView } from '$lib/plugins/types.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -13,6 +15,10 @@
 		data = '[]',
 		dataBinary = null,
 		nodeViewIds = [],
+		api = null,
+		projectHints = null,
+		projectHintsReady = false,
+		resolvedViews = [],
 		editorActivity = $bindable(),
 		selection = $bindable(),
 		hoveredViewId = $bindable(null)
@@ -20,6 +26,12 @@
 		data?: string;
 		dataBinary?: Uint8Array | null;
 		nodeViewIds?: string[];
+		// Camera pan memory (project.hints.vellum.panned) -- optional so existing callers/tests
+		// that don't wire project hints through still work; without `api` the feature is just inert.
+		api?: Api | null;
+		projectHints?: Record<string, unknown> | null;
+		projectHintsReady?: boolean;
+		resolvedViews?: ResolvedView[];
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
 		hoveredViewId?: string | null;
@@ -268,7 +280,65 @@
 		if (vellum.ensure_index_visible(index)) requestRender();
 	});
 
+	// Per-project camera pan memory (project.hints.vellum.panned -- a Vellum-owned concept, same
+	// namespace as the per-view hints.vellum.position, never hints.charter: Charter has no opinion
+	// on camera position). Restored once per project switch, guarded by lastRestoredProjectId
+	// (same "track what we last acted on" shape as lastPanSelection above), and only once
+	// projectHintsReady flips true -- that distinguishes "this project has never been panned" from
+	// "the hints row just hasn't loaded yet", so a fresh live-query subscription on project switch
+	// never gets misread as a fresh project and clobbers a real saved position with the landing
+	// default.
+	let lastRestoredProjectId: string | null = null;
+
+	$effect(() => {
+		const projectId = editorActivity.activeProjectId;
+		if (!initialized || !vellum || !projectId || !projectHintsReady) return;
+		if (projectId === lastRestoredProjectId) return;
+		lastRestoredProjectId = projectId;
+
+		const vellumHints = projectHints?.vellum as { panned?: [number, number] } | undefined;
+		const panned = vellumHints?.panned;
+		if (panned) {
+			vellum.set_pan_absolute(panned[0], panned[1]);
+			requestRender();
+			return;
+		}
+
+		// Never-panned project: point roughly at the seed's "Landing Page" view instead of
+		// Vellum's arbitrary default origin. A best-effort estimate (assumes the untouched default
+		// 100% zoom -- there's no get_zoom to check against) meant to land the view on screen, not
+		// to be pixel-exact.
+		const landing = resolvedViews.find((v) => v.viewName === 'Landing Page');
+		const landingHints = landing?.hints as { vellum?: { position?: [number, number] } } | null;
+		const pos = landingHints?.vellum?.position;
+		if (pos && canvas) {
+			vellum.set_pan_absolute(pos[0] - canvas.clientWidth / 2, pos[1] - canvas.clientHeight / 2);
+			requestRender();
+		}
+	});
+
+	// Debounced write-back of the current camera position, fired after a pan drag or a wheel
+	// zoom (which also moves view_offset -- zoom-toward-cursor). Same coalescing shape as
+	// scheduleReResolve in the live-query loop: cancel-and-reschedule on repeated activity, so a
+	// drag or a burst of wheel notches produces one write, not one per pointermove/frame.
+	let panSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	const PAN_SAVE_DEBOUNCE_MS = 600;
+
+	function schedulePanSave() {
+		const projectId = editorActivity.activeProjectId;
+		if (!api || !vellum || !projectId) return;
+		if (panSaveTimer) clearTimeout(panSaveTimer);
+		panSaveTimer = setTimeout(() => {
+			panSaveTimer = null;
+			if (!vellum) return;
+			const [x, y] = vellum.get_pan();
+			const currentVellumHints = (projectHints?.vellum as Record<string, unknown> | undefined) ?? {};
+			api?.updateProjectHints(projectId, { vellum: { ...currentVellumHints, panned: [x, y] } });
+		}, PAN_SAVE_DEBOUNCE_MS);
+	}
+
 	onDestroy(() => {
+		if (panSaveTimer) clearTimeout(panSaveTimer);
 		if (rafId) cancelAnimationFrame(rafId);
 		if (resizeObserver) resizeObserver.disconnect();
 		// onDestroy runs during SSR too (unlike onMount), where `window` is undefined.
@@ -307,6 +377,7 @@
 			lastY = e.clientY;
 			vellum.set_pan(dx, dy);
 			requestRender();
+			schedulePanSave();
 			return;
 		}
 
@@ -360,6 +431,7 @@
 		if (zoomIn) vellum.zoom_in_at(cx, cy);
 		else vellum.zoom_out_at(cx, cy);
 		requestRender();
+		schedulePanSave();
 	}
 </script>
 

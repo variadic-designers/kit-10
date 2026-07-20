@@ -124,6 +124,17 @@
 		> | null
 	);
 
+	// Camera pan memory (Viewport.svelte): needs the active project's own hints row, which
+	// resolvedViews/viewHints above don't carry (those are per-view). A small dedicated live
+	// query rather than routing through Project.svelte's own -- that one is scoped to rendering
+	// the project list, not reactively exposing the active row's hints to a sibling panel.
+	const projectsWithHintsQuery = liveQuery((api, activity) =>
+		api.getProjectsByWorkspaceId(activity.activeWorkspaceId)
+	);
+	const activeProjectRow = $derived(
+		projectsWithHintsQuery.rows.find((p) => p.projectId === editorActivity.activeProjectId)
+	);
+
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
 		const editor = editorLoading;
@@ -734,10 +745,16 @@
 	{/snippet}
 
 	{#snippet dash(editorReady)}
+		{@const api = editorReady ? queryBuilder(editorReady.dialect) : null}
+
 		<Viewport
 			data={pluginManager?.viewportData ?? '[]'}
 			dataBinary={pluginManager?.viewportDataBinary ?? null}
 			nodeViewIds={pluginManager?.nodeViewIds ?? []}
+			{api}
+			projectHints={activeProjectRow?.hints ?? null}
+			projectHintsReady={activeProjectRow !== undefined}
+			{resolvedViews}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId
