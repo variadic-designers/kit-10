@@ -32,3 +32,7 @@ project.inlang/cache/
 
 # Rust build artifacts
 plugins/**/target/
+
+# Satoshi UI font is fetched at build time (scripts/fetch-fonts.mjs), never committed --
+# Fontshare "free-proprietary": self-hostable, not redistributable as repo files.
+/src/lib/fonts/Satoshi/
