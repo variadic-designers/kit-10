@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	INPUT_TYPES_BEGIN,
 	INPUT_TYPES_END,
+	extractJsonBlockAfter,
 	generatePluginsMd,
 	parseDocumentedHostFns,
+	parseGoldenNodeFields,
 	parseInputTypes,
 	parseRegisteredHostFns
 } from '../../../scripts/generate-plugin-docs.mjs';
@@ -18,6 +20,10 @@ const ROOT = process.cwd();
 const typesSource = readFileSync(resolve(ROOT, 'src/lib/plugins/types.ts'), 'utf8');
 const pluginsMd = readFileSync(resolve(ROOT, 'PLUGINS.md'), 'utf8');
 const managerSource = readFileSync(resolve(ROOT, 'src/lib/plugins/manager.svelte.ts'), 'utf8');
+const wireGolden = readFileSync(
+	resolve(ROOT, 'plugins/charter/tests/wire-format.golden.json'),
+	'utf8'
+);
 
 describe('generate-plugin-docs (inputType table)', () => {
 	it('parses every InputType union member with a non-empty @doc description', () => {
@@ -55,4 +61,33 @@ describe('generate-plugin-docs (host functions)', () => {
 		// Set equality both ways — an undocumented new host fn OR a doc for a removed one both fail.
 		expect(documented, 'PLUGINS.md host-fn headings vs. makeHostFunctions').toEqual(registered);
 	});
+});
+
+describe('generate-plugin-docs (wire node examples)', () => {
+	// Fields deliberately elided from the illustrative examples for brevity — PLUGINS.md documents
+	// each omission in prose (e.g. "extra: BoxExtra ... is omitted here; it defaults when absent").
+	// Anything NOT listed here must appear in its node's example.
+	const OMITTED: Record<string, string[]> = { Box: ['extra'], Text: [], Img: [] };
+	const MARKER: Record<string, string> = {
+		Box: '**Box node:**',
+		Text: '**Text node:**',
+		Img: '**Image node:**'
+	};
+
+	const nodeFields = parseGoldenNodeFields(wireGolden);
+
+	it('golden covers exactly the Box/Text/Img variants', () => {
+		expect(Object.keys(nodeFields).sort()).toEqual(['Box', 'Img', 'Text']);
+	});
+
+	for (const variant of ['Box', 'Text', 'Img'] as const) {
+		it(`PLUGINS.md ${variant} example documents every wire field (source: golden)`, () => {
+			const block = extractJsonBlockAfter(pluginsMd, MARKER[variant]);
+			const omitted = OMITTED[variant];
+			const missing = nodeFields[variant].filter(
+				(key) => !omitted.includes(key) && !block.includes(`"${key}"`)
+			);
+			expect(missing, `${variant} example is missing wire fields`).toEqual([]);
+		});
+	}
 });

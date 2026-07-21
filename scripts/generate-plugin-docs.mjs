@@ -83,6 +83,43 @@ export function parseDocumentedHostFns(pluginsMd) {
 	return [...names].sort();
 }
 
+// The top-level field names of each UiNode variant, read from Charter's committed wire golden
+// (plugins/charter/tests/wire-format.golden.json — the pinned source of truth for the wire shape,
+// see wire_golden_tests). Used to guard that PLUGINS.md's node examples document every real field,
+// so the illustrative JSON can't silently fall behind the actual wire (the exact drift that let
+// colors-as-arrays and missing fields ship before). Returns e.g. { Box: [...], Text: [...], Img: [...] }.
+/**
+ * @param {string} goldenJson
+ * @returns {Record<string, string[]>}
+ */
+export function parseGoldenNodeFields(goldenJson) {
+	/** @type {Record<string, string[]>} */
+	const out = {};
+	for (const node of JSON.parse(goldenJson)) {
+		const variant = Object.keys(node)[0]; // "Box" | "Text" | "Img"
+		out[variant] = Object.keys(node[variant]);
+	}
+	return out;
+}
+
+// Extract the body of the first ```json fenced block after a prose marker (e.g. "**Box node:**").
+/**
+ * @param {string} md
+ * @param {string} marker
+ * @returns {string}
+ */
+export function extractJsonBlockAfter(md, marker) {
+	const start = md.indexOf(marker);
+	if (start === -1) throw new Error(`generate-plugin-docs: marker "${marker}" not found`);
+	const fence = md.indexOf('```json', start);
+	if (fence === -1) throw new Error(`generate-plugin-docs: no json block after "${marker}"`);
+	const bodyStart = md.indexOf('\n', fence) + 1;
+	const end = md.indexOf('```', bodyStart);
+	if (end === -1)
+		throw new Error(`generate-plugin-docs: unterminated json block after "${marker}"`);
+	return md.slice(bodyStart, end);
+}
+
 // Render the inputType reference table (GitHub-flavored markdown). A missing @doc is surfaced
 // loudly in the cell rather than silently blank, so the drift test catches it.
 /**
