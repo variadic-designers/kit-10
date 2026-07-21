@@ -192,7 +192,9 @@
 			// with a new array reference fires the downstream $effect (→ setData → on_resolve).
 			// The row-key dedup above is what prevents that reassignment when nothing changed
 			// -- Svelte cannot do content-based dedup on its own.
-			resolvedViews = allResolved as ResolvedView[];
+			// No cast: ResolvedView is now a re-export of manager's ResolvedViewData (the exact
+			// return type of resolveViewsFromRows), so this is a plain assignment. See types.ts.
+			resolvedViews = allResolved;
 			measure('resolve:cycle:start', 'resolve:dedup:end', 'reResolve total (fetch + dedup)');
 		};
 

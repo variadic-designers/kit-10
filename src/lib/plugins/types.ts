@@ -1,35 +1,53 @@
 import type { ResolvedKit } from 'manager';
 
+// The render-panel widget vocabulary. This union is the CANONICAL source of truth for what
+// inputTypes exist; PLUGINS.md's inputType reference table is GENERATED from it (the `@doc:` line
+// on each member is the table description). Run `npm run generate-docs` after changing a member;
+// the drift-guard test (scripts/generate-plugin-docs.test.ts) fails in CI if the doc is stale.
 export type InputType =
+	// @doc: OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.
 	| 'color'
+	// @doc: Plain text input. The default when `inputType` is omitted.
 	| 'text'
+	// @doc: Numeric input.
 	| 'number'
+	// @doc: Dropdown over the field's `options` list.
 	| 'select'
+	// @doc: Range slider.
 	| 'slider'
+	// @doc: Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts.
 	| 'font'
+	// @doc: View-composition field — the child view list.
 	| 'children'
+	// @doc: Asset picker.
 	| 'asset'
 	// Figma-style per-axis resizing: a Fixed/Hug/Fill segmented control that writes the keyword
 	// values Charter's compile_resize understands (`fill` / `hug` / a length). See StyleField.
+	// @doc: Fixed / Hug / Fill segmented control, plus contextual min/max limits via `resizeKeys`.
 	| 'resize'
 	// Charter's arrangement opinion: a Stack/Cluster/Split/Center/Grid tab row + inline submenu
 	// that writes the keyword values compile_arrange understands. See ArrangeField.
+	// @doc: Stack / Cluster / Split / Center / Grid tab row, with follow-on fields via `arrangeKeys`.
 	| 'arrange'
 	// A numeric stepper (see FieldDef.spacingMode for scalar vs. CSS-shorthand box mode). See
 	// SpacingField.
+	// @doc: Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.
 	| 'spacing'
 	// A segmented row of named-weight buttons, same "selector, not free text" grammar as
 	// arrange/resize -- but the choices are runtime data (the currently resolved font-family's
 	// real weights, from the fontFacts channel), not something Charter declares per FieldDef.
 	// See WeightField.
+	// @doc: Named-weight segmented control, filtered to the resolved family's real weights.
 	| 'weight'
 	// Four-icon segmented control (left/center/right/justify), writing the keyword values
 	// Charter's parse_text_align understands. Fixed, Charter-known choices (unlike "weight") --
 	// handled inline in StyleField, same shape as "resize"'s Fixed/Hug/Fill.
+	// @doc: Left / Center / Right / Justify segmented control.
 	| 'align'
 	// Three-way segmented control (none/underline/line-through -- text-affordances Phase 3 keeps
 	// this single-choice, matching the wire's TextDecorationKind enum, not independent toggles),
 	// writing the keyword values Charter's parse_text_decoration understands.
+	// @doc: None / Underline / Line-through segmented control.
 	| 'decoration';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
@@ -276,12 +294,11 @@ export interface PluginMeta {
 
 export type PluginStatus = 'loading' | 'ready' | 'error' | 'disabled';
 
-export interface ResolvedView {
-	viewId: string;
-	viewName: string;
-	hints: Record<string, unknown> | null;
-	resolvedKits: ResolvedKit[];
-}
+// The editor's view-with-resolved-kits type IS manager's ResolvedViewData -- re-exported here
+// under the editor-local name so call sites keep importing `ResolvedView` from this module, but
+// there is a single authoritative definition (in manager) rather than two hand-synced copies that
+// can silently diverge. See resources/api-formalization.md (Manager<->Editor boundary).
+export type { ResolvedViewData as ResolvedView } from 'manager';
 
 export interface LoadedPlugin {
 	name: string;

@@ -6,6 +6,7 @@
 		"build": "node scripts/fetch-fonts.mjs && vite build",
 		"preview": "vite preview",
 		"fetch-fonts": "node scripts/fetch-fonts.mjs",
+		"generate-docs": "node scripts/generate-plugin-docs.mjs",
 		"postinstall": "node scripts/fetch-fonts.mjs",
 		"prepare": "svelte-kit sync || echo ''",
 		"prepack": "svelte-kit sync && svelte-package && publint",

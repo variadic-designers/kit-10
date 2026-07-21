@@ -349,25 +349,30 @@ edits.
 }
 ```
 
-`inputType` selects the render-panel widget. The full set (canonical source: the
-`InputType` union in `src/lib/plugins/types.ts`) is:
+`inputType` selects the render-panel widget. The table below is GENERATED from the
+`InputType` union in `src/lib/plugins/types.ts` (run `npm run generate-docs`) — edit the
+union's `@doc:` comments, not this table.
 
-| inputType | Widget |
-| --- | --- |
-| `text` | Plain text input (the default when `inputType` is omitted) |
-| `number` | Numeric input |
-| `color` | OKLCH color picker (L/C/H/alpha sliders + swatch + legacy-paste row) |
-| `select` | Dropdown over `options` |
-| `slider` | Range slider |
-| `font` | Suggestion-backed family picker (search-as-you-type; provider mapped in `suggestion-providers.ts`) |
-| `children` | View-composition field (child view list) |
-| `asset` | Asset picker |
-| `resize` | Fixed / Hug / Fill segmented control (+ contextual min/max via `resizeKeys`) |
-| `arrange` | Stack / Cluster / Split / Center / Grid tab row (+ follow-ons via `arrangeKeys`) |
-| `spacing` | Numeric stepper — scalar or CSS T/R/B/L ladder per `spacingMode` |
-| `weight` | Named-weight segmented control, filtered to the resolved family's real weights |
-| `align` | Left / Center / Right / Justify segmented control |
-| `decoration` | None / Underline / Line-through segmented control |
+<!-- BEGIN GENERATED: input-types (source: src/lib/plugins/types.ts) — do not edit by hand -->
+
+| `inputType`  | Widget                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| `color`      | OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.        |
+| `text`       | Plain text input. The default when `inputType` is omitted.                                        |
+| `number`     | Numeric input.                                                                                    |
+| `select`     | Dropdown over the field's `options` list.                                                         |
+| `slider`     | Range slider.                                                                                     |
+| `font`       | Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts. |
+| `children`   | View-composition field — the child view list.                                                     |
+| `asset`      | Asset picker.                                                                                     |
+| `resize`     | Fixed / Hug / Fill segmented control, plus contextual min/max limits via `resizeKeys`.            |
+| `arrange`    | Stack / Cluster / Split / Center / Grid tab row, with follow-on fields via `arrangeKeys`.         |
+| `spacing`    | Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.                  |
+| `weight`     | Named-weight segmented control, filtered to the resolved family's real weights.                   |
+| `align`      | Left / Center / Right / Justify segmented control.                                                |
+| `decoration` | None / Underline / Line-through segmented control.                                                |
+
+<!-- END GENERATED: input-types -->
 
 A plugin that *defines* a field only names the `inputType`; it never names a provider
 plugin (see the suggestion-field note above and VISION.md's 1st Principle). Adding a new
