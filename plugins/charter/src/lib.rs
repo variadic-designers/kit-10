@@ -4648,3 +4648,146 @@ mod arrange_tests {
         assert_eq!(detect_primitive(&props), "box");
     }
 }
+
+// Freezes Charter's serialized UiNode wire format against a committed golden file, and is the
+// producer half of the cross-repo drift guard: the SAME golden is consumed by Vellum's
+// `charter_wire_golden_tests` (../taf_can_do/src/api.rs), which deserializes it with Vellum's own
+// structs and asserts the sentinels survived. Together they close the one silent failure mode of
+// this hand-mirrored boundary -- a field rename on either side landing on the other's
+// `#[serde(default)]` field, defaulting silently with no error (see resources/api-formalization.md
+// and CLAUDE.md's serde-rename pitfall). Charter-side: a renamed/retyped/removed field changes the
+// serialized bytes -> golden mismatch. A NEW field is a compile error in canonical_wire_nodes()
+// until given a sentinel -> forces the golden (and the Vellum consumer) to be updated together.
+#[cfg(test)]
+mod wire_golden_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn color(l: f32, a: f32, b: f32, alpha: f32) -> OklabColor {
+        OklabColor { l, a, b, alpha }
+    }
+
+    // One canonical instance of every UiNode variant, every field a DISTINCT non-default sentinel
+    // so a field-name swap on either side is detectable (a swapped field reads as its default, not
+    // the sentinel). Enum-typed-on-Vellum fields Charter emits as String (flex_direction,
+    // font_style, text_align, text_decoration) use real Vellum variant names; ImageSource uses
+    // `Ref` (the one non-empty variant BOTH sides have -- Charter's `Url` is absent on Vellum).
+    fn canonical_wire_nodes() -> Vec<UiNode> {
+        let box_node = UiNode::Box(UiBoxNode {
+            box_data: BoxData {
+                parent_id: None,
+                width: Extent::Px(111.0),
+                height: Extent::Percent(0.25),
+                min_width: Extent::Px(7.0),
+                min_height: Extent::Px(8.0),
+                max_width: Extent::Px(999.0),
+                max_height: Extent::Percent(0.9),
+                padding: [1.0, 2.0, 3.0, 4.0],
+                bg_color: color(0.11, 0.12, 0.13, 1.0),
+                flex_direction: "RowReverse".to_string(),
+                show_border: true,
+                border_color: color(0.21, -0.22, 0.23, 0.8),
+                border_width: 2.5,
+                corner_radius: 6.0,
+                opacity: 0.75,
+                shadow: Some(BoxShadow {
+                    offset_x: 2.0,
+                    offset_y: 4.0,
+                    blur_radius: 8.0,
+                    spread_radius: 1.0,
+                    color: color(0.0, 0.0, 0.0, 0.4),
+                    inset: true,
+                }),
+                extra: BoxExtra {
+                    gap: 13.0,
+                    align_items: Some(AlignValue::FlexEnd),
+                    justify_content: Some(JustifyValue::SpaceAround),
+                    flex_wrap: FlexWrapValue::WrapReverse,
+                    flex_grow: 3.0,
+                    flex_shrink: Some(0.5),
+                    align_self: Some(AlignValue::Baseline),
+                    flex_basis: Some(Extent::Px(0.0)),
+                    margin: 6.0,
+                    position: NodePosition::Absolute { x: 500.0, y: 400.0 },
+                    grid_template_columns: vec![TrackSize::Px(100.0), TrackSize::AutoFit(160.0)],
+                    grid_template_rows: vec![TrackSize::Fr(2.0)],
+                    grid_auto_rows: vec![TrackSize::Auto],
+                    grid_auto_columns: vec![TrackSize::MinContent],
+                    grid_column: (GridLine::Line(2), GridLine::Span(3)),
+                    grid_row: (GridLine::Auto, GridLine::Line(-1)),
+                },
+                selected: 2,
+                hovered: true,
+            },
+        });
+
+        let text_node = UiNode::Text(UiTextNode {
+            text_data: TextData {
+                parent_id: Some(0),
+                width: Extent::Auto,
+                height: Extent::Auto,
+                padding: [5.0, 6.0, 7.0, 8.0],
+                bg_color: color(0.31, 0.02, -0.03, 0.5),
+                show_border: false,
+                border_color: color(0.0, 0.0, 0.0, 1.0),
+                border_width: 0.0,
+                corner_radius: 0.0,
+                opacity: 1.0,
+                content: "Sentinel".to_string(),
+                font_size: 17.0,
+                font_family: "Satoshi".to_string(),
+                font_weight: 650,
+                font_style: "Oblique".to_string(),
+                text_color: color(0.9, 0.01, -0.02, 1.0),
+                text_align: "Justify".to_string(),
+                text_decoration: "LineThrough".to_string(),
+                line_height: 24.0,
+                selected: 1,
+                hovered: false,
+            },
+        });
+
+        let img_node = UiNode::Img(UiImgNode {
+            img_data: ImgData {
+                parent_id: Some(0),
+                width: Extent::Px(200.0),
+                height: Extent::Px(150.0),
+                source: ImageSource::Ref("img-1".to_string()),
+                fit: "contain".to_string(),
+                object_position: [0.25, 0.75],
+                selected: 0,
+                hovered: false,
+            },
+        });
+
+        vec![box_node, text_node, img_node]
+    }
+
+    fn golden_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wire-format.golden.json")
+    }
+
+    // Regenerate intentionally after a real wire change:
+    //   UPDATE_WIRE_GOLDEN=1 cargo test --manifest-path plugins/charter/Cargo.toml wire_golden
+    // then copy tests/wire-format.golden.json into ../taf_can_do/tests/fixtures/ so Vellum's
+    // consumer test sees the identical bytes (until the Phase 1 shared crate removes the copy).
+    #[test]
+    fn charter_wire_format_matches_golden() {
+        let actual = serde_json::to_string_pretty(&canonical_wire_nodes()).unwrap() + "\n";
+        let path = golden_path();
+
+        if std::env::var("UPDATE_WIRE_GOLDEN").is_ok() || !path.exists() {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &actual).unwrap();
+        }
+
+        let expected = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            actual, expected,
+            "Charter's UiNode wire format changed vs. the golden. If intentional, regenerate with \
+             UPDATE_WIRE_GOLDEN=1 and propagate tests/wire-format.golden.json to \
+             ../taf_can_do/tests/fixtures/ so Vellum's consumer test stays in sync."
+        );
+    }
+}

@@ -76,11 +76,18 @@ cheapest, closes the one silent failure mode, and fixes docs that are wrong toda
 
 ### Phase 0 — Close the silent-drift path + fix what's already wrong
 
-1. **Cross-language round-trip snapshot test** — serialize Charter's real `on_resolve`
-   output on fixtures and deserialize with **Vellum's** structs (and vice-versa),
-   asserting no field silently defaulted. This is the test the current self-round-trip
-   (`../taf_can_do` `lib.rs:472`, Vellum's own structs on both ends) cannot be. Matches
-   the repo's existing "assert serialized keys / regenerate and diff" instinct.
+1. ✅ **Cross-language round-trip golden test (SHIPPED).** Charter's `wire_golden_tests`
+   (`plugins/charter/src/lib.rs`) builds one canonical instance of every `UiNode` variant
+   with a distinct non-default sentinel per field, serializes it, and pins it to
+   `plugins/charter/tests/wire-format.golden.json` (regenerate with `UPDATE_WIRE_GOLDEN=1`).
+   Vellum's `charter_wire_golden_tests` (`../taf_can_do/src/api.rs`) deserializes a committed
+   copy of that golden with **Vellum's** structs and asserts every sentinel survived —
+   closing the silent field-name-drift path (verified: renaming `flex_grow` in the wire makes
+   Vellum's assertion fail on the defaulted `0.0`). A new wire field is a compile error in
+   `canonical_wire_nodes()` until given a sentinel, forcing the golden + Vellum consumer to be
+   updated together. A best-effort cross-repo identity check flags a stale fixture copy when
+   both repos are checked out as siblings. The golden is duplicated across the two repos until
+   Phase 1's shared crate removes the copy.
 2. **Fix `PLUGINS.md`** (inputType list, Oklab color shape, all 11 host fns, add
    `PanelManifest`/`PanelOp`). *(Done in this pass; Phase 2 keeps it honest automatically.)*
 3. **Manager↔Editor cheap wins:** delete `ResolvedView` and re-export `ResolvedViewData`
