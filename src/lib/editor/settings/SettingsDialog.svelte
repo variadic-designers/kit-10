@@ -117,6 +117,8 @@
 	}
 
 	.sidebar {
+		display: flex;
+		flex-direction: column;
 		background: var(--color-surface);
 		border-right: 1px solid var(--color-bg);
 		overflow-y: auto;
