@@ -67,11 +67,24 @@ Output (`OnResolveResult`):
 ```json
 {
   "categories": [FieldCategory],
-  "viewport_data": [UiNode]
+  "viewport_data": [UiNode],
+  "node_view_ids": ["uuid"],
+  "font_requests": [{ "family": "Lato", "weight": 700, "style": "normal" }],
+  "viewport_data_binary": "base64…"
 }
 ```
 
-`categories` populates the render panel in the editor. `viewport_data` is a `UiNode` tree passed directly to Vellum to render.
+`categories` populates the render panel. `viewport_data` is a `UiNode` tree passed
+directly to Vellum. `node_view_ids` is parallel to `viewport_data` (same length/order) —
+which view each node belongs to (`""` for structural grid scaffolding), used to map a
+viewport click-hit index back to a view id. `font_requests` (optional) is the concrete
+post-snapping `(family, weight, style)` set the editor's font scan fetches.
+`viewport_data_binary` (optional) is a MessagePack+base64 encoding of `viewport_data`;
+when present the host base64-decodes it and calls `vellum.set_data_binary()` instead of
+the JSON path — avoids the JSON-parse wall at ~10k views.
+
+Keys are plain snake_case (Charter-authored output) — do **not** add
+`#[serde(rename_all = "camelCase")]` to this struct; the host reads these exact names.
 
 ---
 
@@ -218,6 +231,63 @@ Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning
 
 ---
 
+### `kit10_font_cache_get(url: string) -> bytes`
+
+Read cached font bytes for a resolved URL from the persistent IndexedDB byte cache
+(`src/lib/plugins/font-cache.ts`). Returns empty bytes on a miss. Best-effort: any cache
+fault degrades to empty. Used by Fontavious's `fetch_font` to check the cache before a
+vendor CDN, so reloads are network-free/offline.
+
+---
+
+### `kit10_font_cache_put(metaJson: string, bytes: bytes)`
+
+Store font bytes after a CDN miss. `metaJson` carries `{ url, licenseTier, family, … }`
+(the `licenseTier` is retained for a future export-only-OFL guard); `bytes` is the raw
+WOFF2. Errors are swallowed — a cache-write fault never breaks font fetching.
+
+---
+
+### `kit10_get_project_export(input: string) -> string`
+
+Exposes Manager's `exportProject` (a full project data dump — views, kits, axes, layers,
+render entries, tokens) to any plugin on demand, so export-target plugins pull the same
+data without the host pre-marshaling a per-plugin payload.
+
+```json
+// in:  { "project_id": "uuid" }
+// out: { "success": true, "data": { ... } }
+```
+
+---
+
+### `kit10_import_project_data(input: string) -> string`
+
+Inverse of `kit10_get_project_export` — wraps Manager's `importProjectData`, creating a
+brand-new project (fresh ids throughout) from an export-shaped payload. All id generation
+and remapping happen in Manager.
+
+```json
+// in:  { "workspace_id": "uuid", "data": { ... } }
+// out: { "success": true, "project": { ... } }
+```
+
+---
+
+### `kit10_panel_publish(input: string)`
+
+Publish a `PanelManifest` (see below) into the editor's `$state` map, keyed by
+`panel_id`. Any editor panel that derives off `pluginManager.panelManifest(id)`
+re-renders. Decoupled from `on_resolve`'s return shape on purpose — a plugin can refresh
+its own panel without a full resolve cycle. Charter calls this from inside `on_resolve`
+to ship the Views panel topology.
+
+```json
+{ "panel_id": "views", "manifest": PanelManifest }
+```
+
+---
+
 ## Data types
 
 ### `ResolvedKit`
@@ -225,22 +295,33 @@ Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning
 {
   "kitId": "uuid",
   "kitName": "Button",
-  "childViewIds": ["uuid"],
   "properties": {
     "background": {
       "property": "background",
-      "value": "#3b82f6",
+      "value": "oklch(62% 0.19 260)",
       "sourceLayerId": "uuid",
       "kitId": "uuid",
       "isToken": false,
       "tokenAlias": null,
-      "conditionCount": 1
+      "tokenId": null,
+      "conditionCount": 1,
+      "keys": ["axis-uuid"],
+      "conditionValues": [{ "axisId": "axis-uuid", "value": "dark" }],
+      "viewRefs": null
     }
   }
 }
 ```
 
-`childViewIds` is derived from the `children` render entry (a JSON array of view IDs). It is empty when the kit has no `children` property.
+There is **no `childViewIds`** on `ResolvedKit` — the resolver is name-neutral about
+composition. A property whose value is a `view-list` token carries the referenced view
+ids in **`viewRefs`** (otherwise `null`), gated on the value *type*, never on a property
+*name* like `children`. A consumer that wants to treat some property as nested
+composition identifies it by its own field-kind convention (Charter declares
+`composition_field_keys` on its panel manifest; see below), not off any name here.
+`keys`/`conditionValues` describe which axes (and matched values) the winning layer
+conditioned on. `tokenId` is the render entry's own token row id, for in-place token
+edits.
 
 
 ### `ResolvedView`
@@ -268,7 +349,31 @@ Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning
 }
 ```
 
-`inputType` is one of: `color`, `text`, `number`, `select`, `slider`. If omitted, defaults to `text`.
+`inputType` selects the render-panel widget. The full set (canonical source: the
+`InputType` union in `src/lib/plugins/types.ts`) is:
+
+| inputType | Widget |
+| --- | --- |
+| `text` | Plain text input (the default when `inputType` is omitted) |
+| `number` | Numeric input |
+| `color` | OKLCH color picker (L/C/H/alpha sliders + swatch + legacy-paste row) |
+| `select` | Dropdown over `options` |
+| `slider` | Range slider |
+| `font` | Suggestion-backed family picker (search-as-you-type; provider mapped in `suggestion-providers.ts`) |
+| `children` | View-composition field (child view list) |
+| `asset` | Asset picker |
+| `resize` | Fixed / Hug / Fill segmented control (+ contextual min/max via `resizeKeys`) |
+| `arrange` | Stack / Cluster / Split / Center / Grid tab row (+ follow-ons via `arrangeKeys`) |
+| `spacing` | Numeric stepper — scalar or CSS T/R/B/L ladder per `spacingMode` |
+| `weight` | Named-weight segmented control, filtered to the resolved family's real weights |
+| `align` | Left / Center / Right / Justify segmented control |
+| `decoration` | None / Underline / Line-through segmented control |
+
+A plugin that *defines* a field only names the `inputType`; it never names a provider
+plugin (see the suggestion-field note above and VISION.md's 1st Principle). Adding a new
+`inputType` currently also requires editor-side widget support (`Styles.svelte` /
+`StyleField.svelte`) — the set is editor-owned, not yet plugin-extensible.
+
 `layerId` tells the render panel which layer to target when the field is edited.
 
 ### `UiNode`
@@ -291,18 +396,20 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "max_width": "Auto",
     "max_height": "Auto",
     "padding": [8.0, 8.0, 8.0, 8.0],
-    "bg_color": [0.22, 0.51, 0.98, 1.0],
+    "bg_color": { "l": 0.55, "a": 0.02, "b": -0.16, "alpha": 1.0 },
     "flex_direction": "Column",
     "show_border": false,
-    "border_color": [0.0, 0.0, 0.0, 1.0],
+    "border_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
     "border_width": 0.0,
     "corner_radius": 8.0,
     "opacity": 1.0,
-    "shadow": null
+    "shadow": null,
+    "selected": 0,
+    "hovered": false
   }
 }
 ```
-(`extra: BoxExtra` — gap/align/flex/`flex_basis`/grid/position — is omitted here; it defaults when absent.)
+(`extra: BoxExtra` — gap/align/flex/`flex_basis`/grid/position — is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary — Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection.)
 
 **Text node:**
 ```json
@@ -312,9 +419,9 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "width": "Auto",
     "height": "Auto",
     "padding": [0.0, 0.0, 0.0, 0.0],
-    "bg_color": [0.0, 0.0, 0.0, 0.0],
+    "bg_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 0.0 },
     "show_border": false,
-    "border_color": [0.0, 0.0, 0.0, 1.0],
+    "border_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
     "border_width": 0.0,
     "corner_radius": 0.0,
     "opacity": 1.0,
@@ -323,10 +430,20 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "font_family": "Satoshi",
     "font_weight": 400,
     "font_style": "Normal",
-    "text_color": [1.0, 1.0, 1.0, 1.0]
+    "text_color": { "l": 1.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
+    "text_align": "Left",
+    "text_decoration": "None",
+    "line_height": 21.0,
+    "selected": 0,
+    "hovered": false
   }
 }
 ```
+`text_align` is `"Left" | "Center" | "Right" | "Justify"`; `text_decoration` is
+`"None" | "Underline" | "LineThrough"` (Vellum enum-variant names verbatim).
+`line_height` is an absolute px value; `0.0` reads as "not provided" (Vellum falls back
+to its own ratio). Text nodes must always emit `width: "Auto", height: "Auto"` — Vellum
+measures text during layout.
 
 **Image node:**
 ```json
@@ -337,19 +454,27 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "height": { "Px": 200.0 },
     "source": { "Url": "https://..." },
     "fit": "cover",
-    "object_position": [0.5, 0.5]
+    "object_position": [0.5, 0.5],
+    "selected": 0,
+    "hovered": false
   }
 }
 ```
 `fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong — Vellum reads `fit`.)
 
-`source` is one of: `"None"`, `{ "Url": "..." }`, or `{ "Bytes": [u8 array] }`.
+`source` is one of: `"None"`, `{ "Url": "..." }`, `{ "Bytes": [u8 array] }`, or `{ "Ref": "..." }` (an asset reference).
 
 **`flex_direction`**: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`
 
 **`font_style`**: `"Normal"` | `"Italic"` | `"Oblique"`
 
-**Colors** are `[r, g, b, a]` with each channel in `0.0–1.0`.
+**Colors** are an **`OklabColor` object** — `{ "l", "a", "b", "alpha" }`, Oklab, **not**
+the old `[r,g,b,a]` sRGB array. `l` is perceptual lightness (`0.0–1.0`), `a`/`b` are the
+opponent-color axes (roughly `-0.4–0.4`), `alpha` is `0.0–1.0`. Charter's `parse_color`
+parses `oklch()`/`oklab()` first-class and accepts hex/`rgb()`/`hsl()`/`transparent` as
+legacy input, converting to Oklab on ingest. The object shape is deliberate: a stale
+build sending the old array fails to deserialize loudly instead of silently
+reinterpreting sRGB floats as Oklab. Full architecture: `resources/oklch.md`.
 
 **`padding`** is `[top, right, bottom, left]`.
 
@@ -362,10 +487,60 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
   "offset_y": 4.0,
   "blur_radius": 8.0,
   "spread_radius": 0.0,
-  "color": [0.0, 0.0, 0.0, 0.4],
+  "color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 0.4 },
   "inset": false
 }
 ```
+
+---
+
+### `PanelManifest`
+
+Published via `kit10_panel_publish`. The editor's panels are **generic renderers** over
+this shape: the plugin declares topology + available operations; the editor computes tree
+topology host-side and joins live metadata (view names, locked/hidden state) from its own
+DB query against each item's `id` at render time. Wire keys are snake_case.
+
+```json
+{
+  "panel_id": "views",
+  "composition_field_keys": ["children"],
+  "items": [PanelItem],
+  "header_ops": [PanelOp]
+}
+```
+
+`composition_field_keys` is Charter's *entire* nesting opinion — "this field's `viewRefs`
+are the children." The host walks `resolvedViews` for these keys to build the DAG; root
+detection, ordering, and cycle-guarding are generic graph math done host-side, so they do
+**not** ride the manifest. The manifest also does not carry `icon` (read from
+`hints.view_icon`) or `child_ids`/`is_root` (host-derived).
+
+**`PanelItem`**
+```json
+{
+  "id": "view-uuid",
+  "write_alias": "children",
+  "ops": [PanelOp]
+}
+```
+`write_alias` is the token alias to upsert when DnD writes this item's child list; `null`
+when the item's primitive has no `children` field (Text/Image), so the panel hides the
+nest affordance.
+
+**`PanelOp`** — one self-describing context-menu operation. The plugin owns *which* ops
+an item offers; the editor owns *how* to execute each (switch on `name`).
+```json
+{
+  "name": "add-child",
+  "label": "Box",
+  "icon": "fa-square",
+  "kind": "box"
+}
+```
+`name` is the dispatch key (`rename`/`clone`/`lock`/`hide`/`deselect`/`delete`/`add-child`).
+`kind` is an op-specific payload — today only `add-child` uses it to carry the primitive
+to create (`"box"|"text"|"image"`); other ops leave it `null`.
 
 ---
 
