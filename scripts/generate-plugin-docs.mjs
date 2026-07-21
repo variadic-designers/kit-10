@@ -54,6 +54,35 @@ export function parseInputTypes(typesSource) {
 	return entries;
 }
 
+// The set of host functions actually registered in makeHostFunctions (manager.svelte.ts). Their
+// prose docs in PLUGINS.md stay hand-written (rich, per-fn), so this is a NAME-set guard, not a
+// generator: the drift test asserts the documented set equals this set, catching a host fn added
+// or removed without a PLUGINS.md update. Matches each `kit10_x(` (optionally `async`) method.
+/**
+ * @param {string} managerSource
+ * @returns {string[]}
+ */
+export function parseRegisteredHostFns(managerSource) {
+	const names = new Set();
+	for (const m of managerSource.matchAll(/^\s*(?:async\s+)?(kit10_[a-z0-9_]+)\s*\(/gm)) {
+		names.add(m[1]);
+	}
+	return [...names].sort();
+}
+
+// The host functions PLUGINS.md documents, read from its `### `kit10_x...`` headings.
+/**
+ * @param {string} pluginsMd
+ * @returns {string[]}
+ */
+export function parseDocumentedHostFns(pluginsMd) {
+	const names = new Set();
+	for (const m of pluginsMd.matchAll(/^###\s+`(kit10_[a-z0-9_]+)/gm)) {
+		names.add(m[1]);
+	}
+	return [...names].sort();
+}
+
 // Render the inputType reference table (GitHub-flavored markdown). A missing @doc is surfaced
 // loudly in the cell rather than silently blank, so the drift test catches it.
 /**

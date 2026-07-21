@@ -5,7 +5,9 @@ import {
 	INPUT_TYPES_BEGIN,
 	INPUT_TYPES_END,
 	generatePluginsMd,
-	parseInputTypes
+	parseDocumentedHostFns,
+	parseInputTypes,
+	parseRegisteredHostFns
 } from '../../../scripts/generate-plugin-docs.mjs';
 
 // Drift guard for the generated parts of PLUGINS.md (see resources/api-formalization.md, Phase 2).
@@ -15,6 +17,7 @@ import {
 const ROOT = process.cwd();
 const typesSource = readFileSync(resolve(ROOT, 'src/lib/plugins/types.ts'), 'utf8');
 const pluginsMd = readFileSync(resolve(ROOT, 'PLUGINS.md'), 'utf8');
+const managerSource = readFileSync(resolve(ROOT, 'src/lib/plugins/manager.svelte.ts'), 'utf8');
 
 describe('generate-plugin-docs (inputType table)', () => {
 	it('parses every InputType union member with a non-empty @doc description', () => {
@@ -40,5 +43,16 @@ describe('generate-plugin-docs (inputType table)', () => {
 		for (const e of parseInputTypes(typesSource)) {
 			expect(region, `table row for '${e.name}'`).toContain(`\`${e.name}\``);
 		}
+	});
+});
+
+describe('generate-plugin-docs (host functions)', () => {
+	it('PLUGINS.md documents exactly the host fns registered in manager.svelte.ts', () => {
+		const registered = parseRegisteredHostFns(managerSource);
+		const documented = parseDocumentedHostFns(pluginsMd);
+		// Sanity floor so a parse regression (e.g. zero matches) can't make this pass vacuously.
+		expect(registered.length).toBeGreaterThanOrEqual(11);
+		// Set equality both ways — an undocumented new host fn OR a doc for a removed one both fail.
+		expect(documented, 'PLUGINS.md host-fn headings vs. makeHostFunctions').toEqual(registered);
 	});
 });
