@@ -20,6 +20,7 @@
   ],
   "$defs": {
     "AlignValue": {
+      "description": "CSS `align-items` / `align-self` (taffy's `AlignItems`).",
       "type": "string",
       "enum": [
         "Start",
@@ -32,6 +33,7 @@
       ]
     },
     "BoxData": {
+      "description": "A box — a pure container. It never renders inline text; nest a `Text` child for that.",
       "type": "object",
       "properties": {
         "bg_color": {
@@ -76,20 +78,23 @@
           }
         },
         "flex_direction": {
-          "type": "string"
+          "$ref": "#/$defs/FlexDir"
         },
         "height": {
           "$ref": "#/$defs/Extent"
         },
         "hovered": {
+          "description": "Independent from `selected`.",
           "type": "boolean",
           "default": false
         },
         "max_height": {
-          "$ref": "#/$defs/Extent"
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
         },
         "max_width": {
-          "$ref": "#/$defs/Extent"
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
         },
         "min_height": {
           "$ref": "#/$defs/Extent",
@@ -104,6 +109,7 @@
           "format": "float"
         },
         "padding": {
+          "description": "`[top, right, bottom, left]`.",
           "type": "array",
           "items": {
             "type": "number",
@@ -113,6 +119,7 @@
           "minItems": 4
         },
         "parent_id": {
+          "description": "Index into the `Vec<UiNode>` of this node's parent; `None` = root.",
           "type": [
             "integer",
             "null"
@@ -121,6 +128,7 @@
           "minimum": 0
         },
         "selected": {
+          "description": "0 = none, 1 = secondary, 2 = primary/active. The renderer owns how it's drawn — it must\nNOT overload `border_*` to signal selection.",
           "type": "integer",
           "format": "uint8",
           "default": 0,
@@ -147,8 +155,6 @@
       "required": [
         "width",
         "height",
-        "max_width",
-        "max_height",
         "padding",
         "bg_color",
         "flex_direction",
@@ -160,9 +166,11 @@
       ]
     },
     "BoxExtra": {
+      "description": "Extended flex/grid layout properties, grouped so `BoxData` needn't name every field. Every\nfield is optional — an absent `extra` is all-defaults.",
       "type": "object",
       "properties": {
         "align_items": {
+          "description": "Cross-axis alignment of children (`align-items`). `None` = taffy default (Stretch).",
           "anyOf": [
             {
               "$ref": "#/$defs/AlignValue"
@@ -174,6 +182,7 @@
           "default": null
         },
         "align_self": {
+          "description": "Per-child `align-self` override.",
           "anyOf": [
             {
               "$ref": "#/$defs/AlignValue"
@@ -185,6 +194,7 @@
           "default": null
         },
         "flex_basis": {
+          "description": "`flex-basis`. `None` = `auto`; a \"Fill\" item wants `Px(0)` for a pure share of free space.",
           "anyOf": [
             {
               "$ref": "#/$defs/Extent"
@@ -196,11 +206,13 @@
           "default": null
         },
         "flex_grow": {
+          "description": "`flex-grow`. 0 = don't grow.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "flex_shrink": {
+          "description": "`flex-shrink`. `None` = taffy default (1.0).",
           "type": [
             "number",
             "null"
@@ -209,15 +221,18 @@
           "default": null
         },
         "flex_wrap": {
+          "description": "`flex-wrap`.",
           "$ref": "#/$defs/FlexWrapValue",
           "default": "NoWrap"
         },
         "gap": {
+          "description": "Uniform gap between children (`gap`), flex and grid.",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "grid_auto_columns": {
+          "description": "`grid-auto-columns`.",
           "type": "array",
           "default": [],
           "items": {
@@ -225,6 +240,7 @@
           }
         },
         "grid_auto_rows": {
+          "description": "`grid-auto-rows`.",
           "type": "array",
           "default": [],
           "items": {
@@ -232,6 +248,7 @@
           }
         },
         "grid_column": {
+          "description": "Item column placement `(start, end)`.",
           "type": "array",
           "default": [
             "Auto",
@@ -249,6 +266,7 @@
           ]
         },
         "grid_row": {
+          "description": "Item row placement `(start, end)`.",
           "type": "array",
           "default": [
             "Auto",
@@ -266,6 +284,7 @@
           ]
         },
         "grid_template_columns": {
+          "description": "`grid-template-columns`.",
           "type": "array",
           "default": [],
           "items": {
@@ -273,6 +292,7 @@
           }
         },
         "grid_template_rows": {
+          "description": "`grid-template-rows`.",
           "type": "array",
           "default": [],
           "items": {
@@ -280,6 +300,7 @@
           }
         },
         "justify_content": {
+          "description": "Main-axis distribution (`justify-content`). `None` = taffy default (Start).",
           "anyOf": [
             {
               "$ref": "#/$defs/JustifyValue"
@@ -291,17 +312,20 @@
           "default": null
         },
         "margin": {
+          "description": "Uniform `margin` (all four sides).",
           "type": "number",
           "format": "float",
           "default": 0.0
         },
         "position": {
+          "description": "`position` — flow (`Relative`) vs. floated (`Absolute { x, y }`).",
           "$ref": "#/$defs/NodePosition",
           "default": "Relative"
         }
       }
     },
     "BoxShadow": {
+      "description": "A drop shadow (`box-shadow`).",
       "type": "object",
       "properties": {
         "blur_radius": {
@@ -337,14 +361,15 @@
       ]
     },
     "Extent": {
+      "description": "A box-model size dimension (mirrors taffy's `Dimension`). `fr` is deliberately absent —\nfractional-of-free-space is a container concern (`TrackSize::Fr` / flex grow), not a size a\nchild declares about itself.",
       "oneOf": [
         {
+          "description": "Size to content / fill per flex-grow.",
           "type": "string",
-          "enum": [
-            "Auto"
-          ]
+          "const": "Auto"
         },
         {
+          "description": "Fixed logical pixels.",
           "type": "object",
           "properties": {
             "Px": {
@@ -358,6 +383,7 @@
           ]
         },
         {
+          "description": "Fraction of the parent's definite size (`0.5` == `50%`); resolves to `Auto` under an\nauto-sized parent (standard CSS percentage behavior).",
           "type": "object",
           "properties": {
             "Percent": {
@@ -372,6 +398,16 @@
         }
       ]
     },
+    "FlexDir": {
+      "description": "CSS `flex-direction`. Previously emitted as a bare `String` by Charter — now a real enum, so\nan invalid value fails to deserialize instead of silently mismatching.",
+      "type": "string",
+      "enum": [
+        "Row",
+        "Column",
+        "RowReverse",
+        "ColumnReverse"
+      ]
+    },
     "FlexWrapValue": {
       "type": "string",
       "enum": [
@@ -380,7 +416,16 @@
         "WrapReverse"
       ]
     },
+    "FontStyle": {
+      "type": "string",
+      "enum": [
+        "Normal",
+        "Italic",
+        "Oblique"
+      ]
+    },
     "GridLine": {
+      "description": "A grid line reference for item placement.",
       "oneOf": [
         {
           "type": "string",
@@ -421,23 +466,12 @@
       ]
     },
     "ImageSource": {
+      "description": "Where an image's pixels come from. `Ref` names a previously-loaded image by id.",
       "oneOf": [
         {
           "type": "string",
           "enum": [
             "None"
-          ]
-        },
-        {
-          "type": "object",
-          "properties": {
-            "Url": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false,
-          "required": [
-            "Url"
           ]
         },
         {
@@ -473,10 +507,13 @@
       ]
     },
     "ImgData": {
+      "description": "An image.",
       "type": "object",
       "properties": {
         "fit": {
-          "type": "string"
+          "description": "object-fit: `\"cover\"` | `\"contain\"` | `\"fill\"`.",
+          "type": "string",
+          "default": "cover"
         },
         "height": {
           "$ref": "#/$defs/Extent"
@@ -486,6 +523,7 @@
           "default": false
         },
         "object_position": {
+          "description": "object-position as `(x, y)` fractions in `0..=1`.",
           "type": "array",
           "default": [
             0.5,
@@ -523,11 +561,11 @@
       "required": [
         "width",
         "height",
-        "source",
-        "fit"
+        "source"
       ]
     },
     "JustifyValue": {
+      "description": "CSS `justify-content` (taffy's `JustifyContent`) — adds the `Space*` distributions.",
       "type": "string",
       "enum": [
         "Start",
@@ -542,6 +580,7 @@
       ]
     },
     "NodePosition": {
+      "description": "CSS `position`, with `inset` folded into `Absolute` (only meaningful there). `Relative`\nparticipates in normal flow; `Absolute { x, y }` floats the node at a world-space offset.",
       "oneOf": [
         {
           "type": "string",
@@ -578,6 +617,7 @@
       ]
     },
     "OklabColor": {
+      "description": "Oklab color, the internal + wire representation (never sRGB). Authored as OKLCH, stored as\n`(l, a, b, alpha)`. `Default` is fully transparent (`alpha = 0`).",
       "type": "object",
       "properties": {
         "a": {
@@ -604,7 +644,18 @@
         "alpha"
       ]
     },
+    "TextAlign": {
+      "description": "CSS `text-align` (LTR-relative; no bidi yet). `Left` is the wire default.",
+      "type": "string",
+      "enum": [
+        "Left",
+        "Center",
+        "Right",
+        "Justify"
+      ]
+    },
     "TextData": {
+      "description": "A text run. Always declares `Auto` size; the renderer measures it during layout.",
       "type": "object",
       "properties": {
         "bg_color": {
@@ -632,7 +683,7 @@
           "format": "float"
         },
         "font_style": {
-          "type": "string"
+          "$ref": "#/$defs/FontStyle"
         },
         "font_weight": {
           "type": "integer",
@@ -648,6 +699,7 @@
           "default": false
         },
         "line_height": {
+          "description": "Absolute px; `<= 0.0` means \"not provided\" (renderer falls back to a ratio).",
           "type": "number",
           "format": "float",
           "default": 0.0
@@ -684,14 +736,14 @@
           "type": "boolean"
         },
         "text_align": {
-          "type": "string",
+          "$ref": "#/$defs/TextAlign",
           "default": "Left"
         },
         "text_color": {
           "$ref": "#/$defs/OklabColor"
         },
         "text_decoration": {
-          "type": "string",
+          "$ref": "#/$defs/TextDecorationKind",
           "default": "None"
         },
         "width": {
@@ -716,7 +768,17 @@
         "text_color"
       ]
     },
+    "TextDecorationKind": {
+      "description": "CSS `text-decoration`, single-choice (never underline AND line-through at once).",
+      "type": "string",
+      "enum": [
+        "None",
+        "Underline",
+        "LineThrough"
+      ]
+    },
     "TrackSize": {
+      "description": "A single CSS grid track size.",
       "oneOf": [
         {
           "type": "string",
@@ -753,6 +815,7 @@
           ]
         },
         {
+          "description": "`repeat(auto-fit, minmax(<f32>px, 1fr))` — the one responsive-grid shape the Grid\narrangement needs, not a general `repeat()`.",
           "type": "object",
           "properties": {
             "AutoFit": {

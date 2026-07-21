@@ -400,11 +400,11 @@ examples in the sections below are illustrative. `Required: —` means the field
 | `border_width`   | number       | ✓        |
 | `corner_radius`  | number       | ✓        |
 | `extra`          | BoxExtra     | —        |
-| `flex_direction` | string       | ✓        |
+| `flex_direction` | FlexDir      | ✓        |
 | `height`         | Extent       | ✓        |
 | `hovered`        | boolean      | —        |
-| `max_height`     | Extent       | ✓        |
-| `max_width`      | Extent       | ✓        |
+| `max_height`     | Extent       | —        |
+| `max_width`      | Extent       | —        |
 | `min_height`     | Extent       | —        |
 | `min_width`      | Extent       | —        |
 | `opacity`        | number       | ✓        |
@@ -417,35 +417,35 @@ examples in the sections below are illustrative. `Required: —` means the field
 
 #### `TextData`
 
-| Field             | Type         | Required |
-| ----------------- | ------------ | -------- |
-| `bg_color`        | OklabColor   | ✓        |
-| `border_color`    | OklabColor   | ✓        |
-| `border_width`    | number       | ✓        |
-| `content`         | string       | ✓        |
-| `corner_radius`   | number       | ✓        |
-| `font_family`     | string       | ✓        |
-| `font_size`       | number       | ✓        |
-| `font_style`      | string       | ✓        |
-| `font_weight`     | integer      | ✓        |
-| `height`          | Extent       | ✓        |
-| `hovered`         | boolean      | —        |
-| `line_height`     | number       | —        |
-| `opacity`         | number       | ✓        |
-| `padding`         | [number × 4] | ✓        |
-| `parent_id`       | integer?     | —        |
-| `selected`        | integer      | —        |
-| `show_border`     | boolean      | ✓        |
-| `text_align`      | string       | —        |
-| `text_color`      | OklabColor   | ✓        |
-| `text_decoration` | string       | —        |
-| `width`           | Extent       | ✓        |
+| Field             | Type               | Required |
+| ----------------- | ------------------ | -------- |
+| `bg_color`        | OklabColor         | ✓        |
+| `border_color`    | OklabColor         | ✓        |
+| `border_width`    | number             | ✓        |
+| `content`         | string             | ✓        |
+| `corner_radius`   | number             | ✓        |
+| `font_family`     | string             | ✓        |
+| `font_size`       | number             | ✓        |
+| `font_style`      | FontStyle          | ✓        |
+| `font_weight`     | integer            | ✓        |
+| `height`          | Extent             | ✓        |
+| `hovered`         | boolean            | —        |
+| `line_height`     | number             | —        |
+| `opacity`         | number             | ✓        |
+| `padding`         | [number × 4]       | ✓        |
+| `parent_id`       | integer?           | —        |
+| `selected`        | integer            | —        |
+| `show_border`     | boolean            | ✓        |
+| `text_align`      | TextAlign          | —        |
+| `text_color`      | OklabColor         | ✓        |
+| `text_decoration` | TextDecorationKind | —        |
+| `width`           | Extent             | ✓        |
 
 #### `ImgData`
 
 | Field             | Type         | Required |
 | ----------------- | ------------ | -------- |
-| `fit`             | string       | ✓        |
+| `fit`             | string       | —        |
 | `height`          | Extent       | ✓        |
 | `hovered`         | boolean      | —        |
 | `object_position` | [number × 2] | —        |
@@ -494,13 +494,21 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`
 
 One of:
 
-- `"Auto"`
+- `string`
 - `{ "Px": number }`
 - `{ "Percent": number }`
+
+#### `FlexDir`
+
+One of: `"Row"`, `"Column"`, `"RowReverse"`, `"ColumnReverse"`
 
 #### `FlexWrapValue`
 
 One of: `"NoWrap"`, `"Wrap"`, `"WrapReverse"`
+
+#### `FontStyle`
+
+One of: `"Normal"`, `"Italic"`, `"Oblique"`
 
 #### `GridLine`
 
@@ -515,7 +523,6 @@ One of:
 One of:
 
 - `"None"`
-- `{ "Url": string }`
 - `{ "Bytes": integer[] }`
 - `{ "Ref": string }`
 
@@ -538,6 +545,14 @@ One of:
 | `alpha` | number | ✓        |
 | `b`     | number | ✓        |
 | `l`     | number | ✓        |
+
+#### `TextAlign`
+
+One of: `"Left"`, `"Center"`, `"Right"`, `"Justify"`
+
+#### `TextDecorationKind`
+
+One of: `"None"`, `"Underline"`, `"LineThrough"`
 
 #### `TrackSize`
 

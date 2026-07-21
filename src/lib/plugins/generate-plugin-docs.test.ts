@@ -6,8 +6,8 @@ import {
 	INPUT_TYPES_END,
 	extractJsonBlockAfter,
 	generatePluginsMd,
+	nodeFieldsFromSchema,
 	parseDocumentedHostFns,
-	parseGoldenNodeFields,
 	parseInputTypes,
 	parseRegisteredHostFns
 } from '../../../scripts/generate-plugin-docs.mjs';
@@ -20,10 +20,6 @@ const ROOT = process.cwd();
 const typesSource = readFileSync(resolve(ROOT, 'src/lib/plugins/types.ts'), 'utf8');
 const pluginsMd = readFileSync(resolve(ROOT, 'PLUGINS.md'), 'utf8');
 const managerSource = readFileSync(resolve(ROOT, 'src/lib/plugins/manager.svelte.ts'), 'utf8');
-const wireGolden = readFileSync(
-	resolve(ROOT, 'plugins/charter/tests/wire-format.golden.json'),
-	'utf8'
-);
 const wireSchema = readFileSync(
 	resolve(ROOT, 'plugins/charter/generated/wire-schema.json'),
 	'utf8'
@@ -78,14 +74,14 @@ describe('generate-plugin-docs (wire node examples)', () => {
 		Img: '**Image node:**'
 	};
 
-	const nodeFields = parseGoldenNodeFields(wireGolden);
+	const nodeFields = nodeFieldsFromSchema(wireSchema);
 
-	it('golden covers exactly the Box/Text/Img variants', () => {
+	it('schema covers exactly the Box/Text/Img variants', () => {
 		expect(Object.keys(nodeFields).sort()).toEqual(['Box', 'Img', 'Text']);
 	});
 
 	for (const variant of ['Box', 'Text', 'Img'] as const) {
-		it(`PLUGINS.md ${variant} example documents every wire field (source: golden)`, () => {
+		it(`PLUGINS.md ${variant} example documents every wire field (source: schema)`, () => {
 			const block = extractJsonBlockAfter(pluginsMd, MARKER[variant]);
 			const omitted = OMITTED[variant];
 			const missing = nodeFields[variant].filter(

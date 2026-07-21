@@ -1,6 +1,26 @@
 use extism_pdk::*;
 use serde::{Deserialize, Serialize};
 
+// The render wire types now live in the standalone kit10-protocol crate (the contract Charter and
+// Vellum both conform to), not in Charter. Charter builds and serializes these; it no longer owns
+// their definition.
+use kit10_protocol::{
+    AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridLine, ImageSource,
+    ImgData, JustifyValue, NodePosition, OklabColor, TextAlign, TextData, TextDecorationKind,
+    TrackSize, UiNode,
+};
+
+/// Map Charter's internal flex-direction string (as `resolve_flex_direction` produces it, always
+/// one of the four `FlexDir` variant names) to the wire enum. Unknown → `Column`.
+fn flex_dir_from_str(s: &str) -> FlexDir {
+    match s {
+        "Row" => FlexDir::Row,
+        "RowReverse" => FlexDir::RowReverse,
+        "ColumnReverse" => FlexDir::ColumnReverse,
+        _ => FlexDir::Column,
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ResolvedProperty {
@@ -161,296 +181,6 @@ struct FieldCategory {
     fields: Vec<FieldDef>,
 }
 
-// Track/grid types mirror vellum's api.rs — serde output must match exactly.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum TrackSize {
-    Px(f32),
-    Fr(f32),
-    Auto,
-    MinContent,
-    MaxContent,
-    // Responsive auto-fit repeat, opinionated (not raw CSS `repeat()`): as many tracks as fit,
-    // each `minmax(f32 px, 1fr)`. This is what compile_arrange's Grid tab emits from a single
-    // "Cell min" number -- must match Vellum's TrackSize::AutoFit exactly (see the module-level
-    // comment above).
-    AutoFit(f32),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum GridLine {
-    Auto,
-    Line(i16),
-    Span(u16),
-}
-
-impl Default for GridLine {
-    fn default() -> Self {
-        GridLine::Auto
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum AlignValue {
-    Start,
-    End,
-    FlexStart,
-    FlexEnd,
-    Center,
-    Baseline,
-    Stretch,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum JustifyValue {
-    Start,
-    End,
-    FlexStart,
-    FlexEnd,
-    Center,
-    Stretch,
-    SpaceBetween,
-    SpaceEvenly,
-    SpaceAround,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum FlexWrapValue {
-    NoWrap,
-    Wrap,
-    WrapReverse,
-}
-
-impl Default for FlexWrapValue {
-    fn default() -> Self {
-        FlexWrapValue::NoWrap
-    }
-}
-
-// Mirrors vellum's api.rs — serde output must match exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum NodePosition {
-    Relative,
-    Absolute { x: f32, y: f32 },
-}
-
-impl Default for NodePosition {
-    fn default() -> Self {
-        NodePosition::Relative
-    }
-}
-
-// Mirrors vellum's api.rs Extent — serde output must match exactly. A box-model size dimension:
-// Auto | fixed px | percent-of-parent. `fr` is intentionally absent (that's a grid TrackSize /
-// flex_grow concern, never a value a child declares about its own size).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum Extent {
-    Auto,
-    Px(f32),
-    Percent(f32),
-}
-
-impl Default for Extent {
-    fn default() -> Self {
-        Extent::Auto
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct BoxExtra {
-    #[serde(default)]
-    gap: f32,
-    #[serde(default)]
-    align_items: Option<AlignValue>,
-    #[serde(default)]
-    justify_content: Option<JustifyValue>,
-    #[serde(default)]
-    flex_wrap: FlexWrapValue,
-    #[serde(default)]
-    flex_grow: f32,
-    #[serde(default)]
-    flex_shrink: Option<f32>,
-    #[serde(default)]
-    align_self: Option<AlignValue>,
-    #[serde(default)]
-    flex_basis: Option<Extent>,
-    #[serde(default)]
-    margin: f32,
-    #[serde(default)]
-    position: NodePosition,
-    #[serde(default)]
-    grid_template_columns: Vec<TrackSize>,
-    #[serde(default)]
-    grid_template_rows: Vec<TrackSize>,
-    #[serde(default)]
-    grid_auto_rows: Vec<TrackSize>,
-    #[serde(default)]
-    grid_auto_columns: Vec<TrackSize>,
-    #[serde(default)]
-    grid_column: (GridLine, GridLine),
-    #[serde(default)]
-    grid_row: (GridLine, GridLine),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct BoxShadow {
-    offset_x: f32,
-    offset_y: f32,
-    blur_radius: f32,
-    spread_radius: f32,
-    color: OklabColor,
-    inset: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct BoxData {
-    parent_id: Option<usize>,
-    width: Extent,
-    height: Extent,
-    #[serde(default)]
-    min_width: Extent,
-    #[serde(default)]
-    min_height: Extent,
-    max_width: Extent,
-    max_height: Extent,
-    padding: [f32; 4],
-    bg_color: OklabColor,
-    flex_direction: String,
-    show_border: bool,
-    border_color: OklabColor,
-    border_width: f32,
-    corner_radius: f32,
-    opacity: f32,
-    shadow: Option<BoxShadow>,
-    #[serde(default)]
-    extra: BoxExtra,
-    // 0 = none, 1 = secondary, 2 = primary/active. Vellum draws its own outside outline +
-    // corner handles from this — never encode selection by mutating border_color/border_width.
-    #[serde(default)]
-    selected: u8,
-    // Independent from `selected` — a view can be hovered while a different view stays
-    // selected. Vellum draws a plain highlight border for this, no corner handles.
-    #[serde(default)]
-    hovered: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct UiBoxNode {
-    #[serde(rename = "Box")]
-    box_data: BoxData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct TextData {
-    parent_id: Option<usize>,
-    width: Extent,
-    height: Extent,
-    padding: [f32; 4],
-    bg_color: OklabColor,
-    show_border: bool,
-    border_color: OklabColor,
-    border_width: f32,
-    corner_radius: f32,
-    opacity: f32,
-    content: String,
-    font_size: f32,
-    font_family: String,
-    font_weight: u16,
-    font_style: String,
-    text_color: OklabColor,
-    // Wire values are Vellum's TextAlign/TextDecorationKind enum variant names verbatim
-    // ("Left"/"Center"/"Right"/"Justify", "None"/"Underline"/"LineThrough") -- see
-    // parse_text_align/parse_text_decoration. Plain String like font_style, not a Rust enum on
-    // this side: Charter never round-trips these, it only ever writes them.
-    #[serde(default = "default_text_align")]
-    text_align: String,
-    #[serde(default = "default_text_decoration")]
-    text_decoration: String,
-    // Absolute px, always resolved -- see compile_line_height. `0.0` reads as "not provided" on
-    // Vellum's side (its own font_size*1.2 fallback), matching what an old, not-yet-redeployed
-    // Vellum build already did before this field existed -- but Charter itself never emits 0.0
-    // in practice (compile_line_height always derives a real ratio when unset).
-    #[serde(default)]
-    line_height: f32,
-    #[serde(default)]
-    selected: u8,
-    #[serde(default)]
-    hovered: bool,
-}
-
-fn default_text_align() -> String {
-    "Left".to_string()
-}
-
-fn default_text_decoration() -> String {
-    "None".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct UiTextNode {
-    #[serde(rename = "Text")]
-    text_data: TextData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum UiNode {
-    Box(UiBoxNode),
-    Text(UiTextNode),
-    Img(UiImgNode),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-enum ImageSource {
-    None,
-    Url(String),
-    Bytes(Vec<u8>),
-    Ref(String),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct ImgData {
-    parent_id: Option<usize>,
-    width: Extent,
-    height: Extent,
-    source: ImageSource,
-    // CSS object-fit: "cover" | "contain" | "fill". Must be the field NAME vellum reads
-    // (`fit: String`) — an earlier `cover: bool` here silently never reached vellum (unknown key),
-    // so every image rendered as the `fit` default ("cover") regardless of this value.
-    fit: String,
-    #[serde(default = "default_object_position")]
-    object_position: [f32; 2],
-    #[serde(default)]
-    selected: u8,
-    #[serde(default)]
-    hovered: bool,
-}
-
-fn default_object_position() -> [f32; 2] {
-    [0.5, 0.5]
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct UiImgNode {
-    #[serde(rename = "Img")]
-    img_data: ImgData,
-}
 
 // No rename_all here -- viewport_data/node_view_ids are read as snake_case by
 // manager.svelte.ts (matching the pre-existing viewport_data convention), unlike the
@@ -820,38 +550,10 @@ fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
     ids
 }
 
-// Oklab is Charter's/Vellum's internal and wire color representation -- see kit10's
-// resources/oklch.md. `parse_color` (below) parses OKLCH/Oklab first-class, and hex/rgb/hsl as
-// legacy INPUT formats only (accepted, converted on ingest, never round-tripped). Own copy of
-// the conversion math, manually synced against Vellum's `taf_can_do/src/color.rs` -- no shared
-// crate between these two repos today (see the "Charter/Vellum Wire Types Plan" memory note).
-// Matrices are Björn Ottosson's published Oklab constants, operating on linear sRGB.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
-struct OklabColor {
-    l: f32,
-    a: f32,
-    b: f32,
-    alpha: f32,
-}
-
-impl OklabColor {
-    const fn new(l: f32, a: f32, b: f32, alpha: f32) -> Self {
-        Self { l, a, b, alpha }
-    }
-
-    /// Legacy sRGB-encoded `[r, g, b, a]` (each `0.0..=1.0`, gamma-encoded) -> Oklab. The single
-    /// on-ramp for hex/rgb/hsl input.
-    fn from_srgb(rgba: [f32; 4]) -> Self {
-        let linear = [
-            srgb_to_linear(rgba[0]),
-            srgb_to_linear(rgba[1]),
-            srgb_to_linear(rgba[2]),
-        ];
-        let (l, a, b) = linear_srgb_to_oklab(linear);
-        Self { l, a, b, alpha: rgba[3] }
-    }
-}
+// Oklab is the internal + wire color representation -- see kit10's resources/oklch.md. `parse_color`
+// (below) parses OKLCH/Oklab first-class, and hex/rgb/hsl as legacy INPUT formats only (accepted,
+// converted on ingest, never round-tripped). The `OklabColor` type AND the sRGB->Oklab conversion
+// (`OklabColor::from_srgb`) now live in the shared kit10-protocol crate; Charter only parses.
 
 /// A clearly-wrong, saturated marker color for genuinely unparseable input -- deliberately NOT
 /// black, so a bad value is visually obvious in the preview rather than silently blending in
@@ -861,31 +563,6 @@ fn unparseable_marker() -> OklabColor {
     OklabColor::from_srgb([1.0, 0.0, 1.0, 1.0])
 }
 
-fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
-fn linear_srgb_to_oklab(rgb: [f32; 3]) -> (f32, f32, f32) {
-    let [r, g, b] = rgb;
-
-    let l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
-    let m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
-    let s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
-
-    let l_ = l.cbrt();
-    let m_ = m.cbrt();
-    let s_ = s.cbrt();
-
-    (
-        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
-        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
-        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
-    )
-}
 
 /// Polar OKLCH `(l, chroma, hue_degrees)` -> cartesian Oklab `(l, a, b)`.
 fn oklch_to_oklab(l: f32, c: f32, h_degrees: f32) -> (f32, f32, f32) {
@@ -1599,54 +1276,50 @@ fn build_box_node(
         extra.align_self = Some(a);
     }
 
-    UiNode::Box(UiBoxNode {
-        box_data: BoxData {
-            parent_id,
-            width: rc.width,
-            height: rc.height,
-            min_width: rc.min_width,
-            min_height: rc.min_height,
-            max_width,
-            max_height,
-            padding: paint.padding,
-            bg_color: paint.bg_color,
-            flex_direction: ac.flex_direction,
-            show_border: paint.show_border,
-            border_color: paint.border_color,
-            border_width: paint.border_width,
-            corner_radius: paint.corner_radius,
-            opacity: 1.0,
-            shadow: None,
-            extra,
-            selected: 0,
-            hovered: false,
-        },
+    UiNode::Box(BoxData {
+        parent_id,
+        width: rc.width,
+        height: rc.height,
+        min_width: rc.min_width,
+        min_height: rc.min_height,
+        max_width,
+        max_height,
+        padding: paint.padding,
+        bg_color: paint.bg_color,
+        flex_direction: flex_dir_from_str(&ac.flex_direction),
+        show_border: paint.show_border,
+        border_color: paint.border_color,
+        border_width: paint.border_width,
+        corner_radius: paint.corner_radius,
+        opacity: 1.0,
+        shadow: None,
+        extra,
+        selected: 0,
+        hovered: false,
     })
 }
 
 // text-align: "left" (default hard, absent/unrecognized reads as Left -- same fallback grammar
 // as parse_arrange) | "center" | "right" | "justify". Wire value is Vellum's TextAlign variant
 // name verbatim.
-fn parse_text_align(s: Option<&str>) -> String {
+fn parse_text_align(s: Option<&str>) -> TextAlign {
     match s.map(str::trim) {
-        Some("center") => "Center",
-        Some("right") => "Right",
-        Some("justify") => "Justify",
-        _ => "Left",
+        Some("center") => TextAlign::Center,
+        Some("right") => TextAlign::Right,
+        Some("justify") => TextAlign::Justify,
+        _ => TextAlign::Left,
     }
-    .to_string()
 }
 
 // text-decoration: single-choice, mirroring the "Decor" FieldDef -- never underline AND
 // line-through at once. "none" (default) | "underline" | "line-through". Wire value is
 // Vellum's TextDecorationKind variant name verbatim.
-fn parse_text_decoration(s: Option<&str>) -> String {
+fn parse_text_decoration(s: Option<&str>) -> TextDecorationKind {
     match s.map(str::trim) {
-        Some("underline") => "Underline",
-        Some("line-through") => "LineThrough",
-        _ => "None",
+        Some("underline") => TextDecorationKind::Underline,
+        Some("line-through") => TextDecorationKind::LineThrough,
+        _ => TextDecorationKind::None,
     }
-    .to_string()
 }
 
 // Resolves `line-height` to a concrete absolute px value -- Vellum never receives an "unset"
@@ -1693,34 +1366,32 @@ fn build_text_node(
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, OklabColor::default());
 
-    UiNode::Text(UiTextNode {
-        text_data: TextData {
-            parent_id: Some(parent_id),
-            width: Extent::Auto,
-            height: Extent::Auto,
-            padding: paint.padding,
-            bg_color: paint.bg_color,
-            show_border: paint.show_border,
-            border_color: paint.border_color,
-            border_width: paint.border_width,
-            corner_radius: paint.corner_radius,
-            opacity: 1.0,
-            content,
-            font_size: resolved_font_size,
-            font_family,
-            font_weight: if font_weight > 0 { font_weight } else { 400 },
-            font_style: "Normal".to_string(),
-            text_color: if !color.is_empty() {
-                parse_color(&color)
-            } else {
-                OklabColor::from_srgb([0.2, 0.2, 0.2, 1.0])
-            },
-            text_align,
-            text_decoration,
-            line_height,
-            selected: 0,
-            hovered: false,
+    UiNode::Text(TextData {
+        parent_id: Some(parent_id),
+        width: Extent::Auto,
+        height: Extent::Auto,
+        padding: paint.padding,
+        bg_color: paint.bg_color,
+        show_border: paint.show_border,
+        border_color: paint.border_color,
+        border_width: paint.border_width,
+        corner_radius: paint.corner_radius,
+        opacity: 1.0,
+        content,
+        font_size: resolved_font_size,
+        font_family,
+        font_weight: if font_weight > 0 { font_weight } else { 400 },
+        font_style: FontStyle::Normal,
+        text_color: if !color.is_empty() {
+            parse_color(&color)
+        } else {
+            OklabColor::from_srgb([0.2, 0.2, 0.2, 1.0])
         },
+        text_align,
+        text_decoration,
+        line_height,
+        selected: 0,
+        hovered: false,
     })
 }
 
@@ -1749,21 +1420,19 @@ fn build_img_node(
         ]
     };
 
-    UiNode::Img(UiImgNode {
-        img_data: ImgData {
-            parent_id,
-            width: parse_extent(get_prop(props, "width").as_deref()),
-            height: parse_extent(get_prop(props, "height").as_deref()),
-            source: if src.is_empty() {
-                ImageSource::None
-            } else {
-                ImageSource::Ref(src)
-            },
-            fit,
-            object_position: pos,
-            selected: 0,
-            hovered: false,
+    UiNode::Img(ImgData {
+        parent_id,
+        width: parse_extent(get_prop(props, "width").as_deref()),
+        height: parse_extent(get_prop(props, "height").as_deref()),
+        source: if src.is_empty() {
+            ImageSource::None
+        } else {
+            ImageSource::Ref(src)
         },
+        fit,
+        object_position: pos,
+        selected: 0,
+        hovered: false,
     })
 }
 
@@ -1966,62 +1635,58 @@ fn image_categories() -> Vec<FieldCategory> {
 }
 
 fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32; 4]) -> UiNode {
-    UiNode::Box(UiBoxNode {
-        box_data: BoxData {
-            parent_id,
-            width: Extent::Auto,
-            height: Extent::Auto,
-            max_width: Extent::Auto,
-            max_height: Extent::Auto,
-            min_width: Extent::Auto,
-            min_height: Extent::Auto,
-            padding,
-            bg_color: OklabColor::default(),
-            flex_direction: flex_direction.to_string(),
-            show_border: false,
-            border_color: OklabColor::default(),
-            border_width: 0.0,
-            corner_radius: 0.0,
-            opacity: 1.0,
-            shadow: None,
-            extra: BoxExtra::default(),
-            selected: 0,
-            hovered: false,
-        },
+    UiNode::Box(BoxData {
+        parent_id,
+        width: Extent::Auto,
+        height: Extent::Auto,
+        max_width: Extent::Auto,
+        max_height: Extent::Auto,
+        min_width: Extent::Auto,
+        min_height: Extent::Auto,
+        padding,
+        bg_color: OklabColor::default(),
+        flex_direction: flex_dir_from_str(flex_direction),
+        show_border: false,
+        border_color: OklabColor::default(),
+        border_width: 0.0,
+        corner_radius: 0.0,
+        opacity: 1.0,
+        shadow: None,
+        extra: BoxExtra::default(),
+        selected: 0,
+        hovered: false,
     })
 }
 
 // A top-level view cell placed at a fixed world-space position, escaping the auto-flow grid
 // entirely (see build_viewport). Always a root (parent_id: None).
 fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
-    UiNode::Box(UiBoxNode {
-        box_data: BoxData {
-            parent_id: None,
-            width: Extent::Auto,
-            height: Extent::Auto,
-            max_width: Extent::Auto,
-            max_height: Extent::Auto,
-            min_width: Extent::Auto,
-            min_height: Extent::Auto,
-            padding: [0.0; 4],
-            bg_color: OklabColor::default(),
-            flex_direction: flex_direction.to_string(),
-            show_border: false,
-            border_color: OklabColor::default(),
-            border_width: 0.0,
-            corner_radius: 0.0,
-            opacity: 1.0,
-            shadow: None,
-            extra: BoxExtra {
-                position: NodePosition::Absolute {
-                    x: pos[0],
-                    y: pos[1],
-                },
-                ..BoxExtra::default()
+    UiNode::Box(BoxData {
+        parent_id: None,
+        width: Extent::Auto,
+        height: Extent::Auto,
+        max_width: Extent::Auto,
+        max_height: Extent::Auto,
+        min_width: Extent::Auto,
+        min_height: Extent::Auto,
+        padding: [0.0; 4],
+        bg_color: OklabColor::default(),
+        flex_direction: flex_dir_from_str(flex_direction),
+        show_border: false,
+        border_color: OklabColor::default(),
+        border_width: 0.0,
+        corner_radius: 0.0,
+        opacity: 1.0,
+        shadow: None,
+        extra: BoxExtra {
+            position: NodePosition::Absolute {
+                x: pos[0],
+                y: pos[1],
             },
-            selected: 0,
-            hovered: false,
+            ..BoxExtra::default()
         },
+        selected: 0,
+        hovered: false,
     })
 }
 
@@ -2117,7 +1782,7 @@ fn render_view_nodes(
 
     if primitive == "text" {
         let mut node = build_text_node(&merged, content_parent.unwrap_or(0));
-        if let UiNode::Text(UiTextNode { text_data }) = &mut node {
+        if let UiNode::Text(text_data) = &mut node {
             text_data.selected = selection;
             text_data.hovered = hovered;
         }
@@ -2154,7 +1819,7 @@ fn render_view_nodes(
         }
     } else if primitive == "image" {
         let mut node = build_img_node(&merged, content_parent);
-        if let UiNode::Img(UiImgNode { img_data }) = &mut node {
+        if let UiNode::Img(img_data) = &mut node {
             img_data.selected = selection;
             img_data.hovered = hovered;
         }
@@ -2167,7 +1832,7 @@ fn render_view_nodes(
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent, parent_main_horizontal);
 
-        if let UiNode::Box(UiBoxNode { box_data }) = &mut node {
+        if let UiNode::Box(box_data) = &mut node {
             box_data.selected = selection;
             box_data.hovered = hovered;
         }
@@ -2275,10 +1940,10 @@ fn snap_text_weights(nodes: &mut [UiNode], facts: &std::collections::HashMap<Str
         if let UiNode::Text(t) = node {
             let family_facts = facts
                 .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case(&t.text_data.font_family))
+                .find(|(k, _)| k.eq_ignore_ascii_case(&t.font_family))
                 .map(|(_, v)| v);
             if let Some(f) = family_facts {
-                t.text_data.font_weight = resolve_font_weight(t.text_data.font_weight, f);
+                t.font_weight = resolve_font_weight(t.font_weight, f);
             }
         }
     }
@@ -2298,16 +1963,20 @@ fn collect_font_requests(nodes: &[UiNode]) -> Vec<FontRequest> {
     let mut set = std::collections::BTreeSet::new();
     for node in nodes {
         if let UiNode::Text(t) = node {
-            if t.text_data.font_family.is_empty() {
+            if t.font_family.is_empty() {
                 continue;
             }
             // Lowercased: Fontavious's catalogue styles are "normal"/"italic" and its variant
-            // matching is case-sensitive, while TextData's font_style is Vellum-cased ("Normal").
-            let style = t.text_data.font_style.to_lowercase();
+            // matching is case-sensitive, while font_style is the Vellum-cased `FontStyle` enum.
+            let style = match t.font_style {
+                FontStyle::Normal => "normal",
+                FontStyle::Italic => "italic",
+                FontStyle::Oblique => "oblique",
+            };
             set.insert(FontRequest {
-                family: t.text_data.font_family.clone(),
-                weight: t.text_data.font_weight,
-                style: if style.is_empty() { "normal".to_string() } else { style },
+                family: t.font_family.clone(),
+                weight: t.font_weight,
+                style: style.to_string(),
             });
         }
     }
@@ -2823,7 +2492,7 @@ mod position_wire_tests {
             vec![String::new(), "v1".to_string()],
             "root cell is structural (\"\"), content box belongs to v1"
         );
-        if let UiNode::Box(UiBoxNode { box_data }) = &viewport[0] {
+        if let UiNode::Box(box_data) = &viewport[0] {
             assert_eq!(box_data.parent_id, None);
             assert_eq!(
                 box_data.extra.position,
@@ -2924,7 +2593,7 @@ mod selection_and_hover_tests {
             .iter()
             .position(|id| id == "t1")
             .expect("t1 node present");
-        let UiNode::Text(UiTextNode { text_data }) = &viewport[text_idx] else {
+        let UiNode::Text(text_data) = &viewport[text_idx] else {
             panic!("expected a Text node for a text-primitive view");
         };
         assert_eq!(
@@ -2949,15 +2618,11 @@ mod selection_and_hover_tests {
             .position(|id| id == "child")
             .expect("child node present");
 
-        let UiNode::Box(UiBoxNode {
-            box_data: parent_data,
-        }) = &viewport[parent_idx]
+        let UiNode::Box(parent_data) = &viewport[parent_idx]
         else {
             panic!("expected Box")
         };
-        let UiNode::Box(UiBoxNode {
-            box_data: child_data,
-        }) = &viewport[child_idx]
+        let UiNode::Box(child_data) = &viewport[child_idx]
         else {
             panic!("expected Box")
         };
@@ -2975,15 +2640,11 @@ mod selection_and_hover_tests {
         let parent_idx = node_view_ids.iter().position(|id| id == "parent").unwrap();
         let child_idx = node_view_ids.iter().position(|id| id == "child").unwrap();
 
-        let UiNode::Box(UiBoxNode {
-            box_data: parent_data,
-        }) = &viewport[parent_idx]
+        let UiNode::Box(parent_data) = &viewport[parent_idx]
         else {
             panic!("expected Box")
         };
-        let UiNode::Box(UiBoxNode {
-            box_data: child_data,
-        }) = &viewport[child_idx]
+        let UiNode::Box(child_data) = &viewport[child_idx]
         else {
             panic!("expected Box")
         };
@@ -3563,21 +3224,21 @@ mod text_align_decoration_tests {
 
     #[test]
     fn parse_text_align_maps_known_keywords_and_defaults_to_left() {
-        assert_eq!(parse_text_align(Some("center")), "Center");
-        assert_eq!(parse_text_align(Some("right")), "Right");
-        assert_eq!(parse_text_align(Some("justify")), "Justify");
-        assert_eq!(parse_text_align(Some("left")), "Left");
-        assert_eq!(parse_text_align(Some("garbage")), "Left");
-        assert_eq!(parse_text_align(None), "Left");
+        assert_eq!(parse_text_align(Some("center")), TextAlign::Center);
+        assert_eq!(parse_text_align(Some("right")), TextAlign::Right);
+        assert_eq!(parse_text_align(Some("justify")), TextAlign::Justify);
+        assert_eq!(parse_text_align(Some("left")), TextAlign::Left);
+        assert_eq!(parse_text_align(Some("garbage")), TextAlign::Left);
+        assert_eq!(parse_text_align(None), TextAlign::Left);
     }
 
     #[test]
     fn parse_text_decoration_maps_known_keywords_and_defaults_to_none() {
-        assert_eq!(parse_text_decoration(Some("underline")), "Underline");
-        assert_eq!(parse_text_decoration(Some("line-through")), "LineThrough");
-        assert_eq!(parse_text_decoration(Some("none")), "None");
-        assert_eq!(parse_text_decoration(Some("garbage")), "None");
-        assert_eq!(parse_text_decoration(None), "None");
+        assert_eq!(parse_text_decoration(Some("underline")), TextDecorationKind::Underline);
+        assert_eq!(parse_text_decoration(Some("line-through")), TextDecorationKind::LineThrough);
+        assert_eq!(parse_text_decoration(Some("none")), TextDecorationKind::None);
+        assert_eq!(parse_text_decoration(Some("garbage")), TextDecorationKind::None);
+        assert_eq!(parse_text_decoration(None), TextDecorationKind::None);
     }
 
     #[test]
@@ -3588,8 +3249,8 @@ mod text_align_decoration_tests {
         props.insert("text-decoration".to_string(), prop("underline"));
         let node = build_text_node(&props, 0);
         let UiNode::Text(t) = node else { panic!("expected Text") };
-        assert_eq!(t.text_data.text_align, "Center");
-        assert_eq!(t.text_data.text_decoration, "Underline");
+        assert_eq!(t.text_align, TextAlign::Center);
+        assert_eq!(t.text_decoration, TextDecorationKind::Underline);
     }
 
     #[test]
@@ -3598,8 +3259,8 @@ mod text_align_decoration_tests {
         props.insert("content".to_string(), prop("Hi"));
         let node = build_text_node(&props, 0);
         let UiNode::Text(t) = node else { panic!("expected Text") };
-        assert_eq!(t.text_data.text_align, "Left");
-        assert_eq!(t.text_data.text_decoration, "None");
+        assert_eq!(t.text_align, TextAlign::Left);
+        assert_eq!(t.text_decoration, TextDecorationKind::None);
     }
 
     // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output that
@@ -3680,7 +3341,7 @@ mod line_height_tests {
         props.insert("line-height".to_string(), prop("1.5"));
         let node = build_text_node(&props, 0);
         let UiNode::Text(t) = node else { panic!("expected Text") };
-        assert_eq!(t.text_data.line_height, 24.0);
+        assert_eq!(t.line_height, 24.0);
     }
 
     #[test]
@@ -3691,7 +3352,7 @@ mod line_height_tests {
         // 1.5x ratio for body sizes.
         let node = build_text_node(&props, 0);
         let UiNode::Text(t) = node else { panic!("expected Text") };
-        assert_eq!(t.text_data.line_height, 16.0 * 1.5);
+        assert_eq!(t.line_height, 16.0 * 1.5);
     }
 
     // Wire-key test, per the serde-rename pitfall: TextData is Charter-authored output Vellum
@@ -3789,7 +3450,7 @@ mod text_paint_properties_tests {
         props.insert("padding".to_string(), prop("8px"));
 
         let node = build_text_node(&props, 0);
-        let UiNode::Text(UiTextNode { text_data }) = node else {
+        let UiNode::Text(text_data) = node else {
             panic!("expected a Text node");
         };
         assert_eq!(text_data.bg_color, OklabColor::from_srgb([1.0, 0.0, 0.0, 1.0]));
@@ -3808,7 +3469,7 @@ mod text_paint_properties_tests {
         props.insert("content".to_string(), prop("Hi"));
 
         let node = build_text_node(&props, 0);
-        let UiNode::Text(UiTextNode { text_data }) = node else {
+        let UiNode::Text(text_data) = node else {
             panic!("expected a Text node");
         };
         assert_eq!(text_data.bg_color, OklabColor::default());
@@ -3821,7 +3482,7 @@ mod text_paint_properties_tests {
         // transparent). Boxes used to fall back to opaque neutral-gray; that's gone.
         let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
         let node = build_box_node(&props, None, None);
-        let UiNode::Box(UiBoxNode { box_data }) = node else {
+        let UiNode::Box(box_data) = node else {
             panic!("expected a Box node");
         };
         assert_eq!(
@@ -3837,7 +3498,7 @@ mod text_paint_properties_tests {
         props.insert("font-weight".to_string(), prop("600"));
 
         let node = build_text_node(&props, 0);
-        let UiNode::Text(UiTextNode { text_data }) = node else {
+        let UiNode::Text(text_data) = node else {
             panic!("expected a Text node");
         };
         assert_eq!(text_data.font_weight, 600);
@@ -3849,7 +3510,7 @@ mod text_paint_properties_tests {
         props.insert("content".to_string(), prop("Hi"));
 
         let node = build_text_node(&props, 0);
-        let UiNode::Text(UiTextNode { text_data }) = node else {
+        let UiNode::Text(text_data) = node else {
             panic!("expected a Text node");
         };
         assert_eq!(text_data.font_weight, 400);
@@ -3857,30 +3518,28 @@ mod text_paint_properties_tests {
 
     #[test]
     fn encode_viewport_data_binary_roundtrips_through_base64_and_rmp_serde() {
-        use super::{encode_viewport_data_binary, BoxData, UiBoxNode, UiNode};
+        use super::{encode_viewport_data_binary, BoxData, UiNode};
 
-        let data = vec![UiNode::Box(UiBoxNode {
-            box_data: BoxData {
-                parent_id: None,
-                width: Extent::Auto,
-                height: Extent::Auto,
-                max_width: Extent::Auto,
-                max_height: Extent::Auto,
-                min_width: Extent::Auto,
-                min_height: Extent::Auto,
-                padding: [16.0; 4],
-                bg_color: OklabColor::from_srgb([0.9, 0.9, 0.9, 1.0]),
-                flex_direction: "Column".to_string(),
-                show_border: true,
-                border_color: OklabColor::from_srgb([0.8, 0.8, 0.8, 1.0]),
-                border_width: 1.0,
-                corner_radius: 8.0,
-                opacity: 1.0,
-                shadow: None,
-                extra: Default::default(),
-                selected: 0,
-                hovered: false,
-            },
+        let data = vec![UiNode::Box(BoxData {
+            parent_id: None,
+            width: Extent::Auto,
+            height: Extent::Auto,
+            max_width: Extent::Auto,
+            max_height: Extent::Auto,
+            min_width: Extent::Auto,
+            min_height: Extent::Auto,
+            padding: [16.0; 4],
+            bg_color: OklabColor::from_srgb([0.9, 0.9, 0.9, 1.0]),
+            flex_direction: FlexDir::Column,
+            show_border: true,
+            border_color: OklabColor::from_srgb([0.8, 0.8, 0.8, 1.0]),
+            border_width: 1.0,
+            corner_radius: 8.0,
+            opacity: 1.0,
+            shadow: None,
+            extra: Default::default(),
+            selected: 0,
+            hovered: false,
         })];
 
         let b64 = encode_viewport_data_binary(&data).expect("encoding should succeed");
@@ -3900,7 +3559,7 @@ mod text_paint_properties_tests {
 
     #[test]
     fn on_resolve_result_includes_viewport_data_binary() {
-        use super::{FieldCategory, OnResolveResult, OnSelectionChangeResult};
+        use super::OnResolveResult;
 
         let result = OnResolveResult {
             categories: vec![],
@@ -4095,7 +3754,7 @@ mod extent_parse_tests {
         };
         // The wire field must be the `fit` string vellum reads -- not a `cover` bool that vellum
         // would silently drop, leaving every image at the "cover" default.
-        assert_eq!(img.img_data.fit, "contain");
+        assert_eq!(img.fit, "contain");
 
         // Unknown/absent fit falls back to cover (vellum's own default).
         let mut p2: HashMap<String, ResolvedProperty> = HashMap::new();
@@ -4104,7 +3763,7 @@ mod extent_parse_tests {
         let UiNode::Img(img2) = build_img_node(&p2, None) else {
             panic!("expected Img")
         };
-        assert_eq!(img2.img_data.fit, "cover");
+        assert_eq!(img2.fit, "cover");
     }
 
     #[test]
@@ -4116,10 +3775,10 @@ mod extent_parse_tests {
         let UiNode::Box(b) = node else {
             panic!("expected Box")
         };
-        assert_eq!(b.box_data.width, Extent::Percent(0.5));
-        assert_eq!(b.box_data.min_width, Extent::Px(80.0));
+        assert_eq!(b.width, Extent::Percent(0.5));
+        assert_eq!(b.min_width, Extent::Px(80.0));
         // Charter never emits margin -- its opinion.
-        assert_eq!(b.box_data.extra.margin, 0.0);
+        assert_eq!(b.extra.margin, 0.0);
     }
 }
 
@@ -4147,7 +3806,7 @@ mod resize_tests {
             map.insert((*k).to_string(), prop(k, v));
         }
         match build_box_node(&map, None, parent_main_horizontal) {
-            UiNode::Box(b) => b.box_data,
+            UiNode::Box(b) => b,
             _ => panic!("expected Box"),
         }
     }
@@ -4287,14 +3946,14 @@ mod font_facts_tests {
         facts_map.insert("lato".to_string(), facts(&[(400, 400), (700, 700)]));
         snap_text_weights(&mut nodes, &facts_map);
         let UiNode::Text(t) = &nodes[0] else { panic!("expected Text") };
-        assert_eq!(t.text_data.font_weight, 700, "600 on Lato snaps to 700, key case-insensitive");
+        assert_eq!(t.font_weight, 700, "600 on Lato snaps to 700, key case-insensitive");
 
         // A family with no facts entry is untouched.
         props.insert("font-family".to_string(), prop("Mystery Serif"));
         let mut nodes2 = vec![build_text_node(&props, 0)];
         snap_text_weights(&mut nodes2, &facts_map);
         let UiNode::Text(t2) = &nodes2[0] else { panic!("expected Text") };
-        assert_eq!(t2.text_data.font_weight, 600);
+        assert_eq!(t2.font_weight, 600);
     }
 
     #[test]
@@ -4372,7 +4031,7 @@ mod arrange_tests {
             map.insert((*k).to_string(), prop(k, v));
         }
         match build_box_node(&map, None, None) {
-            UiNode::Box(b) => b.box_data,
+            UiNode::Box(b) => b,
             _ => panic!("expected Box"),
         }
     }
@@ -4543,7 +4202,7 @@ mod arrange_tests {
     #[test]
     fn fresh_box_defaults_to_stack_column_zero_touches() {
         let d = box_with(&[]);
-        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.flex_direction, FlexDir::Column);
         assert_eq!(d.extra.align_items, None);
         assert_eq!(d.extra.justify_content, None);
     }
@@ -4551,7 +4210,7 @@ mod arrange_tests {
     #[test]
     fn stack_row_defaults_align_items_center_when_unset() {
         let d = box_with(&[("arrange", "stack"), ("flex-direction", "row")]);
-        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.flex_direction, FlexDir::Row);
         assert_eq!(d.extra.align_items, Some(AlignValue::Center));
     }
 
@@ -4568,7 +4227,7 @@ mod arrange_tests {
     #[test]
     fn cluster_forces_row_wrap_defaults_when_unset() {
         let d = box_with(&[("arrange", "cluster")]);
-        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.flex_direction, FlexDir::Row);
         assert_eq!(d.extra.flex_wrap, FlexWrapValue::Wrap);
         assert_eq!(d.extra.align_items, Some(AlignValue::FlexStart));
     }
@@ -4588,7 +4247,7 @@ mod arrange_tests {
     #[test]
     fn split_defaults_row_space_between_center_when_unset() {
         let d = box_with(&[("arrange", "split")]);
-        assert_eq!(d.flex_direction, "Row");
+        assert_eq!(d.flex_direction, FlexDir::Row);
         assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
         assert_eq!(d.extra.align_items, Some(AlignValue::Center));
     }
@@ -4596,7 +4255,7 @@ mod arrange_tests {
     #[test]
     fn split_axis_column_is_a_vertical_split() {
         let d = box_with(&[("arrange", "split"), ("flex-direction", "column")]);
-        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.flex_direction, FlexDir::Column);
         assert_eq!(d.extra.justify_content, Some(JustifyValue::SpaceBetween));
     }
 
@@ -4605,7 +4264,7 @@ mod arrange_tests {
         let d = box_with(&[("arrange", "center")]);
         // Center is axis-free -- no follow-on touches direction, so it falls through to the
         // plain absent-flex-direction default (Column), same as a fresh box.
-        assert_eq!(d.flex_direction, "Column");
+        assert_eq!(d.flex_direction, FlexDir::Column);
         assert_eq!(d.extra.justify_content, Some(JustifyValue::Center));
         assert_eq!(d.extra.align_items, Some(AlignValue::Center));
     }
@@ -4667,148 +4326,6 @@ mod arrange_tests {
     }
 }
 
-// Freezes Charter's serialized UiNode wire format against a committed golden file, and is the
-// producer half of the cross-repo drift guard: the SAME golden is consumed by Vellum's
-// `charter_wire_golden_tests` (../taf_can_do/src/api.rs), which deserializes it with Vellum's own
-// structs and asserts the sentinels survived. Together they close the one silent failure mode of
-// this hand-mirrored boundary -- a field rename on either side landing on the other's
-// `#[serde(default)]` field, defaulting silently with no error (see resources/api-formalization.md
-// and CLAUDE.md's serde-rename pitfall). Charter-side: a renamed/retyped/removed field changes the
-// serialized bytes -> golden mismatch. A NEW field is a compile error in canonical_wire_nodes()
-// until given a sentinel -> forces the golden (and the Vellum consumer) to be updated together.
-#[cfg(test)]
-mod wire_golden_tests {
-    use super::*;
-    use std::fs;
-    use std::path::PathBuf;
-
-    fn color(l: f32, a: f32, b: f32, alpha: f32) -> OklabColor {
-        OklabColor { l, a, b, alpha }
-    }
-
-    // One canonical instance of every UiNode variant, every field a DISTINCT non-default sentinel
-    // so a field-name swap on either side is detectable (a swapped field reads as its default, not
-    // the sentinel). Enum-typed-on-Vellum fields Charter emits as String (flex_direction,
-    // font_style, text_align, text_decoration) use real Vellum variant names; ImageSource uses
-    // `Ref` (the one non-empty variant BOTH sides have -- Charter's `Url` is absent on Vellum).
-    fn canonical_wire_nodes() -> Vec<UiNode> {
-        let box_node = UiNode::Box(UiBoxNode {
-            box_data: BoxData {
-                parent_id: None,
-                width: Extent::Px(111.0),
-                height: Extent::Percent(0.25),
-                min_width: Extent::Px(7.0),
-                min_height: Extent::Px(8.0),
-                max_width: Extent::Px(999.0),
-                max_height: Extent::Percent(0.9),
-                padding: [1.0, 2.0, 3.0, 4.0],
-                bg_color: color(0.11, 0.12, 0.13, 1.0),
-                flex_direction: "RowReverse".to_string(),
-                show_border: true,
-                border_color: color(0.21, -0.22, 0.23, 0.8),
-                border_width: 2.5,
-                corner_radius: 6.0,
-                opacity: 0.75,
-                shadow: Some(BoxShadow {
-                    offset_x: 2.0,
-                    offset_y: 4.0,
-                    blur_radius: 8.0,
-                    spread_radius: 1.0,
-                    color: color(0.0, 0.0, 0.0, 0.4),
-                    inset: true,
-                }),
-                extra: BoxExtra {
-                    gap: 13.0,
-                    align_items: Some(AlignValue::FlexEnd),
-                    justify_content: Some(JustifyValue::SpaceAround),
-                    flex_wrap: FlexWrapValue::WrapReverse,
-                    flex_grow: 3.0,
-                    flex_shrink: Some(0.5),
-                    align_self: Some(AlignValue::Baseline),
-                    flex_basis: Some(Extent::Px(0.0)),
-                    margin: 6.0,
-                    position: NodePosition::Absolute { x: 500.0, y: 400.0 },
-                    grid_template_columns: vec![TrackSize::Px(100.0), TrackSize::AutoFit(160.0)],
-                    grid_template_rows: vec![TrackSize::Fr(2.0)],
-                    grid_auto_rows: vec![TrackSize::Auto],
-                    grid_auto_columns: vec![TrackSize::MinContent],
-                    grid_column: (GridLine::Line(2), GridLine::Span(3)),
-                    grid_row: (GridLine::Auto, GridLine::Line(-1)),
-                },
-                selected: 2,
-                hovered: true,
-            },
-        });
-
-        let text_node = UiNode::Text(UiTextNode {
-            text_data: TextData {
-                parent_id: Some(0),
-                width: Extent::Auto,
-                height: Extent::Auto,
-                padding: [5.0, 6.0, 7.0, 8.0],
-                bg_color: color(0.31, 0.02, -0.03, 0.5),
-                show_border: false,
-                border_color: color(0.0, 0.0, 0.0, 1.0),
-                border_width: 0.0,
-                corner_radius: 0.0,
-                opacity: 1.0,
-                content: "Sentinel".to_string(),
-                font_size: 17.0,
-                font_family: "Satoshi".to_string(),
-                font_weight: 650,
-                font_style: "Oblique".to_string(),
-                text_color: color(0.9, 0.01, -0.02, 1.0),
-                text_align: "Justify".to_string(),
-                text_decoration: "LineThrough".to_string(),
-                line_height: 24.0,
-                selected: 1,
-                hovered: false,
-            },
-        });
-
-        let img_node = UiNode::Img(UiImgNode {
-            img_data: ImgData {
-                parent_id: Some(0),
-                width: Extent::Px(200.0),
-                height: Extent::Px(150.0),
-                source: ImageSource::Ref("img-1".to_string()),
-                fit: "contain".to_string(),
-                object_position: [0.25, 0.75],
-                selected: 0,
-                hovered: false,
-            },
-        });
-
-        vec![box_node, text_node, img_node]
-    }
-
-    fn golden_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wire-format.golden.json")
-    }
-
-    // Regenerate intentionally after a real wire change:
-    //   UPDATE_WIRE_GOLDEN=1 cargo test --manifest-path plugins/charter/Cargo.toml wire_golden
-    // then copy tests/wire-format.golden.json into ../taf_can_do/tests/fixtures/ so Vellum's
-    // consumer test sees the identical bytes (until the Phase 1 shared crate removes the copy).
-    #[test]
-    fn charter_wire_format_matches_golden() {
-        let actual = serde_json::to_string_pretty(&canonical_wire_nodes()).unwrap() + "\n";
-        let path = golden_path();
-
-        if std::env::var("UPDATE_WIRE_GOLDEN").is_ok() || !path.exists() {
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, &actual).unwrap();
-        }
-
-        let expected = fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            actual, expected,
-            "Charter's UiNode wire format changed vs. the golden. If intentional, regenerate with \
-             UPDATE_WIRE_GOLDEN=1 and propagate tests/wire-format.golden.json to \
-             ../taf_can_do/tests/fixtures/ so Vellum's consumer test stays in sync."
-        );
-    }
-}
 
 // --- Wire-type JSON Schema (feature = "schema") ---------------------------------------------
 // schemars derives a machine-truth JSON Schema from the actual wire structs; the schema is the

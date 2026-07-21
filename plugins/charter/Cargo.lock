@@ -38,6 +38,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "extism-pdk",
+ "kit10-protocol",
  "rmp-serde",
  "schemars",
  "serde",
@@ -158,6 +159,15 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "kit10-protocol"
+version = "0.1.0"
+source = "git+ssh://git@github.com/Variadic-Designs/kit10-protocol.git?tag=v0.1.0#86fdc300adb149e30428166cafe861b755fadba9"
+dependencies = [
+ "schemars",
+ "serde",
+]
 
 [[package]]
 name = "manyhow"
