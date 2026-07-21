@@ -1,10 +1,10 @@
 use extism_pdk::*;
 use serde::{Deserialize, Serialize};
 
-// The render wire types now live in the standalone kit10-protocol crate (the contract Charter and
+// The render wire types now live in the standalone kit10-scene crate (the contract Charter and
 // Vellum both conform to), not in Charter. Charter builds and serializes these; it no longer owns
 // their definition.
-use kit10_protocol::{
+use kit10_scene::{
     AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridLine, ImageSource,
     ImgData, JustifyValue, NodePosition, OklabColor, TextAlign, TextData, TextDecorationKind,
     TrackSize, UiNode,
@@ -553,7 +553,7 @@ fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
 // Oklab is the internal + wire color representation -- see kit10's resources/oklch.md. `parse_color`
 // (below) parses OKLCH/Oklab first-class, and hex/rgb/hsl as legacy INPUT formats only (accepted,
 // converted on ingest, never round-tripped). The `OklabColor` type AND the sRGB->Oklab conversion
-// (`OklabColor::from_srgb`) now live in the shared kit10-protocol crate; Charter only parses.
+// (`OklabColor::from_srgb`) now live in the shared kit10-scene crate; Charter only parses.
 
 /// A clearly-wrong, saturated marker color for genuinely unparseable input -- deliberately NOT
 /// black, so a bad value is visually obvious in the preview rather than silently blending in

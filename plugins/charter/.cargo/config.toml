@@ -1,4 +1,4 @@
-# Fetch the private kit10-protocol git dependency via the system git (which uses your SSH key /
+# Fetch the private kit10-scene git dependency via the system git (which uses your SSH key /
 # agent), instead of libgit2's built-in transport which can't authenticate to the private repo.
 [net]
 git-fetch-with-cli = true
