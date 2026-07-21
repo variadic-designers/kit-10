@@ -110,6 +110,19 @@ generation.
 
 ### Phase 2 — Automated plugin docs generated from that source
 
+**Status: partially SHIPPED (2026-07-21).** Three PLUGINS.md sections are now machine-backed:
+the inputType table is *generated* from the TS `InputType` union's `@doc:` comments; the
+host-fn list and node examples are *guarded*; and — the schemars piece — the **wire-type
+reference** is generated from `schemars`. Charter derives `JsonSchema` (behind an optional
+`schema` feature so the shipped wasm never pulls schemars in) on the `UiNode` wire cluster;
+`cargo test --features schema` dumps + guards `plugins/charter/generated/wire-schema.json`;
+`scripts/generate-plugin-docs.mjs` renders it into PLUGINS.md's "Wire type reference" tables
+(field / type / required), Prettier-aligned and vitest-guarded. Not yet done: schemars over
+`FieldDef`/`FieldCategory`/`OnResolveResult` (the editor-contract structs), and enriching the
+generated tables with descriptions (Charter's wire fields use `//`, not `///`, so schemars sees
+no doc comments — converting them would auto-populate a Description column). The original design
+for the rest:
+
 Rust/Charter is the authoritative *producer* of the plugin-facing contract, so generation
 flows **one direction: Rust → JSON → docs + TS**, snapshot-test-driven (never a live
 schema-first build):

@@ -381,6 +381,175 @@ plugin (see the suggestion-field note above and VISION.md's 1st Principle). Addi
 
 `layerId` tells the render panel which layer to target when the field is edited.
 
+### Wire type reference (generated)
+
+Field-by-field tables for the `UiNode` wire structs, GENERATED from Charter's schemars-derived
+JSON Schema (`plugins/charter/generated/wire-schema.json`, produced by `cargo test --features
+schema`; rendered by `npm run generate-docs`). This is the machine-truth contract — the JSON
+examples in the sections below are illustrative. `Required: —` means the field is optional
+(Rust `#[serde(default)]`); `T?` is a nullable/optional type.
+
+<!-- BEGIN GENERATED: wire-types (source: plugins/charter/generated/wire-schema.json) — do not edit by hand -->
+
+#### `BoxData`
+
+| Field            | Type         | Required |
+| ---------------- | ------------ | -------- |
+| `bg_color`       | OklabColor   | ✓        |
+| `border_color`   | OklabColor   | ✓        |
+| `border_width`   | number       | ✓        |
+| `corner_radius`  | number       | ✓        |
+| `extra`          | BoxExtra     | —        |
+| `flex_direction` | string       | ✓        |
+| `height`         | Extent       | ✓        |
+| `hovered`        | boolean      | —        |
+| `max_height`     | Extent       | ✓        |
+| `max_width`      | Extent       | ✓        |
+| `min_height`     | Extent       | —        |
+| `min_width`      | Extent       | —        |
+| `opacity`        | number       | ✓        |
+| `padding`        | [number × 4] | ✓        |
+| `parent_id`      | integer?     | —        |
+| `selected`       | integer      | —        |
+| `shadow`         | BoxShadow?   | —        |
+| `show_border`    | boolean      | ✓        |
+| `width`          | Extent       | ✓        |
+
+#### `TextData`
+
+| Field             | Type         | Required |
+| ----------------- | ------------ | -------- |
+| `bg_color`        | OklabColor   | ✓        |
+| `border_color`    | OklabColor   | ✓        |
+| `border_width`    | number       | ✓        |
+| `content`         | string       | ✓        |
+| `corner_radius`   | number       | ✓        |
+| `font_family`     | string       | ✓        |
+| `font_size`       | number       | ✓        |
+| `font_style`      | string       | ✓        |
+| `font_weight`     | integer      | ✓        |
+| `height`          | Extent       | ✓        |
+| `hovered`         | boolean      | —        |
+| `line_height`     | number       | —        |
+| `opacity`         | number       | ✓        |
+| `padding`         | [number × 4] | ✓        |
+| `parent_id`       | integer?     | —        |
+| `selected`        | integer      | —        |
+| `show_border`     | boolean      | ✓        |
+| `text_align`      | string       | —        |
+| `text_color`      | OklabColor   | ✓        |
+| `text_decoration` | string       | —        |
+| `width`           | Extent       | ✓        |
+
+#### `ImgData`
+
+| Field             | Type         | Required |
+| ----------------- | ------------ | -------- |
+| `fit`             | string       | ✓        |
+| `height`          | Extent       | ✓        |
+| `hovered`         | boolean      | —        |
+| `object_position` | [number × 2] | —        |
+| `parent_id`       | integer?     | —        |
+| `selected`        | integer      | —        |
+| `source`          | ImageSource  | ✓        |
+| `width`           | Extent       | ✓        |
+
+#### `AlignValue`
+
+One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`, `"Stretch"`
+
+#### `BoxExtra`
+
+| Field                   | Type                 | Required |
+| ----------------------- | -------------------- | -------- |
+| `align_items`           | AlignValue?          | —        |
+| `align_self`            | AlignValue?          | —        |
+| `flex_basis`            | Extent?              | —        |
+| `flex_grow`             | number               | —        |
+| `flex_shrink`           | number?              | —        |
+| `flex_wrap`             | FlexWrapValue        | —        |
+| `gap`                   | number               | —        |
+| `grid_auto_columns`     | TrackSize[]          | —        |
+| `grid_auto_rows`        | TrackSize[]          | —        |
+| `grid_column`           | [GridLine, GridLine] | —        |
+| `grid_row`              | [GridLine, GridLine] | —        |
+| `grid_template_columns` | TrackSize[]          | —        |
+| `grid_template_rows`    | TrackSize[]          | —        |
+| `justify_content`       | JustifyValue?        | —        |
+| `margin`                | number               | —        |
+| `position`              | NodePosition         | —        |
+
+#### `BoxShadow`
+
+| Field           | Type       | Required |
+| --------------- | ---------- | -------- |
+| `blur_radius`   | number     | ✓        |
+| `color`         | OklabColor | ✓        |
+| `inset`         | boolean    | ✓        |
+| `offset_x`      | number     | ✓        |
+| `offset_y`      | number     | ✓        |
+| `spread_radius` | number     | ✓        |
+
+#### `Extent`
+
+One of:
+
+- `"Auto"`
+- `{ "Px": number }`
+- `{ "Percent": number }`
+
+#### `FlexWrapValue`
+
+One of: `"NoWrap"`, `"Wrap"`, `"WrapReverse"`
+
+#### `GridLine`
+
+One of:
+
+- `"Auto"`
+- `{ "Line": integer }`
+- `{ "Span": integer }`
+
+#### `ImageSource`
+
+One of:
+
+- `"None"`
+- `{ "Url": string }`
+- `{ "Bytes": integer[] }`
+- `{ "Ref": string }`
+
+#### `JustifyValue`
+
+One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Stretch"`, `"SpaceBetween"`, `"SpaceEvenly"`, `"SpaceAround"`
+
+#### `NodePosition`
+
+One of:
+
+- `"Relative"`
+- `{ "Absolute": object }`
+
+#### `OklabColor`
+
+| Field   | Type   | Required |
+| ------- | ------ | -------- |
+| `a`     | number | ✓        |
+| `alpha` | number | ✓        |
+| `b`     | number | ✓        |
+| `l`     | number | ✓        |
+
+#### `TrackSize`
+
+One of:
+
+- `"Auto", "MinContent", "MaxContent"`
+- `{ "Px": number }`
+- `{ "Fr": number }`
+- `{ "AutoFit": number }`
+
+<!-- END GENERATED: wire-types -->
+
 ### `UiNode`
 
 A flat array of nodes. Parent-child relationships are expressed via `parent_id` (index into the array). Nodes with `parent_id: null` are roots.

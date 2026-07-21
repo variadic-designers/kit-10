@@ -163,6 +163,7 @@ struct FieldCategory {
 
 // Track/grid types mirror vellum's api.rs — serde output must match exactly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum TrackSize {
     Px(f32),
     Fr(f32),
@@ -177,6 +178,7 @@ enum TrackSize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum GridLine {
     Auto,
     Line(i16),
@@ -190,6 +192,7 @@ impl Default for GridLine {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum AlignValue {
     Start,
     End,
@@ -201,6 +204,7 @@ enum AlignValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum JustifyValue {
     Start,
     End,
@@ -214,6 +218,7 @@ enum JustifyValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum FlexWrapValue {
     NoWrap,
     Wrap,
@@ -228,6 +233,7 @@ impl Default for FlexWrapValue {
 
 // Mirrors vellum's api.rs — serde output must match exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum NodePosition {
     Relative,
     Absolute { x: f32, y: f32 },
@@ -243,6 +249,7 @@ impl Default for NodePosition {
 // Auto | fixed px | percent-of-parent. `fr` is intentionally absent (that's a grid TrackSize /
 // flex_grow concern, never a value a child declares about its own size).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum Extent {
     Auto,
     Px(f32),
@@ -256,6 +263,7 @@ impl Default for Extent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct BoxExtra {
     #[serde(default)]
     gap: f32,
@@ -292,6 +300,7 @@ struct BoxExtra {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct BoxShadow {
     offset_x: f32,
     offset_y: f32,
@@ -302,6 +311,7 @@ struct BoxShadow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct BoxData {
     parent_id: Option<usize>,
     width: Extent,
@@ -334,12 +344,14 @@ struct BoxData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct UiBoxNode {
     #[serde(rename = "Box")]
     box_data: BoxData,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct TextData {
     parent_id: Option<usize>,
     width: Extent,
@@ -386,6 +398,7 @@ fn default_text_decoration() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct UiTextNode {
     #[serde(rename = "Text")]
     text_data: TextData,
@@ -393,6 +406,7 @@ struct UiTextNode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum UiNode {
     Box(UiBoxNode),
     Text(UiTextNode),
@@ -400,6 +414,7 @@ enum UiNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 enum ImageSource {
     None,
     Url(String),
@@ -408,6 +423,7 @@ enum ImageSource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct ImgData {
     parent_id: Option<usize>,
     width: Extent,
@@ -430,6 +446,7 @@ fn default_object_position() -> [f32; 2] {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct UiImgNode {
     #[serde(rename = "Img")]
     img_data: ImgData,
@@ -810,6 +827,7 @@ fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
 // crate between these two repos today (see the "Charter/Vellum Wire Types Plan" memory note).
 // Matrices are Björn Ottosson's published Oklab constants, operating on linear sRGB.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 struct OklabColor {
     l: f32,
     a: f32,
@@ -4788,6 +4806,56 @@ mod wire_golden_tests {
             "Charter's UiNode wire format changed vs. the golden. If intentional, regenerate with \
              UPDATE_WIRE_GOLDEN=1 and propagate tests/wire-format.golden.json to \
              ../taf_can_do/tests/fixtures/ so Vellum's consumer test stays in sync."
+        );
+    }
+}
+
+// --- Wire-type JSON Schema (feature = "schema") ---------------------------------------------
+// schemars derives a machine-truth JSON Schema from the actual wire structs; the schema is the
+// source of truth for PLUGINS.md's generated "Wire types" reference (scripts/generate-plugin-docs
+// renders it). Gated behind the `schema` feature so the SHIPPED wasm build never pulls schemars
+// in. Root aggregates the three node bodies into ONE schema so schemars emits a single `$defs`
+// map covering every nested leaf (Extent/OklabColor/BoxExtra/TrackSize/...), deduplicated.
+#[cfg(feature = "schema")]
+#[derive(schemars::JsonSchema)]
+#[allow(dead_code)]
+struct WireSchemaRoot {
+    box_node: BoxData,
+    text_node: TextData,
+    img_node: ImgData,
+}
+
+#[cfg(all(feature = "schema", test))]
+mod wire_schema_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn schema_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("generated/wire-schema.json")
+    }
+
+    // Dumps the derived schema AND guards it: `cargo test --features schema` fails if the
+    // committed generated/wire-schema.json is stale vs the actual structs. Regenerate with
+    // UPDATE_WIRE_SCHEMA=1. The JS side (scripts/generate-plugin-docs) then renders this file
+    // into PLUGINS.md, guarded again there -- so the whole Rust struct -> schema -> docs chain
+    // is drift-checked end to end.
+    #[test]
+    fn wire_schema_matches_committed() {
+        let schema = schemars::schema_for!(WireSchemaRoot);
+        let actual = serde_json::to_string_pretty(&schema).unwrap() + "\n";
+        let path = schema_path();
+
+        if std::env::var("UPDATE_WIRE_SCHEMA").is_ok() || !path.exists() {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &actual).unwrap();
+        }
+
+        let expected = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            actual, expected,
+            "wire-schema.json is stale vs the wire structs. Regenerate with \
+             UPDATE_WIRE_SCHEMA=1 cargo test --features schema, then `npm run generate-docs`."
         );
     }
 }

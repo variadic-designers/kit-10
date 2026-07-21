@@ -24,6 +24,10 @@ const wireGolden = readFileSync(
 	resolve(ROOT, 'plugins/charter/tests/wire-format.golden.json'),
 	'utf8'
 );
+const wireSchema = readFileSync(
+	resolve(ROOT, 'plugins/charter/generated/wire-schema.json'),
+	'utf8'
+);
 
 describe('generate-plugin-docs (inputType table)', () => {
 	it('parses every InputType union member with a non-empty @doc description', () => {
@@ -36,8 +40,8 @@ describe('generate-plugin-docs (inputType table)', () => {
 		}
 	});
 
-	it('PLUGINS.md inputType table is up to date — run `npm run generate-docs` if this fails', async () => {
-		expect(await generatePluginsMd(typesSource, pluginsMd)).toBe(pluginsMd);
+	it('PLUGINS.md generated sections are up to date — run `npm run generate-docs` if this fails', async () => {
+		expect(await generatePluginsMd(typesSource, pluginsMd, wireSchema)).toBe(pluginsMd);
 	});
 
 	it('every InputType member has a row inside the generated markers', () => {
