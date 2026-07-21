@@ -47,11 +47,24 @@ The longer-term vision: rules can be dragged and dropped between layers and acro
 
 ---
 
-## 3rd Principle — Export pain, go away
+## 3rd Principle — Plugins, built and envisioned
 
-Plugins can declare export capabilities. Users define an Export Profile in the Export Panel specifying which plugin handles which target.
+The plugin architecture reaches further than export alone — it's the same extensibility the 1st Principle describes, applied concretely. What's already running, first-party but replaceable:
 
-A Web plugin can produce HTML + SCSS output for a View with user-defined preferences. A live-vite integration can stream the output CSS directly to a development server, closing the loop between the design editor and the running site.
+- **Charter** — the default resolver-to-render-tree translator, turning resolved kit data into a flat render tree.
+- **Vellum** — the default GPU renderer, turning Charter's render tree into pixels.
+- **Fontavious** — a utility plugin providing a font catalogue plus fetch/cache layer.
+
+Charter and Vellum are tightly ingrained today — wired in as the editor's assumed interpreter and renderer rather than swapped in through the same loose, declared mechanism other plugins use. That's a bootstrapping expedient, not the end state: as the plugin architecture matures, they're meant to be let go as loose as any other plugin, replaceable the same way a Web plugin or a print-layout renderer would be.
+
+Plugins can also declare export capabilities. Users define an Export Profile in the Export Panel specifying which plugin handles which target. The following are envisioned as free, FOSS-community plugins in the store from day one:
+
+1. **WebCodium** — a markup exporter driven by user-defined Export Profiles. First targets are HTML, CSS, Svelte, and SCSS, meant to slot directly into existing development workflows.
+2. **ViteStreamer** — an opinionated Vite integration that streams editor output straight to a dev server's HMR, closing the loop between the design editor and the running site.
+3. **Inkspensive** — a static-artifact exporter built on a renderer's own output, with DPI/resolution configuration, targeting PDF, PNG, WebP, and similar formats — for direct download or straight into a project's assets.
+4. **Godard** — the motion counterpart to Inkspensive: renders GIFs, MOVs, and similar motion artifacts, same download-or-asset destination.
+5. **Pragma** — a CI/CD orchestrator wiring KIT•10 projects into GitHub, GitLab, and similar, for automated export/deploy workflows.
+
 
 ## 4th Principle — Community and Commons
 
