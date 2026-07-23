@@ -116,14 +116,13 @@
 		<section class="hero">
 			<div class="hero-content">
 				<h1>
-					Design and Code<br />
-					are the <span class="hero-accent">Same Idea</span>
+          Actually make <span class="hero-accent">Scalable</span> Design <span class="hero-accent">Workflows</span> now
 				</h1>
-				<p class="hero-sub">
-					Design says it one way, code says it another, and keeping the two in sync is somebody’s
-					forever-headache. KIT•10 makes them the same thing — set the rules once, and every variant
-					(and the code) just follows.
-				</p>
+
+        <p class="hero-sub">
+          UI is inherently <strong>multi-dimentional</strong>.
+          <strong>KIT10</strong> takes on that scaling frontier and makes it free, forever.
+        </p>
 				<div class="hero-cta">
 					<a href="/edit" class="btn-primary btn-lg">Get Started</a>
 					<a href="#resolve" class="btn-outline btn-lg">See it resolve</a>
@@ -164,7 +163,8 @@
 		<section class="section">
 			<div class="section-text">
 				<h2>Handoff hell, gone</h2>
-				<p class="lead">One idea, described twice — with nothing keeping the two in sync.</p>
+				<p class="lead">KIT 10 nudges you to map out forms into rules, bound by conditions. Call it variants, call it a state machine. 
+        Said rules gives enough context to manifest as <strong>code</strong>.</p>
 				<ul class="ticks">
 					<li><i class="fa-solid fa-xmark"></i> Design says one thing. Code says it again, differently.</li>
 					<li><i class="fa-solid fa-xmark"></i> Every change is re-translated by hand — the <strong>handoff</strong> tax.</li>
