@@ -2,7 +2,13 @@
 
 ## Maintaining this doc
 
-When a factual error is identified in any project MD — either called out by the user or spotted during a task — update the affected file in the same response. Do not defer doc corrections to a follow-up. This applies to CLAUDE.md, CONCEPTS.md, PLUGINS.md, FAQ.md, LIFECYCLE.md, and manager/MILESTONES.md.
+When a factual error is identified in any project MD, either called out by the user or spotted during a task, update the affected file in the same response. Do not defer doc corrections to a follow-up. This applies to CLAUDE.md, CONCEPTS.md, PLUGINS.md, FAQ.md, LIFECYCLE.md, and manager/MILESTONES.md.
+
+---
+
+## Writing style
+
+No em dashes, anywhere: not in code comments, docs, commit messages, UI copy, or marketing/landing-page text. Use a comma, a period, or restructure the sentence instead.
 
 ---
 

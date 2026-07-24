@@ -116,13 +116,13 @@
 		<section class="hero">
 			<div class="hero-content">
 				<h1>
-          Actually make <span class="hero-accent">Scalable</span> Design <span class="hero-accent">Workflows</span> now
+					Actually build <span class="hero-accent">Scalable</span> Design <span class="hero-accent">Workflows</span>
 				</h1>
 
-        <p class="hero-sub">
-          UI is inherently <strong>multi-dimentional</strong>.
-          <strong>KIT10</strong> takes on that scaling frontier and makes it free, forever.
-        </p>
+				<p class="hero-sub">
+					UI is multidimensional. <strong>KIT&bull;10</strong> turns that into rules, once, and every variant,
+					every state, every theme just resolves.
+				</p>
 				<div class="hero-cta">
 					<a href="/edit" class="btn-primary btn-lg">Get Started</a>
 					<a href="#resolve" class="btn-outline btn-lg">See it resolve</a>
