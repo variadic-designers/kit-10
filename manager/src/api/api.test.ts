@@ -114,6 +114,85 @@ describe('api', () => {
 		expect(views[0]!.viewHidden).toBe(true);
 	});
 
+	it('deleteView scrubs the deleted view out of a sibling view-list token elsewhere in the project', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
+
+		// A view-list token, scoped to `parent`, referencing BOTH children -- the live composition
+		// mechanism (ChildViewField/Views.svelte both write through upsertViewToken).
+		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([childA.id, childB.id]));
+
+		await ctx.api.deleteView(childA.id);
+
+		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
+		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
+		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [childB.id] });
+	});
+
+	it('deleteView removes a `view`-type token elsewhere in the project whose sole reference was deleted', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const target = (await ctx.api.createViewInProject(proj.id, 'Hero'))!;
+		const heroTok = (await ctx.api.createToken(proj.id, 'heroView', {
+			type: 'view',
+			view_id: target.id
+		}))!;
+
+		await ctx.api.deleteView(target.id);
+
+		const projectTokens = await ctx.api.getTokensByProjectId(proj.id).execute();
+		expect(projectTokens.map((t) => t.tokenId)).not.toContain(heroTok.id);
+	});
+
+	it('deleteView leaves an unrelated view-list token (referencing a DIFFERENT view) untouched', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const untouched = (await ctx.api.createViewInProject(proj.id, 'Untouched'))!;
+		const toDelete = (await ctx.api.createViewInProject(proj.id, 'ToDelete'))!;
+
+		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([untouched.id]));
+
+		await ctx.api.deleteView(toDelete.id);
+
+		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
+		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
+		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [untouched.id] });
+	});
+
+	it('deleteViews (bulk) scrubs all deleted ids from a surviving view-list token in one pass', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
+		const childC = (await ctx.api.createViewInProject(proj.id, 'Child C'))!;
+
+		await ctx.api.upsertViewToken(
+			proj.id,
+			parent.id,
+			'children',
+			vl([childA.id, childB.id, childC.id])
+		);
+
+		await ctx.api.deleteViews([childA.id, childB.id]);
+
+		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
+		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
+		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [childC.id] });
+	});
+
 	it('updateViewHints shallow-merges into hints, preserving sibling top-level keys', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
@@ -913,19 +992,27 @@ it('creates, updates, and deletes render entries', async () => {
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'source'))!;
 		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const childView = (await ctx.api.createViewInProject(proj.id, 'child'))!;
 		const kit = (await ctx.api.createKitInProject(proj.id, 'k'))!;
 		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
 		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
 		const layer = (await ctx.api.createLayer(kit.id))!;
 		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
-		// Exercises the two "soft" FK cases importProjectData has to remap by hand: a view-type
-		// token, and the 'children' property's JSON-array-of-view-ids.
+		// Exercises the "soft" FK cases importProjectData has to remap by hand: a view-type token,
+		// a view-LIST-type token (the mechanism the live UI actually uses for composition/children --
+		// see the remapTokenValue comment), and the legacy 'children' JSON-array-of-view-ids literal.
 		await ctx.api.createRenderEntry(snippet.id, 'children', JSON.stringify([view.id]));
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
 		await ctx.api.consumeAxis(kit.id, axis.id);
 		await ctx.api.setAxisArg(view.id, kit.id, axis.id, { type: 'literal', value: 'light' });
 		await ctx.api.createToken(proj.id, 'primary', s('#FFFFFF'));
 		await ctx.api.createToken(proj.id, 'heroView', { type: 'view', view_id: view.id });
+		await ctx.api.createToken(
+			proj.id,
+			'children',
+			{ type: 'view-list', view_ids: [childView.id] },
+			{ viewId: view.id }
+		);
 		await ctx.api.attachKitToComposition(kit.id, view.id);
 
 		const charter = (await ctx.api.registerPlugin({
@@ -949,10 +1036,10 @@ it('creates, updates, and deletes render entries', async () => {
 
 		const reimported = await ctx.api.exportProject(imported.id);
 		expect(reimported.project.id).not.toBe(exported.project.id);
-		expect(reimported.views).toHaveLength(1);
+		expect(reimported.views).toHaveLength(2);
 		expect(reimported.kits).toHaveLength(1);
 		expect(reimported.compositions).toHaveLength(1);
-		expect(reimported.tokens).toHaveLength(2);
+		expect(reimported.tokens).toHaveLength(3);
 		expect(reimported.axes).toHaveLength(1);
 		expect(reimported.axisValues).toHaveLength(1);
 		expect(reimported.axesConsumed).toHaveLength(1);
@@ -963,8 +1050,10 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(reimported.layerAxisValues).toHaveLength(1);
 
 		// Every id in the re-exported copy must be fresh, not reused from the source project.
-		const newViewId = reimported.views[0]!.id;
+		const newViewId = reimported.views.find((v: any) => v.name === 'v')!.id;
+		const newChildViewId = reimported.views.find((v: any) => v.name === 'child')!.id;
 		expect(newViewId).not.toBe(view.id);
+		expect(newChildViewId).not.toBe(childView.id);
 		expect(reimported.kits[0]!.id).not.toBe(kit.id);
 
 		// The view-type token must now point at the NEW view, not the source project's.
@@ -972,16 +1061,28 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(reimportedViewToken.value.view_id).toBe(newViewId);
 		expect(reimportedViewToken.value.view_id).not.toBe(view.id);
 
+		// The view-LIST-type token (the live composition mechanism) must reference the NEW child
+		// view, not the source project's -- this is the case remapTokenValue used to silently skip.
+		const reimportedChildrenToken = reimported.tokens.find(
+			(t: any) => t.alias === 'children' && t.value.type === 'view-list'
+		);
+		expect(reimportedChildrenToken.value.view_ids).toEqual([newChildViewId]);
+		expect(reimportedChildrenToken.value.view_ids).not.toEqual([childView.id]);
+
 		// The 'children' render entry's JSON array must reference the new view id too.
 		const childrenEntry = reimported.renderEntries.find((e: any) => e.property === 'children');
 		expect(JSON.parse(childrenEntry.value)).toEqual([newViewId]);
 
 		// The source project itself must be completely untouched by the import.
 		const original = await ctx.api.exportProject(proj.id);
-		expect(original.views).toHaveLength(1);
-		expect(original.views[0]!.id).toBe(view.id);
+		expect(original.views).toHaveLength(2);
+		expect(original.views.find((v: any) => v.name === 'v')!.id).toBe(view.id);
 		const originalViewToken = original.tokens.find((t: any) => t.alias === 'heroView');
 		expect(originalViewToken.value.view_id).toBe(view.id);
+		const originalChildrenToken = original.tokens.find(
+			(t: any) => t.alias === 'children' && t.value.type === 'view-list'
+		);
+		expect(originalChildrenToken.value.view_ids).toEqual([childView.id]);
 	});
 
 	it('importProjectData warns instead of failing when the source interpreter is not installed', async () => {

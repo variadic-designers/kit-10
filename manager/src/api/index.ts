@@ -10,16 +10,21 @@ import {
 } from '../schema.js';
 import { sql, type SelectQueryBuilder } from 'kysely';
 
-// TokenValue's view_id (type: 'view') is a reference to a view row, but it lives inside a jsonb
-// blob rather than a real FK column -- the schema has no way to enforce or cascade it. Importing
-// a project must still remap it, or an imported view-type token would point at the *source*
-// project's view (or nothing, if that project no longer exists).
+// TokenValue's view_id/view_ids (type: 'view' / 'view-list') are references to view rows, but they
+// live inside a jsonb blob rather than a real FK column -- the schema has no way to enforce or
+// cascade them. Importing a project must remap both variants, or an imported view/view-list token
+// would point at the *source* project's views (or nothing, if that project no longer exists) --
+// view-list is the mechanism the live UI actually uses for composition/children, so missing this
+// variant silently corrupts every imported project's view nesting, not just an edge case.
 function remapTokenValue(
 	value: TokenValue | null,
 	viewIdMap: Map<string, string>
 ): TokenValue | null {
 	if (value && value.type === 'view') {
 		return { ...value, view_id: viewIdMap.get(value.view_id) ?? value.view_id };
+	}
+	if (value && value.type === 'view-list') {
+		return { ...value, view_ids: value.view_ids.map((id) => viewIdMap.get(id) ?? id) };
 	}
 	return value;
 }
@@ -563,11 +568,16 @@ export interface QueryAction {
 		  }
 		| undefined
 	>;
+	// Cascades the view's OWN compositions/axis_args/view-scope tokens (real FKs), then scrubs any
+	// OTHER token elsewhere in the project that referenced this view by id inside its opaque
+	// value jsonb (a sibling view's view-list, a kit/project-scope default) -- see
+	// scrubDanglingViewRefs's comment for why that second pass is necessary.
 	deleteView: (viewId: string) => Promise<void>;
 	// Name-neutral bulk delete. The editor computes the subtree to remove from the manifest-driven
 	// DAG it already holds (composition is Charter's opinion, surfaced via composition_field_keys),
 	// so the manager never re-walks a composition token or hardcodes "children" here. Each row's
-	// onDelete('cascade') still cleans its own compositions/axis_args/view-scope tokens.
+	// onDelete('cascade') still cleans its own compositions/axis_args/view-scope tokens; the
+	// remaining dangling-reference scrub (see deleteView) runs once per distinct source project.
 	deleteViews: (viewIds: string[]) => Promise<void>;
 	createKitInProject: (
 		projectId: string,
@@ -896,6 +906,45 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 				view_id: viewId
 			} as any)
 			.execute();
+	}
+}
+
+// Deleting a view's OWN rows is a real FK cascade (views.id -> tokens.view_id/compositions.view_id/
+// axis_args.view_id all ON DELETE CASCADE). But a view can also be REFERENCED by another token
+// anywhere in the project -- a sibling view's `children` view-list, a kit-scope default, a
+// project-scope token -- and those references live inside opaque `tokens.value` jsonb with no FK,
+// so cascade never touches them. Left alone, deleting a view leaves every such reference dangling
+// (a view-list still lists the deleted id; a single `view`-type token still points at nothing).
+// Scrubs every token in the project: a `view-list` token has the deleted id(s) filtered out of
+// `view_ids` (kept, possibly now empty -- an empty list is a meaningful "no children" state); a
+// `view` token whose sole `view_id` was deleted is removed entirely (its one reference is gone, so
+// there is no meaningful remaining value to keep -- any render entry pointing at it via token_id
+// falls back to `null` per the FK's ON DELETE SET NULL, same as any other token deletion).
+async function scrubDanglingViewRefs(
+	trx: SchemaDialect,
+	projectId: string,
+	deletedViewIds: string[]
+): Promise<void> {
+	const deleted = new Set(deletedViewIds);
+	const tokens = await trx
+		.selectFrom('tokens')
+		.where('tokens.project_id', '=', projectId)
+		.select(['tokens.id', 'tokens.value'])
+		.execute();
+
+	for (const t of tokens) {
+		const value = t.value as TokenValue | null;
+		if (!value) continue;
+		if (value.type === 'view' && deleted.has(value.view_id)) {
+			await trx.deleteFrom('tokens').where('id', '=', t.id).execute();
+		} else if (value.type === 'view-list' && value.view_ids.some((id) => deleted.has(id))) {
+			const remaining = value.view_ids.filter((id) => !deleted.has(id));
+			await trx
+				.updateTable('tokens')
+				.set({ value: { ...value, view_ids: remaining } as any })
+				.where('id', '=', t.id)
+				.execute();
+		}
 	}
 }
 
@@ -1437,12 +1486,31 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	deleteView: async (viewId: string) => {
-		await db.deleteFrom('views').where('views.id', '=', viewId).execute();
+		await db.transaction().execute(async (trx) => {
+			const view = await trx
+				.selectFrom('views')
+				.where('views.id', '=', viewId)
+				.select('project_id')
+				.executeTakeFirst();
+			await trx.deleteFrom('views').where('views.id', '=', viewId).execute();
+			if (view) await scrubDanglingViewRefs(trx, view.project_id, [viewId]);
+		});
 	},
 
 	deleteViews: async (viewIds: string[]) => {
 		if (!viewIds.length) return;
-		await db.deleteFrom('views').where('views.id', 'in', viewIds).execute();
+		await db.transaction().execute(async (trx) => {
+			const projectIds = await trx
+				.selectFrom('views')
+				.where('views.id', 'in', viewIds)
+				.select('project_id')
+				.distinct()
+				.execute();
+			await trx.deleteFrom('views').where('views.id', 'in', viewIds).execute();
+			for (const { project_id } of projectIds) {
+				await scrubDanglingViewRefs(trx, project_id, viewIds);
+			}
+		});
 	},
 
 	renameView: async (viewId: string, newName: string) => {
