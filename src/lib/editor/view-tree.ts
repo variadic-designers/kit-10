@@ -61,6 +61,33 @@ export function siblingsOf(id: string, tree: ViewTree, roots: string[]): string[
 	return roots;
 }
 
+// Resolves which root view a canvas drag hit should actually move. A direct hit on a root
+// view's own paint area works as before (falls through to the last line). But a root with zero
+// padding fully tiled by covering children (composed child views, or even its own nested
+// content) has no point that hit-tests to its own box -- every click resolves to whichever
+// child covers that pixel, so it could never be dragged at all. When the ACTIVE view is a root
+// and the hit view is it (or a descendant of it, walked via the same first-parent `parentOf`
+// used for `[`/`]` nav), the active root is the target regardless of which specific descendant
+// was actually hit. A non-active root still only drags on a direct hit -- deliberately not
+// walking up to the nearest root ancestor unconditionally, since that would preclude a possible
+// future drag-to-reorder-children feature (a drag on a non-active view's children should stay
+// free for that, not always mean "move the root"). Returns null if neither applies.
+export function resolveDragTargetViewId(
+	hitViewId: string,
+	activeViewId: string | null,
+	rootViewIds: Set<string>,
+	tree: ViewTree
+): string | null {
+	if (activeViewId && rootViewIds.has(activeViewId)) {
+		let current: string | null = hitViewId;
+		while (current !== null) {
+			if (current === activeViewId) return activeViewId;
+			current = parentOf(current, tree);
+		}
+	}
+	return rootViewIds.has(hitViewId) ? hitViewId : null;
+}
+
 // Resolve a navigation step to a target viewId (or null when there's nowhere to go).
 //   parent -> first parent
 //   child  -> first child

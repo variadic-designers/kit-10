@@ -35,6 +35,7 @@ export type KeybindAction =
 	| 'nav.prevSibling'
 	| 'nav.nextSibling'
 	| 'canvas.pan'
+	| 'view.drag'
 	| 'canvas.toggleBoxModel'
 	| 'canvas.pixelSnap'
 	| 'layer.delete'
@@ -72,6 +73,13 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 	{ id: 'nav.prevSibling', label: 'Previous sibling', group: NAV, allow: ['key'], default: key('ArrowUp') },
 	{ id: 'nav.nextSibling', label: 'Next sibling', group: NAV, allow: ['key'], default: key('ArrowDown') },
 	{ id: 'canvas.pan', label: 'Pan canvas', group: CANVAS, allow: ['mouse'], default: mouse('Mouse0') },
+	// Same default gesture as canvas.pan (Mouse0, no modifiers) -- Viewport.svelte dispatches
+	// between the two by hit-target, not by binding: a pointerdown landing on a draggable root
+	// view starts a node drag, landing on empty canvas (or a non-root node) pans, exactly as
+	// before this action existed. Being its own rebindable action (rather than hardcoded
+	// hit-target logic with no binding at all) lets a user later require e.g. Alt+drag to move a
+	// view, freeing plain left-drag to always pan even over content, without touching canvas.pan.
+	{ id: 'view.drag', label: 'Move view', group: CANVAS, allow: ['mouse'], default: mouse('Mouse0') },
 	{
 		id: 'canvas.toggleBoxModel',
 		label: 'Toggle padding/gap overlay',

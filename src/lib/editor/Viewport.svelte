@@ -6,6 +6,7 @@
 	import { selectView, deselectView } from './selection.js';
 	import { viewportInput, updateViewportInput } from './viewport-input.js';
 	import { keybinds, matchKey, matchMouse, isTextEntryTarget } from './keybinds.js';
+	import { buildViewTree, resolveDragTargetViewId } from './view-tree.js';
 	import type { Api } from 'manager';
 	import type { ResolvedView } from '$lib/plugins/types.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,6 +20,7 @@
 		projectHints = null,
 		projectHintsReady = false,
 		resolvedViews = [],
+		compositionKeys = [],
 		editorActivity = $bindable(),
 		selection = $bindable(),
 		hoveredViewId = $bindable(null)
@@ -32,10 +34,43 @@
 		projectHints?: Record<string, unknown> | null;
 		projectHintsReady?: boolean;
 		resolvedViews?: ResolvedView[];
+		// Charter's composition-field-key list (see view-tree.ts) -- used only to derive
+		// rootViewIds, so a pointerdown on a root view can be routed to a node-drag instead of a
+		// pan. Not otherwise interpreted here.
+		compositionKeys?: string[];
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
 		hoveredViewId?: string | null;
 	} = $props();
+
+	// A view is draggable (in this v1 scope) iff it's a root: nobody else's `children` references
+	// it. Same graph math the Views panel / [ ] nav already use -- see view-tree.ts.
+	const viewTree = $derived(buildViewTree(resolvedViews, compositionKeys));
+	const rootViewIds = $derived.by(() => {
+		const ids = new Set<string>();
+		for (const view of resolvedViews) {
+			if (!viewTree.referencedViewIds.has(view.viewId)) ids.add(view.viewId);
+		}
+		return ids;
+	});
+
+	// Resolves a canvas hit to the view + node index a drag should actually move -- see
+	// resolveDragTargetViewId's doc in view-tree.ts for why this isn't always just `hit` itself.
+	// Always resolves to the target view's own top-level node (nodeViewIds' first occurrence),
+	// not necessarily `hit.index` -- even a direct hit on a root's own nested content (not a
+	// composed child, just its own internal Text/Box) must still drag from the view's true root,
+	// or only that nested subtree would translate instead of the whole view.
+	function resolveDragTarget(hit: { index: number; viewId: string }): { viewId: string; index: number } | null {
+		const targetViewId = resolveDragTargetViewId(
+			hit.viewId,
+			editorActivity.activeViewId,
+			rootViewIds,
+			viewTree
+		);
+		if (!targetViewId) return null;
+		const index = nodeViewIds.indexOf(targetViewId);
+		return index === -1 ? null : { viewId: targetViewId, index };
+	}
 
 	let canvas: HTMLCanvasElement;
 	let initialized = false;
@@ -54,6 +89,16 @@
 	let spaceHeld = false;
 	let lastX = 0;
 	let lastY = 0;
+
+	// Node-drag (move a root view on the canvas). A pointerdown landing on a draggable root view
+	// arms a *candidate* (dragCandidateViewId/Index set, draggingNode still false) instead of
+	// immediately committing -- exactly mirroring how canvas.pan itself only commits to being a
+	// "drag, not a click" once CLICK_DRAG_THRESHOLD_PX is crossed (see onPointerUp). Only once
+	// that threshold is crossed does start_node_drag actually get called and draggingNode flips
+	// to true; if it's never crossed, onPointerUp's existing click-selection path runs unchanged.
+	let dragCandidateViewId: string | null = null;
+	let dragCandidateIndex: number | null = null;
+	let draggingNode = false;
 	// Captured once on pointerdown (unlike lastX/lastY, which move continuously for pan
 	// deltas) -- used on pointerup to tell a click apart from a drag-to-pan.
 	let downX = 0;
@@ -93,15 +138,34 @@
 		rafId = requestAnimationFrame(renderFrame);
 	}
 
-	// Resolves a vellum.get_selection(x, y) hit-test index to the view it belongs to, via
-	// Charter's node_view_ids side-map (parallel to the viewport_data array). "" (structural
-	// grid scaffolding, no owning view) and an out-of-range index both mean "no view".
-	function resolveViewIdAt(x: number, y: number): string | null {
+	// Resolves a vellum.get_selection(x, y) hit-test index to both the index itself and the view
+	// it belongs to, via Charter's node_view_ids side-map (parallel to the viewport_data array).
+	// "" (structural grid scaffolding, no owning view) and an out-of-range index both mean "no
+	// view". Shared by hover/click resolution (resolveViewIdAt) and node-drag eligibility
+	// (onPointerDown), so there's one hit-test call site for both.
+	function resolveHitAt(x: number, y: number): { index: number; viewId: string } | null {
 		if (!vellum) return null;
 		const index: number | undefined = vellum.get_selection(x, y);
 		if (index === undefined) return null;
 		const viewId = nodeViewIds[index];
-		return viewId ? viewId : null;
+		return viewId ? { index, viewId } : null;
+	}
+
+	function resolveViewIdAt(x: number, y: number): string | null {
+		return resolveHitAt(x, y)?.viewId ?? null;
+	}
+
+	// Writes a root view's dragged-to position on drop. Shallow-merges into the existing
+	// hints.vellum sub-object (api.updateViewHints replaces that whole sub-object, not just the
+	// key being set -- see manager's updateViewHints doc), same pattern schedulePanSave already
+	// uses for project.hints.vellum.panned.
+	async function persistViewPosition(viewId: string, x: number, y: number) {
+		if (!api) return;
+		const current =
+			(resolvedViews.find((v) => v.viewId === viewId)?.hints?.vellum as
+				| Record<string, unknown>
+				| undefined) ?? {};
+		await api.updateViewHints(viewId, { vellum: { ...current, position: [x, y] } });
 	}
 
 	function resolveEffective(t: Theme): 'light' | 'dark' {
@@ -359,6 +423,23 @@
 		// even when this gesture isn't a pan under the current binding.
 		downX = e.clientX;
 		downY = e.clientY;
+
+		// A pointerdown landing on a draggable root view takes priority over panning -- arm a
+		// *candidate* rather than committing to a drag immediately, so a plain click still
+		// selects (see onPointerMove/onPointerUp for where the candidate either commits past the
+		// click/drag threshold or falls through to the normal click-selection path unchanged).
+		if (vellum && matchMouse(e, $keybinds['view.drag'], spaceHeld)) {
+			const rect = canvas.getBoundingClientRect();
+			const hit = resolveHitAt(e.clientX - rect.left, e.clientY - rect.top);
+			const target = hit && resolveDragTarget(hit);
+			if (target) {
+				dragCandidateViewId = target.viewId;
+				dragCandidateIndex = target.index;
+				canvas.setPointerCapture(e.pointerId);
+				return;
+			}
+		}
+
 		panning = gestureStartsPan(e);
 		if (panning) {
 			// Middle-button drags otherwise trigger the browser's autoscroll affordance.
@@ -370,6 +451,30 @@
 	}
 
 	function onPointerMove(e: PointerEvent) {
+		if (dragCandidateViewId !== null && vellum) {
+			if (!draggingNode) {
+				const movedDistance = Math.hypot(e.clientX - downX, e.clientY - downY);
+				if (movedDistance <= CLICK_DRAG_THRESHOLD_PX) return; // still just a candidate
+			}
+			const rect = canvas.getBoundingClientRect();
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
+			if (!draggingNode) {
+				const started = vellum.start_node_drag(dragCandidateIndex ?? -1, x, y);
+				if (!started) {
+					// Shouldn't happen (the node was hit-testable a moment ago) -- don't get stuck
+					// treating every subsequent move as a drag candidate.
+					dragCandidateViewId = null;
+					dragCandidateIndex = null;
+					return;
+				}
+				draggingNode = true;
+			}
+			vellum.update_node_drag(x, y);
+			requestRender();
+			return;
+		}
+
 		if (panning && vellum) {
 			const dx = e.clientX - lastX;
 			const dy = e.clientY - lastY;
@@ -395,6 +500,23 @@
 	function onPointerUp(e: PointerEvent) {
 		panning = false;
 		canvas.releasePointerCapture(e.pointerId);
+
+		if (draggingNode && vellum) {
+			const result = vellum.end_node_drag(); // Float32Array; empty if none was active
+			draggingNode = false;
+			const viewId = dragCandidateViewId;
+			dragCandidateViewId = null;
+			dragCandidateIndex = null;
+			if (viewId && result.length === 2) {
+				void persistViewPosition(viewId, result[0], result[1]);
+			}
+			requestRender();
+			return; // a completed drag never also fires click-selection
+		}
+		// Never crossed the drag threshold -- fall through to the normal click-selection path
+		// below exactly as if this candidate had never been armed.
+		dragCandidateViewId = null;
+		dragCandidateIndex = null;
 
 		// Only the primary button selects -- a middle-button release (used for middle-drag pan)
 		// must never fall through into selection when the pan binding is 'middle'.

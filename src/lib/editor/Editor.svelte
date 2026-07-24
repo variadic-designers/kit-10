@@ -357,6 +357,10 @@
 	// CLAUDE.md's panel-manifest section: Charter owns panel contents, the editor's panels are
 	// generic renderers over the manifest shape.
 	const viewsPanelManifest = $derived(pluginManager?.panelManifest('views'));
+	// Charter's own nesting opinion (which resolved-property keys carry child viewRefs) -- the
+	// one piece Viewport.svelte needs to derive its own root-view set locally (see its
+	// rootViewIds), so drag eligibility doesn't require yet another editor-computed prop.
+	const compositionKeys = $derived(viewsPanelManifest?.composition_field_keys ?? []);
 
 	// Keyboard navigation of the View composition tree ([ parent, ] child, ↑/↓ siblings). Lives here
 	// (Editor is always mounted) rather than in the Views panel (which can be collapsed), and reuses
@@ -384,7 +388,6 @@
 		else if (matchKey(e, binds['nav.nextSibling'])) dir = 'next';
 		if (!dir) return;
 
-		const compositionKeys = viewsPanelManifest?.composition_field_keys ?? [];
 		const tree = buildViewTree(resolvedViews, compositionKeys);
 		const roots = resolvedViews
 			.map((v) => v.viewId)
@@ -757,6 +760,7 @@
 			projectHints={activeProjectRow?.hints ?? null}
 			projectHintsReady={activeProjectRow !== undefined}
 			{resolvedViews}
+			{compositionKeys}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildViewTree, parentOf, firstChildOf, siblingsOf, navigate, type ViewTree } from './view-tree.js';
+import {
+	buildViewTree,
+	parentOf,
+	firstChildOf,
+	siblingsOf,
+	navigate,
+	resolveDragTargetViewId,
+	type ViewTree
+} from './view-tree.js';
 import type { ResolvedView } from '$lib/plugins/types.js';
 
 // Build a ResolvedView whose single kit sets `children` to the given view ids (a view-list prop).
@@ -88,5 +96,49 @@ describe('multi-parent (DAG) uses first parent', () => {
 	const t = buildViewTree(dag, ['children']);
 	it('resolves to a single (first) parent', () => {
 		expect(parentOf('Z', t)).toBe('X');
+	});
+});
+
+// A separate fixture from the shared `views`/`tree`/`roots` above (matching the DAG block's own
+// pattern) so adding a second unrelated root here doesn't perturb the siblingsOf/navigate
+// assertions that rely on `roots` being exactly ['A']. Same A → [B, C]; B → [D] shape, plus an
+// unrelated second root E with no children of its own.
+describe('resolveDragTargetViewId', () => {
+	const dragViews = [view('A', ['B', 'C']), view('B', ['D']), view('C'), view('D'), view('E')];
+	const dragTree = buildViewTree(dragViews, ['children']);
+	const dragRoots = new Set(
+		dragViews.map((v) => v.viewId).filter((id) => !dragTree.referencedViewIds.has(id))
+	);
+
+	it('targets the active root when hit directly', () => {
+		expect(resolveDragTargetViewId('A', 'A', dragRoots, dragTree)).toBe('A');
+	});
+
+	it('targets the active root when the hit is a nested descendant (through covering children)', () => {
+		// D is A's grandchild (A -> B -> D) -- e.g. a full-bleed root whose composed children
+		// (or its own nested content) leave no point that hit-tests to A's own box directly.
+		expect(resolveDragTargetViewId('D', 'A', dragRoots, dragTree)).toBe('A');
+		expect(resolveDragTargetViewId('C', 'A', dragRoots, dragTree)).toBe('A');
+	});
+
+	it('falls back to a direct root hit when the active view is not a root', () => {
+		// B is referenced (A's child), so it's never treated as the active-root target even
+		// though it's "active" -- only a hit that's itself a root passes through here.
+		expect(resolveDragTargetViewId('E', 'B', dragRoots, dragTree)).toBe('E');
+		expect(resolveDragTargetViewId('D', 'B', dragRoots, dragTree)).toBeNull();
+	});
+
+	it('falls back to a direct root hit when there is no active view', () => {
+		expect(resolveDragTargetViewId('E', null, dragRoots, dragTree)).toBe('E');
+	});
+
+	it('does not redirect a hit on an unrelated root to the active root', () => {
+		// E is a root but not a descendant of A -- dragging E must still drag E, not A.
+		expect(resolveDragTargetViewId('E', 'A', dragRoots, dragTree)).toBe('E');
+	});
+
+	it('returns null for a non-root hit that is not within the active root either', () => {
+		// No active view, and D (a non-root) is hit directly -- nothing to drag.
+		expect(resolveDragTargetViewId('D', null, dragRoots, dragTree)).toBeNull();
 	});
 });
