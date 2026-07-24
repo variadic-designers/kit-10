@@ -16,7 +16,7 @@
 import { derived } from 'svelte/store';
 import { theme, updateTheme, type Theme } from '$lib/theming.js';
 import { reducedMotion, updateReducedMotion, type ReducedMotion } from '$lib/reduced-motion.js';
-import { viewportInput, updateViewportInput } from './viewport-input.js';
+import { viewportInput, updateViewportInput, DRAG_SNAP_OPTIONS } from './viewport-input.js';
 import { panelVisibility, updatePanelVisibility } from './panel-visibility.js';
 import type { PreferenceBinding } from '$lib/plugins/preferences.js';
 
@@ -81,6 +81,19 @@ export const hostPreferences: PreferenceBinding[] = [
 		},
 		value: derived(viewportInput, (i) => String(i.showBoxModel)),
 		set: (v) => updateViewportInput({ showBoxModel: v === 'true' })
+	},
+	{
+		key: 'host:drag-snap',
+		def: {
+			id: 'drag-snap',
+			label: 'Drag snap grid',
+			kind: 'select',
+			group: CANVAS,
+			default: '16',
+			options: DRAG_SNAP_OPTIONS.map((px) => ({ value: String(px), label: `${px}px` }))
+		},
+		value: derived(viewportInput, (i) => String(i.dragSnapPx)),
+		set: (v) => updateViewportInput({ dragSnapPx: Number(v) })
 	},
 	{
 		key: 'host:layers-panel',

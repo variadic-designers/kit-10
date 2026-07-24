@@ -14,11 +14,21 @@ export interface ViewportInput {
 	zoomInvert: boolean;
 	// Show Vellum's padding/gap (box-model) hatch overlay on hover.
 	showBoxModel: boolean;
+	// World-space grid (px) a live root-view drag snaps its position to -- fed to Vellum via
+	// vellum.set_position_snap_px. One of DRAG_SNAP_OPTIONS; 16 is the default to match Vellum's
+	// own hardcoded fallback (Graphics::position_snap_px), so a session before this preference
+	// loads still snaps the same way.
+	dragSnapPx: number;
 }
+
+// The only values the Settings select (host-preferences.ts, "drag-snap") offers -- Vellum's
+// set_position_snap_px accepts any f32, but the UI is deliberately a closed set, not free entry.
+export const DRAG_SNAP_OPTIONS = [4, 8, 16, 32, 64, 128] as const;
 
 export const VIEWPORT_INPUT_DEFAULTS: ViewportInput = {
 	zoomInvert: false,
-	showBoxModel: true
+	showBoxModel: true,
+	dragSnapPx: 16
 };
 
 const STORAGE_KEY = 'kit10:viewport-input';

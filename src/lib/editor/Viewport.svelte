@@ -145,6 +145,18 @@
 		rafId = requestAnimationFrame(renderFrame);
 	}
 
+	// Drives repaints for the short post-drop settle animation (Vellum eases a dropped root
+	// view's raw position onto the drag-snap grid -- see end_node_drag/step_settle in
+	// taf_can_do). Deliberately its own small, self-terminating rAF loop rather than flipping
+	// `continuousMode` on: that flag is for open-ended continuous rendering with no stopping
+	// condition, while this has a definite end (`vellum.is_settling()` goes false) that Vellum
+	// itself tracks, polled once per frame until then.
+	function driveSettleAnimation() {
+		if (!vellum) return;
+		requestRender();
+		if (vellum.is_settling()) requestAnimationFrame(driveSettleAnimation);
+	}
+
 	// Resolves a vellum.get_selection(x, y) hit-test index to both the index itself and the view
 	// it belongs to, via Charter's node_view_ids side-map (parallel to the viewport_data array).
 	// "" (structural grid scaffolding, no owning view) and an out-of-range index both mean "no
@@ -312,6 +324,16 @@
 		if (initialized && vellum) {
 			vellum.set_show_box_model(show);
 			requestRender();
+		}
+	});
+
+	// Live root-view drag snap grid (Settings > Canvas & Input > Drag snap grid). Only takes
+	// effect on the next update_node_drag call mid-drag -- no repaint needed here on its own,
+	// nothing changes on screen until a drag actually moves.
+	$effect(() => {
+		const snapPx = $viewportInput.dragSnapPx;
+		if (initialized && vellum) {
+			vellum.set_position_snap_px(snapPx);
 		}
 	});
 
@@ -513,6 +535,9 @@
 		canvas.releasePointerCapture(e.pointerId);
 
 		if (draggingNode && vellum) {
+			// The SNAPPED position (end_node_drag may start a settle animation easing the raw
+			// drop point onto it) -- this is what gets persisted, not wherever the cursor
+			// literally released.
 			const result = vellum.end_node_drag(); // Float32Array; empty if none was active
 			draggingNode = false;
 			const viewId = dragCandidateViewId;
@@ -521,7 +546,7 @@
 			if (viewId && result.length === 2) {
 				void persistViewPosition(viewId, result[0], result[1]);
 			}
-			requestRender();
+			driveSettleAnimation();
 			return; // a completed drag never also fires click-selection
 		}
 		// Never crossed the drag threshold -- fall through to the normal click-selection path

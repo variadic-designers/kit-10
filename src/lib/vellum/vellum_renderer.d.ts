@@ -13,6 +13,8 @@ export function initialize(canvas_id: string, width: number, height: number): Pr
 
 export function is_font_loaded(name: string): boolean;
 
+export function is_settling(): boolean;
+
 export function load_font(bytes: Uint8Array): string[];
 
 export function load_image(id: string, bytes: Uint8Array): void;
@@ -37,6 +39,8 @@ export function set_pan(dx: number, dy: number): void;
 export function set_pan_absolute(x: number, y: number): void;
 
 export function set_pixel_snap(on: boolean): void;
+
+export function set_position_snap_px(px: number): void;
 
 export function set_show_box_model(on: boolean): void;
 
@@ -64,6 +68,7 @@ export interface InitOutput {
     readonly get_selection: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly is_font_loaded: (a: number, b: number) => number;
+    readonly is_settling: () => number;
     readonly load_font: (a: number, b: number, c: number) => void;
     readonly load_image: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly render: () => void;
@@ -74,6 +79,7 @@ export interface InitOutput {
     readonly set_pan: (a: number, b: number) => void;
     readonly set_pan_absolute: (a: number, b: number) => void;
     readonly set_pixel_snap: (a: number) => void;
+    readonly set_position_snap_px: (a: number) => void;
     readonly set_show_box_model: (a: number) => void;
     readonly set_zoom: (a: number) => void;
     readonly start_node_drag: (a: number, b: number, c: number) => number;
@@ -82,11 +88,11 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_9077: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7624: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7624_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7624_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9079: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9088: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7635: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7635_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7635_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9090: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
