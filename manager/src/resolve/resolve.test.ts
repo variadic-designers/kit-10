@@ -258,7 +258,7 @@ describe('resolve', () => {
 		expect(result.size).toBe(0);
 	});
 
-	it('resolves a token-backed property to its token value after specificity resolution', async () => {
+	it('substitutes tokens in pass 2 after specificity resolution', async () => {
 		const s = await seedButtonKit();
 
 		// No args → null layer. background is a token reference (colors.bg → #ffffff)
@@ -670,12 +670,6 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.tokenAlias).toBe('accent');
 		});
 
-		// Resolution is token_id-authoritative: an entry's value always comes from the token row
-		// its own token_id names, never a same-alias scan across scopes. This test (and the one
-		// below it) still pass because the entry's token_id is set to the narrowest-scope token
-		// directly -- they exercise "the entry happens to point at the narrow token", not an
-		// implicit override. See the dedicated token_id-authoritative describe block below for
-		// the case that actually distinguishes the two.
 		it('kit token overrides project token with same alias', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Kit Override'))!;
@@ -729,11 +723,11 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.value).toBe('#10b981');
 		});
 
-		it('children entry resolves via its own token_id even when a same-alias view-scope token exists', async () => {
+		it('view-list token on children: view-scoped override wins over kit-scoped token, ignoring specificity', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(
 				ws.workspaceId,
-				'Children Token Id Authoritative'
+				'Children Token Override'
 			))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
@@ -746,47 +740,20 @@ describe('range overlap matching', () => {
 			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), {
 				kitId: kit.id
 			}))!;
-			// Unrelated: a same-alias view-scope token that no entry points at. It must have zero
-			// effect on resolution -- the entry's own token_id is the sole source of truth.
 			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), {
 				viewId: view.id
 			}))!;
 
+			// Kit-scoped layer has 0 conditions (highest possible resolve-pass-1 specificity here);
+			// the view-scoped token must still win in pass 2 regardless.
 			const layer = (await ctx.api.createLayer(kit.id))!;
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitToken.id);
 
 			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
-			expect(flat.get('children')!.viewRefs).toEqual([childA.id]);
+			expect(flat.get('children')!.viewRefs).toEqual([childB.id]);
 			expect(viewToken.id).not.toBe(kitToken.id);
-		});
-
-		it('a same-alias token at a narrower scope never overrides an entry whose token_id points elsewhere', async () => {
-			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
-			const proj = (await ctx.api.createProjectInWorkspace(
-				ws.workspaceId,
-				'Token Id Authoritative Scalar'
-			))!;
-
-			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
-			const kitToken = (await ctx.api.createToken(proj.id, 'brand', s('#111111'), {
-				kitId: kit.id
-			}))!;
-
-			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
-			await ctx.api.attachKitToComposition(kit.id, view.id);
-
-			// Unrelated: a same-alias view-scope token that no entry points at.
-			await ctx.api.createToken(proj.id, 'brand', s('#222222'), { viewId: view.id });
-
-			const layer = (await ctx.api.createLayer(kit.id))!;
-			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
-			await ctx.api.createRenderEntry(snippet.id, 'color', null, kitToken.id);
-
-			const results = await resolveManySlowPath(ctx.db, view.id);
-			const flat = flattenKitResults(results);
-			expect(flat.get('color')!.value).toBe('#111111');
 		});
 
 		it('self-declaring view-scope children: a view-scope `children` token defines children with no render entry', async () => {
@@ -829,6 +796,107 @@ describe('range overlap matching', () => {
 			expect(resolvedParent.resolvedKits.flatMap((k) => [...k.properties.keys()])).not.toContain(
 				'slots'
 			);
+		});
+	});
+
+	// Regression coverage for a real, load-bearing authoring pattern (not a hypothetical): a
+	// resolver change that made token resolution "token_id-authoritative" (an entry's value only
+	// ever comes from the exact token row its own token_id names, ignoring any same-alias token at
+	// a narrower scope) was tried and reverted because it broke this pattern -- see the warning
+	// comment above `ScopedTokenMaps` in resolve.ts. `manager/src/seed.ts`'s `textKit`/`textView`
+	// and `imageKit`/`imageView` helpers are the real production use of exactly this shape: a kit
+	// declares a render entry whose token_id points at a KIT-scope placeholder token, and every VIEW
+	// composing that kit supplies its own value via a separate, same-alias VIEW-scope token. These
+	// tests mirror that helper pair directly so a future "make this token_id-authoritative" change
+	// fails loudly here instead of only being discoverable by eyeballing a blank demo screenshot.
+	describe('kit-default + view-override authoring pattern (seed.ts textKit/textView shape)', () => {
+		it('a view composing the kit sees its OWN same-alias token value, not the kit-scope placeholder its entry declares', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Text Kit'))!;
+
+			// textKit(): kit declares `content` via a render entry whose token_id points at an empty
+			// KIT-scope placeholder token.
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Label'))!;
+			const snippet = (await ctx.api.createRenderSnippet((await ctx.api.createLayer(kit.id))!.id))!;
+			const placeholderTok = (await ctx.api.createToken(proj.id, 'content', s(''), {
+				kitId: kit.id
+			}))!;
+			await ctx.api.createRenderEntry(snippet.id, 'content', null, placeholderTok.id);
+
+			// textView(): the view composes the kit and supplies its own `content` via a VIEW-scope
+			// token of the same alias -- never touching the entry's token_id.
+			const view = (await ctx.api.createViewInProject(proj.id, 'Submit Button'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+			await ctx.api.createToken(proj.id, 'content', s('Submit'), { viewId: view.id });
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolved = views.find((v) => v.viewId === view.id)!;
+			const flat = flattenKitResults(resolved.resolvedKits);
+			expect(flat.get('content')!.value).toBe('Submit');
+		});
+
+		it('two different views composing the SAME kit each see their own content, never the placeholder or a sibling view\'s value', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Text Kit Multi'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Label'))!;
+			const snippet = (await ctx.api.createRenderSnippet((await ctx.api.createLayer(kit.id))!.id))!;
+			const placeholderTok = (await ctx.api.createToken(proj.id, 'content', s(''), {
+				kitId: kit.id
+			}))!;
+			await ctx.api.createRenderEntry(snippet.id, 'content', null, placeholderTok.id);
+
+			const submitView = (await ctx.api.createViewInProject(proj.id, 'Submit'))!;
+			await ctx.api.attachKitToComposition(kit.id, submitView.id);
+			await ctx.api.createToken(proj.id, 'content', s('Submit'), { viewId: submitView.id });
+
+			const cancelView = (await ctx.api.createViewInProject(proj.id, 'Cancel'))!;
+			await ctx.api.attachKitToComposition(kit.id, cancelView.id);
+			await ctx.api.createToken(proj.id, 'content', s('Cancel'), { viewId: cancelView.id });
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const submitFlat = flattenKitResults(views.find((v) => v.viewId === submitView.id)!.resolvedKits);
+			const cancelFlat = flattenKitResults(views.find((v) => v.viewId === cancelView.id)!.resolvedKits);
+			expect(submitFlat.get('content')!.value).toBe('Submit');
+			expect(cancelFlat.get('content')!.value).toBe('Cancel');
+		});
+
+		it('a view with no content override falls back to the kit-scope placeholder the entry actually declares', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Text Kit Fallback'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Label'))!;
+			const snippet = (await ctx.api.createRenderSnippet((await ctx.api.createLayer(kit.id))!.id))!;
+			const placeholderTok = (await ctx.api.createToken(proj.id, 'content', s('Placeholder'), {
+				kitId: kit.id
+			}))!;
+			await ctx.api.createRenderEntry(snippet.id, 'content', null, placeholderTok.id);
+
+			const view = (await ctx.api.createViewInProject(proj.id, 'Unlabeled'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+			// No view-scope `content` token created.
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const flat = flattenKitResults(views.find((v) => v.viewId === view.id)!.resolvedKits);
+			expect(flat.get('content')!.value).toBe('Placeholder');
+		});
+
+		it('imageKit/imageView shape: a view overrides a kit-declared `src` the same way', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Image Kit'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Photo'))!;
+			const snippet = (await ctx.api.createRenderSnippet((await ctx.api.createLayer(kit.id))!.id))!;
+			const placeholderTok = (await ctx.api.createToken(proj.id, 'src', s(''), { kitId: kit.id }))!;
+			await ctx.api.createRenderEntry(snippet.id, 'src', null, placeholderTok.id);
+
+			const view = (await ctx.api.createViewInProject(proj.id, 'Avatar'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+			await ctx.api.createToken(proj.id, 'src', s('/avatar.png'), { viewId: view.id });
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const flat = flattenKitResults(views.find((v) => v.viewId === view.id)!.resolvedKits);
+			expect(flat.get('src')!.value).toBe('/avatar.png');
 		});
 	});
 });

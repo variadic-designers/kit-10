@@ -5,7 +5,9 @@ import {
 	type ViewRow,
 	type CompositionRow,
 	type AxisArgRow,
+	type ProjectTokenRow,
 	type ViewTokenRow,
+	type KitTokenRow,
 	type LayerRow,
 	type ConditionRow,
 	type EntryRow
@@ -41,7 +43,9 @@ const axisArgKeys: Record<keyof AxisArgRow, true> = {
 	axis_id: true,
 	value: true
 };
+const projectTokenKeys: Record<keyof ProjectTokenRow, true> = { alias: true, value: true };
 const viewTokenKeys: Record<keyof ViewTokenRow, true> = { view_id: true, alias: true, value: true };
+const kitTokenKeys: Record<keyof KitTokenRow, true> = { alias: true, value: true, kit_id: true };
 const layerKeys: Record<keyof LayerRow, true> = { id: true, kit_id: true };
 const conditionKeys: Record<keyof ConditionRow, true> = {
 	layer_id: true,
@@ -81,7 +85,7 @@ describe('batched fetch key-set matches row interfaces', () => {
 		await ctx.pg.close();
 	});
 
-	// Seeds a project that populates every one of the 7 rowsets at least once.
+	// Seeds a project that populates every one of the 9 rowsets at least once.
 	async function seedAllRowsets(): Promise<string> {
 		const { api } = ctx;
 		const ws = (await api.getAllWorkspaces().execute())[0]!;
@@ -93,8 +97,9 @@ describe('batched fetch key-set matches row interfaces', () => {
 		const kit = (await api.createKitInProject(proj.id, 'Button'))!;
 		await api.consumeAxis(kit.id, axis.id);
 
-		// a project-scoped token, referenced by a render entry (entries -> token_id join)
+		// project / kit / view scoped tokens (each needs a non-null alias to be selected)
 		const projTok = (await api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
+		await api.createToken(proj.id, 'colors.kit', s('#111111'), { kitId: kit.id });
 
 		// null baseline layer + a conditioned layer -> layers, conditions, entries
 		const nullLayer = (await api.createLayer(kit.id))!;
@@ -126,7 +131,9 @@ describe('batched fetch key-set matches row interfaces', () => {
 
 		// jsonb_build_object -> exact key set
 		assertExact(rows.compositions[0], compositionKeys, 'Composition');
+		assertExact(rows.projectTokens[0], projectTokenKeys, 'ProjectToken');
 		assertExact(rows.viewTokenRows[0], viewTokenKeys, 'ViewToken');
+		assertExact(rows.kitTokenRows[0], kitTokenKeys, 'KitToken');
 		assertExact(rows.conditions[0], conditionKeys, 'Condition');
 		assertExact(rows.entries[0], entryKeys, 'Entry');
 	});

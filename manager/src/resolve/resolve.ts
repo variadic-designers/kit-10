@@ -46,10 +46,9 @@ export interface ResolvedProperty {
 	kitId: string;
 	isToken: boolean;
 	tokenAlias: string | null;
-	// The render entry's own token row id -- this IS the value's source of truth (matchLayers
-	// resolves `value`/`viewRefs` straight from this token's row via fetchLayerData's join).
-	// Also lets the UI update a token-backed property's value in place (e.g. ChildViewField
-	// writing to its per-view `children` token) without a separate lookup-by-alias round trip.
+	// The render entry's own token row id (not the alias-override winner from pass 2) -- lets the
+	// UI update a token-backed property's value in place (e.g. ChildViewField writing to its
+	// per-view `children` token) without a separate lookup-by-alias round trip.
 	tokenId: string | null;
 	conditionCount: number;
 	// Axis-id set the winning Layer conditions on — lets the UI color a property by which axes
@@ -73,9 +72,10 @@ export interface ResolvedProperty {
 // NOT used by the editor's live-query resolve loop.
 export interface CascadeEntry {
 	property: string;
-	// Entry-local declared value: a literal, or the entry's own token value/id. Matches the winner
-	// path exactly -- both read the value straight off the entry's own token_id, there is no
-	// separate scope-override pass to diverge from.
+	// Entry-local declared value: a literal, or the entry's own token value/id. Deliberately does
+	// NOT apply the scope-based alias override (substituteTokens) the winner path does -- that
+	// narrower-scope override is a separate concept that belongs to the planned view-override band,
+	// not to illustrating the kit-layer stack. In the common (no alias override) case it matches.
 	value: string;
 	isToken: boolean;
 	tokenAlias: string | null;
@@ -251,7 +251,8 @@ function matchLayers(
 					axisId: c.axisId,
 					value: formatAxisValue(c.axisValue)
 				})),
-				// Type-driven, not name-driven: a `view-list` token value carries view refs.
+				// Type-driven, not name-driven: a `view-list` token value carries view refs. (A
+				// later view-scope token of the same alias overrides these in substituteTokens.)
 				viewRefs: tv?.type === 'view-list' ? tv.view_ids : null
 			});
 		}
@@ -431,21 +432,111 @@ async function resolveAll(
 	return results;
 }
 
-// A view's own token rows -- used only by applySelfDeclaredViewRefs. Token resolution for
-// entry-linked properties no longer reads any scope-scanning map here: matchLayers resolves an
-// entry's value/viewRefs straight off `entry.tokenId`'s own row (see fetchLayerData's join), so
-// there is nothing left to substitute after matching. project/kit token rows are never fetched by
-// the resolver for this purpose.
-async function fetchViewTokens(
+// DO NOT make this alias-cascade token_id-authoritative (i.e. "an entry's value only ever comes
+// from the exact token row its own token_id names") without re-reading this comment first -- that
+// change was tried and reverted (see git history) because it silently breaks the codebase's actual
+// primary authoring pattern for per-view content: `seed.ts`'s `textKit`/`textView` and
+// `imageKit`/`imageView` declare a render entry whose token_id points at a KIT-scope placeholder
+// (e.g. `content`, value `''`), and every VIEW composing that kit supplies its own real text/src
+// via a SEPARATE, same-alias VIEW-scope token -- relying on exactly this cascade to override the
+// kit's placeholder. Making resolution token_id-authoritative makes every such view render the
+// kit's empty placeholder instead of its own content: every text label and every image in the demo
+// project goes blank. The narrower-scope-by-alias cascade below is that "view overrides kit
+// default" mechanism, not an accidental side effect -- see the regression tests in
+// `resolve.test.ts`'s `describe('kit-default + view-override authoring pattern', ...)`.
+export interface ScopedTokenMaps {
+	// alias -> scalar string value, narrowest scope (project -> kit -> view) wins.
+	scalarMap: Map<string, string>;
+	// alias -> list of view ids, same scope-precedence rule. Separate map rather than widening
+	// scalarMap's value type -- keeps the existing scalar substitution path completely untouched,
+	// and a property only ever wants one or the other (a view-list vs a scalar), never both.
+	viewListMap: Map<string, string[]>;
+}
+
+async function gatherScopedTokens(
 	db: SchemaDialect,
+	projectId: string | undefined,
+	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
+	kitIds: string[],
 	viewId: string
-): Promise<{ alias: string | null; value: TokenValue | null }[]> {
-	return db
-		.selectFrom('tokens')
-		.where('tokens.view_id', '=', viewId)
-		.where('tokens.alias', 'is not', null)
-		.select(['tokens.alias', 'tokens.value'])
-		.execute();
+): Promise<ScopedTokenMaps & { viewTokens: { alias: string | null; value: TokenValue | null }[] }> {
+	const scalarMap = new Map<string, string>();
+	const viewListMap = new Map<string, string[]>();
+
+	if (!projectId) return { scalarMap, viewListMap, viewTokens: [] };
+
+	const [projectTokens, kitTokenRows, viewTokens] = await Promise.all([
+		db
+			.selectFrom('tokens')
+			.where('tokens.project_id', '=', projectId)
+			.where('tokens.kit_id', 'is', null)
+			.where('tokens.view_id', 'is', null)
+			.where('tokens.alias', 'is not', null)
+			.select(['tokens.alias', 'tokens.value'])
+			.execute(),
+
+		kitIds.length > 0
+			? db
+					.selectFrom('tokens')
+					.where('tokens.kit_id', 'in', kitIds)
+					.where('tokens.alias', 'is not', null)
+					.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
+					.execute()
+			: Promise.resolve(
+					[] as { alias: string | null; value: TokenValue | null; kit_id: string | null }[]
+				),
+
+		db
+			.selectFrom('tokens')
+			.where('tokens.view_id', '=', viewId)
+			.where('tokens.alias', 'is not', null)
+			.select(['tokens.alias', 'tokens.value'])
+			.execute()
+	]);
+
+	const apply = (alias: string | null, value: TokenValue | null) => {
+		if (!alias || !value) return;
+		if (value.type === 'scalar') scalarMap.set(alias, value.value);
+		else if (value.type === 'view-list') viewListMap.set(alias, value.view_ids);
+	};
+
+	for (const t of projectTokens) apply(t.alias, t.value);
+
+	// Group kit tokens by kit_id, then apply in kitIds order so priority is preserved.
+	const tokensByKit = new Map<string, typeof kitTokenRows>();
+	for (const t of kitTokenRows) {
+		if (!t.kit_id) continue;
+		if (!tokensByKit.has(t.kit_id)) tokensByKit.set(t.kit_id, []);
+		tokensByKit.get(t.kit_id)!.push(t);
+	}
+	for (const kitId of kitIds) {
+		for (const t of tokensByKit.get(kitId) ?? []) apply(t.alias, t.value);
+	}
+
+	for (const t of viewTokens) apply(t.alias, t.value);
+
+	return { scalarMap, viewListMap, viewTokens };
+}
+
+function substituteTokens(
+	properties: Map<string, ResolvedProperty>,
+	tokenMaps: ScopedTokenMaps
+): void {
+	for (const [, resolved] of properties) {
+		if (!resolved.isToken || !resolved.tokenAlias) continue;
+
+		// Which kind of value a given alias holds is decided by the token's own value type (i.e.
+		// which map it landed in), not by the property's name. A view-list alias sets viewRefs; a
+		// scalar alias sets the string value. No property name is special.
+		const viewIds = tokenMaps.viewListMap.get(resolved.tokenAlias);
+		if (viewIds !== undefined) {
+			resolved.viewRefs = viewIds;
+			continue;
+		}
+
+		const scalarValue = tokenMaps.scalarMap.get(resolved.tokenAlias);
+		if (scalarValue !== undefined) resolved.value = scalarValue;
+	}
 }
 
 /**
@@ -498,19 +589,25 @@ export async function resolveManySlowPath(
 		.innerJoin('kits', 'kits.id', 'compositions.kit_id')
 		.where('compositions.view_id', '=', viewId)
 		.orderBy('compositions.priority_index', 'asc')
-		.select(['compositions.kit_id', 'compositions.priority_index', 'kits.name as kit_name'])
+		.select([
+			'compositions.kit_id',
+			'compositions.priority_index',
+			'kits.name as kit_name',
+			'kits.project_id'
+		])
 		.execute();
 
 	const allKitIds = compositions.map((c) => c.kit_id);
+	const projectId = compositions[0]?.project_id;
 
-	// axisArgs and the view's own tokens (for self-declared view refs) are independent.
-	const [axisArgsRows, viewTokens] = await Promise.all([
+	// axisArgs and token scopes are independent — fetch in parallel.
+	const [axisArgsRows, tokenMap] = await Promise.all([
 		db
 			.selectFrom('axis_args')
 			.where('axis_args.view_id', '=', viewId)
 			.select(['axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
 			.execute(),
-		fetchViewTokens(db, viewId)
+		gatherScopedTokens(db, projectId, allKitIds, viewId)
 	]);
 
 	const argsByKit = new Map<string, Record<string, ArgValue>>();
@@ -522,12 +619,17 @@ export async function resolveManySlowPath(
 
 	const resolvedByKit = await resolveAll(db, allKitIds, argsByKit);
 
-	const results: ResolvedKit[] = compositions.map((comp) => ({
-		kitId: comp.kit_id,
-		kitName: comp.kit_name,
-		properties: resolvedByKit.get(comp.kit_id) ?? new Map()
-	}));
-	applySelfDeclaredViewRefs(results, viewTokens);
+	const results: ResolvedKit[] = [];
+	for (const comp of compositions) {
+		const properties = resolvedByKit.get(comp.kit_id) ?? new Map();
+		substituteTokens(properties, tokenMap);
+		results.push({
+			kitId: comp.kit_id,
+			kitName: comp.kit_name,
+			properties
+		});
+	}
+	applySelfDeclaredViewRefs(results, tokenMap.viewTokens);
 
 	return results;
 }
@@ -680,7 +782,9 @@ export function rowsKey(rows: ResolutionRows): string {
 		rows.viewRows,
 		rows.compositions,
 		rows.axisArgsRows,
+		rows.projectTokens,
 		rows.viewTokenRows,
+		rows.kitTokenRows,
 		rows.layers,
 		rows.conditions,
 		rows.entries
@@ -697,7 +801,9 @@ export interface ResolutionRows {
 	viewRows: ViewRow[];
 	compositions: CompositionRow[];
 	axisArgsRows: AxisArgRow[];
+	projectTokens: ProjectTokenRow[];
 	viewTokenRows: ViewTokenRow[];
+	kitTokenRows: KitTokenRow[];
 	layers: LayerRow[];
 	conditions: ConditionRow[];
 	entries: EntryRow[];
@@ -724,10 +830,19 @@ export interface AxisArgRow {
 	axis_id: string;
 	value: unknown;
 }
+export interface ProjectTokenRow {
+	alias: string | null;
+	value: TokenValue | null;
+}
 export interface ViewTokenRow {
 	view_id: string | null;
 	alias: string | null;
 	value: TokenValue | null;
+}
+export interface KitTokenRow {
+	alias: string | null;
+	value: TokenValue | null;
+	kit_id: string | null;
 }
 export interface LayerRow {
 	id: string;
@@ -749,7 +864,7 @@ export interface EntryRow {
 }
 
 // Fetches every rowset resolution needs in a SINGLE IPC crossing into the PGlite
-// worker. One UNION ALL query returns all 7 rowsets tagged, replacing the 4 sequential
+// worker. One UNION ALL query returns all 9 rowsets tagged, replacing the 4 sequential
 // await groups (RT1→RT2→RT3→RT4) the original resolveManyViews used. Two CTEs
 // (project_view_ids, project_kit_ids) compute the viewIds/kitIds filters once and every
 // branch references them, so no intermediate round-trip is needed to learn them and the
@@ -760,15 +875,10 @@ export interface EntryRow {
 // rowsets (compositions, tokens, conditions, entries) use jsonb_build_object to emit
 // exactly the fields the resolver reads, matching the ResolutionRows interfaces.
 //
-// Token rows are fetched per-entry (the `entries` branch's LEFT JOIN on `render_entries.
-// token_id`) and per-view (`view_tokens`, for applySelfDeclaredViewRefs) only -- there is
-// no project/kit-scope token rowset, since resolution reads a token's value straight off
-// the entry's own token_id rather than scanning scope for a same-alias override.
-//
 // The empty-view and no-kit short-circuits the 4-await version had are handled
 // naturally: if there are no views, every subquery returns 0 rows (they all join/subquery
-// on views); if there are no compositions, layers/conditions/entries return 0 rows while
-// view tokens still return -- resolveViewsFromRows handles both.
+// on views); if there are no compositions, kit_tokens/layers/conditions/entries return
+// 0 rows while project/view tokens still return -- resolveViewsFromRows handles both.
 export async function fetchResolutionRows(
 	db: SchemaDialect,
 	projectId: string
@@ -777,8 +887,8 @@ export async function fetchResolutionRows(
 	// Two CTEs hoist the WHERE filters every branch needs -- the project's view ids, and
 	// the kit ids composed into any of those views -- so each branch references them by
 	// name instead of repeating the `compositions JOIN views WHERE project_id` subquery
-	// (which appeared 4× before). `${projectId}` is now bound once (the view-id CTE)
-	// instead of seven times.
+	// (which appeared 4× before). `${projectId}` is now bound twice (the view-id CTE and
+	// the project-tokens branch) instead of seven times.
 	const result = await sql`
 		WITH project_view_ids AS (
 			SELECT id FROM views WHERE project_id = ${projectId}
@@ -803,11 +913,25 @@ export async function fetchResolutionRows(
 		FROM axis_args aa
 		WHERE aa.view_id IN (SELECT id FROM project_view_ids)
 		UNION ALL
+		SELECT 'project_tokens' AS tag, jsonb_build_object('alias', t.alias, 'value', t.value) AS data
+		FROM tokens t
+		WHERE t.project_id = ${projectId}
+			AND t.kit_id IS NULL
+			AND t.view_id IS NULL
+			AND t.alias IS NOT NULL
+		UNION ALL
 		SELECT 'view_tokens' AS tag, jsonb_build_object(
 			'view_id', t.view_id, 'alias', t.alias, 'value', t.value
 		) AS data
 		FROM tokens t
 		WHERE t.view_id IN (SELECT id FROM project_view_ids)
+			AND t.alias IS NOT NULL
+		UNION ALL
+		SELECT 'kit_tokens' AS tag, jsonb_build_object(
+			'alias', t.alias, 'value', t.value, 'kit_id', t.kit_id
+		) AS data
+		FROM tokens t
+		WHERE t.kit_id IN (SELECT kit_id FROM project_kit_ids)
 			AND t.alias IS NOT NULL
 		UNION ALL
 		SELECT 'layers' AS tag, to_jsonb(l) AS data
@@ -845,7 +969,9 @@ export async function fetchResolutionRows(
 		views: [] as ViewRow[],
 		compositions: [] as CompositionRow[],
 		axis_args: [] as AxisArgRow[],
+		project_tokens: [] as ProjectTokenRow[],
 		view_tokens: [] as ViewTokenRow[],
+		kit_tokens: [] as KitTokenRow[],
 		layers: [] as LayerRow[],
 		conditions: [] as ConditionRow[],
 		entries: [] as EntryRow[]
@@ -863,7 +989,9 @@ export async function fetchResolutionRows(
 		viewRows: grouped.views,
 		compositions: grouped.compositions,
 		axisArgsRows: grouped.axis_args,
+		projectTokens: grouped.project_tokens,
 		viewTokenRows: grouped.view_tokens,
+		kitTokenRows: grouped.kit_tokens,
 		layers: grouped.layers,
 		conditions: grouped.conditions,
 		entries: grouped.entries
@@ -924,8 +1052,20 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 		}
 	}
 
-	// The view's own tokens, for applySelfDeclaredViewRefs -- entry-linked properties resolve
-	// their value/viewRefs straight off matchLayers' own token join, no scope map needed here.
+	// Build token maps
+	const baseTokenMap = new Map<string, string>();
+	const baseViewListMap = new Map<string, string[]>();
+	for (const t of rows.projectTokens) {
+		if (!t.alias || !t.value) continue;
+		if (t.value.type === 'scalar') baseTokenMap.set(t.alias, t.value.value);
+		else if (t.value.type === 'view-list') baseViewListMap.set(t.alias, t.value.view_ids);
+	}
+	const tokensByKit = new Map<string, KitTokenRow[]>();
+	for (const t of rows.kitTokenRows) {
+		if (!t.kit_id) continue;
+		if (!tokensByKit.has(t.kit_id)) tokensByKit.set(t.kit_id, []);
+		tokensByKit.get(t.kit_id)!.push(t);
+	}
 	const tokensByView = new Map<string, ViewTokenRow[]>();
 	for (const t of rows.viewTokenRows) {
 		if (!t.view_id) continue;
@@ -951,6 +1091,22 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 	const result: ResolvedViewData[] = rows.viewRows.map((v) => {
 		const comps = compsByView.get(v.id) ?? [];
 
+		// Token resolution order: project → kit (in composition order) → view
+		const tokenMap = new Map(baseTokenMap);
+		const viewListTokenMap = new Map(baseViewListMap);
+		for (const comp of comps) {
+			for (const t of tokensByKit.get(comp.kit_id) ?? []) {
+				if (!t.alias || !t.value) continue;
+				if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+				else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
+			}
+		}
+		for (const t of tokensByView.get(v.id) ?? []) {
+			if (!t.alias || !t.value) continue;
+			if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
+			else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
+		}
+
 		const resolvedKits: ResolvedKit[] = comps.map((comp) => {
 			const args = argsByViewKit.get(`${v.id}::${comp.kit_id}`) ?? {};
 			const properties = matchLayers(
@@ -958,6 +1114,7 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 				kitLayerDataMaps.get(comp.kit_id) ?? new Map(),
 				args
 			);
+			substituteTokens(properties, { scalarMap: tokenMap, viewListMap: viewListTokenMap });
 			return {
 				kitId: comp.kit_id,
 				kitName: comp.kit_name,

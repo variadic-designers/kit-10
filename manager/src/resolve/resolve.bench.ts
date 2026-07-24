@@ -6,7 +6,7 @@
 // What this measures
 // ------------------
 // The optimization changed two things and left the resolution MATH untouched:
-//   1. Fetch shape: 4 sequential await-groups (RT1→RT2→RT3→RT4, ~7 queries) collapsed
+//   1. Fetch shape: 4 sequential await-groups (RT1→RT2→RT3→RT4, ~9 queries) collapsed
 //      into ONE batched UNION ALL query (1 crossing into the PGlite worker).
 //   2. Dedup: an output fingerprint (kitFingerprint, run twice per view) replaced by an
 //      input row-key (rowsKey, run once) that lets an unchanged fetch skip resolve entirely.
@@ -51,7 +51,9 @@ async function fetchResolutionRowsLegacy(
 		viewRows: [],
 		compositions: [],
 		axisArgsRows: [],
+		projectTokens: [],
 		viewTokenRows: [],
+		kitTokenRows: [],
 		layers: [],
 		conditions: [],
 		entries: []
@@ -66,8 +68,8 @@ async function fetchResolutionRowsLegacy(
 	if (viewRows.length === 0) return empty;
 	const viewIds = viewRows.map((v) => v.id);
 
-	// RT2: compositions + axis_args + view tokens (parallel group)
-	const [compositions, axisArgsRows, viewTokenRows] = await Promise.all([
+	// RT2: compositions + axis_args + project tokens + view tokens (parallel group)
+	const [compositions, axisArgsRows, projectTokens, viewTokenRows] = await Promise.all([
 		db
 			.selectFrom('compositions')
 			.innerJoin('kits', 'kits.id', 'compositions.kit_id')
@@ -87,6 +89,14 @@ async function fetchResolutionRowsLegacy(
 			.execute(),
 		db
 			.selectFrom('tokens')
+			.where('tokens.project_id', '=', projectId)
+			.where('tokens.kit_id', 'is', null)
+			.where('tokens.view_id', 'is', null)
+			.where('tokens.alias', 'is not', null)
+			.select(['tokens.alias', 'tokens.value'])
+			.execute(),
+		db
+			.selectFrom('tokens')
 			.where('tokens.view_id', 'in', viewIds)
 			.where('tokens.alias', 'is not', null)
 			.select(['tokens.view_id', 'tokens.alias', 'tokens.value'])
@@ -100,16 +110,25 @@ async function fetchResolutionRowsLegacy(
 			viewRows: viewRows as ResolutionRows['viewRows'],
 			compositions,
 			axisArgsRows,
+			projectTokens,
 			viewTokenRows
 		};
 	}
 
-	// RT3: layers
-	const layers = await db
-		.selectFrom('layers')
-		.where('layers.kit_id', 'in', allKitIds)
-		.select(['layers.id', 'layers.kit_id'])
-		.execute();
+	// RT3: kit tokens + layers (parallel group)
+	const [kitTokenRows, layers] = await Promise.all([
+		db
+			.selectFrom('tokens')
+			.where('tokens.kit_id', 'in', allKitIds)
+			.where('tokens.alias', 'is not', null)
+			.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
+			.execute(),
+		db
+			.selectFrom('layers')
+			.where('layers.kit_id', 'in', allKitIds)
+			.select(['layers.id', 'layers.kit_id'])
+			.execute()
+	]);
 
 	// RT4: layer conditions + entries (parallel group)
 	const layerIds = layers.map((l) => l.id);
@@ -155,7 +174,9 @@ async function fetchResolutionRowsLegacy(
 		viewRows: viewRows as ResolutionRows['viewRows'],
 		compositions,
 		axisArgsRows: axisArgsRows as ResolutionRows['axisArgsRows'],
+		projectTokens: projectTokens as ResolutionRows['projectTokens'],
 		viewTokenRows: viewTokenRows as ResolutionRows['viewTokenRows'],
+		kitTokenRows: kitTokenRows as ResolutionRows['kitTokenRows'],
 		layers,
 		conditions: conditions as ResolutionRows['conditions'],
 		entries: entries as ResolutionRows['entries']
@@ -357,7 +378,9 @@ if (comparable(resolveViewsFromRows(legacyRows)) !== comparable(resolveViewsFrom
 		batchedRows.viewRows.length +
 		batchedRows.compositions.length +
 		batchedRows.axisArgsRows.length +
+		batchedRows.projectTokens.length +
 		batchedRows.viewTokenRows.length +
+		batchedRows.kitTokenRows.length +
 		batchedRows.layers.length +
 		batchedRows.conditions.length +
 		batchedRows.entries.length;
@@ -372,17 +395,16 @@ if (comparable(resolveViewsFromRows(legacyRows)) !== comparable(resolveViewsFrom
 	console.log('──────────────── query count (structural, env-independent) ───────');
 	console.log(`  legacy fetch (4 round-trip groups): ${legacyQueries} queries`);
 	console.log(`  batched fetch (single UNION ALL):   ${batchedQueries} queries`);
-	// The legacy queries are NOT sequential stalls. They form a DEPENDENCY WATERFALL of 4
+	// The 9 queries are NOT 9 sequential stalls. They form a DEPENDENCY WATERFALL of 4
 	// barriers (RT1 views → RT2 needs viewIds → RT3 needs kitIds → RT4 needs layerIds),
 	// with Promise.all pipelining the queries WITHIN each barrier. So the wall-time cost
-	// is ~4 round-trip latencies, not the raw query count. The batched query dissolves the
-	// waterfall by expressing each dependency as a SQL subquery -> 1 barrier. (Fewer
-	// messages still cuts per-message main-thread serialize/dispatch CPU, a smaller,
-	// separate component.)
+	// is ~4 round-trip latencies, not 9. The batched query dissolves the waterfall by
+	// expressing each dependency as a SQL subquery -> 1 barrier. (9→1 messages still cuts
+	// per-message main-thread serialize/dispatch CPU, a smaller, separate component.)
 	const LEGACY_BARRIERS = 4;
 	const BATCHED_BARRIERS = 1;
 	console.log(
-		`  message count:   ${legacyQueries} → ${batchedQueries}  (per-message dispatch/serialize CPU on the main thread)`
+		`  message count:   9 → 1  (per-message dispatch/serialize CPU on the main thread)`
 	);
 	console.log(
 		`  dependency depth: ${LEGACY_BARRIERS} → ${BATCHED_BARRIERS}  ` +

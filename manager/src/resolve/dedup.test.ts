@@ -8,7 +8,9 @@ function emptyRows(): ResolutionRows {
 		viewRows: [],
 		compositions: [],
 		axisArgsRows: [],
+		projectTokens: [],
 		viewTokenRows: [],
+		kitTokenRows: [],
 		layers: [],
 		conditions: [],
 		entries: []
@@ -20,7 +22,9 @@ function clone(rows: ResolutionRows): ResolutionRows {
 		viewRows: [...rows.viewRows],
 		compositions: [...rows.compositions],
 		axisArgsRows: [...rows.axisArgsRows],
+		projectTokens: [...rows.projectTokens],
 		viewTokenRows: [...rows.viewTokenRows],
+		kitTokenRows: [...rows.kitTokenRows],
 		layers: [...rows.layers],
 		conditions: [...rows.conditions],
 		entries: [...rows.entries]
@@ -50,7 +54,9 @@ describe('rowsKey (input-level dedup)', () => {
 				'axisArgsRows',
 				(r) => r.axisArgsRows.push({ view_id: 'v1', kit_id: 'k1', axis_id: 'a1', value: null })
 			],
+			['projectTokens', (r) => r.projectTokens.push({ alias: 'p', value: null })],
 			['viewTokenRows', (r) => r.viewTokenRows.push({ view_id: 'v1', alias: 'p', value: null })],
+			['kitTokenRows', (r) => r.kitTokenRows.push({ alias: 'p', value: null, kit_id: 'k1' })],
 			['layers', (r) => r.layers.push({ id: 'l1', kit_id: 'k1' })],
 			[
 				'conditions',
