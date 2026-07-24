@@ -380,6 +380,15 @@ export function createPluginManager(api: Api) {
 			});
 
 			const result = await activePlugin.call('on_selection_change', payload);
+			// Re-check after the await, not just before it: setData can fire (and bump
+			// selectionGen) WHILE this WASM call is in flight -- pluginQueue is FIFO/serialized,
+			// so a hover-triggered call enqueued just before a fast DB-backed edit (e.g. dropping
+			// a dragged view) can still be mid-`await` when the edit's own runResolve gets queued
+			// behind it. The pre-await check alone let that stale result through: it still carries
+			// last_resolve_input's pre-edit data, so applying it here would visibly snap the
+			// viewport back to the old state for one frame before the queued runResolve corrects
+			// it right after. Discarding here (not just skipping future runs) closes that window.
+			if (capturedGen !== selectionGen) return;
 			if (result) {
 				const parsed = JSON.parse(result.text()) as {
 					viewport_data?: UiNode[];
