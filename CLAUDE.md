@@ -74,14 +74,13 @@ KIT•10 is a design-system editor that models components as **kits** (style sys
 **Resolution algorithm (`resolve.ts`):**
 
 1. Fetch all layers for the kit.
-2. For each layer, fetch its conditions (axis values it matches) and entries (property values it sets).
+2. For each layer, fetch its conditions (axis values it matches) and entries (property values it sets), left-joining `tokens` on `render_entries.token_id`.
 3. Match layers against the current axis args using specificity (condition count + axis priority indices).
-4. Sort matched layers by specificity ascending — later entries overwrite earlier ones.
-5. Substitute token aliases with their resolved scalar values.
+4. Sort matched layers by specificity ascending — later entries overwrite earlier ones. A token-backed winning entry's value/`viewRefs` come straight from the token row its own `token_id` names (via step 2's join) — there is no separate alias-lookup substitution pass. Resolution is **token_id-authoritative**: a same-alias token at a narrower scope (e.g. a view-scope token sharing an alias with the kit-scope token an entry actually points at) has zero effect on that entry. The one exception is `applySelfDeclaredViewRefs`, which lets a view's own view-list token materialize a property with no backing render entry at all (see the `render_entries` constraint pitfall below) — that path is necessarily alias-keyed since there's no entry to be authoritative about.
 
 **Specificity:** `[conditionCount, priority1, priority2, ...]` sorted descending. Higher specificity always wins.
 
-**`fetchResolutionRows` — single batched query:** one UNION ALL query returns all 9 rowsets tagged (`views`, `compositions`, `kits`-joined `kit_name`, `axis_args`, project/kit/view `tokens`, `layers`, `conditions`, `entries`). Two leading CTEs — `project_view_ids` (the project's views) and `project_kit_ids` (kits composed into any of them) — compute the `viewIds`/`allKitIds` filters once; every branch references them by name instead of repeating the `compositions JOIN views WHERE project_id` subquery, so `projectId` is bound twice (the view-id CTE + the project-tokens branch) rather than per-branch, and no intermediate round-trip is needed to learn the filters. Replaces the original 4-sequential-await layout (RT1→RT2→RT3→RT4). Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY).
+**`fetchResolutionRows` — single batched query:** one UNION ALL query returns all 7 rowsets tagged (`views`, `compositions`, `kits`-joined `kit_name`, `axis_args`, view-scope `tokens`, `layers`, `conditions`, `entries` — the last left-joined against `tokens` per entry). Two leading CTEs — `project_view_ids` (the project's views) and `project_kit_ids` (kits composed into any of them) — compute the `viewIds`/`allKitIds` filters once; every branch references them by name instead of repeating the `compositions JOIN views WHERE project_id` subquery, so `projectId` is bound once (the view-id CTE) rather than per-branch, and no intermediate round-trip is needed to learn the filters. Replaces the original 4-sequential-await layout (RT1→RT2→RT3→RT4). Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY). There is no project/kit-scope token rowset — only view-scope tokens are fetched separately (for `applySelfDeclaredViewRefs`); every other token value rides along on the `entries` branch's own join.
 
 ---
 

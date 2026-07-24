@@ -258,7 +258,7 @@ describe('resolve', () => {
 		expect(result.size).toBe(0);
 	});
 
-	it('substitutes tokens in pass 2 after specificity resolution', async () => {
+	it('resolves a token-backed property to its token value after specificity resolution', async () => {
 		const s = await seedButtonKit();
 
 		// No args → null layer. background is a token reference (colors.bg → #ffffff)
@@ -670,6 +670,12 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.tokenAlias).toBe('accent');
 		});
 
+		// Resolution is token_id-authoritative: an entry's value always comes from the token row
+		// its own token_id names, never a same-alias scan across scopes. This test (and the one
+		// below it) still pass because the entry's token_id is set to the narrowest-scope token
+		// directly -- they exercise "the entry happens to point at the narrow token", not an
+		// implicit override. See the dedicated token_id-authoritative describe block below for
+		// the case that actually distinguishes the two.
 		it('kit token overrides project token with same alias', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Kit Override'))!;
@@ -723,11 +729,11 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.value).toBe('#10b981');
 		});
 
-		it('view-list token on children: view-scoped override wins over kit-scoped token, ignoring specificity', async () => {
+		it('children entry resolves via its own token_id even when a same-alias view-scope token exists', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(
 				ws.workspaceId,
-				'Children Token Override'
+				'Children Token Id Authoritative'
 			))!;
 
 			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
@@ -740,20 +746,47 @@ describe('range overlap matching', () => {
 			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), {
 				kitId: kit.id
 			}))!;
+			// Unrelated: a same-alias view-scope token that no entry points at. It must have zero
+			// effect on resolution -- the entry's own token_id is the sole source of truth.
 			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), {
 				viewId: view.id
 			}))!;
 
-			// Kit-scoped layer has 0 conditions (highest possible resolve-pass-1 specificity here);
-			// the view-scoped token must still win in pass 2 regardless.
 			const layer = (await ctx.api.createLayer(kit.id))!;
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
 			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitToken.id);
 
 			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
-			expect(flat.get('children')!.viewRefs).toEqual([childB.id]);
+			expect(flat.get('children')!.viewRefs).toEqual([childA.id]);
 			expect(viewToken.id).not.toBe(kitToken.id);
+		});
+
+		it('a same-alias token at a narrower scope never overrides an entry whose token_id points elsewhere', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(
+				ws.workspaceId,
+				'Token Id Authoritative Scalar'
+			))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			const kitToken = (await ctx.api.createToken(proj.id, 'brand', s('#111111'), {
+				kitId: kit.id
+			}))!;
+
+			const view = (await ctx.api.createViewInProject(proj.id, 'Test View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			// Unrelated: a same-alias view-scope token that no entry points at.
+			await ctx.api.createToken(proj.id, 'brand', s('#222222'), { viewId: view.id });
+
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'color', null, kitToken.id);
+
+			const results = await resolveManySlowPath(ctx.db, view.id);
+			const flat = flattenKitResults(results);
+			expect(flat.get('color')!.value).toBe('#111111');
 		});
 
 		it('self-declaring view-scope children: a view-scope `children` token defines children with no render entry', async () => {
