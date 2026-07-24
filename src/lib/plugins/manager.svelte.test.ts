@@ -116,6 +116,82 @@ describe('createPluginManager selection-change staleness guard', () => {
 		expect(manager.viewportData).toContain('CORRECT_POST_DROP');
 	});
 
+	it('blocks a hover result that fully completes before the position write\'s own resolve even reaches the queue', async () => {
+		// This is the deterministic (not just racy) version of the bug: a position write's
+		// runResolve needs a real DB round-trip before it's even enqueued, while a hover-
+		// triggered on_selection_change only needs one 0ms timer -- so the hover call reliably
+		// runs to completion FIRST, every time, not merely "sometimes if timing lines up." The
+		// selectionGen-only guard can't catch this (nothing has bumped it yet when the hover call
+		// finishes); beginPendingResolve's resolvePending flag is what's actually needed here.
+		controlledCalls = new Set(['on_selection_change', 'on_resolve']);
+		const manager = createPluginManager({} as Api);
+
+		await manager.loadPlugin({} as never, 'charter');
+		manager.setData([], {}, 'view1', [
+			{ viewId: 'view1', viewName: 'v', hints: {}, resolvedKits: [] }
+		] as never);
+		await flush();
+		resolvePending('on_resolve', { viewport_data: [{ marker: 'initial' }] });
+		await flush();
+
+		// Hover settles on the view (e.g. right before the user grabs it to drag) -- in flight.
+		manager.setHover('view1');
+		await flush();
+		expect(hasPending('on_selection_change')).toBe(true);
+
+		// The drop happens: beginPendingResolve fires synchronously, well before the position
+		// write's own resolve reaches pluginQueue (modeled here by not calling setData yet).
+		manager.beginPendingResolve();
+
+		// The hover call now resolves and runs all the way to completion -- no on_resolve call is
+		// even pending yet, so this isn't "still in flight when setData lands", it finishes
+		// first, in full, exactly like it would in the real app.
+		resolvePending('on_selection_change', { viewport_data: [{ marker: 'STALE_PRE_DROP' }] });
+		await flush();
+		expect(manager.viewportData).not.toContain('STALE_PRE_DROP');
+
+		// The position write's real resolve lands afterward and its result still applies.
+		manager.setData([], {}, 'view1', [
+			{ viewId: 'view1', viewName: 'v', hints: {}, resolvedKits: [] }
+		] as never);
+		await flush();
+		expect(hasPending('on_resolve')).toBe(true);
+		resolvePending('on_resolve', { viewport_data: [{ marker: 'CORRECT_POST_DROP' }] });
+		await flush();
+		expect(manager.viewportData).toContain('CORRECT_POST_DROP');
+	});
+
+	it('resumes normal selection-change processing once the pending resolve completes', async () => {
+		controlledCalls = new Set(['on_selection_change', 'on_resolve']);
+		const manager = createPluginManager({} as Api);
+
+		await manager.loadPlugin({} as never, 'charter');
+		manager.setData([], {}, 'view1', [
+			{ viewId: 'view1', viewName: 'v', hints: {}, resolvedKits: [] }
+		] as never);
+		await flush();
+		resolvePending('on_resolve', { viewport_data: [{ marker: 'initial' }] });
+		await flush();
+
+		manager.beginPendingResolve();
+		manager.setData([], {}, 'view1', [
+			{ viewId: 'view1', viewName: 'v', hints: {}, resolvedKits: [] }
+		] as never);
+		await flush();
+		resolvePending('on_resolve', { viewport_data: [{ marker: 'after-drop' }] });
+		await flush();
+		expect(manager.viewportData).toContain('after-drop');
+
+		// resolvePending was cleared once that resolve landed -- a later, unrelated hover change
+		// is processed normally again.
+		manager.setHover('view2');
+		await flush();
+		expect(hasPending('on_selection_change')).toBe(true);
+		resolvePending('on_selection_change', { viewport_data: [{ marker: 'fresh-hover' }] });
+		await flush();
+		expect(manager.viewportData).toContain('fresh-hover');
+	});
+
 	it('still applies an on_selection_change result when no newer setData raced it', async () => {
 		controlledCalls = new Set(['on_selection_change', 'on_resolve']);
 		const manager = createPluginManager({} as Api);

@@ -106,6 +106,20 @@ export function createPluginManager(api: Api) {
 	// the increment was enqueued while data was stale — skip it.
 	let selectionGen = 0;
 
+	// True from beginPendingResolve() until the next runResolve actually completes. Guards a
+	// DIFFERENT staleness window than selectionGen: a caller can know synchronously that a
+	// resolve-triggering write is about to happen (e.g. persisting a dragged view's new
+	// position) well before that write's own resolve reaches pluginQueue -- the write has to
+	// round-trip through the DB + a live query + fetchResolutionRows first, while a hover-
+	// triggered on_selection_change only needs one 0ms timer to reach the same queue. Since
+	// pluginQueue is FIFO, the selection-change call is therefore reliably enqueued AND EXECUTED
+	// (its pre-await selectionGen check passes -- nothing has bumped selectionGen yet) before the
+	// resolve even arrives, applying a result built from last_resolve_input that still predates
+	// the write. Bumping selectionGen at that point doesn't help (nothing later invalidates a
+	// call that already ran to completion); resolvePending blocks it outright, regardless of
+	// timing, until an actual resolve has landed.
+	let resolvePending = false;
+
 	// Serial queue — all plugin calls are chained so they never run concurrently
 	let pluginQueue: Promise<void> = Promise.resolve();
 
@@ -339,6 +353,10 @@ export function createPluginManager(api: Api) {
 		mark('resolve:plugin:start');
 		const result = await activePlugin.call('on_resolve', payload);
 		mark('resolve:plugin:end');
+		// A real resolve has now landed -- last_resolve_input (Charter-side) reflects whatever
+		// write beginPendingResolve was guarding against, so the selection-change fast path is
+		// safe to trust again.
+		resolvePending = false;
 
 		measure('resolve:serialize:start', 'resolve:serialize:end', 'serialize payload');
 		measure('resolve:plugin:start', 'resolve:plugin:end', 'plugin.call(on_resolve)');
@@ -370,7 +388,10 @@ export function createPluginManager(api: Api) {
 		return async () => {
 			// If setData fired between enqueue and execution, our project_views
 			// are stale — runResolve will produce a correct viewport instead.
-			if (capturedGen !== selectionGen || !activePlugin) return;
+			// resolvePending additionally blocks a call that hasn't even started yet when a
+			// caller already knows (via beginPendingResolve) a resolve is on its way but hasn't
+			// reached pluginQueue -- see resolvePending's own doc above.
+			if (capturedGen !== selectionGen || !activePlugin || resolvePending) return;
 
 			const payload = JSON.stringify({
 				primary: _selPrimary,
@@ -388,7 +409,7 @@ export function createPluginManager(api: Api) {
 			// last_resolve_input's pre-edit data, so applying it here would visibly snap the
 			// viewport back to the old state for one frame before the queued runResolve corrects
 			// it right after. Discarding here (not just skipping future runs) closes that window.
-			if (capturedGen !== selectionGen) return;
+			if (capturedGen !== selectionGen || resolvePending) return;
 			if (result) {
 				const parsed = JSON.parse(result.text()) as {
 					viewport_data?: UiNode[];
@@ -569,6 +590,17 @@ export function createPluginManager(api: Api) {
 		}, 0);
 	}
 
+	// Call synchronously, BEFORE issuing a write whose live-query-triggered resolve will take a
+	// real DB round-trip to reach pluginQueue (e.g. persisting a dragged view's dropped
+	// position). Without this, a hover/selection-change call that only needs one 0ms timer to
+	// reach the same FIFO queue is reliably dequeued and fully executed first, applying a result
+	// built from last_resolve_input that still predates the write -- a deterministic, always-
+	// reproducing "snaps to the old state, then the new one" flash, not a rare race. See
+	// resolvePending's own doc for why bumping selectionGen alone doesn't cover this window.
+	function beginPendingResolve() {
+		resolvePending = true;
+	}
+
 	// Shared by setSelection and setHover -- both just mutate a piece of interaction state and
 	// then need the same debounced on_selection_change call carrying ALL current state
 	// (primary/secondary/activeViewId/hoveredViewId), not just the field that changed.
@@ -655,6 +687,7 @@ export function createPluginManager(api: Api) {
 		setData,
 		setSelection,
 		setHover,
+		beginPendingResolve,
 		fieldUpdate,
 		disablePlugin
 	};

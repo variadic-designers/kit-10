@@ -480,6 +480,13 @@
 		pluginManager.setHover(hoveredViewId);
 	});
 
+	// Passed to Viewport.svelte so it can flag "a resolve is coming" synchronously, before
+	// persisting a dragged view's dropped position -- see beginPendingResolve's doc in
+	// manager.svelte.ts for why this can't just be selectionGen bumping on its own.
+	function beginPendingResolve() {
+		pluginManager?.beginPendingResolve();
+	}
+
 	// Font facts (text-affordances Phase 1): for every family the resolved data names, ask
 	// Fontavious's `family_facts` which weight ranges actually exist, and hand the assembled
 	// map to Charter via setData -> on_resolve's `fontFacts`. Charter's resolve_font_weight
@@ -761,6 +768,7 @@
 			projectHintsReady={activeProjectRow !== undefined}
 			{resolvedViews}
 			{compositionKeys}
+			{beginPendingResolve}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

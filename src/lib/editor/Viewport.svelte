@@ -21,6 +21,7 @@
 		projectHintsReady = false,
 		resolvedViews = [],
 		compositionKeys = [],
+		beginPendingResolve = () => {},
 		editorActivity = $bindable(),
 		selection = $bindable(),
 		hoveredViewId = $bindable(null)
@@ -38,6 +39,12 @@
 		// rootViewIds, so a pointerdown on a root view can be routed to a node-drag instead of a
 		// pan. Not otherwise interpreted here.
 		compositionKeys?: string[];
+		// Flags "a resolve is coming" on the plugin manager synchronously, before persistViewPosition
+		// writes the dropped position -- see beginPendingResolve's doc in manager.svelte.ts. Without
+		// this, a hover-triggered on_selection_change call reliably runs to completion (and applies
+		// its stale result) before the position write's own resolve even reaches pluginQueue, since
+		// that resolve needs a real DB round-trip first while hover only needs one 0ms timer.
+		beginPendingResolve?: () => void;
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
 		hoveredViewId?: string | null;
@@ -161,6 +168,10 @@
 	// uses for project.hints.vellum.panned.
 	async function persistViewPosition(viewId: string, x: number, y: number) {
 		if (!api) return;
+		// Synchronous, before the write -- see beginPendingResolve's own doc (manager.svelte.ts)
+		// for why this has to happen here rather than once the resolve it's guarding against
+		// actually arrives.
+		beginPendingResolve();
 		const current =
 			(resolvedViews.find((v) => v.viewId === viewId)?.hints?.vellum as
 				| Record<string, unknown>
