@@ -153,6 +153,25 @@ export interface QueryToken {
 	instantiateKitDefaults: (viewId: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
 	deleteToken: (tokenId: string) => Promise<void>;
+	/**
+	 * Move an existing token to a different scope -- a real move (same row/id, just
+	 * kit_id/view_id flipped), not a copy. A tagged union rather than the optional-field shape
+	 * `createToken`'s `scope` param uses, so "move to project scope" is an explicit case
+	 * (`{ projectOnly: true }`) rather than "omit everything", which is easy to typo into a
+	 * no-op. Any entry whose `token_id` points at this row keeps resolving to it unchanged
+	 * (resolution is token_id-authoritative, not alias/scope-based -- see resolve.ts), so a
+	 * scope move never changes which entries pick up this token's value.
+	 *
+	 * Checks the target scope's alias-uniqueness partial index (`tokens_project_alias_unique` /
+	 * `_kit_` / `_view_`) before writing, returning a typed collision result instead of letting
+	 * the constraint throw. No auto-rename/auto-suffix on collision -- the caller must resolve
+	 * it explicitly (matches this codebase's "editing never silently reattaches/renames"
+	 * convention, e.g. detachToken).
+	 */
+	moveTokenScope: (
+		tokenId: string,
+		newScope: { projectOnly: true } | { kitId: string } | { viewId: string }
+	) => Promise<{ ok: true } | { ok: false; reason: 'alias-collision'; collidingTokenId: string }>;
 	getTokensByProjectId: (projectId: string | null) => SelectQueryBuilder<
 		Schema,
 		'tokens',
@@ -1449,6 +1468,56 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteToken: async (tokenId: string) => {
 		await db.deleteFrom('tokens').where('tokens.id', '=', tokenId).execute();
+	},
+
+	moveTokenScope: async (
+		tokenId: string,
+		newScope: { projectOnly: true } | { kitId: string } | { viewId: string }
+	) => {
+		const kitId = 'kitId' in newScope ? newScope.kitId : null;
+		const viewId = 'viewId' in newScope ? newScope.viewId : null;
+
+		return await db.transaction().execute(async (trx) => {
+			const token = await trx
+				.selectFrom('tokens')
+				.where('tokens.id', '=', tokenId)
+				.select(['tokens.alias', 'tokens.project_id'])
+				.executeTakeFirst();
+			if (!token) return { ok: true as const };
+
+			if (token.alias !== null) {
+				let collisionQuery = trx
+					.selectFrom('tokens')
+					.where('tokens.alias', '=', token.alias)
+					.where('tokens.id', '!=', tokenId)
+					.select('tokens.id as id');
+				collisionQuery =
+					kitId !== null
+						? collisionQuery.where('tokens.kit_id', '=', kitId)
+						: viewId !== null
+							? collisionQuery.where('tokens.view_id', '=', viewId)
+							: collisionQuery
+									.where('tokens.project_id', '=', token.project_id)
+									.where('tokens.kit_id', 'is', null)
+									.where('tokens.view_id', 'is', null);
+
+				const colliding = await collisionQuery.executeTakeFirst();
+				if (colliding) {
+					return {
+						ok: false as const,
+						reason: 'alias-collision' as const,
+						collidingTokenId: colliding.id
+					};
+				}
+			}
+
+			await trx
+				.updateTable('tokens')
+				.set({ kit_id: kitId, view_id: viewId })
+				.where('tokens.id', '=', tokenId)
+				.execute();
+			return { ok: true as const };
+		});
 	},
 
 	createAxis: async (

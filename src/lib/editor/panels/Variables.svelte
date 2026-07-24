@@ -50,7 +50,7 @@
 	import { type Api, type EditorState, type TokenValue } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
-	import { draggable } from '../dnd.svelte.ts';
+	import { draggable, dropZone, type DragPayload } from '../dnd.svelte.ts';
 
 	type TokenRow = {
 		tokenId: string;
@@ -148,6 +148,56 @@
 
 	async function renameToken(tokenId: string, alias: string) {
 		await api.updateTokenAlias(tokenId, alias);
+	}
+
+	type TokenScope = 'project' | 'kit' | 'view';
+
+	function tokenCurrentScope(tokenId: string): TokenScope | null {
+		if ((projectTokensQuery.rows as TokenRow[]).some((t) => t.tokenId === tokenId)) return 'project';
+		if ((kitTokensQuery.rows as TokenRow[]).some((t) => t.tokenId === tokenId)) return 'kit';
+		if ((viewTokensQuery.rows as TokenRow[]).some((t) => t.tokenId === tokenId)) return 'view';
+		return null;
+	}
+
+	let moveError = $state<string | null>(null);
+	let moveErrorTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function flashMoveError(message: string) {
+		moveError = message;
+		if (moveErrorTimer) clearTimeout(moveErrorTimer);
+		moveErrorTimer = setTimeout(() => (moveError = null), 3500);
+	}
+
+	// Real move (same row/id) via api.moveTokenScope -- never a copy. Blocks with an inline error
+	// on an alias collision at the target scope rather than auto-renaming; the caller resolves it.
+	async function moveTokenToScope(tokenId: string, target: TokenScope) {
+		if (tokenCurrentScope(tokenId) === target) return;
+		const newScope =
+			target === 'project'
+				? { projectOnly: true as const }
+				: target === 'kit'
+					? { kitId: editorActivity.activeKitId! }
+					: { viewId: editorActivity.activeViewId! };
+		const result = await api.moveTokenScope(tokenId, newScope);
+		if (!result.ok) {
+			flashMoveError(`This alias already exists in ${target} scope`);
+		}
+	}
+
+	function tokenDropCanDrop(target: TokenScope) {
+		return (payload: DragPayload) => {
+			if (payload.kind !== 'token') return false;
+			if (target === 'kit' && !editorActivity.activeKitId) return false;
+			if (target === 'view' && !editorActivity.activeViewId) return false;
+			return tokenCurrentScope(payload.tokenId) !== target;
+		};
+	}
+
+	function tokenDropOnDrop(target: TokenScope) {
+		return (payload: DragPayload) => {
+			if (payload.kind !== 'token') return;
+			moveTokenToScope(payload.tokenId, target);
+		};
 	}
 
 	const tokenPanelContextMenu: ContextMenuContentGenerator = () => [
@@ -340,11 +390,19 @@
 			</li>
 		{/snippet}
 
+		{#if moveError}
+			<div class="token-move-error">{moveError}</div>
+		{/if}
+
 		<!-- View Tokens (only when a view is selected) -->
 		{#if editorActivity.activeViewId}
 			{@const viewRows = viewTokensQuery.rows as TokenRow[]}
 
-			<details class="token-scope" open>
+			<details
+				class="token-scope"
+				open
+				use:dropZone={{ accepts: 'token', canDrop: tokenDropCanDrop('view'), onDrop: tokenDropOnDrop('view') }}
+			>
 				<summary class="token-scope__header">
 					<h3 class="token-scope__label">
 						<i class="fa-regular fa-window-maximize"></i>
@@ -378,7 +436,11 @@
 		{#if editorActivity.activeKitId}
 			{@const kitRows = kitTokensQuery.rows as TokenRow[]}
 
-			<details class="token-scope" open>
+			<details
+				class="token-scope"
+				open
+				use:dropZone={{ accepts: 'token', canDrop: tokenDropCanDrop('kit'), onDrop: tokenDropOnDrop('kit') }}
+			>
 				<summary class="token-scope__header">
 					<h3 class="token-scope__label">
 						<i class="fa-solid fa-puzzle-piece"></i>
@@ -411,7 +473,15 @@
 		<!-- Project Tokens -->
 		{@const projectRows = projectTokensQuery.rows as TokenRow[]}
 
-		<details class="token-scope" open>
+		<details
+			class="token-scope"
+			open
+			use:dropZone={{
+				accepts: 'token',
+				canDrop: tokenDropCanDrop('project'),
+				onDrop: tokenDropOnDrop('project')
+			}}
+		>
 			<summary class="token-scope__header">
 				<h3 class="token-scope__label">
 					<i class="fa-solid fa-diagram-project"></i>
@@ -514,8 +584,22 @@
 <style lang="scss" global>
 	@use '_index' as *;
 
+	.token-move-error {
+		margin: $x-space-xs;
+		padding: calc($x-space-xs / 2) $x-space-sm;
+		border-radius: 4px;
+		background: var(--color-error, oklch(58% 0.22 25));
+		color: var(--color-error-text, oklch(98% 0 0));
+		font-size: $x-font-size-xs;
+	}
+
 	.token-scope {
 		@include layout-flex-column();
+
+		&.dnd-over {
+			outline: 2px solid var(--color-primary);
+			outline-offset: -2px;
+		}
 
 		summary {
 			list-style: none;

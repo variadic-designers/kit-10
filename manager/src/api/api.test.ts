@@ -508,6 +508,65 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(after).toHaveLength(0);
 	});
 
+	it('moveTokenScope moves a token between scopes, preserving its id', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+
+		const token = (await ctx.api.createToken(proj.id, 'brand', s('#111111')))!;
+		expect(token.kit_id).toBeNull();
+		expect(token.view_id).toBeNull();
+
+		// project -> kit
+		const toKit = await ctx.api.moveTokenScope(token.id, { kitId: kit.id });
+		expect(toKit).toEqual({ ok: true });
+		let kitTokens = await ctx.api.getTokensByKitId(kit.id).execute();
+		expect(kitTokens).toHaveLength(1);
+		expect(kitTokens[0]!.tokenId).toBe(token.id);
+
+		// kit -> view
+		const toView = await ctx.api.moveTokenScope(token.id, { viewId: view.id });
+		expect(toView).toEqual({ ok: true });
+		const viewTokens = await ctx.api.getTokensByViewId(view.id).execute();
+		expect(viewTokens).toHaveLength(1);
+		expect(viewTokens[0]!.tokenId).toBe(token.id);
+		kitTokens = await ctx.api.getTokensByKitId(kit.id).execute();
+		expect(kitTokens).toHaveLength(0);
+
+		// view -> project
+		const toProject = await ctx.api.moveTokenScope(token.id, { projectOnly: true });
+		expect(toProject).toEqual({ ok: true });
+		const projectTokens = await ctx.api.getTokensByProjectId(proj.id).execute();
+		expect(projectTokens.map((t) => t.tokenId)).toContain(token.id);
+	});
+
+	it('moveTokenScope blocks on an alias collision at the target scope, leaving the token unmoved', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+
+		const projectToken = (await ctx.api.createToken(proj.id, 'brand', s('#111111')))!;
+		const kitToken = (await ctx.api.createToken(proj.id, 'brand', s('#222222'), {
+			kitId: kit.id
+		}))!;
+
+		const result = await ctx.api.moveTokenScope(projectToken.id, { kitId: kit.id });
+		expect(result).toEqual({
+			ok: false,
+			reason: 'alias-collision',
+			collidingTokenId: kitToken.id
+		});
+
+		// Unmoved: still project-scoped.
+		const projectTokens = await ctx.api.getTokensByProjectId(proj.id).execute();
+		expect(projectTokens.map((t) => t.tokenId)).toContain(projectToken.id);
+		const kitTokens = await ctx.api.getTokensByKitId(kit.id).execute();
+		expect(kitTokens.map((t) => t.tokenId)).toEqual([kitToken.id]);
+	});
+
 	it('upsertViewToken creates then updates one view-scoped token for an alias', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
