@@ -40,6 +40,11 @@
 		projectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		// Arms pipette-pick-a-target mode for a layer-to-layer move (Styles.svelte owns the actual
+		// api.moveRenderEntryToLayer call once a target's picked in Axes) -- and the direct one-click
+		// shortcut to the kit's unconditional base layer, which has no Axes-panel dot to pick up.
+		onMoveToLayer?: () => void;
+		onMoveToBaseLayer?: () => void;
 	};
 
 	let {
@@ -65,7 +70,9 @@
 		api,
 		projectId,
 		onFieldUpdate,
-		callUtilityPlugin
+		callUtilityPlugin,
+		onMoveToLayer,
+		onMoveToBaseLayer
 	}: StyleFieldProps = $props();
 
 	const currentFontStatus = $derived(
@@ -89,6 +96,23 @@
 				icon: 'fa-solid fa-box-open',
 				disabled: !isToken,
 				onClick: () => detach()
+			},
+			'hr',
+			{
+				name: 'moveToLayer',
+				description: 'Pick a value in Axes to relocate this property’s entry there',
+				displayText: 'Move to Layer…',
+				icon: 'fa-solid fa-arrows-turn-to-dots',
+				disabled: !onMoveToLayer || !sourceLayerId,
+				onClick: () => onMoveToLayer?.()
+			},
+			{
+				name: 'moveToBaseLayer',
+				description: 'Relocate this property’s entry to the kit’s unconditional base layer',
+				displayText: 'Move to Base Layer',
+				icon: 'fa-solid fa-circle-dot',
+				disabled: !onMoveToBaseLayer || conditionValues.length === 0,
+				onClick: () => onMoveToBaseLayer?.()
 			},
 			'hr',
 			{

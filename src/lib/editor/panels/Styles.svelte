@@ -241,9 +241,40 @@
 		await api.removePropertyFromLayer(src, key);
 	}
 
+	// "Move to Layer…" — arms pipette pick-a-target mode (same shared state as painting) for the
+	// NEXT axis value picked up in the Axes panel, but instead of painting a value onto it, this
+	// relocates the property's existing render entry there (api.moveRenderEntryToLayer preserves the
+	// entry's id/token, unlike a paint's copy). The move fires automatically the moment the picked
+	// target is ready -- no second click back in Styles needed.
+	let movingKey = $state<string | null>(null);
+
+	function startMoveToLayer(key: string) {
+		movingKey = key;
+	}
+
+	async function moveToBaseLayer(key: string) {
+		const kitId = activeKitId;
+		const src = track(key).sourceLayerId;
+		if (!kitId || !src) return;
+		await api.moveRenderEntryToLayer(src, key, kitId, []);
+	}
+
+	$effect(() => {
+		const key = movingKey;
+		const target = held;
+		if (!key || !target || !target.ready) return;
+		const kitId = activeKitId;
+		const src = track(key).sourceLayerId;
+		movingKey = null;
+		stopPaint();
+		if (!kitId || !src) return;
+		api.moveRenderEntryToLayer(src, key, kitId, target.axisValueIds);
+	});
+
 	function onPipetteKey(e: KeyboardEvent) {
 		if (held && matchKey(e, $keybinds['edit.cancel'])) {
 			e.preventDefault();
+			movingKey = null;
 			stopPaint();
 		}
 	}
@@ -259,15 +290,23 @@
 	{#snippet content()}
 		{#if held}
 			<div class="pipette-bar" style="--held: {held.color}">
-				<i class="fa-solid fa-eye-dropper"></i>
+				<i class="fa-solid {movingKey ? 'fa-arrows-turn-to-dots' : 'fa-eye-dropper'}"></i>
 				<span class="pipette-bar__text">
-					{#if held.ready}
+					{#if movingKey}
+						Pick a value in Axes to move this property there
+					{:else if held.ready}
 						Painting onto <strong>{held.label}</strong> · click a property
 					{:else}
 						Pick a value in Axes to paint onto
 					{/if}
 				</span>
-				<button class="pipette-bar__btn" onclick={() => stopPaint()}>Done</button>
+				<button
+					class="pipette-bar__btn"
+					onclick={() => {
+						movingKey = null;
+						stopPaint();
+					}}>Done</button
+				>
 			</div>
 		{/if}
 		{#if resolvedKits}
@@ -365,6 +404,8 @@
 										projectId={activeProjectId}
 										{onFieldUpdate}
 										{callUtilityPlugin}
+										onMoveToLayer={() => startMoveToLayer(field.key)}
+										onMoveToBaseLayer={() => moveToBaseLayer(field.key)}
 									/>
 								{/if}
 								</div>

@@ -403,6 +403,32 @@ export interface QueryLayer {
 	// null/base layer (zero conditions) is never GC'd -- it's the fallback write target and may
 	// legitimately be empty. Returns whether the layer itself was removed.
 	removePropertyFromLayer: (layerId: string, property: string) => Promise<{ layerDeleted: boolean }>;
+	/**
+	 * Move a property's render entry(ies) from sourceLayerId to a different condition set on the
+	 * same kit -- find-or-creates the target layer (reusing createLayerWithConditions's exact-match
+	 * rule) and repoints the entry's snippet_id in place, preserving its id/token_id/value (never a
+	 * delete+recreate, so an attached token survives the move). GCs the source layer if left empty
+	 * (same rule as removePropertyFromLayer). Cross-kit moves are rejected -- a property's semantics
+	 * are kit-scoped. Takes (layerId, property) rather than an entry id, mirroring
+	 * removePropertyFromLayer's shape -- the Render panel has sourceLayerId + property, not a raw
+	 * render_entries id.
+	 */
+	moveRenderEntryToLayer: (
+		sourceLayerId: string,
+		property: string,
+		targetKitId: string,
+		targetAxisValueIds: string[]
+	) => Promise<
+		| { ok: true; layerId: string; created: boolean; sourceLayerDeleted: boolean }
+		| {
+				ok: false;
+				reason:
+					| 'source-layer-not-found'
+					| 'cross-kit-not-supported'
+					| 'property-not-found-on-layer'
+					| 'target-layer-failed';
+		  }
+	>;
 	addAxisValueToLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	removeAxisValueFromLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	getLayersByKitId: (
@@ -857,6 +883,100 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 			} as any)
 			.execute();
 	}
+}
+
+// Find-or-create the kit's layer whose condition set is EXACTLY axisValueIds, guaranteeing it has
+// a render snippet. Shared by createLayerWithConditions (Axes-panel "create layer" / pipette write
+// target) and moveRenderEntryToLayer, so the two can never disagree on the exact-match rule.
+async function findOrCreateLayer(
+	trx: SchemaDialect,
+	kitId: string,
+	axisValueIds: string[]
+): Promise<{ layerId: string; created: boolean; snippetId: string } | undefined> {
+	const target = new Set(axisValueIds);
+	const layers = await trx.selectFrom('layers').select('id').where('kit_id', '=', kitId).execute();
+	const layerIds = layers.map((l) => l.id);
+	// A brand-new kit has zero layers -- `WHERE layer_id IN ()` on an empty array is invalid SQL,
+	// so skip the query entirely rather than let it reach the DB.
+	const conds =
+		layerIds.length > 0
+			? await trx
+					.selectFrom('layer_axis_values')
+					.select(['layer_id', 'axis_value_id'])
+					.where('layer_id', 'in', layerIds)
+					.execute()
+			: [];
+	const byLayer = new Map<string, Set<string>>();
+	for (const l of layers) byLayer.set(l.id, new Set());
+	for (const c of conds) byLayer.get(c.layer_id)?.add(c.axis_value_id);
+
+	let layerId: string | undefined;
+	let created = false;
+	for (const [id, set] of byLayer) {
+		if (set.size === target.size && [...target].every((v) => set.has(v))) {
+			layerId = id;
+			break;
+		}
+	}
+
+	if (!layerId) {
+		const layer = await trx
+			.insertInto('layers')
+			.values({ kit_id: kitId })
+			.returningAll()
+			.executeTakeFirst();
+		if (!layer) return undefined;
+		layerId = layer.id;
+		created = true;
+		if (axisValueIds.length > 0) {
+			await trx
+				.insertInto('layer_axis_values')
+				.values(axisValueIds.map((axis_value_id) => ({ layer_id: layerId!, axis_value_id })))
+				.execute();
+		}
+	}
+
+	// The write host-fn needs a snippet to exist; ensure one whether reused or fresh.
+	let snippet = await trx
+		.selectFrom('render_snippets')
+		.select('id')
+		.where('layer_id', '=', layerId)
+		.executeTakeFirst();
+	if (!snippet) {
+		snippet = await trx
+			.insertInto('render_snippets')
+			.values({ layer_id: layerId })
+			.returning('id')
+			.executeTakeFirstOrThrow();
+	}
+
+	return { layerId, created, snippetId: snippet.id };
+}
+
+// A conditioned layer (>=1 condition) left with zero render entries across its snippet is dead
+// weight -- delete it (cascade drops its snippet + conditions). The null/base layer (0 conditions)
+// is never GC'd -- it's the fallback write target and may legitimately be empty. Shared by
+// removePropertyFromLayer and moveRenderEntryToLayer. Returns whether the layer was removed.
+async function gcLayerIfEmptyAndConditioned(trx: SchemaDialect, layerId: string): Promise<boolean> {
+	const conds = await trx
+		.selectFrom('layer_axis_values')
+		.select('axis_value_id')
+		.where('layer_id', '=', layerId)
+		.limit(1)
+		.execute();
+	if (conds.length === 0) return false;
+
+	const remaining = await trx
+		.selectFrom('render_entries')
+		.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+		.where('render_snippets.layer_id', '=', layerId)
+		.select('render_entries.id')
+		.limit(1)
+		.execute();
+	if (remaining.length > 0) return false;
+
+	await trx.deleteFrom('layers').where('id', '=', layerId).execute();
+	return true;
 }
 
 export const queryBuilder = (db: SchemaDialect): Api => ({
@@ -1841,88 +1961,86 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 					.execute();
 			}
 
-			// GC only conditioned layers -- the null/base layer (0 conditions) stays even when empty.
-			const conds = await trx
-				.selectFrom('layer_axis_values')
-				.select('axis_value_id')
-				.where('layer_id', '=', layerId)
-				.limit(1)
-				.execute();
-			if (conds.length === 0) return { layerDeleted: false };
-
-			const remaining = await trx
-				.selectFrom('render_entries')
-				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
-				.where('render_snippets.layer_id', '=', layerId)
-				.select('render_entries.id')
-				.limit(1)
-				.execute();
-			if (remaining.length > 0) return { layerDeleted: false };
-
-			await trx.deleteFrom('layers').where('id', '=', layerId).execute();
-			return { layerDeleted: true };
+			const layerDeleted = await gcLayerIfEmptyAndConditioned(trx, layerId);
+			return { layerDeleted };
 		});
 	},
 
 	createLayerWithConditions: async (kitId: string, axisValueIds: string[]) => {
-		const target = new Set(axisValueIds);
 		return await db.transaction().execute(async (trx) => {
-			// Existing layers of this kit + their condition sets, to reuse an exact match.
-			const layers = await trx
+			const result = await findOrCreateLayer(trx, kitId, axisValueIds);
+			if (!result) return undefined;
+			return { layerId: result.layerId, created: result.created };
+		});
+	},
+
+	// Atomically relocate a property's render entry(ies) from sourceLayerId to a different (existing
+	// or new) condition set on the SAME kit -- preserves each entry's id/token_id/value (an UPDATE
+	// of snippet_id, never a delete+recreate), then GCs the source layer if it's left empty. Takes
+	// (layerId, property) rather than a raw entry id -- mirrors removePropertyFromLayer's shape
+	// exactly, since that's what the Render panel actually has (ResolvedProperty carries
+	// sourceLayerId + property, not an entry id) and it's what lets this move "the entry(ies) for
+	// this property" the same way removePropertyFromLayer deletes them. Restricted to same-kit
+	// moves: a property's semantics are kit-scoped by convention, so moving across kits would change
+	// what "property" resolves against downstream (Charter) in a way this op shouldn't silently do.
+	moveRenderEntryToLayer: async (
+		sourceLayerId: string,
+		property: string,
+		targetKitId: string,
+		targetAxisValueIds: string[]
+	) => {
+		return await db.transaction().execute(async (trx) => {
+			const sourceLayer = await trx
 				.selectFrom('layers')
-				.select('id')
-				.where('kit_id', '=', kitId)
+				.where('id', '=', sourceLayerId)
+				.select('kit_id')
+				.executeTakeFirst();
+			if (!sourceLayer) return { ok: false as const, reason: 'source-layer-not-found' as const };
+			if (sourceLayer.kit_id !== targetKitId) {
+				return { ok: false as const, reason: 'cross-kit-not-supported' as const };
+			}
+
+			const entries = await trx
+				.selectFrom('render_entries')
+				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+				.where('render_snippets.layer_id', '=', sourceLayerId)
+				.where('render_entries.property', '=', property)
+				.select('render_entries.id as id')
 				.execute();
-			const conds = await trx
-				.selectFrom('layer_axis_values')
-				.select(['layer_id', 'axis_value_id'])
+			if (entries.length === 0) {
+				return { ok: false as const, reason: 'property-not-found-on-layer' as const };
+			}
+
+			const target = await findOrCreateLayer(trx, targetKitId, targetAxisValueIds);
+			if (!target) return { ok: false as const, reason: 'target-layer-failed' as const };
+
+			if (target.layerId === sourceLayerId) {
+				return {
+					ok: true as const,
+					layerId: target.layerId,
+					created: target.created,
+					sourceLayerDeleted: false
+				};
+			}
+
+			await trx
+				.updateTable('render_entries')
+				.set({ snippet_id: target.snippetId })
 				.where(
-					'layer_id',
+					'id',
 					'in',
-					layers.map((l) => l.id)
+					entries.map((e) => e.id)
 				)
 				.execute();
-			const byLayer = new Map<string, Set<string>>();
-			for (const l of layers) byLayer.set(l.id, new Set());
-			for (const c of conds) byLayer.get(c.layer_id)?.add(c.axis_value_id);
 
-			let layerId: string | undefined;
-			let created = false;
-			for (const [id, set] of byLayer) {
-				if (set.size === target.size && [...target].every((v) => set.has(v))) {
-					layerId = id;
-					break;
-				}
-			}
+			const sourceLayerDeleted = await gcLayerIfEmptyAndConditioned(trx, sourceLayerId);
 
-			if (!layerId) {
-				const layer = await trx
-					.insertInto('layers')
-					.values({ kit_id: kitId })
-					.returningAll()
-					.executeTakeFirst();
-				if (!layer) return undefined;
-				layerId = layer.id;
-				created = true;
-				if (axisValueIds.length > 0) {
-					await trx
-						.insertInto('layer_axis_values')
-						.values(axisValueIds.map((axis_value_id) => ({ layer_id: layerId!, axis_value_id })))
-						.execute();
-				}
-			}
-
-			// The write host-fn needs a snippet to exist; ensure one whether reused or fresh.
-			const snippet = await trx
-				.selectFrom('render_snippets')
-				.select('id')
-				.where('layer_id', '=', layerId)
-				.executeTakeFirst();
-			if (!snippet) {
-				await trx.insertInto('render_snippets').values({ layer_id: layerId }).execute();
-			}
-
-			return { layerId, created };
+			return {
+				ok: true as const,
+				layerId: target.layerId,
+				created: target.created,
+				sourceLayerDeleted
+			};
 		});
 	},
 

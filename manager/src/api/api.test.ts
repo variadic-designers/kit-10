@@ -403,6 +403,107 @@ describe('api', () => {
 		expect(after).toHaveLength(0);
 	});
 
+	it('moveRenderEntryToLayer relocates an entry to a new condition set, preserving id/token, and GCs the emptied source layer', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const light = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+
+		const token = (await ctx.api.createToken(proj.id, 'brand', s('#111111')))!;
+
+		const sourceLayer = (await ctx.api.createLayerWithConditions(kit.id, [dark.id]))!;
+		const sourceSnippets = await ctx.api.getRenderSnippetsByLayerId(sourceLayer.layerId).execute();
+		const entry = (await ctx.api.createRenderEntry(
+			sourceSnippets[0]!.snippetId,
+			'color',
+			null,
+			token.id
+		))!;
+
+		const result = await ctx.api.moveRenderEntryToLayer(
+			sourceLayer.layerId,
+			'color',
+			kit.id,
+			[light.id]
+		);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.created).toBe(true);
+		expect(result.sourceLayerDeleted).toBe(true); // conditioned source layer left empty
+		expect(result.layerId).not.toBe(sourceLayer.layerId);
+
+		// Entry survived with identical id and its token intact.
+		const moved = await ctx.db
+			.selectFrom('render_entries')
+			.selectAll()
+			.where('id', '=', entry.id)
+			.executeTakeFirst();
+		expect(moved).toBeDefined();
+		expect(moved!.token_id).toBe(token.id);
+
+		// Source (conditioned) layer is gone.
+		const remainingSourceLayer = await ctx.db
+			.selectFrom('layers')
+			.selectAll()
+			.where('id', '=', sourceLayer.layerId)
+			.executeTakeFirst();
+		expect(remainingSourceLayer).toBeUndefined();
+
+		// New layer has the light condition.
+		const newConds = await ctx.db
+			.selectFrom('layer_axis_values')
+			.selectAll()
+			.where('layer_id', '=', result.layerId)
+			.execute();
+		expect(newConds.map((c) => c.axis_value_id)).toEqual([light.id]);
+	});
+
+	it('moveRenderEntryToLayer rejects a move to a different kit', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const kitA = (await ctx.api.createKitInProject(proj.id, 'a'))!;
+		const kitB = (await ctx.api.createKitInProject(proj.id, 'b'))!;
+		const layer = (await ctx.api.createLayer(kitA.id))!;
+		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+		await ctx.api.createRenderEntry(snippet.id, 'color', '#fff');
+
+		const result = await ctx.api.moveRenderEntryToLayer(layer.id, 'color', kitB.id, []);
+		expect(result).toEqual({ ok: false, reason: 'cross-kit-not-supported' });
+	});
+
+	it('moveRenderEntryToLayer reuses an existing layer with the same target condition set', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+
+		const existingDarkLayer = (await ctx.api.createLayerWithConditions(kit.id, [dark.id]))!;
+		const nullLayer = (await ctx.api.createLayer(kit.id))!;
+		const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+		await ctx.api.createRenderEntry(nullSnippet.id, 'color', '#fff');
+
+		const result = await ctx.api.moveRenderEntryToLayer(nullLayer.id, 'color', kit.id, [dark.id]);
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.created).toBe(false);
+		expect(result.layerId).toBe(existingDarkLayer.layerId);
+		// The null layer is never GC'd even when left empty.
+		expect(result.sourceLayerDeleted).toBe(false);
+
+		const nullLayerStillThere = await ctx.db
+			.selectFrom('layers')
+			.selectAll()
+			.where('id', '=', nullLayer.id)
+			.executeTakeFirst();
+		expect(nullLayerStillThere).toBeDefined();
+	});
+
 	// ---- Render Snippets (now point to layers) ----
 
 	it('creates and deletes render snippets on a layer', async () => {
