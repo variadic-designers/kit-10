@@ -129,12 +129,32 @@
 
 	function enterCreateMode() {
 		pendingConditions = {};
+		editingLayerId = null;
 		createMode = true;
 	}
+
+	// Shares createMode's whole condition-builder UI/state with "new layer" -- editingLayerId is
+	// what distinguishes the two at commit time (updateLayerAxisValues vs createLayerWithConditions).
+	// Seeded from the layer currently behind the clicked dot so editing starts from its real,
+	// current condition set rather than empty.
+	let editingLayerId = $state<string | null>(null);
+
+	function enterEditLayerMode(axisValueId: string, keys: string[]) {
+		const resolved = resolveDotLayer(axisValueId, keys);
+		if (!resolved) return;
+		pendingConditions = Object.fromEntries(resolved.conds.map((c) => [c.axisId, c.axisValueId]));
+		editingLayerId = resolved.layerId;
+		createMode = true;
+	}
+
+	// True while build-a-condition-set mode is editing an EXISTING layer's conditions rather than
+	// building a brand-new one -- distinguishes the shared createMode UI's commit target and copy.
+	const editingExisting = $derived(editingLayerId !== null);
 
 	function cancelCreateMode() {
 		createMode = false;
 		pendingConditions = {};
+		editingLayerId = null;
 	}
 
 	function toggleCondition(axisId: string, axisValueId: string) {
@@ -166,6 +186,7 @@
 	async function commitCreateLayer() {
 		const kitId = editorActivity.activeKitId;
 		const ids = Object.values(pendingConditions);
+		const editingId = editingLayerId;
 		if (!kitId || ids.length === 0) {
 			cancelCreateMode();
 			return;
@@ -176,6 +197,14 @@
 			value: (axisValues[axisId] ?? []).find((v) => v.axisValueId === pendingConditions[axisId])?.value
 				.value
 		}));
+		if (editingId) {
+			await api.updateLayerAxisValues(editingId, ids);
+			cancelCreateMode();
+			// Reflect the edited combination in the selection so the row now visibly matches it, but
+			// don't arm painting -- editing conditions isn't a "start painting here" gesture.
+			await applySelection(conds);
+			return;
+		}
 		await api.createLayerWithConditions(kitId, ids);
 		cancelCreateMode();
 		// The new dot appears via the live query. Reflect the combination in the selection, then paint
@@ -191,7 +220,7 @@
 	function resolveDotLayer(
 		axisValueId: string,
 		keys: string[]
-	): { layerId: string; conds: { axisId: string; value: string }[] } | null {
+	): { layerId: string; conds: { axisId: string; axisValueId: string; value: string }[] } | null {
 		const kSorted = [...new Set(keys)].sort().join('|');
 		const candidates = layerConditionsByLayer.filter(({ conds }) => {
 			if (conds.length === 0) return false;
@@ -206,7 +235,11 @@
 			})
 		);
 		const chosen = active ?? candidates[0]!;
-		const conds = chosen.conds.map((c) => ({ axisId: c.axisId, value: (c.value as any)?.value }));
+		const conds = chosen.conds.map((c) => ({
+			axisId: c.axisId,
+			axisValueId: c.axisValueId,
+			value: (c.value as any)?.value
+		}));
 		return { layerId: chosen.layerId, conds };
 	}
 
@@ -607,12 +640,18 @@
 				<span class="create-layer-bar__dot"></span>
 				<span class="create-layer-bar__text">
 					{#if pendingAxisIds.length === 0}
-						Pick axis values for the new layer…
+						{editingExisting ? 'Pick this layer’s new condition set…' : 'Pick axis values for the new layer…'}
 					{:else}
-						{pendingAxisIds.length} axis{pendingAxisIds.length === 1 ? '' : 'es'} · press Enter to create
+						{pendingAxisIds.length} axis{pendingAxisIds.length === 1 ? '' : 'es'} · press Enter to {editingExisting
+							? 'save'
+							: 'create'}
 					{/if}
 				</span>
-				<button class="create-layer-bar__btn" onclick={() => commitCreateLayer()} disabled={pendingAxisIds.length === 0}>Create</button>
+				<button
+					class="create-layer-bar__btn"
+					onclick={() => commitCreateLayer()}
+					disabled={pendingAxisIds.length === 0}>{editingExisting ? 'Save' : 'Create'}</button
+				>
 				<button class="create-layer-bar__btn create-layer-bar__btn--ghost" onclick={() => cancelCreateMode()}>Cancel</button>
 			</div>
 		{/if}
@@ -697,6 +736,7 @@
 				onToggleCondition={toggleCondition}
 				onPickLayer={(axisValueId, keys) => onPickLayer(axisValueId, keys)}
 				onDeleteLayer={(axisValueId, keys) => onDeleteLayer(axisValueId, keys)}
+				onEditLayerConditions={(axisValueId, keys) => enterEditLayerMode(axisValueId, keys)}
 				/>
 				</div>
 			{/each}

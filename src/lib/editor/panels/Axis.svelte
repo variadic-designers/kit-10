@@ -73,6 +73,10 @@
 		onPickLayer?: (axisValueId: string, keys: string[]) => void;
 		// Alt-clicking a dot deletes the layer it represents.
 		onDeleteLayer?: (axisValueId: string, keys: string[]) => void;
+		// Right-click a dot -> "Edit Conditions…" -- opens the layer's whole condition set for
+		// editing (a different op from pick-up/delete: it changes what the layer itself matches,
+		// not which layer a paint targets or removing it outright).
+		onEditLayerConditions?: (axisValueId: string, keys: string[]) => void;
 	};
 </script>
 
@@ -118,7 +122,8 @@
 		pendingColor = null,
 		onToggleCondition,
 		onPickLayer,
-		onDeleteLayer
+		onDeleteLayer,
+		onEditLayerConditions
 	}: AxisProps = $props();
 
 	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
@@ -246,6 +251,20 @@
 				onClick: () => {
 					if (axisValueId) onValueDelete?.(axisValueId);
 				}
+			}
+		];
+	}
+
+	// Right-click menu for a layer-combo dot -- distinct from the value's own context menu
+	// (valueContextMenu) and from the dot's plain-click (pick up) / alt-click (delete) gestures.
+	function dotContextMenu(axisValueId: string, keys: string[]): ContextMenuContentGenerator {
+		return () => [
+			{
+				name: 'edit-conditions',
+				description: "Change which axis values this layer's whole condition set matches",
+				displayText: 'Edit Conditions…',
+				icon: 'fa-solid fa-sliders',
+				onClick: () => onEditLayerConditions?.(axisValueId, keys)
 			}
 		];
 	}
@@ -402,6 +421,7 @@
 												class:axis-field__layer-shape--active={layer.active}
 												style="--shape-color: {layerDotColor(layer.keys, layer.active)}"
 												title={dotTitle(layer)}
+												use:contextMenu={dotContextMenu(axisValueId ?? '', layer.keys)}
 												onmouseenter={() => onLayerHover?.(layer.keys)}
 												onmouseleave={() => onLayerHover?.(null)}
 												onclick={(e) => {

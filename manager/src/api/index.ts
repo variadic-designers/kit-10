@@ -431,6 +431,20 @@ export interface QueryLayer {
 	>;
 	addAxisValueToLayer: (layerId: string, axisValueId: string) => Promise<void>;
 	removeAxisValueFromLayer: (layerId: string, axisValueId: string) => Promise<void>;
+	/**
+	 * Replace a layer's whole condition set in one transactional diff-and-set (rather than a series
+	 * of addAxisValueToLayer/removeAxisValueFromLayer calls). If the resulting condition set is now
+	 * identical to another layer's on the same kit, MERGES into it rather than leaving two layers
+	 * with the same conditions -- an inconsistent state the resolver's specificity math doesn't guard
+	 * against (both would match identically; which entry wins would come down to unintentional
+	 * insertion/iteration order). On a per-property clash during the merge, the just-edited layer's
+	 * entry wins (it's the one the user explicitly acted on); the edited layer itself is deleted once
+	 * empty (cascades its snippet + conditions).
+	 */
+	updateLayerAxisValues: (
+		layerId: string,
+		axisValueIds: string[]
+	) => Promise<{ merged: boolean; mergedIntoLayerId?: string }>;
 	getLayersByKitId: (
 		kitId: string
 	) => SelectQueryBuilder<Schema, 'layers', { layerId: string; kitId: string; lastModified: Date }>;
@@ -2122,6 +2136,110 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.where('layer_axis_values.layer_id', '=', layerId)
 			.where('layer_axis_values.axis_value_id', '=', axisValueId)
 			.execute();
+	},
+
+	updateLayerAxisValues: async (layerId: string, axisValueIds: string[]) => {
+		const target = new Set(axisValueIds);
+		return await db.transaction().execute(async (trx) => {
+			const layer = await trx
+				.selectFrom('layers')
+				.where('id', '=', layerId)
+				.select('kit_id')
+				.executeTakeFirst();
+			if (!layer) return { merged: false };
+
+			const current = await trx
+				.selectFrom('layer_axis_values')
+				.select('axis_value_id')
+				.where('layer_id', '=', layerId)
+				.execute();
+			const currentSet = new Set(current.map((c) => c.axis_value_id));
+			const toRemove = [...currentSet].filter((id) => !target.has(id));
+			const toAdd = [...target].filter((id) => !currentSet.has(id));
+
+			if (toRemove.length > 0) {
+				await trx
+					.deleteFrom('layer_axis_values')
+					.where('layer_id', '=', layerId)
+					.where('axis_value_id', 'in', toRemove)
+					.execute();
+			}
+			if (toAdd.length > 0) {
+				await trx
+					.insertInto('layer_axis_values')
+					.values(toAdd.map((axis_value_id) => ({ layer_id: layerId, axis_value_id })))
+					.execute();
+			}
+
+			// Collision check: another layer of the same kit whose condition set now exactly matches.
+			const siblings = await trx
+				.selectFrom('layers')
+				.select('id')
+				.where('kit_id', '=', layer.kit_id)
+				.where('id', '!=', layerId)
+				.execute();
+			const siblingIds = siblings.map((l) => l.id);
+			const siblingConds =
+				siblingIds.length > 0
+					? await trx
+							.selectFrom('layer_axis_values')
+							.select(['layer_id', 'axis_value_id'])
+							.where('layer_id', 'in', siblingIds)
+							.execute()
+					: [];
+			const byLayer = new Map<string, Set<string>>();
+			for (const l of siblings) byLayer.set(l.id, new Set());
+			for (const c of siblingConds) byLayer.get(c.layer_id)?.add(c.axis_value_id);
+
+			let collisionLayerId: string | undefined;
+			for (const [id, set] of byLayer) {
+				if (set.size === target.size && [...target].every((v) => set.has(v))) {
+					collisionLayerId = id;
+					break;
+				}
+			}
+			if (!collisionLayerId) return { merged: false };
+
+			// Merge: relocate the edited layer's entries onto the collision layer's snippet, the
+			// edited layer's entry winning on a per-property clash.
+			let targetSnippet = await trx
+				.selectFrom('render_snippets')
+				.select('id')
+				.where('layer_id', '=', collisionLayerId)
+				.executeTakeFirst();
+			if (!targetSnippet) {
+				targetSnippet = await trx
+					.insertInto('render_snippets')
+					.values({ layer_id: collisionLayerId })
+					.returning('id')
+					.executeTakeFirstOrThrow();
+			}
+
+			const movingEntries = await trx
+				.selectFrom('render_entries')
+				.innerJoin('render_snippets', 'render_snippets.id', 'render_entries.snippet_id')
+				.where('render_snippets.layer_id', '=', layerId)
+				.select(['render_entries.id as id', 'render_entries.property as property'])
+				.execute();
+
+			for (const e of movingEntries) {
+				await trx
+					.deleteFrom('render_entries')
+					.where('snippet_id', '=', targetSnippet.id)
+					.where('property', '=', e.property)
+					.execute();
+				await trx
+					.updateTable('render_entries')
+					.set({ snippet_id: targetSnippet.id })
+					.where('id', '=', e.id)
+					.execute();
+			}
+
+			// The edited layer is now empty -- delete it (cascades its snippet + conditions).
+			await trx.deleteFrom('layers').where('id', '=', layerId).execute();
+
+			return { merged: true, mergedIntoLayerId: collisionLayerId };
+		});
 	},
 
 	createRenderSnippet: async (layerId: string) => {

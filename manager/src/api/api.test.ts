@@ -504,6 +504,86 @@ describe('api', () => {
 		expect(nullLayerStillThere).toBeDefined();
 	});
 
+	it('updateLayerAxisValues diffs a layer condition set in place with no collision', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const themeAxis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(themeAxis.id, { type: 'literal', value: 'dark' }))!;
+		const light = (await ctx.api.createAxisValue(themeAxis.id, {
+			type: 'literal',
+			value: 'light'
+		}))!;
+		const densityAxis = (await ctx.api.createAxis(proj.id, 'density'))!;
+		const compact = (await ctx.api.createAxisValue(densityAxis.id, {
+			type: 'literal',
+			value: 'compact'
+		}))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+
+		const layer = (await ctx.api.createLayer(kit.id))!;
+		await ctx.api.addAxisValueToLayer(layer.id, dark.id);
+
+		const result = await ctx.api.updateLayerAxisValues(layer.id, [light.id, compact.id]);
+		expect(result).toEqual({ merged: false });
+
+		const conds = await ctx.db
+			.selectFrom('layer_axis_values')
+			.select('axis_value_id')
+			.where('layer_id', '=', layer.id)
+			.execute();
+		expect(new Set(conds.map((c) => c.axis_value_id))).toEqual(new Set([light.id, compact.id]));
+	});
+
+	it('updateLayerAxisValues merges into a sibling layer with the resulting identical condition set, edited layer wins on a property clash', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const light = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+
+		// Existing dark-scoped layer with a 'color' entry.
+		const darkLayer = (await ctx.api.createLayerWithConditions(kit.id, [dark.id]))!;
+		const darkSnippets = await ctx.api.getRenderSnippetsByLayerId(darkLayer.layerId).execute();
+		await ctx.api.createRenderEntry(darkSnippets[0]!.snippetId, 'color', '#000000');
+		await ctx.api.createRenderEntry(darkSnippets[0]!.snippetId, 'padding', '4px');
+
+		// A separate light-scoped layer, about to be re-pointed at dark -- also declares 'color'
+		// (clash) plus a distinct property.
+		const lightLayer = (await ctx.api.createLayerWithConditions(kit.id, [light.id]))!;
+		const lightSnippets = await ctx.api.getRenderSnippetsByLayerId(lightLayer.layerId).execute();
+		await ctx.api.createRenderEntry(lightSnippets[0]!.snippetId, 'color', '#ffffff');
+		await ctx.api.createRenderEntry(lightSnippets[0]!.snippetId, 'gap', '8px');
+
+		const result = await ctx.api.updateLayerAxisValues(lightLayer.layerId, [dark.id]);
+		expect(result).toEqual({ merged: true, mergedIntoLayerId: darkLayer.layerId });
+
+		// The edited (light->dark) layer is gone.
+		const editedLayerStillThere = await ctx.db
+			.selectFrom('layers')
+			.selectAll()
+			.where('id', '=', lightLayer.layerId)
+			.executeTakeFirst();
+		expect(editedLayerStillThere).toBeUndefined();
+
+		// The surviving dark layer has: 'color' from the merged-in (edited) layer (#ffffff, the
+		// clash winner), 'padding' from its own original entry, and 'gap' from the merged-in layer.
+		const survivingSnippets = await ctx.api.getRenderSnippetsByLayerId(darkLayer.layerId).execute();
+		const entries = await ctx.db
+			.selectFrom('render_entries')
+			.select(['property', 'value'])
+			.where(
+				'snippet_id',
+				'in',
+				survivingSnippets.map((s) => s.snippetId)
+			)
+			.execute();
+		const byProp = Object.fromEntries(entries.map((e) => [e.property, e.value]));
+		expect(byProp).toEqual({ color: '#ffffff', padding: '4px', gap: '8px' });
+	});
+
 	// ---- Render Snippets (now point to layers) ----
 
 	it('creates and deletes render snippets on a layer', async () => {
