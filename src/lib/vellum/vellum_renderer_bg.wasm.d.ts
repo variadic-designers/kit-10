@@ -1,6 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const end_node_drag: (a: number) => void;
 export const ensure_index_visible: (a: number) => number;
 export const get_pan: (a: number) => void;
 export const get_selection: (a: number, b: number) => number;
@@ -18,15 +19,17 @@ export const set_pan_absolute: (a: number, b: number) => void;
 export const set_pixel_snap: (a: number) => void;
 export const set_show_box_model: (a: number) => void;
 export const set_zoom: (a: number) => void;
+export const start_node_drag: (a: number, b: number, c: number) => number;
+export const update_node_drag: (a: number, b: number, c: number) => void;
 export const zoom_in: () => void;
 export const zoom_in_at: (a: number, b: number) => void;
 export const zoom_out: () => void;
 export const zoom_out_at: (a: number, b: number) => void;
-export const __wasm_bindgen_func_elem_9028: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_7575: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_7575_2: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_7575_3: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_9030: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_9077: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_7624: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_7624_2: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_7624_3: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_9079: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_export: (a: number, b: number) => number;
 export const __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_export3: (a: number) => void;
