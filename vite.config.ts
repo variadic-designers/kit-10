@@ -1,13 +1,70 @@
 import devtoolsJson from 'vite-plugin-devtools-json';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
 import { searchForWorkspaceRoot } from 'vite';
 
 import { sveltekit } from '@sveltejs/kit/vite';
 import k10 from './plugin/vite-kit10-plugin.js';
 import crossOriginIsolation from 'vite-plugin-cross-origin-isolation';
 
+// The editor's client-only stack (manager/Kysely/PGlite, Vellum's WASM loader, the
+// Charter/Extism plugin runtime) is dynamically imported as one subtree from
+// routes/edit/+page.svelte, and without manualChunks it lands in a single ~620kB client
+// chunk. Splitting along these lines lets the browser fetch the pieces in parallel and
+// lets an unrelated change (e.g. Vellum) avoid invalidating the DB/plugin chunks' cache.
+// This does NOT reduce total bytes shipped -- the editor needs all of it before it's
+// usable -- it only improves fetch parallelism and cache locality.
+//
+// Must be client-build-only: applying this during the SERVER build too accidentally
+// co-locates Svelte's own shared internal runtime helpers (needed by every SSR'd
+// component, e.g. DarkModeToggle) inside these chunks -- since a Rollup manualChunks
+// bucket is one file, ANY route needing so much as one shared helper from it then has to
+// load the whole chunk, dragging @extism/extism into every route's server bundle instead
+// of just staying out of it (worse than the problem this fixes).
+//
+// SvelteKit doesn't run `vite build --ssr` (Vite's own isSsrBuild configEnv flag stays
+// false for both passes) -- it injects `build.ssr` itself through its own plugin's
+// `config` hook. So detecting the server pass means reading `config.build.ssr` from a
+// plugin `config` hook placed AFTER sveltekit() in the plugins array, not from configEnv.
+function clientOnlyManualChunks(): Plugin {
+	return {
+		name: 'client-only-manual-chunks',
+		apply: 'build',
+		config(config) {
+			if (config.build?.ssr) return;
+
+			config.build ??= {};
+			config.build.rollupOptions ??= {};
+			config.build.rollupOptions.output ??= {};
+			const output = config.build.rollupOptions.output;
+			if (Array.isArray(output)) return; // multi-output not used here
+
+			output.manualChunks = (id: string) => {
+				if (
+					id.includes('/manager/src/') ||
+					id.includes('/kysely/') ||
+					id.includes('@electric-sql/pglite')
+				) {
+					return 'editor-db';
+				}
+				if (id.includes('/src/lib/vellum/')) {
+					return 'editor-vellum';
+				}
+				if (id.includes('@extism/extism') || id.includes('/src/lib/plugins/')) {
+					return 'editor-plugins';
+				}
+			};
+		}
+	};
+}
+
 export default defineConfig({
-	plugins: [k10(), sveltekit(), devtoolsJson(), crossOriginIsolation()],
+	plugins: [
+		k10(),
+		sveltekit(),
+		devtoolsJson(),
+		crossOriginIsolation(),
+		clientOnlyManualChunks()
+	],
 
 	optimizeDeps: {
 		// pglite and its extension packages ship a `.tar.gz`/wasm bundle loaded via
@@ -28,6 +85,13 @@ export default defineConfig({
 		fs: {
 			allow: [searchForWorkspaceRoot(process.cwd())]
 		}
+	},
+
+	build: {
+		// The PGlite web worker (a separate build, untouched by clientOnlyManualChunks
+		// above) is an in-browser Postgres engine's JS glue -- inherently ~550kB, nothing
+		// to split. Set just above that so a genuine future regression still gets flagged.
+		chunkSizeWarningLimit: 600
 	},
 
 	test: {
