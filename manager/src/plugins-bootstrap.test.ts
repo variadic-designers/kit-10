@@ -23,11 +23,21 @@ describe('registerBuiltinPlugins', () => {
 
 		expect(charter.name).toBe('charter');
 		expect(charter.kind).toBe('interpreter');
-		expect(charter.manifest).toEqual({ wasm: [{ url: '/charter.wasm' }] });
+		expect(charter.manifest).toEqual({
+			wasm: [{ url: '/charter.wasm' }],
+			capabilities: { hostFns: ['kit10_write_render_entry_to_layer', 'kit10_panel_publish'] }
+		});
 		expect(charter.content_hash).toMatch(/^[0-9a-f]{64}$/);
 
 		expect(fontavious.name).toBe('fontavious');
 		expect(fontavious.kind).toBe('utility');
+		expect(fontavious.manifest).toEqual({
+			wasm: [{ url: '/fontavious.wasm' }],
+			capabilities: {
+				hostFns: ['kit10_font_cache_get', 'kit10_font_cache_put', 'kit10_kv_get'],
+				hosts: ['fonts.gstatic.com', 'cdn.fontshare.com']
+			}
+		});
 		expect(fontavious.options).toEqual({
 			allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com']
 		});
@@ -47,7 +57,8 @@ describe('registerBuiltinPlugins', () => {
 					}
 				],
 				imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]
-			}
+			},
+			capabilities: { hostFns: ['kit10_get_project_export', 'kit10_import_project_data'] }
 		});
 		expect(tenner.content_hash).toMatch(/^[0-9a-f]{64}$/);
 	});

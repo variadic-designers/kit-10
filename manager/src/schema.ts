@@ -86,6 +86,17 @@ export interface ImportCapability {
 	accept: string;
 }
 
+// What a plugin REQUESTS from the host -- the grantable surface today is host functions
+// (kit10_*, see makeHostFunctions in manager.svelte.ts) and network egress (Extism's own
+// allowedHosts). This is a declaration, not yet an install-time prompt/grant flow (see
+// resources/plugin-store-research.md §5.2/§5.5) -- for now, an undeclared (`capabilities`
+// absent) plugin still gets the full host-fn set, so this rolls out additively same as
+// `provides` did; a plugin that DOES declare `hostFns` is restricted to exactly that set.
+export interface PluginCapabilities {
+	hostFns?: string[];
+	hosts?: string[];
+}
+
 export interface PluginManifest {
 	wasm: { url: string }[];
 	// What this plugin can do beyond just loading -- a plugin declares its own capability here
@@ -97,6 +108,7 @@ export interface PluginManifest {
 		exports?: ExportCapability[];
 		imports?: ImportCapability[];
 	};
+	capabilities?: PluginCapabilities;
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever

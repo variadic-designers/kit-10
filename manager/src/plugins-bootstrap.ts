@@ -1,13 +1,29 @@
 import type { SchemaDialect, PluginManifest } from './schema.js';
 import { queryBuilder, type Api, type PluginRow } from './api/index.js';
 
-const CHARTER_MANIFEST: PluginManifest = { wasm: [{ url: '/charter.wasm' }] };
-const FONTAVIOUS_MANIFEST: PluginManifest = { wasm: [{ url: '/fontavious.wasm' }] };
+const CHARTER_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/charter.wasm' }],
+	// Charter's own extern block (plugins/charter/src/lib.rs) only declares these two --
+	// keep this list in sync with the Rust side; a call to a fn not listed here silently
+	// disappears from `functions` (see makeHostFunctions' filtering) with no dedicated error.
+	capabilities: { hostFns: ['kit10_write_render_entry_to_layer', 'kit10_panel_publish'] }
+};
+
 // Runtime font-file hosts fetch_font is allowed to reach. gstatic serves the OFL/Google tier;
 // cdn.fontshare.com serves the free-proprietary Fontshare tier (Satoshi, Clash, etc.). The
 // Fontshare *API* host (api.fontshare.com) is deliberately NOT here -- it's only used by the
-// build-time catalogue generator, never by the plugin at runtime.
-const FONTAVIOUS_OPTIONS = { allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com'] };
+// build-time catalogue generator, never by the plugin at runtime. Single source of truth for
+// both the declared `capabilities.hosts` (below) and the actual Extism `allowedHosts` option
+// (FONTAVIOUS_OPTIONS) -- these used to be two independent literals that could silently drift.
+const FONTAVIOUS_HOSTS = ['fonts.gstatic.com', 'cdn.fontshare.com'];
+const FONTAVIOUS_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/fontavious.wasm' }],
+	capabilities: {
+		hostFns: ['kit10_font_cache_get', 'kit10_font_cache_put', 'kit10_kv_get'],
+		hosts: FONTAVIOUS_HOSTS
+	}
+};
+const FONTAVIOUS_OPTIONS = { allowedHosts: FONTAVIOUS_HOSTS };
 const TENNER_MANIFEST: PluginManifest = {
 	wasm: [{ url: '/tenner.wasm' }],
 	provides: {
@@ -20,7 +36,8 @@ const TENNER_MANIFEST: PluginManifest = {
 			}
 		],
 		imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]
-	}
+	},
+	capabilities: { hostFns: ['kit10_get_project_export', 'kit10_import_project_data'] }
 };
 
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that

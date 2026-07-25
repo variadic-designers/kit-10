@@ -156,11 +156,18 @@ export function createPluginManager(api: Api) {
 		}
 	}
 
-	function makeHostFunctions(pluginName: string) {
+	// `grantedHostFns`, when provided (a plugin's manifest declared `capabilities.hostFns`),
+	// restricts the returned function set to exactly that list -- everything else silently
+	// isn't present in `functions`, so a call to an undeclared kit10_* fn fails the same way a
+	// call to a nonexistent one always has (Extism's own "function not found"), no separate
+	// permission-denied path needed. `undefined` (a plugin with no `capabilities` declared at
+	// all) keeps the full set -- additive rollout, same posture as `provides` (see schema.ts's
+	// PluginCapabilities doc comment): this is a declaration+filter today, not yet an
+	// install-time grant UI (resources/plugin-store-research.md §5.2/§5.5).
+	function makeHostFunctions(pluginName: string, grantedHostFns?: string[]) {
 		const localKV = kvStoreFor(pluginName);
 
-		return {
-			'extism:host/user': {
+		const allFunctions = {
 				kit10_log(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const { level, message }: { level: string; message: string } = JSON.parse(rawJson);
@@ -332,8 +339,15 @@ export function createPluginManager(api: Api) {
 					panelManifests = new Map(panelManifests).set(input.panel_id, input.manifest);
 					return cp.store(JSON.stringify(true));
 				}
-			}
 		};
+
+		const grantedFunctions = grantedHostFns
+			? Object.fromEntries(
+					Object.entries(allFunctions).filter(([fnName]) => grantedHostFns.includes(fnName))
+				)
+			: allFunctions;
+
+		return { 'extism:host/user': grantedFunctions };
 	}
 
 	async function runResolve(): Promise<void> {
@@ -431,14 +445,18 @@ export function createPluginManager(api: Api) {
 		};
 	}
 
-	async function loadPlugin(manifest: ManifestLike | PromiseLike<ManifestLike>, name: string) {
+	async function loadPlugin(
+		manifest: ManifestLike | PromiseLike<ManifestLike>,
+		name: string,
+		grantedHostFns?: string[]
+	) {
 		plugins = [...plugins.filter((p) => p.name !== name), { name, status: 'loading' }];
 
 		try {
 			const plugin = await createPlugin(manifest, {
 				runInWorker: true,
 				useWasi: true,
-				functions: makeHostFunctions(name)
+				functions: makeHostFunctions(name, grantedHostFns)
 			});
 
 			activePlugin = plugin;
@@ -462,7 +480,8 @@ export function createPluginManager(api: Api) {
 	async function loadUtilityPlugin(
 		manifest: ManifestLike | PromiseLike<ManifestLike>,
 		name: string,
-		options?: Partial<ExtismPluginOptions>
+		options?: Partial<ExtismPluginOptions>,
+		grantedHostFns?: string[]
 	) {
 		plugins = [...plugins.filter((p) => p.name !== name), { name, status: 'loading' }];
 
@@ -470,7 +489,7 @@ export function createPluginManager(api: Api) {
 			const plugin = await createPlugin(manifest, {
 				runInWorker: true,
 				useWasi: true,
-				functions: makeHostFunctions(name),
+				functions: makeHostFunctions(name, grantedHostFns),
 				...options
 			});
 
@@ -499,7 +518,8 @@ export function createPluginManager(api: Api) {
 		await loadUtilityPlugin(
 			row.manifest,
 			row.name,
-			(row.options ?? undefined) as Partial<ExtismPluginOptions> | undefined
+			(row.options ?? undefined) as Partial<ExtismPluginOptions> | undefined,
+			row.manifest.capabilities?.hostFns
 		);
 	}
 

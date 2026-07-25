@@ -420,7 +420,8 @@
 						await pluginManager.loadUtilityPlugin(
 							versionedManifest(plugin.manifest, plugin.content_hash),
 							plugin.name,
-							(plugin.options ?? undefined) as Partial<ExtismPluginOptions> | undefined
+							(plugin.options ?? undefined) as Partial<ExtismPluginOptions> | undefined,
+							plugin.manifest.capabilities?.hostFns
 						);
 					}
 				}
@@ -451,7 +452,8 @@
 				loadedInterpreterName = interpreter.name;
 				manager.loadPlugin(
 					versionedManifest(interpreter.manifest, interpreter.content_hash),
-					interpreter.name
+					interpreter.name,
+					interpreter.manifest.capabilities?.hostFns
 				);
 			}
 		});
