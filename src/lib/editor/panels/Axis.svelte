@@ -87,7 +87,7 @@
 	import { draggable, dropZone } from '../dnd.svelte.ts';
 	import { layerDotColor } from './layer-color.ts';
 	import { AXIS_KINDS } from './axisKinds.ts';
-	import { keybinds, matchMouse } from '../keybinds.js';
+	import { keybinds, matchMouse, matchWheel } from '../keybinds.js';
 
 	let {
 		axisId,
@@ -278,6 +278,35 @@
 		}
 	}
 
+	// Shift+scroll while hovering the axis header cycles its current value. "Unset" is a single
+	// extra stop shared between the two ends -- scrolling past the last value lands on Unset
+	// before continuing on to the first, and vice versa scrolling past the first (rather than
+	// wrapping straight from last to first with no stop, or duplicating the unset stop at both
+	// ends). Modeled as a virtual index space of categoricalValues.length + 1, where the extra
+	// trailing slot means unset. Header-only (not the whole expanded value list) so this works
+	// identically whether the axis is collapsed or open. createMode is guarded the same as
+	// selectVariant/the click handler: while building a Layer's condition set, a value click
+	// toggles membership in that set rather than selecting the current arg, and cycling the arg
+	// out from under that would be confusing.
+	function handleAxisWheel(e: WheelEvent) {
+		if (kind !== 'categorical' || disabled || createMode) return;
+		if (!matchWheel(e, $keybinds['axis.cycleValue'])) return;
+		const len = categoricalValues.length;
+		if (len === 0) return;
+		e.preventDefault();
+
+		const unsetSlot = len;
+		const slots = len + 1;
+		const currentIndex = categoricalValues.findIndex(
+			(v) => currentArg?.type === 'literal' && currentArg.value === v.value
+		);
+		const currentSlot = currentIndex === -1 ? unsetSlot : currentIndex;
+		const dir = e.deltaY > 0 ? 1 : -1;
+		const nextSlot = (currentSlot + dir + slots) % slots;
+
+		onArgChange(nextSlot === unsetSlot ? null : { type: 'literal', value: categoricalValues[nextSlot].value });
+	}
+
 	function handleRangeChange(min: number | null, max: number | null) {
 		if (disabled) return;
 		onArgChange({ type: 'range', min, max });
@@ -332,6 +361,7 @@
 		style={highlightColor ? `--axis-highlight: ${highlightColor}` : undefined}
 		use:contextMenu={axisContextMenu}
 		use:draggable={{ payload: dragPayload ?? (() => null), preview: dragPreview }}
+		onwheel={handleAxisWheel}
 	>
 		<h3>
 			<Renameable

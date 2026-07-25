@@ -20,7 +20,7 @@ import { type Writable, writable, get } from 'svelte/store';
 // held-Space pan gesture (Figma-style) -- only meaningful on a mouse binding; keyboard matching
 // ignores it.
 export interface Binding {
-	source: 'key' | 'mouse';
+	source: 'key' | 'mouse' | 'wheel';
 	code: string;
 	ctrl: boolean;
 	shift: boolean;
@@ -41,19 +41,26 @@ export type KeybindAction =
 	| 'layer.delete'
 	| 'property.remove'
 	| 'edit.cancel'
-	| 'panel.toggleLayers';
+	| 'panel.toggleLayers'
+	| 'axis.cycleValue';
 
 // Grouping headers in the Keybinds tab.
 const NAV = 'Navigation';
 const CANVAS = 'Canvas';
 const AUTHORING = 'Authoring';
 const PANELS = 'Panels';
+const AXES = 'Axes';
 
 function key(code: string, mods: Partial<Binding> = {}): Binding {
 	return { source: 'key', code, ctrl: false, shift: false, alt: false, meta: false, space: false, ...mods };
 }
 function mouse(code: string, mods: Partial<Binding> = {}): Binding {
 	return { source: 'mouse', code, ctrl: false, shift: false, alt: false, meta: false, space: false, ...mods };
+}
+// Wheel bindings have no button/key-code variability -- `code` is always the fixed 'Wheel'
+// constant, so only the modifiers actually distinguish one wheel binding from another.
+function wheel(mods: Partial<Binding> = {}): Binding {
+	return { source: 'wheel', code: 'Wheel', ctrl: false, shift: false, alt: false, meta: false, space: false, ...mods };
 }
 
 // One rebindable action, declared as data (mirrors `hostPreferences`). `allow` constrains which
@@ -63,7 +70,7 @@ export interface KeybindActionDef {
 	id: KeybindAction;
 	label: string;
 	group: string;
-	allow: Array<'key' | 'mouse'>;
+	allow: Array<'key' | 'mouse' | 'wheel'>;
 	default: Binding;
 }
 
@@ -103,6 +110,13 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 		group: PANELS,
 		allow: ['key'],
 		default: key('KeyL', { shift: true })
+	},
+	{
+		id: 'axis.cycleValue',
+		label: 'Cycle axis value on hover',
+		group: AXES,
+		allow: ['wheel'],
+		default: wheel({ shift: true })
 	}
 ];
 
@@ -125,7 +139,11 @@ function load(): KeybindMap {
 		const out = structuredCloneMap(KEYBIND_DEFAULTS);
 		for (const a of KEYBIND_ACTIONS) {
 			const b = parsed[a.id];
-			if (b && typeof b.code === 'string' && (b.source === 'key' || b.source === 'mouse')) {
+			if (
+				b &&
+				typeof b.code === 'string' &&
+				(b.source === 'key' || b.source === 'mouse' || b.source === 'wheel')
+			) {
 				out[a.id] = {
 					source: b.source,
 					code: b.code,
@@ -215,10 +233,18 @@ export function matchMouse(
 	return modsMatch(e, b);
 }
 
+// Does a wheel event satisfy this binding? Wheel bindings have no button/code variability (see
+// the `wheel()` helper above) -- only the modifiers distinguish them, so this is modsMatch plus
+// the source check. A key or mouse binding never matches a wheel event.
+export function matchWheel(e: ModEvent, b: Binding): boolean {
+	if (b.source !== 'wheel') return false;
+	return modsMatch(e, b);
+}
+
 // Capture: turn a raw key/mouse event into the Binding it represents (for the record widget).
 // Modifier-only keydowns (Shift/Control/Alt/Meta pressed alone) are rejected -- returns null so the
 // capture control keeps waiting for a real key.
-export function readEventToBinding(e: KeyboardEvent | MouseEvent): Binding | null {
+export function readEventToBinding(e: KeyboardEvent | MouseEvent | WheelEvent): Binding | null {
 	const mods = {
 		ctrl: e.ctrlKey,
 		shift: e.shiftKey,
@@ -226,11 +252,15 @@ export function readEventToBinding(e: KeyboardEvent | MouseEvent): Binding | nul
 		meta: e.metaKey,
 		space: false
 	};
-	// Discriminate on the presence of `key` rather than `instanceof KeyboardEvent`: only KeyboardEvent
-	// carries it, and this keeps the function testable with plain event-shaped objects (no DOM globals).
+	// Discriminate on the presence of `key`/`deltaY` rather than `instanceof`: only KeyboardEvent
+	// carries `key` and only WheelEvent carries `deltaY`, and this keeps the function testable with
+	// plain event-shaped objects (no DOM globals).
 	if ('key' in e && typeof e.key === 'string') {
 		if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return null;
 		return { source: 'key', code: e.code, ...mods };
+	}
+	if ('deltaY' in e) {
+		return { source: 'wheel', code: 'Wheel', ...mods };
 	}
 	const code = MOUSE_BUTTON_CODE[(e as MouseEvent).button];
 	if (!code) return null;
@@ -267,7 +297,12 @@ const MOUSE_LABELS: Record<string, string> = {
 	Mouse2: 'Right-click'
 };
 
+const WHEEL_LABELS: Record<string, string> = {
+	Wheel: 'Scroll'
+};
+
 function codeLabel(b: Binding): string {
+	if (b.source === 'wheel') return WHEEL_LABELS[b.code] ?? b.code;
 	if (b.source === 'mouse') return MOUSE_LABELS[b.code] ?? b.code;
 	if (KEY_LABELS[b.code]) return KEY_LABELS[b.code];
 	if (b.code.startsWith('Key')) return b.code.slice(3);

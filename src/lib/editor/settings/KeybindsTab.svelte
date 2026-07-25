@@ -53,9 +53,9 @@
 		const onKey = (e: KeyboardEvent) => {
 			if (e.code === 'Space') {
 				spaceHeld = true;
-				// While recording a mouse slot, Space is a modifier to combine with a click, not a
-				// binding of its own -- swallow it and keep waiting for the click.
-				if (def.allow.includes('mouse') && !def.allow.includes('key')) {
+				// While recording a mouse/wheel slot, Space is a modifier to combine with the gesture,
+				// not a binding of its own -- swallow it and keep waiting for the click/scroll.
+				if (!def.allow.includes('key')) {
 					e.preventDefault();
 					return;
 				}
@@ -80,13 +80,25 @@
 			updateKeybind(def.id, { ...b, space: spaceHeld });
 			stopRecording();
 		};
+		const onWheel = (e: WheelEvent) => {
+			if (!def.allow.includes('wheel')) return;
+			const b = readEventToBinding(e);
+			if (!b) return;
+			e.preventDefault();
+			e.stopPropagation();
+			updateKeybind(def.id, { ...b, space: spaceHeld });
+			stopRecording();
+		};
 
 		window.addEventListener('keydown', onKey, true);
 		window.addEventListener('keyup', onKeyUp, true);
-		// Defer the mouse listener a tick so the click that STARTED recording isn't itself captured.
+		// Defer the mouse/wheel listeners a tick so the click that STARTED recording isn't itself
+		// captured (a wheel event can't self-trigger the same way, but deferring both keeps this
+		// symmetric and avoids a same-tick scroll carried over from the triggering click).
 		let mouseAttached = false;
 		const attachMouse = () => {
 			window.addEventListener('mousedown', onMouse, true);
+			window.addEventListener('wheel', onWheel, { capture: true, passive: false });
 			mouseAttached = true;
 		};
 		const timer = window.setTimeout(attachMouse, 0);
@@ -95,7 +107,10 @@
 			window.clearTimeout(timer);
 			window.removeEventListener('keydown', onKey, true);
 			window.removeEventListener('keyup', onKeyUp, true);
-			if (mouseAttached) window.removeEventListener('mousedown', onMouse, true);
+			if (mouseAttached) {
+				window.removeEventListener('mousedown', onMouse, true);
+				window.removeEventListener('wheel', onWheel, true);
+			}
 		};
 	}
 </script>
@@ -121,9 +136,11 @@
 						onclick={() => startRecording(def)}
 					>
 						{#if recording === def.id}
-							Press {def.allow.includes('mouse') && !def.allow.includes('key')
-								? 'modifier + click'
-								: 'keys'}…
+							Press {def.allow.includes('wheel')
+								? 'modifier + scroll'
+								: def.allow.includes('mouse') && !def.allow.includes('key')
+									? 'modifier + click'
+									: 'keys'}…
 						{:else}
 							{formatBinding($keybinds[def.id])}
 						{/if}
