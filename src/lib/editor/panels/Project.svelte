@@ -9,8 +9,14 @@
 	import type { EditorState } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { queryBuilder, type Api } from 'manager';
-	import { PROJECT_EXPORT_PROVIDERS } from '$lib/plugins/project-export-providers.js';
-	import { PROJECT_IMPORT_PROVIDERS } from '$lib/plugins/project-import-providers.js';
+	import {
+		resolveExportProviders,
+		type ProjectExportProvider
+	} from '$lib/plugins/project-export-providers.js';
+	import {
+		resolveImportProviders,
+		type ProjectImportProvider
+	} from '$lib/plugins/project-import-providers.js';
 
 	const {
 		editorReady,
@@ -47,22 +53,19 @@
 		}
 	});
 
-	// Which PROJECT_EXPORT_PROVIDERS / PROJECT_IMPORT_PROVIDERS entries actually have a matching
-	// plugin registered in the DB-backed catalogue. Both are install-level now (see
-	// PluginActivation in schema.ts) -- neither is scoped per-project the way it used to be, so
-	// export and import share the exact same availability check, fetched once: the catalogue
-	// only changes on app bootstrap (registerBuiltinPlugins), not during a normal session.
-	let availableExportProviders: typeof PROJECT_EXPORT_PROVIDERS = $state([]);
-	let availableImportProviders: typeof PROJECT_IMPORT_PROVIDERS = $state([]);
+	// Export/import providers resolved from whatever's actually installed (each plugin declares
+	// its own `provides.exports`/`provides.imports` capability on its manifest -- see
+	// project-export-providers.ts). Both are install-level (see PluginActivation in schema.ts) --
+	// neither is scoped per-project, so export and import share the exact same fetch, done once:
+	// the catalogue only changes on app bootstrap (registerBuiltinPlugins), not during a normal
+	// session.
+	let availableExportProviders: ProjectExportProvider[] = $state([]);
+	let availableImportProviders: ProjectImportProvider[] = $state([]);
 
 	$effect(() => {
 		api.listPlugins().then((plugins) => {
-			availableExportProviders = PROJECT_EXPORT_PROVIDERS.filter((provider) =>
-				plugins.some((p) => p.name === provider.id)
-			);
-			availableImportProviders = PROJECT_IMPORT_PROVIDERS.filter((provider) =>
-				plugins.some((p) => p.name === provider.id)
-			);
+			availableExportProviders = resolveExportProviders(plugins);
+			availableImportProviders = resolveImportProviders(plugins);
 		});
 	});
 
@@ -71,7 +74,7 @@
 	// Mirrors buildExportSubmenu's callUtilityPlugin shape, just in the opposite direction. On
 	// success the plugin returns the new project's {id, name} as its plain text result, which we
 	// use to select it immediately -- the project list itself updates via the existing live query.
-	const pickFileAndImport = (provider: (typeof PROJECT_IMPORT_PROVIDERS)[number]) => {
+	const pickFileAndImport = (provider: ProjectImportProvider) => {
 		const workspaceId = editorActivity.activeWorkspaceId;
 		if (!workspaceId) {
 			console.error('No active workspace to import into');
@@ -166,9 +169,9 @@
 		URL.revokeObjectURL(url);
 	};
 
-	// Builds the "Export" submenu from whichever PROJECT_EXPORT_PROVIDERS entries are actually
-	// installed (see availableExportProviders above). Never hardcodes Tenner (or any other
-	// specific plugin) by name here -- that mapping lives entirely in
+	// Builds the "Export" submenu from whichever export providers are actually resolved from
+	// installed plugins (see availableExportProviders above). Never hardcodes Tenner (or any
+	// other specific plugin) by name here -- that mapping lives entirely in
 	// project-export-providers.ts, so a future second export plugin needs no change to this file.
 	const buildExportSubmenu = (projectId: string, projectName: string): ContextMenuContent => {
 		const providers = availableExportProviders;

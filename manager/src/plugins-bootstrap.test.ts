@@ -35,7 +35,20 @@ describe('registerBuiltinPlugins', () => {
 
 		expect(tenner.name).toBe('tenner');
 		expect(tenner.kind).toBe('utility');
-		expect(tenner.manifest).toEqual({ wasm: [{ url: '/tenner.wasm' }] });
+		expect(tenner.manifest).toEqual({
+			wasm: [{ url: '/tenner.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export Raw with Tenner',
+						fn: 'export_project',
+						fileExtension: 'yaml',
+						mimeType: 'text/yaml'
+					}
+				],
+				imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]
+			}
+		});
 		expect(tenner.content_hash).toMatch(/^[0-9a-f]{64}$/);
 	});
 

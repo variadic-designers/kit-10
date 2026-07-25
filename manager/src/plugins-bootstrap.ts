@@ -8,7 +8,20 @@ const FONTAVIOUS_MANIFEST: PluginManifest = { wasm: [{ url: '/fontavious.wasm' }
 // Fontshare *API* host (api.fontshare.com) is deliberately NOT here -- it's only used by the
 // build-time catalogue generator, never by the plugin at runtime.
 const FONTAVIOUS_OPTIONS = { allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com'] };
-const TENNER_MANIFEST: PluginManifest = { wasm: [{ url: '/tenner.wasm' }] };
+const TENNER_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/tenner.wasm' }],
+	provides: {
+		exports: [
+			{
+				label: 'Export Raw with Tenner',
+				fn: 'export_project',
+				fileExtension: 'yaml',
+				mimeType: 'text/yaml'
+			}
+		],
+		imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]
+	}
+};
 
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that
 // URL right now, so it never drifts the way a hand-maintained version string would (both

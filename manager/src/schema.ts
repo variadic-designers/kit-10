@@ -73,8 +73,30 @@ export type PluginKind = 'interpreter' | 'utility';
 // which project is active, not this field.
 export type PluginActivation = 'eager' | 'lazy';
 
+export interface ExportCapability {
+	label: string;
+	fn: string;
+	fileExtension: string;
+	mimeType: string;
+}
+
+export interface ImportCapability {
+	label: string;
+	fn: string;
+	accept: string;
+}
+
 export interface PluginManifest {
 	wasm: { url: string }[];
+	// What this plugin can do beyond just loading -- a plugin declares its own capability here
+	// instead of the editor hardcoding a specific plugin's identity into a TS const (VISION's
+	// 1st Principle). `id` deliberately isn't part of either shape: a manifest has no way to
+	// know its own registry `name`, that's attached at the point where a PluginRow (which does
+	// carry `name`) and this `provides` block are both in scope -- see project-export-providers.ts.
+	provides?: {
+		exports?: ExportCapability[];
+		imports?: ImportCapability[];
+	};
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever

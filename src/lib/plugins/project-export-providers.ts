@@ -1,32 +1,24 @@
-// Swappable mapping of "which plugins can export a whole project" -- same shape as
-// suggestion-providers.ts's inputType -> plugin mapping, and for the same reason (VISION.md's
+// Runtime resolver over listPlugins() -- same reason as suggestion-providers.ts (VISION.md's
 // 1st Principle): the UI that builds the Export submenu never hardcodes a specific plugin's
-// name inline, it reads this list. Adding a new project-level export target later (a second
-// utility plugin producing, say, a zipped bundle or a different format) is a one-entry addition
-// here, not a change to Project.svelte's menu-building logic.
+// name inline, it reads whatever's actually installed. A plugin declares its own export
+// capability on its manifest's `provides.exports` (see schema.ts); adding a new project-level
+// export target is now a matter of a plugin registering itself with that capability, not an
+// edit to this file.
 //
-// A provider only actually shows up in a given project's Export submenu if that project also
-// references the matching plugin (by `id`, matched against `kit10_get_project_export`-style
-// registry rows via getProjectPlugins) -- see Project.svelte's providersForProject.
+// A provider only actually shows up in the Export submenu once the matching plugin is
+// registered in the DB-backed catalogue (listPlugins()) with a matching `provides.exports`
+// entry -- see Project.svelte's availableExportProviders.
 
-export interface ProjectExportProvider {
-	// Must match a plugins.name row in the DB-backed plugin registry (manager's plugins table).
+import type { PluginRow, ExportCapability } from 'manager';
+
+export interface ProjectExportProvider extends ExportCapability {
+	// The owning plugin's registry name -- attached here rather than living on the manifest
+	// capability itself, since a manifest has no way to know its own registry `name`.
 	id: string;
-	// Menu item label shown to the user.
-	label: string;
-	// Utility plugin function to call via callUtilityPlugin(id, fn, payload).
-	fn: string;
-	// File extension (no leading dot) and MIME type used when saving the result to disk.
-	fileExtension: string;
-	mimeType: string;
 }
 
-export const PROJECT_EXPORT_PROVIDERS: ProjectExportProvider[] = [
-	{
-		id: 'tenner',
-		label: 'Export Raw with Tenner',
-		fn: 'export_project',
-		fileExtension: 'yaml',
-		mimeType: 'text/yaml'
-	}
-];
+export function resolveExportProviders(plugins: PluginRow[]): ProjectExportProvider[] {
+	return plugins.flatMap((p) =>
+		(p.manifest.provides?.exports ?? []).map((capability) => ({ id: p.name, ...capability }))
+	);
+}
