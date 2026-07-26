@@ -38,6 +38,39 @@
 		});
 	});
 
+	// An export run takes view(s) as input, not just "the whole project" -- Tenner doesn't care
+	// (it always dumps everything, and safely ignores the extra `view_ids` field, see
+	// ExportProjectInput in plugins/tenner/src/lib.rs), but a future per-component exporter
+	// (WebCodium) would. One-shot fetch, same posture as availableExportProviders above -- a
+	// picker list doesn't need live-query reactivity the way Project.svelte's own project list
+	// does. Defaults to "all views selected" on every (re)fetch, matching Tenner's current
+	// implicit whole-project behavior -- the user narrows it down, rather than starting from
+	// nothing selected.
+	let projectViews: { viewId: string; viewName: string }[] = $state([]);
+	let selectedViewIds: Set<string> = $state(new Set());
+
+	$effect(() => {
+		if (!projectId) {
+			projectViews = [];
+			selectedViewIds = new Set();
+			return;
+		}
+		api
+			.getViewsByProjectId(projectId)
+			.execute()
+			.then((views) => {
+				projectViews = views;
+				selectedViewIds = new Set(views.map((v) => v.viewId));
+			});
+	});
+
+	function toggleView(viewId: string) {
+		const next = new Set(selectedViewIds);
+		if (next.has(viewId)) next.delete(viewId);
+		else next.add(viewId);
+		selectedViewIds = next;
+	}
+
 	const exportProfile = $derived(projectHints?.exportProfile as ExportProfile | undefined);
 	const groups = $derived(resolveExportProfile(availableExportProviders, exportProfile));
 
@@ -53,7 +86,11 @@
 		if (!provider || !projectId) return;
 		const name = projectName ?? 'export';
 		callUtilityPlugin
-			?.(provider.id, provider.fn, JSON.stringify({ project_id: projectId }))
+			?.(
+				provider.id,
+				provider.fn,
+				JSON.stringify({ project_id: projectId, view_ids: [...selectedViewIds] })
+			)
 			.then((result) => {
 				const text = (result as { text(): string }).text();
 				downloadText(text, `${name}.${provider.fileExtension}`, provider.mimeType);
@@ -85,6 +122,22 @@
 		{:else if groups.length === 0}
 			<p class="empty">No export plugins are available yet</p>
 		{:else}
+			{#if projectViews.length > 0}
+				<ul class="export-views">
+					{#each projectViews as view (view.viewId)}
+						<li>
+							<label>
+								<input
+									type="checkbox"
+									checked={selectedViewIds.has(view.viewId)}
+									onchange={() => toggleView(view.viewId)}
+								/>
+								{view.viewName}
+							</label>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 			<ul class="export-target-list">
 				{#each groups as group (group.target)}
 					<li class="export-target">
@@ -131,6 +184,24 @@
 		color: var(--color-text-muted);
 		@include fonts-stack('Satoshi-Light', sans);
 		font-size: $x-font-size-xs;
+	}
+
+	.export-views {
+		list-style: none;
+		padding: $x-space-xs $x-space-sm;
+		margin: 0;
+		border-bottom: 1px solid var(--color-panel-header-border);
+		display: flex;
+		flex-wrap: wrap;
+		gap: $x-space-xs;
+		font-size: $x-font-size-xs;
+		color: var(--color-text-muted);
+
+		label {
+			display: inline-flex;
+			align-items: center;
+			gap: calc($x-space-xs / 2);
+		}
 	}
 
 	.export-target-list {
