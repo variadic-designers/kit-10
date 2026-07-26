@@ -8,6 +8,18 @@ references are load-bearing.
 Related: `PLUGINS.md` (the contract), `CLAUDE.md` §4/§5 (Plugin Manager + Charter), VISION.md
 Principles 1 & 3 (which already anticipate this).
 
+**Status (2026-07-26): §4 gaps 1–3 shipped.** The manifest is no longer just `{wasm}` — it now
+carries `provides.exports/imports` (with `target`/`multiFile`), `capabilities.hostFns/hosts`
+(enforced by `makeHostFunctions`'s grant filter), and `supports`. §3's provider-mapping seams
+(export/import) are now runtime resolvers over `listPlugins()`, not hardcoded TS. An install path
+exists (Plugins panel's form + `/store`'s hand-off). Export Profile (§5.4) is real. `plugins/webcodium/`
+is the first real non-first-party plugin exercising all of it. **Still open**: gap 4 (config
+schema/storage), gap 5 (capability *grant* UI — requests are declared and enforced, never shown
+to the user before install), a real remote catalogue behind `/store` (its plugin list is still
+100% invented), and all of §6's open questions (config scope, capability granularity, `kind` vs.
+tags, descriptor source of truth, remote wasm trust, wire-format versioning). Read this doc for
+the grounding/reasoning; treat §4/§5's checklist items above as done, not as remaining work.
+
 ---
 
 ## 1. The current model, precisely

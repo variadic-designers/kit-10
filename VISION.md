@@ -59,7 +59,7 @@ Charter and Vellum are tightly ingrained today — wired in as the editor's assu
 
 Plugins can also declare export capabilities. Users define an Export Profile in the Export Panel specifying which plugin handles which target. The following are envisioned as free, FOSS-community plugins in the store from day one:
 
-1. **WebCodium** — a markup exporter driven by user-defined Export Profiles. First targets are HTML, CSS, Svelte, and SCSS, meant to slot directly into existing development workflows.
+1. **WebCodium** — a markup exporter driven by user-defined Export Profiles. First targets are HTML, CSS, Svelte, and SCSS, meant to slot directly into existing development workflows. WebCodium understands variants as discrete or a dynamic thing.
 2. **ViteStreamer** — an opinionated Vite integration that streams editor output straight to a dev server's HMR, closing the loop between the design editor and the running site.
 3. **Inkspensive** — a static-artifact exporter built on a renderer's own output, with DPI/resolution configuration, targeting PDF, PNG, WebP, and similar formats — for direct download or straight into a project's assets.
 4. **Godard** — the motion counterpart to Inkspensive: renders GIFs, MOVs, and similar motion artifacts, same download-or-asset destination.

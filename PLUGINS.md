@@ -30,6 +30,59 @@ KIT•10 has two kinds of plugins with different roles and different levels of s
 
 ---
 
+## Plugin manifest
+
+Every plugin registers with a `PluginManifest` (`manager/src/schema.ts`), stored as jsonb on the `plugins` table (`api.registerPlugin`, upsert-by-name). Beyond `wasm: [{ url }]`, a manifest can declare three independent, optional facts about itself — each additive: a manifest with none of them behaves exactly as if this section didn't exist.
+
+```ts
+interface PluginManifest {
+	wasm: { url: string }[];
+	provides?: {
+		exports?: ExportCapability[]; // { label, fn, fileExtension, mimeType, target?, multiFile? }
+		imports?: ImportCapability[]; // { label, fn, accept }
+	};
+	capabilities?: {
+		hostFns?: string[]; // restricts makeHostFunctions' grant to exactly this list
+		hosts?: string[];   // becomes Extism's allowedHosts when granted
+	};
+	supports?: string[]; // plugin registry names this plugin was specifically built to understand
+}
+```
+
+**`provides.exports`** — what the plugin can export, and how the host presents it. `target` is a normalized format id (e.g. `"html"`, `"yaml"`) letting two different plugins be recognized as competing options for the same output — see "Export Profile" below. `multiFile`, when `true`, changes the plugin function's return contract: instead of a single text blob, it returns JSON `{ files: [{ filename, mimeType, content }] }`, and the host downloads exactly those filenames — needed whenever one export produces cross-referencing files (e.g. HTML that links its own CSS by name) and the plugin must guarantee the reference matches what's actually downloaded, since the host would otherwise invent a filename independently.
+
+**`capabilities`** — the host-fn/network surface this plugin requests. `makeHostFunctions(pluginName, grantedHostFns)` filters its full function map down to exactly `hostFns` when the manifest declares it; an undeclared `capabilities` still gets the full set (additive rollout — nothing is silently more locked down than before this field existed). `hosts` is the source for the plugin's Extism `allowedHosts` option.
+
+**`supports`** — a plugin declaring specific compatibility with another plugin by registry name, e.g. an HTML exporter that understands Charter's particular translation opinions (its `UiNode` shape, arrangement/resize conventions) rather than "any interpreter." The reverse view ("X is a dependency of Y") is never stored — it's derived from every installed plugin's own `supports` list (`src/lib/plugins/plugin-relationships.ts`). Purely informational today: nothing gates on whether a declared `supports` target is actually installed.
+
+**Export Profile.** A project's `hints.exportProfile` (jsonb, `target -> plugin registry name`) records which plugin the user picked when more than one competes for the same `target` — resolved by `src/lib/plugins/export-profile.ts`'s `resolveExportProfile`: the saved choice if it's still installed, else the sole provider if there's only one, else `null` (ambiguous, shown as a picker in the Export panel). No DB migration for this — it rides the same `hints` jsonb column views/projects already use for plugin-namespaced data (`hints.vellum`, `hints.charter`).
+
+**Worked example — `plugins/webcodium/`** (a real, non-first-party plugin; not registered in `manager/src/plugins-bootstrap.ts` on purpose, since VISION.md frames it as a community/store plugin — install it via the Plugins panel's form):
+
+```json
+{
+	"wasm": [{ "url": "/webcodium.wasm" }],
+	"provides": {
+		"exports": [
+			{
+				"label": "Export HTML + CSS with WebCodium",
+				"fn": "export_html_css",
+				"fileExtension": "html",
+				"mimeType": "text/html",
+				"target": "html",
+				"multiFile": true
+			}
+		]
+	},
+	"capabilities": { "hostFns": ["kit10_get_interpreter_output"] },
+	"supports": ["charter"]
+}
+```
+
+Its `export_html_css` function calls the `kit10_get_interpreter_output` host fn (see the host-function table below) to fetch Charter's resolved `UiNode` tree, then returns the `{ files: [...] }` envelope `multiFile: true` requires.
+
+---
+
 ## Plugin functions
 
 These are the functions a plugin must or may export. All inputs and outputs are JSON strings.
