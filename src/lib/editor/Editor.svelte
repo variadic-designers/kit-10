@@ -795,7 +795,7 @@
 
 		<TokensPanel {api} {editorReady} bind:editorActivity />
 
-		<PluginsPanel manager={pluginManager} />
+		<PluginsPanel manager={pluginManager} {api} />
 
 		<AssetsPanel {api} {editorReady} bind:editorActivity />
 

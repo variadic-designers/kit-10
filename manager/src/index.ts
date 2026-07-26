@@ -82,7 +82,10 @@ export { type TokenValue, type TokenValueScalar, type TokenValueView } from './s
 export {
 	type ExportCapability,
 	type ImportCapability,
-	type PluginCapabilities
+	type PluginCapabilities,
+	type PluginManifest,
+	type PluginKind,
+	type PluginActivation
 } from './schema.js';
 export { type AxisValueType } from './schema.js';
 export {
