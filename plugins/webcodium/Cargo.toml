@@ -1,0 +1,17 @@
+[package]
+name = "webcodium"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk = "1.4.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+kit10-scene = { git = "ssh://git@github.com/Variadic-Designs/kit10-scene.git", tag = "v0.1.0" }
+
+[profile.release]
+opt-level = "s"
+lto = true
