@@ -285,10 +285,11 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	import type { EditorState, EditorQueryBuilder, Api, PluginKind } from 'manager';
+	import type { EditorState, EditorQueryBuilder, Api, PluginActivation, PluginKind, PluginManifest } from 'manager';
 	import { initializeEditorState } from 'manager';
 	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
 	import { getVellumInstance, requestVellumRender } from './vellum-instance.js';
+	import { STORE_CATALOGUE } from '$lib/plugin-catalogue.js';
 	import type { ExtismPluginOptions } from '@extism/extism';
 
 	let pluginManager = $state<PluginManager | null>(null);
@@ -299,7 +300,24 @@
 	// server-chunk-splitting commits), so the actual registerPlugin call has to happen where the
 	// DB already lives. PluginsPanel consumes this once (pre-filling its install form) and clears
 	// it via onInstallHandled so a later reload of the same URL doesn't re-trigger it.
-	let pendingInstall = $state<{ name: string; kind: PluginKind } | null>(null);
+	// If the installed id has a real `manifest` in the shared STORE_CATALOGUE (see
+	// $lib/plugin-catalogue.ts), it's carried along too so the install form opens fully
+	// pre-filled instead of just name+kind -- looked up here, not serialized into the URL, since
+	// both /store and /edit import the same catalogue module.
+	let pendingInstall = $state<{
+		name: string;
+		kind: PluginKind;
+		manifest?: PluginManifest;
+		activation?: PluginActivation;
+	} | null>(null);
+
+	// Bumped by PluginsPanel after a successful registerPlugin call. Export.svelte/Project.svelte
+	// each fetch the install-level plugin catalogue once on mount (no live query on that table
+	// yet) on the assumption it only changes at app bootstrap -- true before /store's install
+	// handoff existed, false now that registering a plugin mid-session and immediately wanting to
+	// export/import with it is the normal path. Threaded into both as a prop so reading it inside
+	// their existing fetch effects forces a refetch when it changes.
+	let pluginRegistryVersion = $state(0);
 
 	// Appends the registered content hash as a `?v=` query to each wasm URL so a rebuilt plugin is
 	// never served stale from the browser/Extism cache (the hash is computed no-store at
@@ -448,9 +466,12 @@
 		const installName = page.url.searchParams.get('install');
 		if (installName) {
 			const rawKind = page.url.searchParams.get('kind');
+			const catalogueEntry = STORE_CATALOGUE.find((p) => p.id === installName);
 			pendingInstall = {
 				name: installName,
-				kind: rawKind === 'interpreter' ? 'interpreter' : 'utility'
+				kind: rawKind === 'interpreter' ? 'interpreter' : 'utility',
+				manifest: catalogueEntry?.manifest,
+				activation: catalogueEntry?.activation
 			};
 			// Strip the params so a refresh (or the user just bookmarking this URL) doesn't
 			// re-open the install form every time -- PluginsPanel has already captured what it
@@ -759,6 +780,7 @@
 			{editorReady}
 			bind:editorActivity
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
+			{pluginRegistryVersion}
 		/>
 
 		<ViewsPanel
@@ -824,6 +846,7 @@
 			{api}
 			{pendingInstall}
 			onInstallHandled={() => (pendingInstall = null)}
+			onPluginRegistered={() => pluginRegistryVersion++}
 		/>
 
 		<ExportPanel
@@ -832,6 +855,7 @@
 			projectName={editorActivity.activeProjectName}
 			projectHints={activeProjectRow?.hints ?? null}
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
+			{pluginRegistryVersion}
 		/>
 
 		<AssetsPanel {api} {editorReady} bind:editorActivity />

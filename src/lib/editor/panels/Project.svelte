@@ -24,12 +24,16 @@
 		editorReady,
 		editorActivity = $bindable(),
 		api,
-		callUtilityPlugin
+		callUtilityPlugin,
+		pluginRegistryVersion = 0
 	}: {
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
 		api: Api;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		// Bumped by Editor.svelte after PluginsPanel registers a new plugin -- read below purely to
+		// re-trigger the fetch, since there's no live query on the plugin catalogue table yet.
+		pluginRegistryVersion?: number;
 	} = $props();
 
 	const projectsQuery = liveQuery((api, activity) => {
@@ -58,13 +62,14 @@
 	// Export/import providers resolved from whatever's actually installed (each plugin declares
 	// its own `provides.exports`/`provides.imports` capability on its manifest -- see
 	// project-export-providers.ts). Both are install-level (see PluginActivation in schema.ts) --
-	// neither is scoped per-project, so export and import share the exact same fetch, done once:
-	// the catalogue only changes on app bootstrap (registerBuiltinPlugins), not during a normal
-	// session.
+	// neither is scoped per-project, so export and import share the exact same fetch. Re-fetches
+	// whenever pluginRegistryVersion changes, not just on mount, so a plugin registered
+	// mid-session (e.g. via /store's install handoff) shows up here without a full reload.
 	let availableExportProviders: ProjectExportProvider[] = $state([]);
 	let availableImportProviders: ProjectImportProvider[] = $state([]);
 
 	$effect(() => {
+		void pluginRegistryVersion;
 		api.listPlugins().then((plugins) => {
 			availableExportProviders = resolveExportProviders(plugins);
 			availableImportProviders = resolveImportProviders(plugins);

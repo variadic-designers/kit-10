@@ -10,15 +10,31 @@
 		manager,
 		api,
 		pendingInstall = null,
-		onInstallHandled
+		onInstallHandled,
+		onPluginRegistered
 	}: {
 		manager: PluginManager | null;
 		api: Api;
 		// /store's Install button hands off here (see Editor.svelte) rather than performing the
 		// registration itself -- /store has no DB access. Pre-fills the form below and is
 		// consumed exactly once via onInstallHandled so a later prop change doesn't re-open it.
-		pendingInstall?: { name: string; kind: PluginKind } | null;
+		// `manifest`/`activation` are present when Editor.svelte found a real entry for this id in
+		// the shared STORE_CATALOGUE ($lib/plugin-catalogue.ts) -- when present, the wasm URL and
+		// manifest JSON are pre-filled too, not just name+kind.
+		pendingInstall?: {
+			name: string;
+			kind: PluginKind;
+			manifest?: PluginManifest;
+			activation?: PluginActivation;
+		} | null;
 		onInstallHandled?: () => void;
+		// Fired after a successful registration -- Editor.svelte bumps a shared version counter it
+		// threads into Export.svelte/Project.svelte, whose own provider lists are otherwise fetched
+		// once on mount and would never notice a plugin registered mid-session (see those panels'
+		// own comments -- this used to be a safe assumption when the catalogue only ever changed at
+		// app bootstrap; it stopped being one the moment /store's install handoff made registering
+		// a plugin mid-session, then immediately wanting to use it, the normal path).
+		onPluginRegistered?: () => void;
 	} = $props();
 
 	// The DB-backed registry -- the source of truth for what's *installed*, independent of
@@ -51,6 +67,11 @@
 		if (!pendingInstall) return;
 		formName = pendingInstall.name;
 		formKind = pendingInstall.kind;
+		if (pendingInstall.manifest) {
+			formWasmUrl = pendingInstall.manifest.wasm[0]?.url ?? '';
+			formManifestJson = JSON.stringify(pendingInstall.manifest, null, 2);
+		}
+		if (pendingInstall.activation) formActivation = pendingInstall.activation;
 		installing = true;
 		onInstallHandled?.();
 	});
@@ -171,6 +192,7 @@
 
 		await refreshCatalogue();
 		resetForm();
+		onPluginRegistered?.();
 
 		// A freshly registered interpreter isn't usable by anything until some project actually
 		// adopts it (projects.interpreter_plugin_id) -- prompt for that right away instead of
@@ -186,9 +208,26 @@
 				name: 'import_plugin',
 				displayText: 'Import Plugin',
 				icon: 'fa-solid fa-microchip',
-				onClick: () => {
-					installing = true;
-				}
+				submenu: [
+					{
+						name: 'import_plugin_manual',
+						displayText: 'Manual',
+						icon: 'fa-solid fa-pen',
+						onClick: () => {
+							installing = true;
+						}
+					},
+					{
+						name: 'import_plugin_from_store',
+						displayText: 'From Store',
+						icon: 'fa-solid fa-store',
+						// Opens in a new tab -- /store has no SSR-shared session with /edit's live
+						// PGlite instance (see Editor.svelte's pendingInstall comment), so navigating
+						// there in the same tab would tear down the current editor session instead
+						// of just browsing alongside it.
+						onClick: () => ({ link: '/store' })
+					}
+				]
 			}
 		];
 	};

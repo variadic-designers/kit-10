@@ -6,6 +6,11 @@
 
 	import { initializeReducedMotion } from '$lib/reduced-motion.js';
 	import { page } from '$app/state';
+	import {
+		STORE_CATALOGUE,
+		type StoreCapability,
+		type StoreKind
+	} from '$lib/plugin-catalogue.js';
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
@@ -13,43 +18,20 @@
 	});
 
 	// ── Static store data ────────────────────────────────────────────────────
-	// This page renders the intended store UX over a hardcoded catalogue -- there's still no
-	// remote index (every card below is invented, not a real fetchable plugin). Install now
-	// navigates to /edit?install=<id>&kind=<kind> instead of being a dead button: /edit has no
-	// SSR and owns the PGlite instance the registry actually lives in, while this route is
-	// deliberately kept server-rendered/lightweight (no PGlite/Vellum/Charter in this bundle),
-	// so the real registerPlugin call has to happen there, not here (see Plugins.svelte's
-	// pendingInstall prop). For a card whose id has no real wasm behind it (every "Community"
-	// entry here), the editor's install form still opens pre-filled, but the user has to supply
-	// an actual URL themselves -- there is nothing to fetch for these yet. When the store goes
-	// live this array is replaced by a real remote index + `listPlugins()` (installed set); the
-	// card shape below mirrors the plugin descriptor proposed in
-	// resources/plugin-store-research.md §5.1.
+	// The catalogue itself lives in $lib/plugin-catalogue.ts, shared with the editor's install
+	// handoff (Editor.svelte's pendingInstall -> Plugins.svelte's install form) -- a card whose
+	// entry carries a real `manifest` (WebCodium today, alongside the always-installed builtins)
+	// lets Install open that form fully pre-filled; a card with no manifest (the illustrative
+	// "Community" cards) still opens the form, but the user has to supply a wasm URL themselves --
+	// there is nothing real to fetch for these yet. Install navigates to /edit?install=<id>&kind=
+	// <kind> rather than registering directly: /edit has no SSR and owns the PGlite instance the
+	// registry actually lives in, while this route is deliberately kept server-rendered/
+	// lightweight (no PGlite/Vellum/Charter in this bundle). When the store goes live this
+	// catalogue is replaced by a real remote index + `listPlugins()` (installed set); the card
+	// shape mirrors the plugin descriptor proposed in resources/plugin-store-research.md §5.1.
 
-	type Kind = 'interpreter' | 'utility' | 'renderer';
-	type Status = 'installed' | 'available' | 'soon';
-	type Capability =
-		| 'network'
-		| 'reads-design'
-		| 'writes-design'
-		| 'reads-project'
-		| 'creates-project'
-		| 'drives-canvas'
-		| 'drives-panels';
-
-	interface StorePlugin {
-		id: string;
-		name: string;
-		author: string;
-		kind: Kind;
-		icon: string; // Font Awesome class
-		tagline: string;
-		provides: string[]; // what capabilities/roles it declares (badges)
-		capabilities: Capability[]; // host powers it requests
-		version: string;
-		status: Status;
-		firstParty: boolean;
-	}
+	type Kind = StoreKind;
+	type Capability = StoreCapability;
 
 	const CAP_META: Record<Capability, { label: string; icon: string; danger: boolean }> = {
 		network: { label: 'Network access', icon: 'fa-solid fa-globe', danger: true },
@@ -67,113 +49,6 @@
 		renderer: { label: 'Renderer', icon: 'fa-solid fa-cube' }
 	};
 
-	const plugins: StorePlugin[] = [
-		{
-			id: 'charter',
-			name: 'Charter',
-			author: 'KIT•10',
-			kind: 'interpreter',
-			icon: 'fa-solid fa-diagram-project',
-			tagline: 'Translates resolved kits into a flat render tree — the default viewport interpreter.',
-			provides: ['Viewport', 'Render fields', 'Layout opinions'],
-			capabilities: ['reads-design', 'writes-design', 'drives-canvas', 'drives-panels'],
-			version: '0.1.0',
-			status: 'installed',
-			firstParty: true
-		},
-		{
-			id: 'fontavious',
-			name: 'Fontavious',
-			author: 'KIT•10',
-			kind: 'utility',
-			icon: 'fa-solid fa-font',
-			tagline: 'Font catalogue + fetch. Serves the font picker and streams WOFF2 to the renderer.',
-			provides: ['Suggestions: font'],
-			capabilities: ['network'],
-			version: '0.1.0',
-			status: 'installed',
-			firstParty: true
-		},
-		{
-			id: 'tenner',
-			name: 'Tenner',
-			author: 'KIT•10',
-			kind: 'utility',
-			icon: 'fa-solid fa-file-arrow-down',
-			tagline: 'Raw project serialization — export and import a whole project as YAML.',
-			provides: ['Export: YAML', 'Import: YAML'],
-			capabilities: ['reads-project', 'creates-project'],
-			version: '0.1.0',
-			status: 'installed',
-			firstParty: true
-		},
-		{
-			id: 'glyphet',
-			name: 'Glyphet',
-			author: 'Community',
-			kind: 'utility',
-			icon: 'fa-solid fa-icons',
-			tagline: 'Icon-set catalogue. Adds an "icon" field type with search across popular open sets.',
-			provides: ['Suggestions: icon'],
-			capabilities: ['network'],
-			version: '0.2.0',
-			status: 'available',
-			firstParty: false
-		},
-		{
-			id: 'weftcss',
-			name: 'Weft',
-			author: 'Community',
-			kind: 'utility',
-			icon: 'fa-brands fa-css3-shield',
-			tagline: 'Export a view as production HTML + SCSS, with a live-vite stream to a dev server.',
-			provides: ['Export: HTML/SCSS', 'Export: live-vite'],
-			capabilities: ['reads-project'],
-			version: '0.4.1',
-			status: 'available',
-			firstParty: false
-		},
-		{
-			id: 'bridgeport',
-			name: 'Bridgeport',
-			author: 'Community',
-			kind: 'utility',
-			icon: 'fa-solid fa-right-left',
-			tagline: 'Import from Figma & Penpot files, mapping frames and variants onto kits and axes.',
-			provides: ['Import: .fig', 'Import: .penpot'],
-			capabilities: ['creates-project'],
-			version: '0.3.0',
-			status: 'soon',
-			firstParty: false
-		},
-		{
-			id: 'loomweave',
-			name: 'Loomweave',
-			author: 'Community',
-			kind: 'interpreter',
-			icon: 'fa-solid fa-code',
-			tagline: 'Alternative interpreter that emits a DOM-shaped tree instead of Charter primitives.',
-			provides: ['Viewport', 'Render fields'],
-			capabilities: ['reads-design', 'writes-design', 'drives-canvas', 'drives-panels'],
-			version: '0.1.0-beta',
-			status: 'soon',
-			firstParty: false
-		},
-		{
-			id: 'splatter',
-			name: 'Splatter',
-			author: 'Community',
-			kind: 'renderer',
-			icon: 'fa-solid fa-cubes',
-			tagline: 'Experimental Gaussian-splatting renderer surface — a peek at a replaceable core.',
-			provides: ['Renderer'],
-			capabilities: ['drives-canvas'],
-			version: '0.0.3',
-			status: 'soon',
-			firstParty: false
-		}
-	];
-
 	// ── Client-only filtering (visual; no backend) ───────────────────────────
 	const categories = [
 		{ id: 'all', label: 'All' },
@@ -187,7 +62,7 @@
 	let query = $state('');
 
 	const filtered = $derived(
-		plugins.filter((p) => {
+		STORE_CATALOGUE.filter((p) => {
 			const inCat =
 				activeCategory === 'all'
 					? true
@@ -204,7 +79,7 @@
 		})
 	);
 
-	const installedCount = plugins.filter((p) => p.status === 'installed').length;
+	const installedCount = STORE_CATALOGUE.filter((p) => p.status === 'installed').length;
 </script>
 
 <svelte:head>
@@ -240,8 +115,9 @@
 			<div class="store-note">
 				<i class="fa-solid fa-circle-info"></i>
 				<span
-					>This is a design preview — Install hands off to the editor's plugin registry. The
-					community cards below are illustrative and have no real plugin behind them yet.</span
+					>This is a design preview — Install hands off to the editor's plugin registry. Charter,
+					Fontavious, Tenner, and WebCodium are real; the remaining "Community" cards are
+					illustrative and have no real plugin behind them yet.</span
 				>
 			</div>
 		</header>

@@ -19,20 +19,27 @@
 		projectId,
 		projectName,
 		projectHints,
-		callUtilityPlugin
+		callUtilityPlugin,
+		pluginRegistryVersion = 0
 	}: {
 		api: Api;
 		projectId: string | null;
 		projectName: string | null;
 		projectHints: Record<string, unknown> | null;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		// Bumped by Editor.svelte after PluginsPanel registers a new plugin -- read below purely to
+		// re-trigger the fetch, since there's no live query on the plugin catalogue table yet.
+		pluginRegistryVersion?: number;
 	} = $props();
 
-	// Install-level, one-shot fetch -- same posture as Project.svelte/Plugins.svelte (no live
-	// query exists for the plugin catalogue yet).
+	// Install-level fetch -- same posture as Project.svelte/Plugins.svelte (no live query exists
+	// for the plugin catalogue yet). Re-fetches whenever pluginRegistryVersion changes, not just
+	// on mount, so a plugin registered mid-session (e.g. via /store's install handoff) shows up
+	// here without a full reload.
 	let availableExportProviders: ProjectExportProvider[] = $state([]);
 
 	$effect(() => {
+		void pluginRegistryVersion;
 		api.listPlugins().then((plugins) => {
 			availableExportProviders = resolveExportProviders(plugins);
 		});
