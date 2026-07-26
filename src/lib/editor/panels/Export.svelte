@@ -128,6 +128,7 @@
 			<p class="empty">No export plugins are available yet</p>
 		{:else}
 			{#if projectViews.length > 0}
+				<span class="export-views__label">Views to export</span>
 				<ul class="export-views">
 					{#each projectViews as view (view.viewId)}
 						<li>
@@ -191,9 +192,18 @@
 		font-size: $x-font-size-xs;
 	}
 
+	.export-views__label {
+		display: block;
+		padding: $x-space-xs $x-space-sm 0;
+		@include fonts-stack('Satoshi-Regular', sans);
+		font-size: $x-font-size-xs;
+		text-transform: uppercase;
+		color: var(--color-text);
+	}
+
 	.export-views {
 		list-style: none;
-		padding: $x-space-xs $x-space-sm;
+		padding: calc($x-space-xs / 2) $x-space-sm $x-space-xs;
 		margin: 0;
 		border-bottom: 1px solid var(--color-panel-header-border);
 		display: flex;

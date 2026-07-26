@@ -1,7 +1,7 @@
 use extism_pdk::*;
 use kit10_scene::{Extent, FlexDir, FontStyle, OklabColor, TextAlign, TextDecorationKind, UiNode};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // kit10_get_interpreter_output ignores its input and always returns a plain JSON string (not an
 // #[encoding(Json)]-tagged struct) -- verified against its actual JS implementation
@@ -21,6 +21,11 @@ struct InterpreterOutput {
     available: bool,
     #[serde(default)]
     viewport_data: Vec<UiNode>,
+    // Parallel to viewport_data -- node_view_ids[i] is the view id that node belongs to ("" for
+    // structural grid scaffolding that isn't a view at all). Used to resolve which nodes a
+    // view_ids selection actually refers to (see resolve_export_roots).
+    #[serde(default)]
+    node_view_ids: Vec<String>,
     #[serde(default)]
     reason: Option<String>,
 }
@@ -30,10 +35,11 @@ struct ExportInput {
     #[serde(default)]
     #[allow(dead_code)]
     project_id: String,
-    // Accepted, NOT yet used to filter -- v1 exports everything Charter resolved, same as
-    // Tenner's whole-project behavior. See the crate-level doc comment below for why.
+    // Which views to export. Empty means "export nothing" -- there is no hidden fallback to
+    // "everything" when this is empty, the checkbox state in the Export panel literally
+    // determines the output. Selecting every view (the panel's default) reproduces the same
+    // output as an unfiltered export -- see resolve_export_roots's doc comment for why.
     #[serde(default)]
-    #[allow(dead_code)]
     view_ids: Vec<String>,
 }
 
@@ -61,11 +67,10 @@ pub fn on_init(_input: String) -> FnResult<String> {
 /// function references (`index.html`'s <link href="styles.css">` is guaranteed to match).
 ///
 /// v1 scope, deliberate: Box (layout/color) and Text (content/fonts) nodes only -- Img is
-/// skipped entirely. `view_ids` is accepted but not used to filter; this always exports
-/// everything the interpreter resolved.
+/// skipped entirely.
 #[plugin_fn]
 pub fn export_html_css(input: String) -> FnResult<String> {
-    let _req: ExportInput = serde_json::from_str(&input).unwrap_or_default();
+    let req: ExportInput = serde_json::from_str(&input).unwrap_or_default();
 
     let raw = unsafe { kit10_get_interpreter_output(String::new())? };
     let output: InterpreterOutput = serde_json::from_str(&raw)?;
@@ -77,8 +82,12 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         .into());
     }
 
-    let html = render_html(&output.viewport_data);
-    let css = render_css(&output.viewport_data);
+    let children = build_children_map(&output.viewport_data);
+    let roots = resolve_export_roots(&output.viewport_data, &output.node_view_ids, &req.view_ids);
+    let included = collect_descendants(&children, &roots);
+
+    let html = render_html(&output.viewport_data, &children, &roots);
+    let css = render_css(&output.viewport_data, &included);
 
     let result = ExportResult {
         files: vec![
@@ -159,29 +168,90 @@ fn font_style_css(s: &FontStyle) -> &'static str {
     }
 }
 
-// children[i] = indices whose parent_id == Some(i); roots = indices whose parent_id is None.
-fn build_children_map(nodes: &[UiNode]) -> (Vec<usize>, HashMap<usize, Vec<usize>>) {
-    let mut roots = Vec::new();
-    let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        let parent_id = match node {
-            UiNode::Box(d) => d.parent_id,
-            UiNode::Text(d) => d.parent_id,
-            UiNode::Img(d) => d.parent_id,
-        };
-        match parent_id {
-            Some(p) => children.entry(p).or_default().push(i),
-            None => roots.push(i),
-        }
+fn parent_of(node: &UiNode) -> Option<usize> {
+    match node {
+        UiNode::Box(d) => d.parent_id,
+        UiNode::Text(d) => d.parent_id,
+        UiNode::Img(d) => d.parent_id,
     }
-    (roots, children)
 }
 
-fn render_html(nodes: &[UiNode]) -> String {
-    let (roots, children) = build_children_map(nodes);
+// children[i] = indices whose parent_id == Some(i).
+fn build_children_map(nodes: &[UiNode]) -> HashMap<usize, Vec<usize>> {
+    let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        if let Some(p) = parent_of(node) {
+            children.entry(p).or_default().push(i);
+        }
+    }
+    children
+}
+
+// Every view (top-level or nested as a child via composition) gets exactly one entry in
+// node_view_ids tagged with its own view id (verified against Charter's render_view_nodes,
+// plugins/charter/src/lib.rs) -- a nested view's parent_id points directly at its containing
+// view's own node, while a top-level view's parent_id chain only ever passes through structural
+// grid scaffolding (tagged ""), never another view. So: a selected view only becomes an
+// independent export root if no ancestor (walking parent_id) is ALSO a selected view's node --
+// otherwise it's already going to render as part of that ancestor's subtree, and treating it as
+// a second root would duplicate it. Selecting every view (the Export panel's default) therefore
+// reproduces exactly the same output as an unfiltered export: every nested view's parent is also
+// selected, so nested views are correctly excluded as independent roots.
+fn resolve_export_roots(
+    nodes: &[UiNode],
+    node_view_ids: &[String],
+    selected_view_ids: &[String],
+) -> Vec<usize> {
+    let is_selected = |i: usize| -> bool {
+        node_view_ids
+            .get(i)
+            .map(|v| !v.is_empty() && selected_view_ids.contains(v))
+            .unwrap_or(false)
+    };
+
+    let candidates: HashSet<usize> = (0..nodes.len()).filter(|&i| is_selected(i)).collect();
+
+    // Collected in ascending index order (not HashSet iteration order, which is unspecified) so
+    // the exported HTML/CSS has a stable, deterministic node ordering run to run -- and so
+    // selecting every view reproduces bit-for-bit the same output as an unfiltered export.
+    let mut roots: Vec<usize> = candidates
+        .iter()
+        .copied()
+        .filter(|&c| {
+            let mut cur = parent_of(&nodes[c]);
+            while let Some(p) = cur {
+                if candidates.contains(&p) {
+                    return false;
+                }
+                cur = parent_of(&nodes[p]);
+            }
+            true
+        })
+        .collect();
+    roots.sort_unstable();
+    roots
+}
+
+// BFS over the children map from the resolved roots, so render_css only emits rules for nodes
+// actually reachable from an included root -- not the whole project's tree.
+fn collect_descendants(children: &HashMap<usize, Vec<usize>>, roots: &[usize]) -> HashSet<usize> {
+    let mut included = HashSet::new();
+    let mut stack: Vec<usize> = roots.to_vec();
+    while let Some(i) = stack.pop() {
+        if !included.insert(i) {
+            continue;
+        }
+        if let Some(kids) = children.get(&i) {
+            stack.extend(kids.iter().copied());
+        }
+    }
+    included
+}
+
+fn render_html(nodes: &[UiNode], children: &HashMap<usize, Vec<usize>>, roots: &[usize]) -> String {
     let mut body = String::new();
-    for &i in &roots {
-        render_html_node(nodes, &children, i, &mut body);
+    for &i in roots {
+        render_html_node(nodes, children, i, &mut body);
     }
     format!(
         "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n{body}</body>\n</html>\n"
@@ -215,9 +285,12 @@ fn render_html_node(
     }
 }
 
-fn render_css(nodes: &[UiNode]) -> String {
+fn render_css(nodes: &[UiNode], included: &HashSet<usize>) -> String {
     let mut out = String::new();
     for (i, node) in nodes.iter().enumerate() {
+        if !included.contains(&i) {
+            continue;
+        }
         let class = class_name(i);
         let mut props: Vec<String> = Vec::new();
         match node {
@@ -352,6 +425,18 @@ mod tests {
         assert_eq!(escape_html("<script>&\""), "&lt;script&gt;&amp;&quot;");
     }
 
+    // Renders the whole tree unfiltered -- roots are every node with no parent, matching what
+    // resolve_export_roots would produce if every view were selected (see the
+    // selecting_every_view_reproduces_unfiltered_output test below for that exact guarantee).
+    fn render_all(nodes: &[UiNode]) -> (String, String) {
+        let children = build_children_map(nodes);
+        let roots: Vec<usize> = (0..nodes.len())
+            .filter(|&i| parent_of(&nodes[i]).is_none())
+            .collect();
+        let included = collect_descendants(&children, &roots);
+        (render_html(nodes, &children, &roots), render_css(nodes, &included))
+    }
+
     #[test]
     fn renders_a_box_with_a_text_child() {
         let nodes = vec![
@@ -359,12 +444,11 @@ mod tests {
             UiNode::Text(test_text(Some(0), "Hello")),
         ];
 
-        let html = render_html(&nodes);
+        let (html, css) = render_all(&nodes);
         assert!(html.contains("<div class=\"k10-0\">"));
         assert!(html.contains("<p class=\"k10-1\">Hello</p>"));
         assert!(html.contains("<link rel=\"stylesheet\" href=\"styles.css\">"));
 
-        let css = render_css(&nodes);
         assert!(css.contains(".k10-0 {"));
         assert!(css.contains("width: 200px;"));
         assert!(css.contains(".k10-1 {"));
@@ -387,9 +471,8 @@ mod tests {
             }),
         ];
 
-        let html = render_html(&nodes);
+        let (html, css) = render_all(&nodes);
         assert!(!html.contains("<img"));
-        let css = render_css(&nodes);
         assert!(!css.contains("k10-1"));
     }
 
@@ -398,6 +481,69 @@ mod tests {
         let input: ExportInput = serde_json::from_str("{}").unwrap();
         assert_eq!(input.project_id, "");
         assert!(input.view_ids.is_empty());
+    }
+
+    // Fixture used by every resolve_export_roots test below: two sibling top-level views
+    // ("view-a", "view-b"), and "view-c" nested inside "view-a" (parent_id: Some(0)) -- mirrors
+    // exactly how Charter tags a nested child view's node (parent_id points at the containing
+    // view's own node, per render_view_nodes).
+    fn view_fixture() -> (Vec<UiNode>, Vec<String>) {
+        let nodes = vec![
+            UiNode::Box(test_box(None)),
+            UiNode::Box(test_box(None)),
+            UiNode::Box(test_box(Some(0))),
+        ];
+        let node_view_ids = vec!["view-a".to_string(), "view-b".to_string(), "view-c".to_string()];
+        (nodes, node_view_ids)
+    }
+
+    #[test]
+    fn resolve_export_roots_selects_only_the_chosen_top_level_view() {
+        let (nodes, node_view_ids) = view_fixture();
+        let roots = resolve_export_roots(&nodes, &node_view_ids, &["view-a".to_string()]);
+        assert_eq!(roots, vec![0]);
+    }
+
+    #[test]
+    fn resolve_export_roots_excludes_a_nested_view_whose_parent_is_also_selected() {
+        let (nodes, node_view_ids) = view_fixture();
+        let selected = vec!["view-a".to_string(), "view-c".to_string()];
+        let roots = resolve_export_roots(&nodes, &node_view_ids, &selected);
+        // view-c (index 2) is nested inside view-a (index 0), which is also selected -- it must
+        // NOT be treated as a second independent root (it already renders as part of view-a's
+        // subtree; including it again would duplicate it).
+        assert_eq!(roots, vec![0]);
+    }
+
+    #[test]
+    fn resolve_export_roots_is_empty_for_no_selection() {
+        let (nodes, node_view_ids) = view_fixture();
+        let roots = resolve_export_roots(&nodes, &node_view_ids, &[]);
+        assert!(roots.is_empty());
+    }
+
+    #[test]
+    fn resolve_export_roots_ignores_an_unknown_view_id() {
+        let (nodes, node_view_ids) = view_fixture();
+        let roots = resolve_export_roots(&nodes, &node_view_ids, &["view-zzz".to_string()]);
+        assert!(roots.is_empty());
+    }
+
+    #[test]
+    fn selecting_every_view_reproduces_unfiltered_output() {
+        let (nodes, node_view_ids) = view_fixture();
+        let selected = vec!["view-a".to_string(), "view-b".to_string(), "view-c".to_string()];
+
+        let children = build_children_map(&nodes);
+        let roots = resolve_export_roots(&nodes, &node_view_ids, &selected);
+        let included = collect_descendants(&children, &roots);
+        let filtered_html = render_html(&nodes, &children, &roots);
+        let filtered_css = render_css(&nodes, &included);
+
+        let (unfiltered_html, unfiltered_css) = render_all(&nodes);
+
+        assert_eq!(filtered_html, unfiltered_html);
+        assert_eq!(filtered_css, unfiltered_css);
     }
 
     #[test]
