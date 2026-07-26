@@ -41,6 +41,23 @@ const TENNER_MANIFEST: PluginManifest = {
 	capabilities: { hostFns: ['kit10_get_project_export', 'kit10_import_project_data'] }
 };
 
+// Same manifest shape as plugin-catalogue.ts's webcodium entry (kept in sync by hand -- that
+// file is app-side, this one is the manager package, so it can't be imported directly).
+const WEBCODIUM_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/webcodium.wasm' }],
+	provides: {
+		exports: [
+			{
+				label: 'Export HTML + CSS with WebCodium',
+				fn: 'export_html_css',
+				fileExtension: 'html',
+				mimeType: 'text/html',
+				target: 'html'
+			}
+		]
+	}
+};
+
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that
 // URL right now, so it never drifts the way a hand-maintained version string would (both
 // plugins are still sitting at an untouched Cargo.toml "0.1.0"). Best-effort only: a fetch
@@ -63,6 +80,7 @@ export interface BuiltinPlugins {
 	charter: PluginRow;
 	fontavious: PluginRow;
 	tenner: PluginRow;
+	webcodium: PluginRow;
 }
 
 // Registers KIT-10's built-in plugins into the DB-backed catalogue (idempotent -- upserts
@@ -71,10 +89,11 @@ export interface BuiltinPlugins {
 export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<BuiltinPlugins> {
 	const api: Api = queryBuilder(dialect);
 
-	const [charterHash, fontaviousHash, tennerHash] = await Promise.all([
+	const [charterHash, fontaviousHash, tennerHash, webcodiumHash] = await Promise.all([
 		hashUrl(CHARTER_MANIFEST.wasm[0]!.url),
 		hashUrl(FONTAVIOUS_MANIFEST.wasm[0]!.url),
-		hashUrl(TENNER_MANIFEST.wasm[0]!.url)
+		hashUrl(TENNER_MANIFEST.wasm[0]!.url),
+		hashUrl(WEBCODIUM_MANIFEST.wasm[0]!.url)
 	]);
 
 	const charter = await api.registerPlugin({
@@ -107,7 +126,21 @@ export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<Bu
 		contentHash: tennerHash
 	});
 
-	if (!charter || !fontavious || !tenner) throw new Error('Failed to register builtin plugins');
+	// Lazy, same posture as Tenner -- an occasional explicit export action, not core to using the
+	// editor. Registering it here (rather than requiring a manual /store install) is what makes
+	// every project's HTML export resolve to WebCodium by default: resolveExportProfile's
+	// single-provider fallback picks it automatically once it's the sole `html` target provider,
+	// with no per-project hints.exportProfile write needed.
+	const webcodium = await api.registerPlugin({
+		name: 'webcodium',
+		kind: 'utility',
+		activation: 'lazy',
+		manifest: WEBCODIUM_MANIFEST,
+		contentHash: webcodiumHash
+	});
 
-	return { charter, fontavious, tenner };
+	if (!charter || !fontavious || !tenner || !webcodium)
+		throw new Error('Failed to register builtin plugins');
+
+	return { charter, fontavious, tenner, webcodium };
 }

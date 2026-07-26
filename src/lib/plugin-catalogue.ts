@@ -86,11 +86,11 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 		provides: ['Export: HTML/CSS'],
 		capabilities: ['reads-design'],
 		version: '0.1.0',
-		status: 'available',
-		// Deliberately not marked first-party even though KIT•10 built it -- VISION.md frames
-		// WebCodium as a proof that a genuinely non-builtin, store-installed plugin can be just as
-		// real as Charter/Fontavious/Tenner (see CLAUDE.md's plugins/webcodium/ note).
-		firstParty: false,
+		// Bootstrapped by manager/src/plugins-bootstrap.ts (registerBuiltinPlugins) like
+		// Fontavious/Tenner, so every project's HTML export resolves to it by default with no
+		// manual /store install -- see CLAUDE.md's plugins/webcodium/ note.
+		status: 'installed',
+		firstParty: true,
 		activation: 'lazy',
 		manifest: {
 			wasm: [{ url: '/webcodium.wasm' }],

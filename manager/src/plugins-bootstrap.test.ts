@@ -18,8 +18,8 @@ describe('registerBuiltinPlugins', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('registers charter as an interpreter and fontavious/tenner as utilities, all hashed', async () => {
-		const { charter, fontavious, tenner } = await registerBuiltinPlugins(ctx.db);
+	it('registers charter as an interpreter and fontavious/tenner/webcodium as utilities, all hashed', async () => {
+		const { charter, fontavious, tenner, webcodium } = await registerBuiltinPlugins(ctx.db);
 
 		expect(charter.name).toBe('charter');
 		expect(charter.kind).toBe('interpreter');
@@ -62,6 +62,24 @@ describe('registerBuiltinPlugins', () => {
 			capabilities: { hostFns: ['kit10_get_project_export', 'kit10_import_project_data'] }
 		});
 		expect(tenner.content_hash).toMatch(/^[0-9a-f]{64}$/);
+
+		expect(webcodium.name).toBe('webcodium');
+		expect(webcodium.kind).toBe('utility');
+		expect(webcodium.manifest).toEqual({
+			wasm: [{ url: '/webcodium.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export HTML + CSS with WebCodium',
+						fn: 'export_html_css',
+						fileExtension: 'html',
+						mimeType: 'text/html',
+						target: 'html'
+					}
+				]
+			}
+		});
+		expect(webcodium.content_hash).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it('is idempotent -- re-running upserts the same rows instead of duplicating', async () => {
@@ -69,7 +87,7 @@ describe('registerBuiltinPlugins', () => {
 		await registerBuiltinPlugins(ctx.db);
 
 		const all = await ctx.db.selectFrom('plugins').selectAll().execute();
-		expect(all).toHaveLength(3);
+		expect(all).toHaveLength(4);
 	});
 
 	it('falls back to a null content_hash if the fetch fails, without throwing', async () => {

@@ -15,7 +15,7 @@ export async function seedDemoProject(
 	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'KIT\u202210 Demo'))!;
 
 	await api.setProjectInterpreter(proj.id, builtinPlugins.charter.id);
-	// No utility-plugin linking -- Fontavious and Tenner are install-level (see
+	// No utility-plugin linking -- Fontavious, Tenner, and WebCodium are install-level (see
 	// PluginActivation in schema.ts), loaded globally rather than per-project.
 
 	// Project-scoped tokens
