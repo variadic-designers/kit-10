@@ -20,6 +20,7 @@ import type {
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
 import { getCachedFont, putCachedFont } from './font-cache.js';
+import { buildInterpreterOutputPayload } from './interpreter-output.js';
 import { get } from 'svelte/store';
 import {
 	type CollectedPreference,
@@ -230,6 +231,27 @@ export function createPluginManager(api: Api) {
 				kit10_get_resolution(cp: any, _inputOffs: bigint) {
 					const data = serializeResolvedKits(context.resolvedKits);
 					return cp.store(JSON.stringify(data));
+				},
+
+				// Public access to the active interpreter's last resolved output (post-translation --
+				// viewport data/categories/font requests, not just resolved kit properties like
+				// kit10_get_resolution above). Any plugin can request this via capabilities.hostFns;
+				// this is the concrete channel PluginManifest.supports was built toward (e.g. a future
+				// WebCodium declaring `supports: ['charter']` documents intent, this host fn is what
+				// actually lets it read Charter's output). See interpreter-output.ts for why the rare
+				// binary-cached-only case returns `available: false` instead of data.
+				kit10_get_interpreter_output(cp: any, _inputOffs: bigint) {
+					return cp.store(
+						JSON.stringify(
+							buildInterpreterOutputPayload(
+								viewportData,
+								viewportDataBinary,
+								nodeViewIds,
+								fieldCategories,
+								fontRequests
+							)
+						)
+					);
 				},
 
 				// Exposes Manager's exportProject (a full project data dump -- views, kits, axes,

@@ -198,6 +198,12 @@ Returns the current resolved kits for the active view as `ResolvedKit[]`. Useful
 
 ---
 
+### `kit10_get_interpreter_output() -> string`
+
+Returns the active interpreter's last resolved output (`viewport_data`, `node_view_ids`, `categories`, `font_requests`) to any plugin that declares this in `capabilities.hostFns` -- the same public-access pattern as `kit10_get_resolution`, one level further down the pipeline (post-translation, not just resolved kit properties). Returns `{ "available": false, "reason": "binary-only" }` instead of data when only the MessagePack binary form of the viewport data is currently cached (large projects, ~10k+ views) -- there is no JS-side MessagePack decoder in this codebase, so this is a documented gap, not a bug.
+
+---
+
 ### `kit10_write_render_entry_to_layer(input: string) -> string`
 
 Write or update a property on a layer's render snippet. Creates the entry if it does not exist; updates it if it does.
