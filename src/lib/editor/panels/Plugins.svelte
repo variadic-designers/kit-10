@@ -4,6 +4,7 @@
 	import Panel from '../Panel.svelte';
 	import type { PluginManager } from '$lib/plugins/manager.svelte.js';
 	import type { Api, PluginRow, PluginManifest, PluginKind, PluginActivation } from 'manager';
+	import { resolvePluginRelationships } from '$lib/plugins/plugin-relationships.js';
 
 	let {
 		manager,
@@ -227,6 +228,11 @@
 			return { row, status: loaded?.status ?? '', error: loaded?.error };
 		})
 	);
+
+	// "Support for" (a plugin's own declared compatibility target, e.g. WebCodium -> Charter)
+	// and "dependency of" (the derived reverse view) -- see plugin-relationships.ts. Informational
+	// only: nothing here reacts to an unsatisfied (not-installed) support entry.
+	let relationships = $derived(resolvePluginRelationships(catalogue));
 </script>
 
 <Panel name="Plugins" tooltip="Plugins" contextMenuContent={pluginPanelContextMenu}>
@@ -236,24 +242,37 @@
 		{:else}
 			<ul class="plugin-list">
 				{#each rows as { row, status, error } (row.name)}
+					{@const relationship = relationships.find((r) => r.name === row.name)}
 					<li class="plugin-item">
-						<i class={statusIcon(status)} style={`color: ${statusColor(status)}`}></i>
-						<span class="plugin-name">{row.name}</span>
-						<span class="plugin-kind"
-							>{row.kind}{row.activation ? ` · ${row.activation}` : ''}</span
-						>
-						{#if error}
-							<span class="plugin-error" title={error}>error</span>
-						{/if}
-						{#if row.kind === 'interpreter'}
-							<button
-								type="button"
-								class="plugin-assign"
-								title="Assign to a project"
-								onclick={(e) => openInterpreterAssignMenu(row.id, e.currentTarget)}
+						<div class="plugin-item__main">
+							<i class={statusIcon(status)} style={`color: ${statusColor(status)}`}></i>
+							<span class="plugin-name">{row.name}</span>
+							<span class="plugin-kind"
+								>{row.kind}{row.activation ? ` · ${row.activation}` : ''}</span
 							>
-								<i class="fa-solid fa-diagram-project"></i>
-							</button>
+							{#if error}
+								<span class="plugin-error" title={error}>error</span>
+							{/if}
+							{#if row.kind === 'interpreter'}
+								<button
+									type="button"
+									class="plugin-assign"
+									title="Assign to a project"
+									onclick={(e) => openInterpreterAssignMenu(row.id, e.currentTarget)}
+								>
+									<i class="fa-solid fa-diagram-project"></i>
+								</button>
+							{/if}
+						</div>
+						{#if relationship && (relationship.supports.length > 0 || relationship.dependencyOf.length > 0)}
+							<div class="plugin-relationships">
+								{#if relationship.supports.length > 0}
+									<span>Supports: {relationship.supports.map((s) => s.name).join(', ')}</span>
+								{/if}
+								{#if relationship.dependencyOf.length > 0}
+									<span>Dependency of: {relationship.dependencyOf.join(', ')}</span>
+								{/if}
+							</div>
 						{/if}
 					</li>
 				{/each}
@@ -332,13 +351,18 @@
 
 	.plugin-item {
 		display: flex;
-		align-items: center;
-		gap: $x-space-xs;
+		flex-direction: column;
 		padding: $x-space-xs $x-space-sm;
 		cursor: pointer;
 
 		&:hover {
 			background: var(--color-surface-alt);
+		}
+
+		.plugin-item__main {
+			display: flex;
+			align-items: center;
+			gap: $x-space-xs;
 		}
 
 		.plugin-name {
@@ -371,6 +395,17 @@
 			&:hover {
 				color: var(--color-primary);
 			}
+		}
+
+		.plugin-relationships {
+			display: flex;
+			flex-direction: column;
+			gap: 2px;
+			margin-top: 2px;
+			padding-left: calc($x-font-size-lg + $x-space-xs);
+			@include fonts-stack('Satoshi-Light', sans);
+			font-size: $x-font-size-xs;
+			color: var(--color-text-muted);
 		}
 	}
 

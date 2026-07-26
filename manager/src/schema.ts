@@ -116,6 +116,14 @@ export interface PluginManifest {
 		imports?: ImportCapability[];
 	};
 	capabilities?: PluginCapabilities;
+	// Plugin registry names this plugin declares specific compatibility with -- "WebCodium
+	// supports Charter" means WebCodium's own logic was built to understand Charter's specific
+	// translation opinions (its UiNode shape, composition/arrangement conventions), not just
+	// "any interpreter." The reverse view ("Charter is a dependency of WebCodium") is never
+	// stored -- it's derived by resolvePluginRelationships (src/lib/plugins/plugin-
+	// relationships.ts) from every installed plugin's own `supports` list. Informational only:
+	// nothing gates on whether a named plugin is actually installed.
+	supports?: string[];
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
