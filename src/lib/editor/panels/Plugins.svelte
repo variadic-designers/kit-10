@@ -1,10 +1,24 @@
 <script lang="ts">
-	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
+	import type { ContextMenuContent, ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
+	import { openContextMenu } from '$lib/components/contextMenuStore.js';
 	import Panel from '../Panel.svelte';
 	import type { PluginManager } from '$lib/plugins/manager.svelte.js';
 	import type { Api, PluginRow, PluginManifest, PluginKind, PluginActivation } from 'manager';
 
-	let { manager, api }: { manager: PluginManager | null; api: Api } = $props();
+	let {
+		manager,
+		api,
+		pendingInstall = null,
+		onInstallHandled
+	}: {
+		manager: PluginManager | null;
+		api: Api;
+		// /store's Install button hands off here (see Editor.svelte) rather than performing the
+		// registration itself -- /store has no DB access. Pre-fills the form below and is
+		// consumed exactly once via onInstallHandled so a later prop change doesn't re-open it.
+		pendingInstall?: { name: string; kind: PluginKind } | null;
+		onInstallHandled?: () => void;
+	} = $props();
 
 	// The DB-backed registry -- the source of truth for what's *installed*, independent of
 	// whether anything has actually loaded it yet this session (a lazy utility plugin, or a
@@ -32,6 +46,14 @@
 	let formManifestJson = $state('');
 	let formError: string | null = $state(null);
 
+	$effect(() => {
+		if (!pendingInstall) return;
+		formName = pendingInstall.name;
+		formKind = pendingInstall.kind;
+		installing = true;
+		onInstallHandled?.();
+	});
+
 	function resetForm() {
 		installing = false;
 		formName = '';
@@ -42,6 +64,50 @@
 		formError = null;
 	}
 
+	// The one thing that's genuinely project-scoped is an interpreter's automated, reactive
+	// role: a project's on_resolve loop runs continuously against whatever plugin sits in its
+	// interpreter_plugin_id, unlike a utility plugin (install-level, invoked on demand). This
+	// is the workspace -> project cascading menu (same ContextMenuContent + submenu machinery
+	// Views.svelte/Project.svelte already use for their own context menus, just opened
+	// programmatically here instead of from a right-click) that lets a newly- or
+	// previously-registered interpreter actually be assigned to a project via
+	// setProjectInterpreter -- there was no UI reaching that call at all before this.
+	async function openInterpreterAssignMenu(pluginId: string, target: HTMLElement) {
+		const projects = await api.getAllProjects().execute();
+
+		const byWorkspace = new Map<string, typeof projects>();
+		for (const p of projects) {
+			const list = byWorkspace.get(p.workspaceName) ?? [];
+			list.push(p);
+			byWorkspace.set(p.workspaceName, list);
+		}
+
+		const content: ContextMenuContent =
+			byWorkspace.size === 0
+				? [
+						{
+							name: 'no_projects',
+							displayText: 'No projects yet',
+							icon: 'fa-solid fa-folder',
+							disabled: true
+						}
+					]
+				: [...byWorkspace.entries()].map(([workspaceName, workspaceProjects]) => ({
+						name: `assign_workspace_${workspaceName}`,
+						displayText: workspaceName,
+						icon: 'fa-solid fa-folder',
+						submenu: workspaceProjects.map((p) => ({
+							name: `assign_project_${p.projectId}`,
+							displayText: p.projectName,
+							icon: 'fa-regular fa-window-maximize',
+							onClick: () => api.setProjectInterpreter(p.projectId, pluginId)
+						}))
+					}));
+
+		const rect = target.getBoundingClientRect();
+		openContextMenu(rect.left, rect.bottom, target, content);
+	}
+
 	// Builds the manifest from either the simple Wasm-URL field or the advanced JSON textarea
 	// (whichever the user actually filled in), then calls the same registerPlugin upsert-by-name
 	// primitive registerBuiltinPlugins already uses at boot (manager/src/plugins-bootstrap.ts) --
@@ -49,7 +115,7 @@
 	// rather than silently upserting over it (a real risk here: upsert-by-name is exactly right
 	// for re-registering a known built-in at boot, but the wrong default for a user-typed name
 	// that might collide with charter/fontavious/tenner or another install).
-	async function handleRegister() {
+	async function handleRegister(submitter: HTMLElement | null) {
 		formError = null;
 		const name = formName.trim();
 		if (!name) {
@@ -97,14 +163,20 @@
 		// Eager utility plugins are meant to be loaded once, unconditionally, at editor boot
 		// (see PluginActivation) -- since this one didn't exist at boot, load it right now so
 		// it's usable immediately instead of only after the next full reload. Lazy utility
-		// plugins load themselves on first actual use (callUtilityPlugin); an interpreter has no
-		// per-project selection UI yet, so registering one only adds the catalogue row for now.
+		// plugins load themselves on first actual use (callUtilityPlugin).
 		if (formKind === 'utility' && activation === 'eager') {
 			await manager?.loadUtilityPlugin(manifest, name, undefined, manifest.capabilities?.hostFns);
 		}
 
 		await refreshCatalogue();
 		resetForm();
+
+		// A freshly registered interpreter isn't usable by anything until some project actually
+		// adopts it (projects.interpreter_plugin_id) -- prompt for that right away instead of
+		// leaving the user to find the per-row "assign" action on their own.
+		if (formKind === 'interpreter' && submitter) {
+			await openInterpreterAssignMenu(row.id, submitter);
+		}
 	}
 
 	const pluginPanelContextMenu: ContextMenuContentGenerator = () => {
@@ -173,6 +245,16 @@
 						{#if error}
 							<span class="plugin-error" title={error}>error</span>
 						{/if}
+						{#if row.kind === 'interpreter'}
+							<button
+								type="button"
+								class="plugin-assign"
+								title="Assign to a project"
+								onclick={(e) => openInterpreterAssignMenu(row.id, e.currentTarget)}
+							>
+								<i class="fa-solid fa-diagram-project"></i>
+							</button>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -183,7 +265,7 @@
 				class="plugin-install"
 				onsubmit={(e) => {
 					e.preventDefault();
-					handleRegister();
+					handleRegister((e as SubmitEvent).submitter as HTMLElement | null);
 				}}
 			>
 				<input
@@ -275,6 +357,20 @@
 			margin-left: auto;
 			font-size: $x-font-size-xs;
 			color: var(--color-danger);
+		}
+
+		.plugin-assign {
+			margin-left: auto;
+			padding: 2px 4px;
+			border: none;
+			background: transparent;
+			color: var(--color-text-muted);
+			cursor: pointer;
+			font-size: $x-font-size-xs;
+
+			&:hover {
+				color: var(--color-primary);
+			}
 		}
 	}
 

@@ -13,11 +13,18 @@
 	});
 
 	// ── Static store data ────────────────────────────────────────────────────
-	// DEFINITIVE, NOT FUNCTIONAL: this page renders the intended store UX over a
-	// hardcoded catalogue. No install/registry wiring yet — Install buttons are
-	// inert on purpose. When the store goes live this array is replaced by the
-	// remote index + `listPlugins()` (installed set); the card shape below mirrors
-	// the plugin descriptor proposed in resources/plugin-store-research.md §5.1.
+	// This page renders the intended store UX over a hardcoded catalogue -- there's still no
+	// remote index (every card below is invented, not a real fetchable plugin). Install now
+	// navigates to /edit?install=<id>&kind=<kind> instead of being a dead button: /edit has no
+	// SSR and owns the PGlite instance the registry actually lives in, while this route is
+	// deliberately kept server-rendered/lightweight (no PGlite/Vellum/Charter in this bundle),
+	// so the real registerPlugin call has to happen there, not here (see Plugins.svelte's
+	// pendingInstall prop). For a card whose id has no real wasm behind it (every "Community"
+	// entry here), the editor's install form still opens pre-filled, but the user has to supply
+	// an actual URL themselves -- there is nothing to fetch for these yet. When the store goes
+	// live this array is replaced by a real remote index + `listPlugins()` (installed set); the
+	// card shape below mirrors the plugin descriptor proposed in
+	// resources/plugin-store-research.md §5.1.
 
 	type Kind = 'interpreter' | 'utility' | 'renderer';
 	type Status = 'installed' | 'available' | 'soon';
@@ -232,7 +239,10 @@
 			</p>
 			<div class="store-note">
 				<i class="fa-solid fa-circle-info"></i>
-				<span>This is a design preview — installing isn't wired up yet.</span>
+				<span
+					>This is a design preview — Install hands off to the editor's plugin registry. The
+					community cards below are illustrative and have no real plugin behind them yet.</span
+				>
 			</div>
 		</header>
 
@@ -307,12 +317,16 @@
 							<button type="button" class="p-btn p-btn--installed" disabled>
 								<i class="fa-solid fa-check"></i> Installed
 							</button>
-						{:else if plugin.status === 'soon'}
+						{:else if plugin.status === 'soon' || plugin.kind === 'renderer'}
 							<button type="button" class="p-btn p-btn--soon" disabled>Coming soon</button>
 						{:else}
-							<button type="button" class="p-btn p-btn--install" disabled title="Store isn't live yet">
+							<a
+								href="/edit?install={encodeURIComponent(plugin.id)}&kind={plugin.kind}"
+								class="p-btn p-btn--install"
+								title="Opens the editor to finish registering this plugin"
+							>
 								<i class="fa-solid fa-download"></i> Install
-							</button>
+							</a>
 						{/if}
 					</div>
 				</article>
@@ -803,6 +817,12 @@
 		&--install {
 			background: var(--color-primary);
 			color: var(--color-pure);
+			cursor: pointer;
+			text-decoration: none;
+
+			&:hover {
+				background: var(--color-primary-hover);
+			}
 		}
 
 		&--installed {
