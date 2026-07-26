@@ -10,34 +10,31 @@
 
 import type { FieldCategory, FontRequest, UiNode } from './types.js';
 
-export type InterpreterOutputPayload =
-	| {
-			available: true;
-			viewport_data: UiNode[];
-			node_view_ids: string[];
-			categories: FieldCategory[];
-			font_requests: FontRequest[];
-	  }
-	| { available: false; reason: 'binary-only' };
+// The `available: false` shape used to exist for a "binary-cached-only" case that never actually
+// happens: Charter's viewport_data is a required field on both OnResolveResult and
+// OnSelectionChangeResult, always sent alongside the optional viewport_data_binary, never instead
+// of it (see the shared crate's structs) -- manager.svelte.ts now keeps its own viewportData
+// state in sync with viewport_data independently of whichever binary path Vellum takes, so JSON
+// is always current whenever a resolve has happened at all. Kept as a plain type (not a union)
+// rather than a permanently-dead `available: false` branch nothing can construct.
+export interface InterpreterOutputPayload {
+	available: true;
+	viewport_data: UiNode[];
+	node_view_ids: string[];
+	categories: FieldCategory[];
+	font_requests: FontRequest[];
+}
 
-// viewportData/viewportDataBinary/nodeViewIds/categories/fontRequests are exactly the module-
-// level $state PluginManager already maintains in manager.svelte.ts (populated by runResolve /
+// viewportData/nodeViewIds/categories/fontRequests are exactly the module-level $state
+// PluginManager already maintains in manager.svelte.ts (populated by runResolve /
 // makeSelectionChangeRunner) -- this function just decides what to hand a REQUESTING plugin,
 // never mutates or refetches anything itself.
 export function buildInterpreterOutputPayload(
 	viewportData: string,
-	viewportDataBinary: Uint8Array | null,
 	nodeViewIds: string[],
 	categories: FieldCategory[],
 	fontRequests: FontRequest[]
 ): InterpreterOutputPayload {
-	// The binary path exists purely so Vellum's Rust side can skip a JSON parse at scale (see
-	// OnResolveResult.viewport_data_binary's doc comment) -- nothing on the JS host ever decodes
-	// it back, so a third plugin asking for JSON gets an honest "not available" instead of the
-	// host silently handing back stale/empty JSON.
-	if (viewportDataBinary) {
-		return { available: false, reason: 'binary-only' };
-	}
 	return {
 		available: true,
 		viewport_data: JSON.parse(viewportData),

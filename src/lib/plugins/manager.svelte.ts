@@ -50,6 +50,13 @@ function serializeResolvedViews(views: ResolvedView[] | null) {
 	}));
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+	const binaryStr = atob(b64);
+	const bytes = new Uint8Array(binaryStr.length);
+	for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+	return bytes;
+}
+
 export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
@@ -238,14 +245,12 @@ export function createPluginManager(api: Api) {
 				// kit10_get_resolution above). Any plugin can request this via capabilities.hostFns;
 				// this is the concrete channel PluginManifest.supports was built toward (e.g. a future
 				// WebCodium declaring `supports: ['charter']` documents intent, this host fn is what
-				// actually lets it read Charter's output). See interpreter-output.ts for why the rare
-				// binary-cached-only case returns `available: false` instead of data.
+				// actually lets it read Charter's output).
 				kit10_get_interpreter_output(cp: any, _inputOffs: bigint) {
 					return cp.store(
 						JSON.stringify(
 							buildInterpreterOutputPayload(
 								viewportData,
-								viewportDataBinary,
 								nodeViewIds,
 								fieldCategories,
 								fontRequests
@@ -401,17 +406,21 @@ export function createPluginManager(api: Api) {
 			const parsed: OnResolveResult = JSON.parse(result.text());
 			fieldCategories = parsed.categories ?? [];
 			fontRequests = parsed.font_requests ?? [];
-			if (parsed.viewport_data_binary) {
-				const binaryStr = atob(parsed.viewport_data_binary);
-				const bytes = new Uint8Array(binaryStr.length);
-				for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-				viewportDataBinary = bytes;
-				nodeViewIds = parsed.node_view_ids ?? [];
-			} else if (parsed.viewport_data) {
+			// Charter's viewport_data is a required field -- always present alongside
+			// viewport_data_binary, never replaced by it. The two used to be handled as
+			// mutually exclusive (binary preferred, JSON left stale/unset otherwise), which broke
+			// kit10_get_interpreter_output for every consumer other than Vellum: any non-empty
+			// scene always carries binary too, so the JSON output was effectively never fresh. Keep
+			// both in sync independently -- Vellum still gets the binary fast path via
+			// viewportDataBinary (see Viewport.svelte's dataBinary ?? data), and any plugin reading
+			// viewportData now sees current data instead of "binary-only".
+			if (parsed.viewport_data) {
 				viewportData = JSON.stringify(parsed.viewport_data);
-				viewportDataBinary = null;
-				nodeViewIds = parsed.node_view_ids ?? [];
 			}
+			viewportDataBinary = parsed.viewport_data_binary
+				? base64ToBytes(parsed.viewport_data_binary)
+				: null;
+			nodeViewIds = parsed.node_view_ids ?? [];
 			// Panel manifests are NOT read here — they're published via the `kit10_panel_publish`
 			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
 			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
@@ -452,17 +461,15 @@ export function createPluginManager(api: Api) {
 					node_view_ids?: string[];
 					viewport_data_binary?: string;
 				};
-				if (parsed.viewport_data_binary) {
-					const binaryStr = atob(parsed.viewport_data_binary);
-					const bytes = new Uint8Array(binaryStr.length);
-					for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-					viewportDataBinary = bytes;
-					nodeViewIds = parsed.node_view_ids ?? [];
-				} else if (parsed.viewport_data?.length) {
+				// Same fix as runResolve above -- viewport_data and viewport_data_binary aren't
+				// mutually exclusive, keep both in sync independently.
+				if (parsed.viewport_data) {
 					viewportData = JSON.stringify(parsed.viewport_data);
-					viewportDataBinary = null;
-					nodeViewIds = parsed.node_view_ids ?? [];
 				}
+				viewportDataBinary = parsed.viewport_data_binary
+					? base64ToBytes(parsed.viewport_data_binary)
+					: null;
+				nodeViewIds = parsed.node_view_ids ?? [];
 			}
 		};
 	}

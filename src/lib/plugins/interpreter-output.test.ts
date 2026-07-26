@@ -2,10 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { buildInterpreterOutputPayload } from './interpreter-output.js';
 
 describe('buildInterpreterOutputPayload', () => {
-	it('returns the full payload when only the JSON form is cached', () => {
+	it('returns the full payload from the current viewportData', () => {
 		const payload = buildInterpreterOutputPayload(
 			'[{"type":"box"}]',
-			null,
 			['view1'],
 			[{ category: 'layout', fields: [] } as any],
 			[{ family: 'Satoshi', weight: 400, style: 'Normal' } as any]
@@ -20,20 +19,8 @@ describe('buildInterpreterOutputPayload', () => {
 		});
 	});
 
-	it('returns unavailable/binary-only when the binary form is cached, regardless of viewportData', () => {
-		const payload = buildInterpreterOutputPayload(
-			'[{"type":"box"}]',
-			new Uint8Array([1, 2, 3]),
-			['view1'],
-			[],
-			[]
-		);
-
-		expect(payload).toEqual({ available: false, reason: 'binary-only' });
-	});
-
 	it('treats the never-resolved/empty-project default as a legitimate empty payload', () => {
-		const payload = buildInterpreterOutputPayload('[]', null, [], [], []);
+		const payload = buildInterpreterOutputPayload('[]', [], [], []);
 
 		expect(payload).toEqual({
 			available: true,
