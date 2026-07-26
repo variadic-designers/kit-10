@@ -69,8 +69,7 @@ interface PluginManifest {
 				"fn": "export_html_css",
 				"fileExtension": "html",
 				"mimeType": "text/html",
-				"target": "html",
-				"multiFile": true
+				"target": "html"
 			}
 		]
 	},
@@ -79,7 +78,7 @@ interface PluginManifest {
 }
 ```
 
-Its `export_html_css` function calls the `kit10_get_interpreter_output` host fn (see the host-function table below) to fetch Charter's resolved `UiNode` tree, then returns the `{ files: [...] }` envelope `multiFile: true` requires.
+Its `export_html_css` function calls the `kit10_get_interpreter_output` host fn (see the host-function table below) to fetch Charter's resolved `UiNode` tree, then returns a single HTML document with its CSS inlined in a `<style>` block -- no `multiFile: true`, since that's a two-file download (see `download.ts`'s rapid-successive-download browser quirk) this plugin doesn't need yet.
 
 ---
 
@@ -253,7 +252,7 @@ Returns the current resolved kits for the active view as `ResolvedKit[]`. Useful
 
 ### `kit10_get_interpreter_output() -> string`
 
-Returns the active interpreter's last resolved output (`viewport_data`, `node_view_ids`, `categories`, `font_requests`) to any plugin that declares this in `capabilities.hostFns` -- the same public-access pattern as `kit10_get_resolution`, one level further down the pipeline (post-translation, not just resolved kit properties). Returns `{ "available": false, "reason": "binary-only" }` instead of data when only the MessagePack binary form of the viewport data is currently cached (large projects, ~10k+ views) -- there is no JS-side MessagePack decoder in this codebase, so this is a documented gap, not a bug.
+Returns the active interpreter's last resolved output (`viewport_data`, `node_view_ids`, `categories`, `font_requests`) to any plugin that declares this in `capabilities.hostFns` -- the same public-access pattern as `kit10_get_resolution`, one level further down the pipeline (post-translation, not just resolved kit properties). Always `{ "available": true, ... }` once any resolve has happened -- `viewport_data` is a required field on Charter's output, always sent alongside the optional MessagePack `viewport_data_binary` (used only for Vellum's own large-scene fast path), never replaced by it.
 
 ---
 
