@@ -43,28 +43,17 @@ struct ExportInput {
     view_ids: Vec<String>,
 }
 
-#[derive(serde::Serialize)]
-struct ExportFile {
-    filename: String,
-    mime_type: String,
-    content: String,
-}
-
-#[derive(serde::Serialize)]
-struct ExportResult {
-    files: Vec<ExportFile>,
-}
-
 #[plugin_fn]
 pub fn on_init(_input: String) -> FnResult<String> {
     Ok("ok".to_string())
 }
 
 /// Translates Charter's resolved UiNode tree (fetched via kit10_get_interpreter_output, the
-/// public host function any plugin declaring `supports: ["charter"]` can request) into an HTML
-/// document + a separate CSS stylesheet, returned as a multiFile envelope
-/// (ExportCapability.multiFile) so the host downloads both under the exact filenames this
-/// function references (`index.html`'s <link href="styles.css">` is guaranteed to match).
+/// public host function any plugin declaring `supports: ["charter"]` can request) into a single
+/// HTML document with its CSS inlined in a `<style>` block, rather than a separate stylesheet --
+/// simpler for now than the multiFile envelope's two-file download (see download.ts's known
+/// rapid-successive-download browser quirk). Splitting CSS back out into its own linked file is a
+/// natural follow-up once that's worth the multi-file plumbing again.
 ///
 /// v1 scope, deliberate: Box (layout/color) and Text (content/fonts) nodes only -- Img is
 /// skipped entirely.
@@ -86,24 +75,10 @@ pub fn export_html_css(input: String) -> FnResult<String> {
     let roots = resolve_export_roots(&output.viewport_data, &output.node_view_ids, &req.view_ids);
     let included = collect_descendants(&children, &roots);
 
-    let html = render_html(&output.viewport_data, &children, &roots);
     let css = render_css(&output.viewport_data, &included);
+    let html = render_html(&output.viewport_data, &children, &roots, &css);
 
-    let result = ExportResult {
-        files: vec![
-            ExportFile {
-                filename: "index.html".into(),
-                mime_type: "text/html".into(),
-                content: html,
-            },
-            ExportFile {
-                filename: "styles.css".into(),
-                mime_type: "text/css".into(),
-                content: css,
-            },
-        ],
-    };
-    Ok(serde_json::to_string(&result)?)
+    Ok(html)
 }
 
 // -- translation --------------------------------------------------------------------------
@@ -248,13 +223,18 @@ fn collect_descendants(children: &HashMap<usize, Vec<usize>>, roots: &[usize]) -
     included
 }
 
-fn render_html(nodes: &[UiNode], children: &HashMap<usize, Vec<usize>>, roots: &[usize]) -> String {
+fn render_html(
+    nodes: &[UiNode],
+    children: &HashMap<usize, Vec<usize>>,
+    roots: &[usize],
+    css: &str,
+) -> String {
     let mut body = String::new();
     for &i in roots {
         render_html_node(nodes, children, i, &mut body);
     }
     format!(
-        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<link rel=\"stylesheet\" href=\"styles.css\">\n</head>\n<body>\n{body}</body>\n</html>\n"
+        "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<style>\n{css}</style>\n</head>\n<body>\n{body}</body>\n</html>\n"
     )
 }
 
@@ -434,7 +414,9 @@ mod tests {
             .filter(|&i| parent_of(&nodes[i]).is_none())
             .collect();
         let included = collect_descendants(&children, &roots);
-        (render_html(nodes, &children, &roots), render_css(nodes, &included))
+        let css = render_css(nodes, &included);
+        let html = render_html(nodes, &children, &roots, &css);
+        (html, css)
     }
 
     #[test]
@@ -447,7 +429,8 @@ mod tests {
         let (html, css) = render_all(&nodes);
         assert!(html.contains("<div class=\"k10-0\">"));
         assert!(html.contains("<p class=\"k10-1\">Hello</p>"));
-        assert!(html.contains("<link rel=\"stylesheet\" href=\"styles.css\">"));
+        assert!(html.contains("<style>"));
+        assert!(html.contains(".k10-0 {"));
 
         assert!(css.contains(".k10-0 {"));
         assert!(css.contains("width: 200px;"));
@@ -537,8 +520,8 @@ mod tests {
         let children = build_children_map(&nodes);
         let roots = resolve_export_roots(&nodes, &node_view_ids, &selected);
         let included = collect_descendants(&children, &roots);
-        let filtered_html = render_html(&nodes, &children, &roots);
         let filtered_css = render_css(&nodes, &included);
+        let filtered_html = render_html(&nodes, &children, &roots, &filtered_css);
 
         let (unfiltered_html, unfiltered_css) = render_all(&nodes);
 
