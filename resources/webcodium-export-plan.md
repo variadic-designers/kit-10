@@ -2,26 +2,28 @@
 
 `VISION.md`'s 3rd Principle states the mandate in one line: *"WebCodium — a markup exporter driven by user-defined Export Profiles. First targets are HTML, CSS, Svelte, and SCSS... WebCodium understands variants as discrete or a dynamic thing."* This doc is the elaboration — the concrete mechanics behind that sentence, phased.
 
-Only Phase 1 is built. Phases 2 and 3 are roadmap, not implementation — no code for either exists yet.
+Phases 1 and 2 are built. Phase 3 is roadmap, not implementation — no code for it exists yet.
 
 ---
 
 ## Phase 1 — naive per-node export (shipped)
 
-`export_html_css` (`plugins/webcodium/src/lib.rs`) walks Charter's resolved `UiNode` tree and emits one CSS class per **rendered node instance** — `.k10-39`, `.k10-40`, ... — with literal, already-resolved values (`width: 900px`, `background: oklab(...)`) baked directly into each rule. Output is a single HTML file with the CSS inlined in a `<style>` block (see the "for now" note in `CLAUDE.md`'s WebCodium paragraph — single-file to sidestep the two-file download quirk documented in `download.ts`).
+`export_html_css` (`plugins/webcodium/src/lib.rs`, translation split across `tree.rs`/`css.rs`/`html.rs` as of the Phase 2 restructure) walks Charter's resolved `UiNode` tree and emits one CSS class per **rendered node instance** — `.k10-39`, `.k10-40`, ... — with literal, already-resolved values (`width: 900px`, `background: oklab(...)`) baked directly into each rule. Output is a single HTML file with the CSS inlined in a `<style>` block — single-file to sidestep the two-file download quirk documented in `download.ts` (see `CLAUDE.md`'s `plugins/webcodium/` section).
 
 This is a direct, unopinionated dump of whatever Charter resolved for the exported view(s). It has no concept of kits, axes, or variants — a node's class exists because that node was rendered, not because it represents a reusable design unit. It's the correct minimal v1 (proves the `kit10_get_interpreter_output` pipeline end to end), but it is explicitly **not** the intended end state — later phases replace this translation strategy, not just add options on top of it.
 
 ---
 
-## Phase 2 — SCSS by default
+## Phase 2 — SCSS by default (shipped)
 
 SCSS is a strict superset of CSS — anything emitted as SCSS always transpiles losslessly to plain CSS, so switching the default output target costs nothing functionally. What it buys is brevity: SCSS's nesting syntax lets sibling/child relationships collapse instead of repeating fully-qualified selectors, which matters more as Phase 3's nested selectors (see below) make the output tree-shaped rather than flat.
 
-Scope, as currently understood:
-- Output format changes from plain CSS to SCSS syntax; still transpiled/valid CSS wherever a consumer doesn't care about the `.scss` extension specifically.
-- Still a single exported file for now — this phase is about syntax brevity within the existing inline/single-file shape (Phase 1's decision), not a file-count change. Splitting CSS back into its own linked file remains a separate, independently-revisitable decision (see `CLAUDE.md`'s existing note on that).
-- No axis/variant awareness yet — that's Phase 3. This phase is a pure syntax-target swap on top of Phase 1's existing per-node translation.
+Shipped scope, as implemented (`css::render_scss`, `plugins/webcodium/src/css.rs`):
+- Output format changed from plain flat CSS to nested SCSS — a child node's rule is written inside its parent's block, mirroring the same parent/child recursion `html::render_html` already used for `<div>` nesting (only `Box` nodes recurse into children, matching exactly).
+- Deliberately plain descendant nesting — no `&`, no Sass variables, no mixins — which makes the output simultaneously valid real Sass (renameable straight to a `.scss` file and compiled) AND valid native CSS (the CSS Nesting spec, Baseline across evergreen browsers since 2023). This is what let it ship inline, unchanged from Phase 1's decision: still a single exported HTML file with the stylesheet inlined in `<style>`, still renders correctly in a browser as-is.
+- No axis/variant awareness — that's Phase 3. This phase was a pure syntax-target swap on top of Phase 1's existing per-node translation, exactly as scoped below (not a file-count change, no new export capability/manifest entry — `export_html_css`'s external contract is unchanged).
+
+**Two correctness follow-ups landed the same day, orthogonal to the phase numbering above** — full detail in `CLAUDE.md`'s `plugins/webcodium/` section, not repeated here: `css.rs` now emits the full `BoxExtra`/`BoxData` layout surface (align/justify/flex-grow-shrink-basis/min-max-size/grid), closing a real divergence between Vellum's in-editor rendering and the browser export; and every export is now prefixed with a small first-party CSS reset (`css::BASELINE_RESET`) fixing a `<p>`-margin leak that neither `normalize.css` nor `the-new-css-reset` would have solved cleanly.
 
 ---
 
