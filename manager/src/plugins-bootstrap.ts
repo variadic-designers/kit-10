@@ -32,7 +32,8 @@ const TENNER_MANIFEST: PluginManifest = {
 				label: 'Export Raw with Tenner',
 				fn: 'export_project',
 				fileExtension: 'yaml',
-				mimeType: 'text/yaml'
+				mimeType: 'text/yaml',
+				target: 'yaml'
 			}
 		],
 		imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]

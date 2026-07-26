@@ -263,6 +263,7 @@
 	import ProjectPanel from './panels/Project.svelte';
 	import ComposePanel from './panels/Compose.svelte';
 	import PluginsPanel from './panels/Plugins.svelte';
+	import ExportPanel from './panels/Export.svelte';
 	import AssetsPanel from './panels/Assets.svelte';
 	import LayersPanel from './panels/Layers.svelte';
 
@@ -823,6 +824,14 @@
 			{api}
 			{pendingInstall}
 			onInstallHandled={() => (pendingInstall = null)}
+		/>
+
+		<ExportPanel
+			{api}
+			projectId={editorActivity.activeProjectId}
+			projectName={editorActivity.activeProjectName}
+			projectHints={activeProjectRow?.hints ?? null}
+			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 		/>
 
 		<AssetsPanel {api} {editorReady} bind:editorActivity />

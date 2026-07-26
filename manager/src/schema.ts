@@ -78,6 +78,13 @@ export interface ExportCapability {
 	fn: string;
 	fileExtension: string;
 	mimeType: string;
+	// Normalized format identifier (e.g. "yaml", "html") for recognizing that two different
+	// plugins produce the same kind of output -- distinct from fileExtension/label, which a
+	// plugin could vary independently of what format family it actually produces. Optional,
+	// falling back to fileExtension for any manifest that predates this field (see
+	// export-profile.ts's effectiveTarget) -- same additive-rollout posture as `provides`/
+	// `capabilities`.
+	target?: string;
 }
 
 export interface ImportCapability {

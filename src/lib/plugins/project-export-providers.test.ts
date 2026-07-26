@@ -60,4 +60,34 @@ describe('resolveExportProviders', () => {
 			{ id: 'webcodium', label: 'Export HTML', fn: 'export_html', fileExtension: 'html', mimeType: 'text/html' }
 		]);
 	});
+
+	it('forwards an explicitly declared target field untouched', () => {
+		const webcodium = plugin({
+			name: 'webcodium',
+			manifest: {
+				wasm: [],
+				provides: {
+					exports: [
+						{
+							label: 'Export HTML',
+							fn: 'export_html',
+							fileExtension: 'html',
+							mimeType: 'text/html',
+							target: 'html'
+						}
+					]
+				}
+			}
+		});
+		expect(resolveExportProviders([webcodium])).toEqual([
+			{
+				id: 'webcodium',
+				label: 'Export HTML',
+				fn: 'export_html',
+				fileExtension: 'html',
+				mimeType: 'text/html',
+				target: 'html'
+			}
+		]);
+	});
 });

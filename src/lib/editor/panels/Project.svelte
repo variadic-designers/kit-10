@@ -17,6 +17,8 @@
 		resolveImportProviders,
 		type ProjectImportProvider
 	} from '$lib/plugins/project-import-providers.js';
+	import { resolveExportProfile, type ExportProfile } from '$lib/plugins/export-profile.js';
+	import { downloadText } from '$lib/download.js';
 
 	const {
 		editorReady,
@@ -159,21 +161,18 @@
 
 	let projectEditing: Record<string, boolean> = $state({});
 
-	const downloadText = (text: string, filename: string, mimeType: string) => {
-		const blob = new Blob([text], { type: mimeType });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = filename;
-		a.click();
-		URL.revokeObjectURL(url);
-	};
-
 	// Builds the "Export" submenu from whichever export providers are actually resolved from
-	// installed plugins (see availableExportProviders above). Never hardcodes Tenner (or any
-	// other specific plugin) by name here -- that mapping lives entirely in
-	// project-export-providers.ts, so a future second export plugin needs no change to this file.
-	const buildExportSubmenu = (projectId: string, projectName: string): ContextMenuContent => {
+	// installed plugins (see availableExportProviders above), grouped by target so two plugins
+	// competing for the same format collapse into one menu item -- the project's saved choice
+	// (hints.exportProfile, see export-profile.ts) or the sole provider when there's no real
+	// choice to make. Never hardcodes Tenner (or any other specific plugin) by name here -- that
+	// mapping lives entirely in project-export-providers.ts, so a future second export plugin
+	// needs no change to this file.
+	const buildExportSubmenu = (
+		projectId: string,
+		projectName: string,
+		hints: Record<string, unknown> | null
+	): ContextMenuContent => {
 		const providers = availableExportProviders;
 
 		if (providers.length === 0) {
@@ -188,26 +187,47 @@
 			];
 		}
 
-		return providers.map((provider) => ({
-			name: `export_${provider.id}`,
-			displayText: provider.label,
-			icon: 'fa-solid fa-file-export',
-			onClick: () => {
-				callUtilityPlugin
-					?.(provider.id, provider.fn, JSON.stringify({ project_id: projectId }))
-					.then((result) => {
-						const text = (result as { text(): string }).text();
-						downloadText(text, `${projectName}.${provider.fileExtension}`, provider.mimeType);
-					})
-					.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
+		const exportProfile = hints?.exportProfile as ExportProfile | undefined;
+		const groups = resolveExportProfile(providers, exportProfile);
+
+		return groups.map((group) => {
+			const provider = group.effective;
+
+			if (!provider) {
+				// 2+ providers compete for this target and nothing's been chosen yet -- point at
+				// the Export panel (the one place the choice actually sticks) instead of
+				// guessing or listing every raw provider inline again.
+				return {
+					name: `export_${group.target}_ambiguous`,
+					displayText: `Export as ${group.target}`,
+					icon: 'fa-solid fa-file-export',
+					disabled: true,
+					description: `${group.providers.length} plugins can export ${group.target} — choose one in the Export panel.`
+				};
 			}
-		}));
+
+			return {
+				name: `export_${group.target}`,
+				displayText: provider.label,
+				icon: 'fa-solid fa-file-export',
+				onClick: () => {
+					callUtilityPlugin
+						?.(provider.id, provider.fn, JSON.stringify({ project_id: projectId }))
+						.then((result) => {
+							const text = (result as { text(): string }).text();
+							downloadText(text, `${projectName}.${provider.fileExtension}`, provider.mimeType);
+						})
+						.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
+				}
+			};
+		});
 	};
 
 	const projectListingContextMenu: (
 		projectId: string,
-		projectName: string
-	) => ContextMenuContentGenerator = (projectId, projectName) => {
+		projectName: string,
+		hints: Record<string, unknown> | null
+	) => ContextMenuContentGenerator = (projectId, projectName, hints) => {
 		return () => [
 			{
 				name: 'rename_project',
@@ -229,7 +249,7 @@
 				name: 'export_project',
 				displayText: 'Export',
 				icon: 'fa-solid fa-file-export',
-				submenu: buildExportSubmenu(projectId, projectName)
+				submenu: buildExportSubmenu(projectId, projectName, hints)
 			}
 		];
 	};
@@ -249,7 +269,7 @@
 				<button
 					onclick={() => selectProject(p.projectId, p.projectName)}
 					class:selected={p.projectId === editorActivity.activeProjectId}
-					use:contextMenu={projectListingContextMenu(p.projectId, p.projectName)}
+					use:contextMenu={projectListingContextMenu(p.projectId, p.projectName, p.hints)}
 					title={`by ${p.author} - ${p.license}`}
 				>
 					<span class="project-listing__name"
