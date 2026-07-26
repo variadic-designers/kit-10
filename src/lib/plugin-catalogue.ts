@@ -101,7 +101,8 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 						fn: 'export_html_css',
 						fileExtension: 'html',
 						mimeType: 'text/html',
-						target: 'html'
+						target: 'html',
+						viewScoped: true
 					}
 				]
 			}

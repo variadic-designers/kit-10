@@ -3,6 +3,7 @@
 	import Panel from '../Panel.svelte';
 	import type { Api } from 'manager';
 	import { downloadExportResult } from '$lib/download.js';
+	import { liveQuery } from '../Editor.svelte';
 	import {
 		resolveExportProviders,
 		type ProjectExportProvider
@@ -13,6 +14,7 @@
 		type ExportProfile,
 		type ExportTargetGroup
 	} from '$lib/plugins/export-profile.js';
+	import { isFlaggedForExport } from '$lib/plugins/export-flags.js';
 
 	const {
 		api,
@@ -45,37 +47,23 @@
 		});
 	});
 
-	// An export run takes view(s) as input, not just "the whole project" -- Tenner doesn't care
-	// (it always dumps everything, and safely ignores the extra `view_ids` field, see
-	// ExportProjectInput in plugins/tenner/src/lib.rs), but a future per-component exporter
-	// (WebCodium) would. One-shot fetch, same posture as availableExportProviders above -- a
-	// picker list doesn't need live-query reactivity the way Project.svelte's own project list
-	// does. Defaults to "all views selected" on every (re)fetch, matching Tenner's current
-	// implicit whole-project behavior -- the user narrows it down, rather than starting from
-	// nothing selected.
-	let projectViews: { viewId: string; viewName: string }[] = $state([]);
-	let selectedViewIds: Set<string> = $state(new Set());
-
-	$effect(() => {
-		if (!projectId) {
-			projectViews = [];
-			selectedViewIds = new Set();
-			return;
-		}
-		api
-			.getViewsByProjectId(projectId)
-			.execute()
-			.then((views) => {
-				projectViews = views;
-				selectedViewIds = new Set(views.map((v) => v.viewId));
-			});
+	// Which views a run actually exports is controlled per-provider by hints.<providerId>.export
+	// (see export-flags.ts) -- set from the Views panel's per-view "Export to" context-menu
+	// submenu, not from this panel. A live query (not a one-shot fetch) so flagging/unflagging a
+	// view while this panel is open is reflected immediately, same pattern as Views.svelte's own
+	// viewsQuery.
+	const viewsQuery = liveQuery((api, activity) => {
+		return api.getViewsByProjectId(activity.activeProjectId);
 	});
 
-	function toggleView(viewId: string) {
-		const next = new Set(selectedViewIds);
-		if (next.has(viewId)) next.delete(viewId);
-		else next.add(viewId);
-		selectedViewIds = next;
+	// The views flagged for a given target's effective provider -- empty (not "everything") when
+	// nothing's been flagged yet, when the target is still ambiguous (no effective provider), or
+	// when the provider isn't view-scoped at all (Tenner: project-basis, ignores view_ids --
+	// "flagged views" isn't a concept that applies to it, see schema.ts's viewScoped doc comment).
+	function flaggedViewsFor(group: ExportTargetGroup) {
+		const provider = group.effective;
+		if (!provider?.viewScoped) return [];
+		return viewsQuery.rows.filter((v) => isFlaggedForExport(v.hints, provider.id));
 	}
 
 	const exportProfile = $derived(projectHints?.exportProfile as ExportProfile | undefined);
@@ -92,11 +80,12 @@
 		const provider = group.effective;
 		if (!provider || !projectId) return;
 		const name = projectName ?? 'export';
+		const viewIds = flaggedViewsFor(group).map((v) => v.viewId);
 		callUtilityPlugin
 			?.(
 				provider.id,
 				provider.fn,
-				JSON.stringify({ project_id: projectId, view_ids: [...selectedViewIds] })
+				JSON.stringify({ project_id: projectId, view_ids: viewIds })
 			)
 			.then((result) => {
 				const text = (result as { text(): string }).text();
@@ -134,25 +123,9 @@
 		{:else if groups.length === 0}
 			<p class="empty">No export plugins are available yet</p>
 		{:else}
-			{#if projectViews.length > 0}
-				<span class="export-views__label">Views to export</span>
-				<ul class="export-views">
-					{#each projectViews as view (view.viewId)}
-						<li>
-							<label>
-								<input
-									type="checkbox"
-									checked={selectedViewIds.has(view.viewId)}
-									onchange={() => toggleView(view.viewId)}
-								/>
-								{view.viewName}
-							</label>
-						</li>
-					{/each}
-				</ul>
-			{/if}
 			<ul class="export-target-list">
 				{#each groups as group (group.target)}
+					{@const flagged = flaggedViewsFor(group)}
 					<li class="export-target">
 						<span class="export-target__name">{group.target}</span>
 
@@ -182,6 +155,19 @@
 						>
 							Export
 						</button>
+
+						{#if group.effective?.viewScoped}
+							<span class="export-target__views">
+								{#if flagged.length > 0}
+									Views: {flagged.map((v) => v.viewName).join(', ')}
+								{:else}
+									No views flagged — right-click a view in the Views panel → Export to → {group
+										.effective.label}
+								{/if}
+							</span>
+						{:else if group.effective}
+							<span class="export-target__views">Exports the whole project</span>
+						{/if}
 					</li>
 				{/each}
 			</ul>
@@ -197,33 +183,6 @@
 		color: var(--color-text-muted);
 		@include fonts-stack('Satoshi-Light', sans);
 		font-size: $x-font-size-xs;
-	}
-
-	.export-views__label {
-		display: block;
-		padding: $x-space-xs $x-space-sm 0;
-		@include fonts-stack('Satoshi-Regular', sans);
-		font-size: $x-font-size-xs;
-		text-transform: uppercase;
-		color: var(--color-text);
-	}
-
-	.export-views {
-		list-style: none;
-		padding: calc($x-space-xs / 2) $x-space-sm $x-space-xs;
-		margin: 0;
-		border-bottom: 1px solid var(--color-panel-header-border);
-		display: flex;
-		flex-wrap: wrap;
-		gap: $x-space-xs;
-		font-size: $x-font-size-xs;
-		color: var(--color-text-muted);
-
-		label {
-			display: inline-flex;
-			align-items: center;
-			gap: calc($x-space-xs / 2);
-		}
 	}
 
 	.export-target-list {
@@ -273,6 +232,13 @@
 				opacity: 0.5;
 				cursor: not-allowed;
 			}
+		}
+
+		&__views {
+			flex-basis: 100%;
+			@include fonts-stack('Satoshi-Light', sans);
+			font-size: $x-font-size-xs;
+			color: var(--color-text-muted);
 		}
 	}
 </style>

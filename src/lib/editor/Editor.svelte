@@ -788,6 +788,7 @@
 			{editorReady}
 			{resolvedViews}
 			{viewsPanelManifest}
+			{pluginRegistryVersion}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId

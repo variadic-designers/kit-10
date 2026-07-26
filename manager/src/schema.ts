@@ -92,6 +92,14 @@ export interface ExportCapability {
 	// actually downloaded. Absent/false = single-file behavior, unchanged (see download.ts's
 	// resolveDownloadFiles).
 	multiFile?: boolean;
+	// When true, this capability actually filters its output by the `view_ids` it's given --
+	// e.g. WebCodium exports exactly the selected views. Absent/false = the plugin dumps the
+	// whole project regardless of `view_ids` (Tenner: project-basis, not view-basis -- its own
+	// ExportProjectInput safely ignores the field entirely). Drives whether the per-view "Export
+	// to" context-menu flag (src/lib/plugins/export-flags.ts) and the Export panel's per-view
+	// readout are even offered for this provider -- flagging individual views for a
+	// project-basis exporter would be misleading, since the flag would never change its output.
+	viewScoped?: boolean;
 }
 
 export interface ImportCapability {

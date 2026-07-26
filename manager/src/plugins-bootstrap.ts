@@ -52,7 +52,8 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 				fn: 'export_html_css',
 				fileExtension: 'html',
 				mimeType: 'text/html',
-				target: 'html'
+				target: 'html',
+				viewScoped: true
 			}
 		]
 	}

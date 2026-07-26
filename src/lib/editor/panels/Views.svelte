@@ -8,6 +8,11 @@
 	import { buildViewTree } from '../view-tree.js';
 	import type { PanelManifest, PanelItem, PanelOp, ResolvedView } from '$lib/plugins/types.js';
 	import type { MenuItem } from '$lib/components/contextMenuStore.js';
+	import {
+		resolveExportProviders,
+		type ProjectExportProvider
+	} from '$lib/plugins/project-export-providers.js';
+	import { isFlaggedForExport, buildExportFlagHints } from '$lib/plugins/export-flags.js';
 
 	type ViewsPanel = {
 		selection: EditorSelection;
@@ -29,6 +34,10 @@
 		// the editor re-deriving which field is the composition one. undefined until the first
 		// `on_resolve` lands; the panel renders empty in that window.
 		viewsPanelManifest?: PanelManifest;
+		// Bumped by Editor.svelte after PluginsPanel registers a new plugin -- same posture as
+		// Export.svelte's own prop, so a plugin installed mid-session shows up in the per-view
+		// "Export to" submenu without a full reload.
+		pluginRegistryVersion?: number;
 	};
 
 	let {
@@ -38,8 +47,39 @@
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
 		resolvedViews = [],
-		viewsPanelManifest
+		viewsPanelManifest,
+		pluginRegistryVersion = 0
 	}: ViewsPanel = $props();
+
+	// Which installed plugins can export a view -- drives the per-view "Export to" context-menu
+	// submenu below. Same fetch posture as Export.svelte's own availableExportProviders (no live
+	// query on the plugin catalogue table yet).
+	let availableExportProviders: ProjectExportProvider[] = $state([]);
+
+	$effect(() => {
+		void pluginRegistryVersion;
+		api.listPlugins().then((plugins) => {
+			availableExportProviders = resolveExportProviders(plugins);
+		});
+	});
+
+	// Only view-scoped providers get a per-view flag -- a project-basis exporter (Tenner: dumps
+	// the whole project always, its own ExportProjectInput ignores view_ids entirely) would make
+	// the flag misleading, since toggling it would never actually change that plugin's output.
+	// `viewScoped` is a manifest-declared capability (schema.ts's ExportCapability), never a
+	// hardcoded plugin name here.
+	const viewScopedExportProviders = $derived(
+		availableExportProviders.filter((p) => p.viewScoped)
+	);
+
+	// Toggles hints.<providerId>.export for one view -- the only write path for the per-view
+	// export flag the Export panel reads (see export-flags.ts). Never a literal plugin name in
+	// this file: `provider.id` is whichever plugin the user actually clicked in the submenu.
+	async function toggleExportFlag(viewId: string, provider: ProjectExportProvider) {
+		const row = rowsByViewId.get(viewId);
+		const next = !isFlaggedForExport(row?.hints, provider.id);
+		await api.updateViewHints(viewId, buildExportFlagHints(row?.hints, provider.id, next));
+	}
 
 	export const selectView = (id: string, _name: string) => {
 		selectViewShared(editorActivity, selection, id);
@@ -169,25 +209,50 @@
 
 	// Per-item context menu — built from the item's declared ops. The plugin owns what's on the
 	// menu (Charter's `common_item_ops`/`container_item_ops`), the editor only renders + dispatches.
+	// The "Export to" submenu appended below is editor-native, not manifest-driven — export
+	// capability comes from whatever plugins are installed (project-export-providers.ts), a
+	// concern orthogonal to Charter's View-composition ops.
 	function menuFor(viewId: string): ContextMenuContentGenerator {
 		return () => {
 			const item = manifestById.get(viewId);
-			if (!item) return [];
+			const row = rowsByViewId.get(viewId);
 			// `lock`/`hide` op labels override the generic plugin-supplied ones with the actual
 			// next-state of the toggle ("Lock" when currently unlocked, "Unlock" when locked) —
 			// live DB state the manifest doesn't carry. Pure presentation; `name` stays the same
 			// so dispatch routing is unaffected.
-			const row = rowsByViewId.get(viewId);
-			const ops = item.ops.map((op) => {
-				if (op.name === 'lock' && row) {
-					return { ...op, label: row.viewLocked ? 'Unlock' : 'Lock' };
-				}
-				if (op.name === 'hide' && row) {
-					return { ...op, label: row.viewHidden ? 'Show' : 'Hide' };
-				}
-				return op;
-			});
-			return buildMenuFromOps(ops, (op) => dispatchOp(op, viewId, item));
+			const items: (MenuItem | 'hr')[] = item
+				? buildMenuFromOps(
+						item.ops.map((op) => {
+							if (op.name === 'lock' && row) {
+								return { ...op, label: row.viewLocked ? 'Unlock' : 'Lock' };
+							}
+							if (op.name === 'hide' && row) {
+								return { ...op, label: row.viewHidden ? 'Show' : 'Hide' };
+							}
+							return op;
+						}),
+						(op) => dispatchOp(op, viewId, item)
+					)
+				: [];
+
+			if (viewScopedExportProviders.length > 0) {
+				if (items.length > 0) items.push('hr');
+				items.push({
+					name: 'export-to',
+					displayText: 'Export to',
+					icon: 'fa-solid fa-file-export',
+					submenu: viewScopedExportProviders.map((provider) => ({
+						name: `export-to-${provider.id}`,
+						displayText: provider.label,
+						icon: isFlaggedForExport(row?.hints, provider.id)
+							? 'fa-solid fa-square-check'
+							: 'fa-regular fa-square',
+						onClick: () => toggleExportFlag(viewId, provider)
+					}))
+				});
+			}
+
+			return items;
 		};
 	}
 
