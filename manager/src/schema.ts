@@ -85,6 +85,13 @@ export interface ExportCapability {
 	// export-profile.ts's effectiveTarget) -- same additive-rollout posture as `provides`/
 	// `capabilities`.
 	target?: string;
+	// When true, this capability's plugin function returns a JSON envelope
+	// { files: [{ filename, mimeType, content }] } instead of a raw text blob -- the host
+	// downloads exactly the filenames the plugin itself chose, so a multi-file output (e.g. an
+	// HTML export referencing its own CSS by name) can guarantee the reference matches what's
+	// actually downloaded. Absent/false = single-file behavior, unchanged (see download.ts's
+	// resolveDownloadFiles).
+	multiFile?: boolean;
 }
 
 export interface ImportCapability {

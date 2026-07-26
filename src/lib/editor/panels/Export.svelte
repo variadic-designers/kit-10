@@ -2,7 +2,7 @@
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Panel from '../Panel.svelte';
 	import type { Api } from 'manager';
-	import { downloadText } from '$lib/download.js';
+	import { downloadExportResult } from '$lib/download.js';
 	import {
 		resolveExportProviders,
 		type ProjectExportProvider
@@ -93,7 +93,12 @@
 			)
 			.then((result) => {
 				const text = (result as { text(): string }).text();
-				downloadText(text, `${name}.${provider.fileExtension}`, provider.mimeType);
+				return downloadExportResult(
+					text,
+					provider.multiFile,
+					`${name}.${provider.fileExtension}`,
+					provider.mimeType
+				);
 			})
 			.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
 	}

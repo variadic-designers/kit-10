@@ -18,7 +18,7 @@
 		type ProjectImportProvider
 	} from '$lib/plugins/project-import-providers.js';
 	import { resolveExportProfile, type ExportProfile } from '$lib/plugins/export-profile.js';
-	import { downloadText } from '$lib/download.js';
+	import { downloadExportResult } from '$lib/download.js';
 
 	const {
 		editorReady,
@@ -215,7 +215,12 @@
 						?.(provider.id, provider.fn, JSON.stringify({ project_id: projectId }))
 						.then((result) => {
 							const text = (result as { text(): string }).text();
-							downloadText(text, `${projectName}.${provider.fileExtension}`, provider.mimeType);
+							return downloadExportResult(
+								text,
+								provider.multiFile,
+								`${projectName}.${provider.fileExtension}`,
+								provider.mimeType
+							);
 						})
 						.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
 				}
