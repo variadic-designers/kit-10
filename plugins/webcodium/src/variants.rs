@@ -1,0 +1,1379 @@
+// Kit-basis static/dynamic variant synthesis (resources/webcodium-export-plan.md Phase 3).
+// This is the one place WebCodium reasons about the axis/kit model itself -- every prior phase
+// only ever consumed Charter's already-resolved, axis-blind UiNode[] output. Consumes the
+// unresolved KitExportShape (fetched via the kit10_get_kit_export_shape host fn) and produces:
+//
+//   - The Kit's own BASE declarations (excluded axes collapsed to their default/lowest value).
+//   - One VariantRule per non-excluded axis value: a BEM-style static modifier
+//     (`--{value}`) or a real dynamic selector (`:hover`/`.is-{value}`), holding only the
+//     DELTA against the base -- i.e. what CSS's own cascade needs the modifier class to
+//     override, not a full re-statement of every property (mirrors how `.button--secondary`
+//     only carries `background` in the worked example in the plan doc).
+//
+// v1 scope cut (deliberate, not an oversight): properties whose CSS meaning depends on
+// SIBLING/PARENT layout context this module doesn't have -- concretely, `resize`'s `fill`/`hug`
+// keywords on width/height (compile_resize's flex-grow/shrink/basis math needs to know the
+// parent's own main axis) -- are skipped with an explicit comment rather than guessed. The real
+// fix (a Charter `translate_properties` entrypoint the host round-trips arbitrary property maps
+// through) is deferred to a Phase 3.1 follow-up (see the plan doc).
+//
+// `arrange` (Stack/Cluster/Split/Center/Grid) is NOT in that scope-cut category, despite being
+// Charter's own compiled preset -- `compile_arrange`/`resolve_flex_direction` need nothing from
+// sibling/parent context, so `synthesize_arrange` below replicates them directly from a Kit's own
+// raw properties (flex-direction/align-items/justify-content/flex-wrap, or a default
+// grid-template-columns for Grid). This was a real, reported bug in the initial ship: `arrange`
+// was originally scope-cut alongside `resize`, so a Kit authored via the high-level Split/Cluster/
+// Center presets (the overwhelmingly common authoring path) exported with NONE of its actual
+// layout -- "Split" silently did nothing in the export while looking correct in the editor.
+//
+// Also v1 scope: only "literal"/"discrete" axis values are matched (range axes are disabled
+// project-wide today, resources/layer-authoring.md) and only single-axis conditions are
+// resolved against -- a layer conditioned on two non-excluded axes together never gets its own
+// combined variant class in v1. This mirrors resolve.ts's matchesArg/matchLayers cascade
+// (manager/src/resolve/resolve.ts) closely enough that a change to one should prompt checking
+// the other, but is NOT the same code -- this is a small, explicitly-scoped Rust port, not a
+// shared crate, since resolve.ts's version also handles range intervals and priority-index
+// tie-breaking this module doesn't need.
+
+use crate::tree::kit_class_name;
+use kit10_scene::OklabColor;
+use serde::Deserialize;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AxisValueWire {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportAxisValue {
+    #[serde(default)]
+    pub axis_value_id: String,
+    #[serde(default)]
+    pub value: AxisValueWire,
+    #[serde(default)]
+    pub priority_index: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AxisExportMeta {
+    pub axis_id: String,
+    #[serde(default)]
+    pub axis_name: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub variant_kind: String,
+    #[serde(default)]
+    pub excluded_from_export: bool,
+    #[serde(default)]
+    pub default_value: Option<AxisValueWire>,
+    #[serde(default)]
+    pub priority_index: i64,
+    #[serde(default)]
+    pub values: Vec<ExportAxisValue>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TokenValueWire {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub view_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportLayerCondition {
+    pub axis_id: String,
+    #[serde(default)]
+    pub axis_value_id: String,
+    #[serde(default)]
+    pub value: AxisValueWire,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportLayerEntry {
+    pub property: String,
+    #[serde(default)]
+    pub literal_value: Option<String>,
+    #[serde(default)]
+    pub token_value: Option<TokenValueWire>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportLayer {
+    #[serde(default)]
+    pub layer_id: String,
+    #[serde(default)]
+    pub conditions: Vec<ExportLayerCondition>,
+    #[serde(default)]
+    pub entries: Vec<ExportLayerEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct KitExportShape {
+    #[serde(default)]
+    pub kit_id: String,
+    #[serde(default)]
+    pub kit_name: String,
+    #[serde(default)]
+    pub axes: Vec<AxisExportMeta>,
+    #[serde(default)]
+    pub layers: Vec<ExportLayer>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub(crate) struct KitExportShapeResponse {
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default)]
+    pub kits: HashMap<String, KitExportShape>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+// A resolved entry's effective literal string -- mirrors resolve.ts's matchLayers exactly
+// (scalar token -> its value, view token -> its view_id, anything else -> ""), so a token-backed
+// raw entry resolves the same way it would through the real resolver.
+fn resolve_entry_value(entry: &ExportLayerEntry) -> String {
+    if let Some(tv) = &entry.token_value {
+        match tv.kind.as_str() {
+            "scalar" => tv.value.clone().unwrap_or_default(),
+            "view" => tv.view_id.clone().unwrap_or_default(),
+            _ => String::new(),
+        }
+    } else {
+        entry.literal_value.clone().unwrap_or_default()
+    }
+}
+
+fn matches_condition(cond: &ExportLayerCondition, args: &HashMap<String, String>) -> bool {
+    if cond.value.kind != "literal" && cond.value.kind != "discrete" {
+        return false; // range conditions are out of scope for v1 -- see module doc comment
+    }
+    args.get(&cond.axis_id).map(|v| *v == cond.value.value).unwrap_or(false)
+}
+
+// Winner-only resolve, matching resolve.ts's matchLayers: layers whose every condition matches
+// `args`, applied ascending by condition count (specificity) so a more-specific layer's entries
+// overwrite a less-specific one's. No priority-index tie-break (see module doc comment) -- v1's
+// synthetic single-axis-at-a-time matches don't need it. `is_box` gates synthesize_arrange (a
+// Text-primitive Kit never has arrange/flex-direction properties to begin with -- running it
+// unconditionally would inject a spurious flex-direction onto a Text kit that never asked for one).
+fn resolve_properties(
+    shape: &KitExportShape,
+    args: &HashMap<String, String>,
+    is_box: bool,
+) -> HashMap<String, String> {
+    let mut matching: Vec<&ExportLayer> = shape
+        .layers
+        .iter()
+        .filter(|l| l.conditions.iter().all(|c| matches_condition(c, args)))
+        .collect();
+    matching.sort_by_key(|l| l.conditions.len());
+
+    let mut result = HashMap::new();
+    for layer in matching {
+        for entry in &layer.entries {
+            result.insert(entry.property.clone(), resolve_entry_value(entry));
+        }
+    }
+    synthesize_border(&mut result);
+    if is_box {
+        synthesize_arrange(&mut result);
+    } else {
+        synthesize_line_height(&mut result);
+    }
+    result
+}
+
+// Replicates Charter's compile_arrange/resolve_flex_direction (plugins/charter/src/lib.rs)
+// exactly: the "arrange" raw property (Stack/Cluster/Split/Center/Grid, unrecognized/absent ->
+// Stack) is Charter's own opinionated preset, and every property it implies -- flex-direction,
+// align-items, justify-content, flex-wrap, or a default grid-template-columns -- is a DEFAULT
+// that Charter computes at translate time and never stores as its own literal render_entries
+// value, UNLESS the designer explicitly overrode it via that tab's own follow-on control or the
+// Advanced/Custom-tracks escape hatch (in which case the raw property already present in
+// `properties` wins, exactly matching Charter's own "only fires when never explicitly set" rule).
+//
+// This closed a real, reported bug: v1 originally listed "arrange" as an unsupported-compiled
+// property and skipped it entirely, so a Split/Cluster/Center-arranged Kit exported with NONE of
+// its actual layout (no justify-content, no align-items, sometimes no flex-direction) -- "Split"
+// silently stopped working the moment a Kit relied on the high-level preset instead of manually
+// setting flex-direction/justify-content/align-items itself, which is the overwhelmingly common
+// authoring path. Unlike `resize`'s `fill`/`hug` (still correctly left unsupported -- see the
+// module doc comment), `compile_arrange` needs nothing from sibling/parent layout context, so it
+// can be replicated purely from a Kit's own raw properties.
+fn synthesize_arrange(properties: &mut HashMap<String, String>) {
+    let raw_arrange = properties.remove("arrange");
+    let kind = match raw_arrange.as_deref().map(str::trim) {
+        Some("cluster") => "cluster",
+        Some("split") => "split",
+        Some("center") => "center",
+        Some("grid") => "grid",
+        // "stack", absent, or unrecognized -- Default hard, mirrors parse_arrange exactly.
+        _ => "stack",
+    };
+    let cell_min_raw = properties.remove("grid-cell-min");
+
+    if kind == "grid" {
+        // Grid never uses flex-direction/align-items/justify-content/flex-wrap defaults --
+        // mirrors compile_arrange's own Grid branch, which only ever sets grid_template_columns.
+        let has_custom_tracks =
+            properties.get("grid-template-columns").map(|v| !v.is_empty()).unwrap_or(false);
+        if !has_custom_tracks {
+            let cell_min =
+                cell_min_raw.as_deref().map(parse_px_like).filter(|&v| v > 0.0).unwrap_or(160.0);
+            properties.insert(
+                "grid-template-columns".to_string(),
+                format!("repeat(auto-fit, minmax({cell_min}px, 1fr))"),
+            );
+        }
+        return;
+    }
+
+    // flex_direction is always concretely resolved (never optional), matching
+    // resolve_flex_direction exactly -- a fresh box with no arrange/flex-direction touched at all
+    // still needs an explicit `flex-direction: column;` in the export, since Charter's own
+    // default (Stack -> Column) differs from CSS's native initial value (row).
+    let raw_flex_direction = properties.get("flex-direction").cloned();
+    let flex_direction = match raw_flex_direction.as_deref() {
+        Some("row") => "row",
+        Some("row-reverse") => "row-reverse",
+        Some("column-reverse") => "column-reverse",
+        Some("column") => "column",
+        _ => match kind {
+            "cluster" | "split" => "row",
+            _ => "column",
+        },
+    };
+    properties.insert("flex-direction".to_string(), flex_direction.to_string());
+
+    let has_align_items = properties.get("align-items").map(|v| !v.is_empty()).unwrap_or(false);
+    let has_justify_content =
+        properties.get("justify-content").map(|v| !v.is_empty()).unwrap_or(false);
+    let has_flex_wrap = properties.get("flex-wrap").map(|v| !v.is_empty()).unwrap_or(false);
+
+    match kind {
+        "stack" => {
+            if !has_align_items && flex_direction == "row" {
+                properties.insert("align-items".to_string(), "center".to_string());
+            }
+        }
+        "cluster" => {
+            if !has_flex_wrap {
+                properties.insert("flex-wrap".to_string(), "wrap".to_string());
+            }
+            if !has_align_items {
+                properties.insert("align-items".to_string(), "flex-start".to_string());
+            }
+        }
+        "split" => {
+            if !has_justify_content {
+                properties.insert("justify-content".to_string(), "space-between".to_string());
+            }
+            if !has_align_items {
+                properties.insert("align-items".to_string(), "center".to_string());
+            }
+        }
+        "center" => {
+            if !has_justify_content {
+                properties.insert("justify-content".to_string(), "center".to_string());
+            }
+            if !has_align_items {
+                properties.insert("align-items".to_string(), "center".to_string());
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_px_like(raw: &str) -> f32 {
+    raw.trim().trim_end_matches("px").trim().parse::<f32>().unwrap_or(0.0)
+}
+
+// Combines the raw "border" (a COLOR ONLY value -- box_categories()'s FieldDef is
+// `.with_input_type("color")`) and "border-width" (a separate raw px property) into Charter's own
+// border shorthand convention, exactly mirroring extract_paint_props' has_border/border_width
+// rules (plugins/charter/src/lib.rs): a border is present iff "border" is set and isn't "none";
+// its width defaults to 1px when a color is set but no explicit width is. This can't be left as
+// two independently-diffed raw properties -- "border: <color>;" alone is syntactically valid CSS
+// but leaves border-style at its "none" initial value, so the border never actually renders (a
+// real bug caught on a live export: 2026-07-27). Mutates `properties` in place, replacing the two
+// raw keys with one atomic "border" value ("{width}px solid {color}") the normal diffable-property
+// pipeline can treat like any other property -- or removing "border" entirely when no color is set.
+fn synthesize_border(properties: &mut HashMap<String, String>) {
+    let border_color = properties.get("border").cloned().unwrap_or_default();
+    let width_raw = properties.remove("border-width");
+    let has_border = !border_color.is_empty() && border_color != "none";
+    if !has_border {
+        properties.remove("border");
+        return;
+    }
+    let width = width_raw.as_deref().map(parse_px_like).filter(|w| *w > 0.0).unwrap_or(1.0);
+    let color =
+        if is_recognized_color(&border_color) { border_color } else { unparseable_color_marker() };
+    properties.insert("border".to_string(), format!("{width}px solid {color}"));
+}
+
+// Mirrors Charter's parse_color dispatch (plugins/charter/src/lib.rs) closely enough to answer
+// "would Charter's parser recognize this token, or fall through to warn_unparseable's magenta
+// marker" -- a minimal prefix/keyword check, NOT the full OKLCH/hex/rgb/hsl conversion math (out
+// of this pass's v1 scope cut). Matches parse_color's own branch order: oklch(/oklab(/
+// "transparent"/#/rgb(/rgba(/hsl(/hsla(. Deliberately does not replicate parse_color's inner
+// per-branch validation (e.g. a "#12" of the wrong hex length also warns there, and a malformed
+// numeric arg inside a recognized rgb()/hsl() silently defaults rather than warning) -- that's
+// real but rare malformed-input territory this minimal gate doesn't chase.
+fn is_recognized_color(raw: &str) -> bool {
+    let s = raw.trim();
+    s.starts_with("oklch(")
+        || s.starts_with("oklab(")
+        || s.eq_ignore_ascii_case("transparent")
+        || s.starts_with('#')
+        || s.starts_with("rgb(")
+        || s.starts_with("rgba(")
+        || s.starts_with("hsl(")
+        || s.starts_with("hsla(")
+}
+
+// The exact CSS string Charter's own unparseable_marker() (visible magenta, never silent black)
+// resolves to, computed via the same kit10_scene::OklabColor::from_srgb conversion and the same
+// oklab() formatting css.rs already uses for Path A -- not a hand-copied literal, so it can never
+// drift from what Charter/Vellum actually show for the identical unparseable input. Path A always
+// reads the already-resolved (magenta-if-unparseable) color; without this, Path B's generic
+// passthrough let a raw CSS named color like "red" (which parse_color doesn't recognize) render
+// as real red in the export, diverging from the magenta Vellum/Path A would show for the same data
+// (a real audited discrepancy, 2026-07-27).
+fn unparseable_color_marker() -> String {
+    crate::css::oklab_css(&OklabColor::from_srgb([1.0, 0.0, 1.0, 1.0]))
+}
+
+// Replicates Charter's compile_line_height (plugins/charter/src/lib.rs) exactly: a raw
+// "line-height" is CSS-style dual-read -- a "px"-suffixed value is absolute, a bare number is a
+// MULTIPLIER of the node's own resolved font-size (never a literal px, unlike every other diffable
+// length) -- and an absent/unparseable raw value derives a ratio ramp: ~1.5x at body sizes (<=20px
+// font-size), tightening to ~1.1x at display sizes (>=48px), linear in between. Without this,
+// declarations_for's generic as_px_if_bare_number formatter reads a bare "1.5" as a literal
+// 1.5px -- catastrophically cramped/overlapping lines in the export vs. Vellum's canvas (a real
+// bug caught on a live audit: 2026-07-27). Mutates `properties` in place, replacing the raw
+// (possibly-multiplier) value with the resolved absolute px number -- the existing "line-height"
+// entry in DIFFABLE_PROPERTIES/format_value's as_px_if_bare_number formatting then applies "px" to
+// this already-correct number, same as font-size/border-radius/gap. Text-only -- mirrors
+// build_text_node, which is the only caller of compile_line_height in Charter; a Box never has
+// this synthesized (see resolve_properties' is_box gate).
+fn synthesize_line_height(properties: &mut HashMap<String, String>) {
+    let font_size = properties
+        .get("font-size")
+        .map(|s| parse_px_like(s))
+        .filter(|&v| v > 0.0)
+        .unwrap_or(16.0);
+
+    let raw_line_height = properties.get("line-height").cloned();
+    let resolved = match raw_line_height.as_deref().map(str::trim) {
+        Some(s) => match s.strip_suffix("px") {
+            Some(px) => match px.trim().parse::<f32>() {
+                Ok(v) => v,
+                Err(_) => default_line_height(font_size),
+            },
+            None => match s.parse::<f32>() {
+                Ok(mult) => font_size * mult,
+                Err(_) => default_line_height(font_size),
+            },
+        },
+        None => default_line_height(font_size),
+    };
+
+    properties.insert("line-height".to_string(), resolved.to_string());
+}
+
+fn default_line_height(font_size: f32) -> f32 {
+    let t = ((font_size - 20.0) / (48.0 - 20.0)).clamp(0.0, 1.0);
+    let ratio = 1.5 - t * (1.5 - 1.1);
+    font_size * ratio
+}
+
+// The value an excluded axis collapses to: its own default_value if set to a real literal,
+// otherwise its lowest-priority_index value. None if neither exists (an excluded axis with no
+// values at all -- nothing to collapse to, so it's simply absent from the args map).
+fn excluded_axis_value(axis: &AxisExportMeta) -> Option<String> {
+    if let Some(dv) = &axis.default_value {
+        if dv.kind == "literal" && !dv.value.is_empty() {
+            return Some(dv.value.clone());
+        }
+    }
+    axis.values.iter().min_by_key(|v| v.priority_index).map(|v| v.value.value.clone())
+}
+
+fn excluded_axis_args(shape: &KitExportShape) -> HashMap<String, String> {
+    let mut args = HashMap::new();
+    for axis in &shape.axes {
+        if !axis.excluded_from_export {
+            continue;
+        }
+        if let Some(value) = excluded_axis_value(axis) {
+            args.insert(axis.axis_id.clone(), value);
+        }
+    }
+    args
+}
+
+// Properties WebCodium can safely re-derive as a direct CSS declaration from a raw kit property
+// string, with no Charter-side compilation -- see the module doc comment's v1 scope cut.
+// Deliberately excludes "display" (see synthesize_base_declarations' doc comment) and
+// "border-width" (synthesize_border merges it into "border" before this list is ever consulted --
+// it never survives as its own key).
+//
+// grid-auto-rows/-columns and grid-column/-row (Grid's "Custom tracks" escape hatch) and
+// flex-grow/flex-shrink/align-self (the item-level flex trio, no longer panel-exposed but still
+// parsed by Charter as a literal raw-property escape hatch for legacy/imported data -- see
+// build_box_node) were missing from this list entirely: a Kit-basis Grid item using them, or
+// legacy raw flex data, got an inert "unsupported dynamic-compiled property" comment instead of
+// the real declaration, even though css.rs's Path A already emits all of them unconditionally for
+// non-Kit nodes (a real audited discrepancy, 2026-07-27). Their raw stored values are already
+// valid CSS syntax as-is (parse_track_list/parse_grid_line/parse_px all consume plain CSS-like
+// tokens), so the default format_value passthrough is correct -- no new formatter needed, same
+// treatment grid-template-columns/rows above already get. "flex-basis" is deliberately NOT
+// included -- unlike the other three, Charter never reads a raw "flex-basis" kit property at all
+// (see build_box_node: it's hardcoded `None` until compile_resize's Fill mode sets it to
+// `Px(0.0)` afterward); there is no raw property for Path B to diff, so whitelisting it would let
+// a stray literal "flex-basis" leak into the export as a declaration Charter itself never honors
+// -- the exact opposite of parity.
+const DIFFABLE_PROPERTIES: &[&str] = &[
+    "background",
+    "color",
+    "font-family",
+    "font-size",
+    "font-weight",
+    "padding",
+    "border",
+    "border-radius",
+    "opacity",
+    "gap",
+    "width",
+    "height",
+    "flex-direction",
+    "align-items",
+    "justify-content",
+    "flex-wrap",
+    "text-align",
+    "text-decoration",
+    "line-height",
+    "grid-template-columns",
+    "grid-template-rows",
+    "grid-auto-rows",
+    "grid-auto-columns",
+    "grid-column",
+    "grid-row",
+    "flex-grow",
+    "flex-shrink",
+    "align-self",
+];
+
+// Charter's own raw-property parsers (parse_px et al.) treat a bare number as an implicit px
+// value -- mirrored here so "16" formats as "16px", not the CSS-invalid bare "16".
+fn as_px_if_bare_number(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.parse::<f64>().is_ok() {
+        format!("{trimmed}px")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+// Formats one property's raw kit-authored value as a CSS value string. None for `width`/`height`
+// set to Charter's own compiled `fill`/`hug` keywords -- those are compiled vocabulary, not a
+// literal size, and must never reach here as a plain value (the caller checks DIFFABLE_PROPERTIES
+// first, but fill/hug pass that check since "width"/"height" are themselves diffable -- only the
+// keyword VALUE is compiled, so this is where that specific case is caught).
+fn format_value(property: &str, raw: &str) -> Option<String> {
+    match property {
+        "width" | "height" => {
+            if raw == "fill" || raw == "hug" {
+                None
+            } else {
+                Some(as_px_if_bare_number(raw))
+            }
+        }
+        "font-family" => Some(format!("\"{raw}\"")),
+        "padding" => Some(raw.split_whitespace().map(as_px_if_bare_number).collect::<Vec<_>>().join(" ")),
+        "font-size" | "border-radius" | "gap" | "line-height" => Some(as_px_if_bare_number(raw)),
+        "font-weight" => Some(format_font_weight(raw)),
+        // "border"'s own color is already gated inside synthesize_border before this is ever
+        // reached (its raw value there is the full "{width}px solid {color}" shorthand, not a bare
+        // color string) -- background/color are the two properties that still hold a bare,
+        // possibly-unrecognized color string at this point.
+        "background" | "color" => {
+            Some(if is_recognized_color(raw) { raw.to_string() } else { unparseable_color_marker() })
+        }
+        _ => Some(raw.to_string()),
+    }
+}
+
+// Charter's build_text_node parses font-weight via parse_px (numeric-or-px-suffixed only, same as
+// every other length property) and falls back to 400 (CSS "normal") whenever that yields 0 -- a
+// keyword like "bold" never parses as a number, so it silently reads as 400 on Vellum's canvas.
+// Without this, WebCodium's generic passthrough formatted a raw "bold" verbatim, which the browser
+// renders as real bold (700) -- diverging from what Vellum/Path A show for the identical data.
+// Charter's further resolve_font_weight (snapping to the nearest weight the family's Fontavious
+// facts actually have, e.g. 600 -> 700 on Lato) is deliberately NOT replicated here -- WebCodium's
+// export pipeline has no family-facts input, same v1 scope cut as font suggestions elsewhere.
+fn format_font_weight(raw: &str) -> String {
+    let parsed = parse_px_like(raw);
+    let weight = if parsed > 0.0 { parsed as u16 } else { 400 };
+    weight.to_string()
+}
+
+fn declarations_for(properties: &HashMap<String, String>, exclude: Option<&HashMap<String, String>>) -> Vec<String> {
+    let mut declarations: Vec<String> = Vec::new();
+    let mut entries: Vec<(&String, &String)> = properties.iter().collect();
+    entries.sort_by_key(|(k, _)| k.as_str());
+
+    for (property, value) in entries {
+        if let Some(base) = exclude {
+            if base.get(property) == Some(value) {
+                continue; // unchanged from the base -- CSS cascade already covers it
+            }
+        }
+        if !DIFFABLE_PROPERTIES.contains(&property.as_str()) {
+            declarations.push(format!(
+                "/* unsupported dynamic-compiled property: {property} (see webcodium-export-plan.md) */"
+            ));
+            continue;
+        }
+        if let Some(formatted) = format_value(property, value) {
+            declarations.push(format!("{property}: {formatted};"));
+        }
+    }
+    declarations
+}
+
+// `display` is deliberately NEVER read as a literal raw property here, even though Charter does
+// expose one via the arrangeKeys "Advanced flex" escape hatch (box_categories()) -- the
+// overwhelmingly common case (a Kit authored through Stack/Cluster/Split/Center/Grid, never
+// touching Advanced) never writes a raw "display" entry at all: Charter computes it purely from
+// whether a grid-template is present (see css.rs::node_props' own `is_grid` check, which this
+// mirrors). A raw kit property set that has a real `flex-direction`/`gap`/other flex-only
+// property but no `display` at all is Charter's NORMAL, expected shape, not a data gap -- so
+// `display` has to be computed here from the same grid-template-presence rule, or a Kit-basis
+// box would render with `flex-direction` and no `display: flex` at all (a real, silently-broken
+// bug this fixes: flex-direction is a no-op without a flex display mode).
+fn box_display_declaration(properties: &HashMap<String, String>) -> String {
+    let is_grid = properties.get("grid-template-columns").map(|v| !v.is_empty()).unwrap_or(false)
+        || properties.get("grid-template-rows").map(|v| !v.is_empty()).unwrap_or(false);
+    if is_grid { "display: grid;".to_string() } else { "display: flex;".to_string() }
+}
+
+// The Kit's own base declarations -- excluded axes collapsed to their default/lowest value,
+// everything else at its unconditioned (null-layer) state. `is_box` is whether the node this
+// Kit's rule is being synthesized for is a Box (a Text/Img-primitive Kit never needs a `display`
+// declaration at all) -- see box_display_declaration's doc comment for why this can't just be
+// diffed off the raw properties like everything else.
+pub(crate) fn synthesize_base_declarations(shape: &KitExportShape, is_box: bool) -> Vec<String> {
+    let base_args = excluded_axis_args(shape);
+    let base = resolve_properties(shape, &base_args, is_box);
+    let mut declarations = declarations_for(&base, None);
+    if is_box {
+        declarations.insert(0, box_display_declaration(&base));
+    }
+    declarations
+}
+
+pub(crate) struct VariantRule {
+    // Appended directly after the Kit's own class name -- "--secondary" (static BEM modifier),
+    // ":hover" (a recognized dynamic pseudo-class), or ".is-loading" (dynamic JS-toggle fallback).
+    pub selector_suffix: String,
+    pub declarations: Vec<String>,
+}
+
+fn dynamic_selector_suffix(value: &str) -> String {
+    match value.to_lowercase().as_str() {
+        "hover" => ":hover".to_string(),
+        "focus" => ":focus".to_string(),
+        "focus-within" | "focuswithin" => ":focus-within".to_string(),
+        "focus-visible" | "focusvisible" => ":focus-visible".to_string(),
+        "active" => ":active".to_string(),
+        "visited" => ":visited".to_string(),
+        "checked" => ":checked".to_string(),
+        "disabled" => ":disabled".to_string(),
+        _ => format!(".is-{}", kit_class_name(value)),
+    }
+}
+
+// One VariantRule per non-excluded axis value, holding only the delta against the Kit's own base
+// declarations. Empty declarations (the variant matches the base exactly) are skipped entirely --
+// no reason to emit an empty ruleset. `is_box` -- see synthesize_base_declarations/
+// synthesize_arrange's doc comments.
+pub(crate) fn synthesize_variant_rules(shape: &KitExportShape, is_box: bool) -> Vec<VariantRule> {
+    let base_args = excluded_axis_args(shape);
+    let base = resolve_properties(shape, &base_args, is_box);
+    let mut rules = Vec::new();
+
+    for axis in &shape.axes {
+        if axis.excluded_from_export {
+            continue;
+        }
+        for value in &axis.values {
+            if value.value.kind != "literal" && value.value.kind != "discrete" {
+                continue; // range axis values -- v1 scope cut, see module doc comment
+            }
+            let mut variant_args = base_args.clone();
+            variant_args.insert(axis.axis_id.clone(), value.value.value.clone());
+            let variant = resolve_properties(shape, &variant_args, is_box);
+
+            let declarations = declarations_for(&variant, Some(&base));
+            if declarations.is_empty() {
+                continue;
+            }
+
+            let selector_suffix = if axis.variant_kind == "dynamic" {
+                dynamic_selector_suffix(&value.value.value)
+            } else {
+                format!("--{}", kit_class_name(&value.value.value))
+            };
+            rules.push(VariantRule { selector_suffix, declarations });
+        }
+    }
+    rules
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn literal(value: &str) -> AxisValueWire {
+        AxisValueWire { kind: "literal".to_string(), value: value.to_string() }
+    }
+
+    fn literal_entry(property: &str, value: &str) -> ExportLayerEntry {
+        ExportLayerEntry {
+            property: property.to_string(),
+            literal_value: Some(value.to_string()),
+            token_value: None,
+        }
+    }
+
+    fn condition(axis_id: &str, value: &str) -> ExportLayerCondition {
+        ExportLayerCondition { axis_id: axis_id.to_string(), axis_value_id: String::new(), value: literal(value) }
+    }
+
+    // The worked example from resources/webcodium-export-plan.md: Button with a static `theme`
+    // axis (primary/secondary, default primary) and a dynamic `state` axis (hover).
+    fn button_shape() -> KitExportShape {
+        KitExportShape {
+            kit_id: "button".to_string(),
+            kit_name: "Button".to_string(),
+            axes: vec![
+                AxisExportMeta {
+                    axis_id: "theme".to_string(),
+                    axis_name: Some("theme".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "static".to_string(),
+                    excluded_from_export: false,
+                    default_value: Some(literal("primary")),
+                    priority_index: 0,
+                    values: vec![
+                        ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("primary"), priority_index: 0 },
+                        ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("secondary"), priority_index: 1000 },
+                    ],
+                },
+                AxisExportMeta {
+                    axis_id: "state".to_string(),
+                    axis_name: Some("state".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "dynamic".to_string(),
+                    excluded_from_export: false,
+                    default_value: None,
+                    priority_index: 1000,
+                    values: vec![ExportAxisValue {
+                        axis_value_id: "v3".to_string(),
+                        value: literal("hover"),
+                        priority_index: 0,
+                    }],
+                },
+            ],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("background", "oklab(60% 0.1 0.02 / 1)")],
+                },
+                ExportLayer {
+                    layer_id: "secondary".to_string(),
+                    conditions: vec![condition("theme", "secondary")],
+                    entries: vec![literal_entry("background", "oklab(40% 0.05 -0.01 / 1)")],
+                },
+                ExportLayer {
+                    layer_id: "hover".to_string(),
+                    conditions: vec![condition("state", "hover")],
+                    entries: vec![literal_entry("background", "oklab(65% 0.1 0.02 / 1)")],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn base_declarations_come_from_the_null_layer() {
+        let shape = button_shape();
+        let base = synthesize_base_declarations(&shape, true);
+        assert_eq!(
+            base,
+            vec![
+                "display: flex;".to_string(),
+                "background: oklab(60% 0.1 0.02 / 1);".to_string(),
+                "flex-direction: column;".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn static_axis_value_produces_a_bem_modifier_with_only_the_delta() {
+        let shape = button_shape();
+        let rules = synthesize_variant_rules(&shape, true);
+        let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
+        assert_eq!(secondary.declarations, vec!["background: oklab(40% 0.05 -0.01 / 1);".to_string()]);
+    }
+
+    #[test]
+    fn dynamic_axis_value_with_a_recognized_name_produces_a_real_pseudo_class() {
+        let shape = button_shape();
+        let rules = synthesize_variant_rules(&shape, true);
+        let hover = rules.iter().find(|r| r.selector_suffix == ":hover").unwrap();
+        assert_eq!(hover.declarations, vec!["background: oklab(65% 0.1 0.02 / 1);".to_string()]);
+    }
+
+    #[test]
+    fn dynamic_axis_value_with_an_unrecognized_name_falls_back_to_an_is_class() {
+        assert_eq!(dynamic_selector_suffix("loading"), ".is-loading");
+        assert_eq!(dynamic_selector_suffix("Hover"), ":hover", "recognized names match case-insensitively");
+    }
+
+    #[test]
+    fn excluded_axis_produces_no_variant_rule_and_its_default_value_wins_the_base() {
+        let mut shape = button_shape();
+        shape.axes[1].excluded_from_export = true; // exclude `state`
+        // A layer conditioned on the excluded axis's own default (none set -- falls back to its
+        // lowest-priority value, "hover", the only value it has) should still fold into the base.
+        let rules = synthesize_variant_rules(&shape, true);
+        assert!(
+            rules.iter().all(|r| r.selector_suffix != ":hover"),
+            "an excluded axis must not produce a variant rule for any of its values"
+        );
+        let base = synthesize_base_declarations(&shape, true);
+        assert_eq!(
+            base,
+            vec![
+                "display: flex;".to_string(),
+                "background: oklab(65% 0.1 0.02 / 1);".to_string(),
+                "flex-direction: column;".to_string()
+            ],
+            "excluded axis collapses into the base using its lowest-priority value (no default_value set)"
+        );
+    }
+
+    #[test]
+    fn box_gets_display_flex_by_default_and_display_grid_when_a_grid_template_is_set() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("flex-direction", "row")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"display: flex;".to_string()), "base was: {:?}", base);
+        assert!(base.contains(&"flex-direction: row;".to_string()));
+
+        let mut grid_shape = shape.clone();
+        grid_shape.layers[0].entries.push(literal_entry("grid-template-columns", "200px 1fr"));
+        let grid_base = synthesize_base_declarations(&grid_shape, true);
+        assert!(grid_base.contains(&"display: grid;".to_string()), "base was: {:?}", grid_base);
+        assert!(!grid_base.contains(&"display: flex;".to_string()));
+    }
+
+    #[test]
+    fn a_non_box_kit_never_gets_a_display_declaration() {
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("color", "#111111")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(!base.iter().any(|d| d.starts_with("display:")));
+    }
+
+    #[test]
+    fn border_color_alone_gets_an_implicit_1px_solid_width_and_style() {
+        // "border: <color>;" alone is syntactically valid CSS but leaves border-style at its
+        // "none" initial value -- no border ever actually renders. Charter's own default (used
+        // whenever a border color is set with no explicit width) is 1px, mirrored here.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border", "#000000")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        // is_box=false also synthesizes the default ratio-ramp line-height (no font-size set -> 16px
+        // default -> 24px) -- see synthesize_line_height's own tests for that logic in isolation.
+        assert_eq!(
+            base,
+            vec!["border: 1px solid #000000;".to_string(), "line-height: 24px;".to_string()]
+        );
+    }
+
+    #[test]
+    fn border_with_an_explicit_width_uses_it_instead_of_the_1px_default() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border", "#000000"), literal_entry("border-width", "3")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert_eq!(
+            base,
+            vec!["border: 3px solid #000000;".to_string(), "line-height: 24px;".to_string()]
+        );
+    }
+
+    #[test]
+    fn no_border_color_produces_no_border_declaration_even_with_an_explicit_width() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border-width", "3")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert_eq!(
+            base,
+            vec!["line-height: 24px;".to_string()],
+            "no border color set -- border-width alone must produce nothing: {:?}",
+            base
+        );
+    }
+
+    #[test]
+    fn border_none_produces_no_border_declaration() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border", "none")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert_eq!(base, vec!["line-height: 24px;".to_string()]);
+    }
+
+    #[test]
+    fn bare_number_line_height_is_a_multiplier_of_font_size_not_a_literal_px() {
+        // The reported bug: "1.5" used to format as "line-height: 1.5px;" (catastrophically
+        // cramped), when Charter treats a bare number as font_size * 1.5.
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("font-size", "20"),
+                    literal_entry("line-height", "1.5"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(
+            base.contains(&"line-height: 30px;".to_string()),
+            "expected font_size(20) * 1.5 = 30px, got {:?}",
+            base
+        );
+    }
+
+    #[test]
+    fn px_suffixed_line_height_is_absolute_regardless_of_font_size() {
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("font-size", "20"),
+                    literal_entry("line-height", "40px"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"line-height: 40px;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn unset_line_height_derives_the_ratio_ramp_default_at_body_size() {
+        // font-size <= 20px -> the ramp is pinned at its 1.5x ceiling.
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("font-size", "16")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"line-height: 24px;".to_string()), "16 * 1.5 = 24: {:?}", base);
+    }
+
+    #[test]
+    fn unset_line_height_derives_the_ratio_ramp_default_at_display_size() {
+        // font-size >= 48px -> the ramp is pinned at its 1.1x floor.
+        let shape = KitExportShape {
+            kit_id: "heading".to_string(),
+            kit_name: "Heading".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("font-size", "48")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        let line_height = base
+            .iter()
+            .find_map(|d| d.strip_prefix("line-height: ").and_then(|v| v.strip_suffix("px;")))
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or_else(|| panic!("no line-height declaration found: {:?}", base));
+        // 48 * 1.1, computed in f32 -- not exactly 52.8 (1.1 isn't exactly representable).
+        assert!((line_height - 52.8).abs() < 0.01, "48 * 1.1 ~= 52.8, got {line_height}: {:?}", base);
+    }
+
+    #[test]
+    fn box_kits_never_get_a_synthesized_line_height() {
+        // is_box=true -- mirrors build_text_node being the only caller of compile_line_height.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("font-size", "16")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.iter().all(|d| !d.contains("line-height")), "{:?}", base);
+    }
+
+    #[test]
+    fn recognized_background_color_passes_through_unchanged() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("background", "oklch(50% 0.1 200)")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"background: oklch(50% 0.1 200);".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn unrecognized_named_color_becomes_the_same_magenta_marker_charter_would_show() {
+        // "red" is a real CSS named color the browser understands, but Charter's parse_color does
+        // NOT recognize named colors at all -- it warns and substitutes a visible magenta marker.
+        // Passing "red" straight through would render real red in the export while Vellum/Path A
+        // show magenta for the identical unparseable data.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("color", "red")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        let expected = format!("color: {};", unparseable_color_marker());
+        assert!(base.contains(&expected), "expected {:?}, got {:?}", expected, base);
+        assert!(!base.iter().any(|d| d.contains("red")), "{:?}", base);
+    }
+
+    #[test]
+    fn unrecognized_border_color_substitutes_the_marker_inside_the_shorthand() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border", "cornflowerblue")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        let expected = format!("border: 1px solid {};", unparseable_color_marker());
+        assert!(base.contains(&expected), "expected {:?}, got {:?}", expected, base);
+        assert!(!base.iter().any(|d| d.contains("cornflowerblue")), "{:?}", base);
+    }
+
+    #[test]
+    fn a_variant_that_only_changes_border_color_recomputes_the_whole_shorthand() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![AxisExportMeta {
+                axis_id: "theme".to_string(),
+                axis_name: Some("theme".to_string()),
+                kind: Some("categorical".to_string()),
+                variant_kind: "static".to_string(),
+                excluded_from_export: false,
+                default_value: None,
+                priority_index: 0,
+                values: vec![ExportAxisValue {
+                    axis_value_id: "v1".to_string(),
+                    value: literal("danger"),
+                    priority_index: 0,
+                }],
+            }],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("border", "#000000"), literal_entry("border-width", "2")],
+                },
+                ExportLayer {
+                    layer_id: "danger".to_string(),
+                    conditions: vec![condition("theme", "danger")],
+                    entries: vec![literal_entry("border", "#ff0000")],
+                },
+            ],
+        };
+        let rules = synthesize_variant_rules(&shape, true);
+        let danger = rules.iter().find(|r| r.selector_suffix == "--danger").unwrap();
+        // The variant only overrode "border" (color), not "border-width" -- but since border is
+        // one atomic shorthand, the recomputed value still carries the base's 2px width, not the
+        // 1px-if-unset default.
+        assert_eq!(danger.declarations, vec!["border: 2px solid #ff0000;".to_string()]);
+    }
+
+    #[test]
+    fn compiled_property_is_skipped_with_an_explicit_comment_not_silently_wrong() {
+        // "arrange" itself is now fully synthesized (see synthesize_arrange), and align-self is
+        // now a real diffable property too (see DIFFABLE_PROPERTIES' doc comment) -- flex-basis is
+        // the genuine still-unsupported item-level flex property (Charter never reads it as a raw
+        // kit property at all; it's exclusively a compile_resize output) to exercise the "skip
+        // with a comment, don't guess" path.
+        let mut shape = button_shape();
+        shape.layers.push(ExportLayer {
+            layer_id: "flex-basis-layer".to_string(),
+            conditions: vec![condition("theme", "secondary")],
+            entries: vec![literal_entry("flex-basis", "0")],
+        });
+        let rules = synthesize_variant_rules(&shape, true);
+        let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
+        assert!(
+            secondary
+                .declarations
+                .iter()
+                .any(|d| d.contains("unsupported dynamic-compiled property: flex-basis")),
+            "declarations were: {:?}",
+            secondary.declarations
+        );
+        assert!(!secondary.declarations.iter().any(|d| d.starts_with("flex-basis:")));
+    }
+
+    #[test]
+    fn grid_auto_and_line_placement_properties_pass_through_as_real_declarations() {
+        let shape = KitExportShape {
+            kit_id: "cell".to_string(),
+            kit_name: "Cell".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("grid-auto-rows", "100px"),
+                    literal_entry("grid-auto-columns", "minmax(100px, 1fr)"),
+                    literal_entry("grid-column", "span 2"),
+                    literal_entry("grid-row", "1 / 3"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"grid-auto-rows: 100px;".to_string()), "{:?}", base);
+        assert!(base.contains(&"grid-auto-columns: minmax(100px, 1fr);".to_string()), "{:?}", base);
+        assert!(base.contains(&"grid-column: span 2;".to_string()), "{:?}", base);
+        assert!(base.contains(&"grid-row: 1 / 3;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn item_level_flex_properties_pass_through_as_real_declarations() {
+        let shape = KitExportShape {
+            kit_id: "cell".to_string(),
+            kit_name: "Cell".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("flex-grow", "2"),
+                    literal_entry("flex-shrink", "0"),
+                    literal_entry("align-self", "flex-end"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"flex-grow: 2;".to_string()), "{:?}", base);
+        assert!(base.contains(&"flex-shrink: 0;".to_string()), "{:?}", base);
+        assert!(base.contains(&"align-self: flex-end;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn split_arrangement_produces_justify_content_align_items_and_row_direction() {
+        // Regression test for the reported bug: a Kit authored via the high-level "Split" preset
+        // (the common case -- only the "arrange" raw property is stored, none of its implied
+        // flex-direction/justify-content/align-items) must still export real layout, not nothing.
+        let shape = KitExportShape {
+            kit_id: "header".to_string(),
+            kit_name: "Header".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("arrange", "split")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"display: flex;".to_string()), "base was: {:?}", base);
+        assert!(base.contains(&"flex-direction: row;".to_string()), "base was: {:?}", base);
+        assert!(base.contains(&"justify-content: space-between;".to_string()), "base was: {:?}", base);
+        assert!(base.contains(&"align-items: center;".to_string()), "base was: {:?}", base);
+        // "arrange" itself is Charter's own preset name, never a real CSS property.
+        assert!(!base.iter().any(|d| d.starts_with("arrange")));
+    }
+
+    #[test]
+    fn cluster_arrangement_defaults_to_row_wrap_and_flex_start() {
+        let shape = KitExportShape {
+            kit_id: "tags".to_string(),
+            kit_name: "Tags".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("arrange", "cluster")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"flex-direction: row;".to_string()));
+        assert!(base.contains(&"flex-wrap: wrap;".to_string()));
+        assert!(base.contains(&"align-items: flex-start;".to_string()));
+    }
+
+    #[test]
+    fn an_explicit_raw_override_wins_over_the_arrange_default() {
+        // Mirrors Charter's own "only fires when never explicitly set" rule: a raw align-items
+        // set directly (via the Advanced escape hatch) must NOT be clobbered by Split's own
+        // align-items: center default.
+        let shape = KitExportShape {
+            kit_id: "header".to_string(),
+            kit_name: "Header".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("arrange", "split"),
+                    literal_entry("align-items", "flex-end"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"align-items: flex-end;".to_string()), "base was: {:?}", base);
+        assert!(!base.iter().any(|d| d == "align-items: center;"));
+    }
+
+    #[test]
+    fn grid_arrangement_computes_display_grid_and_an_autofit_template_from_cell_min() {
+        let shape = KitExportShape {
+            kit_id: "gallery".to_string(),
+            kit_name: "Gallery".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("arrange", "grid"), literal_entry("grid-cell-min", "200")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, true);
+        assert!(base.contains(&"display: grid;".to_string()), "base was: {:?}", base);
+        assert!(
+            base.contains(&"grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));".to_string()),
+            "base was: {:?}",
+            base
+        );
+        assert!(!base.iter().any(|d| d.starts_with("flex-direction")));
+    }
+
+    #[test]
+    fn a_text_kit_never_gets_arrange_properties_even_with_a_stray_flex_direction() {
+        // is_box: false -- a Text-primitive Kit should never have flex-direction synthesized onto
+        // it, even in the unusual case its raw properties included one.
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("color", "#111111")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(!base.iter().any(|d| d.starts_with("flex-direction") || d.starts_with("display")));
+    }
+
+    #[test]
+    fn bare_numeric_values_get_an_implicit_px_unit() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("gap", "16"), literal_entry("padding", "8 16")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"gap: 16px;".to_string()));
+        assert!(base.contains(&"padding: 8px 16px;".to_string()));
+    }
+
+    #[test]
+    fn numeric_font_weight_passes_through_as_a_bare_number() {
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("font-weight", "600")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"font-weight: 600;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn keyword_font_weight_falls_back_to_400_never_passes_through_as_a_real_keyword() {
+        // Charter's build_text_node parses font-weight via parse_px -- "bold" doesn't parse as a
+        // number, so Vellum renders/exports it as 400 (normal). WebCodium must agree, not let the
+        // browser interpret "bold" literally as 700.
+        let shape = KitExportShape {
+            kit_id: "label".to_string(),
+            kit_name: "Label".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("font-weight", "bold")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert!(base.contains(&"font-weight: 400;".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d.contains("bold")), "{:?}", base);
+    }
+
+    #[test]
+    fn fill_and_hug_width_keywords_are_compiled_and_produce_no_declaration() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("width", "fill")],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert_eq!(
+            base,
+            vec!["line-height: 24px;".to_string()],
+            "fill/hug are Charter's compiled keywords, not a literal size: {:?}",
+            base
+        );
+    }
+
+    #[test]
+    fn token_backed_scalar_entry_resolves_to_the_tokens_value() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![ExportLayerEntry {
+                    property: "color".to_string(),
+                    literal_value: None,
+                    token_value: Some(TokenValueWire {
+                        kind: "scalar".to_string(),
+                        value: Some("#3b82f6".to_string()),
+                        view_id: None,
+                    }),
+                }],
+            }],
+        };
+        let base = synthesize_base_declarations(&shape, false);
+        assert_eq!(
+            base,
+            vec!["color: #3b82f6;".to_string(), "line-height: 24px;".to_string()]
+        );
+    }
+}

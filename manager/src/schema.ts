@@ -142,13 +142,13 @@ export interface PluginManifest {
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
-// the DB2026_07_19 interface below is renamed for an actual schema change (not for every minor
+// the DB2026_07_27 interface below is renamed for an actual schema change (not for every minor
 // edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
-export const CURRENT_SCHEMA_VERSION = '2026-07-19';
+export const CURRENT_SCHEMA_VERSION = '2026-07-27';
 
 // --- Schema tables ---
 
-export interface DB2026_07_19 {
+export interface DB2026_07_27 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
@@ -231,6 +231,12 @@ export interface AxisTable {
 	hint: JSONColumnType<string[]> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	default_value: JSONColumnType<ArgValue> | null;
+	// Whether this axis's values compile to BEM-style static modifier classes (e.g.
+	// `.button--primary`) or real dynamic selectors (a recognized CSS pseudo-class like `:hover`,
+	// falling back to a `.is-{value}` JS-toggle class) in WebCodium's Kit-basis export. Explicit
+	// per-axis designer choice, not inferred from axis name/semantics -- see
+	// resources/webcodium-export-plan.md.
+	variant_kind: Generated<'static' | 'dynamic'>;
 }
 
 export interface AxisValuesTable {
@@ -245,6 +251,12 @@ export interface AxesConsumedTable {
 	kit_id: string;
 	axis_id: string;
 	priority_index: number;
+	// Per-Kit export exclusion: when true, WebCodium's Kit-basis export collapses this axis to a
+	// single base rule (using the axis's own default_value, or its lowest-priority value if unset)
+	// instead of emitting a variant per value. Scoped to (kit, axis), not the axis globally, since
+	// axes_consumed is already the exact join row for that pair -- see
+	// resources/webcodium-export-plan.md.
+	excluded_from_export: Generated<boolean>;
 }
 
 // ------------------------------
@@ -325,8 +337,8 @@ export interface AssetsTable {
 }
 
 // Current version of db
-export type SchemaTS = Kysely<DB2026_07_19>;
-export type Schema = DB2026_07_19;
+export type SchemaTS = Kysely<DB2026_07_27>;
+export type Schema = DB2026_07_27;
 export type SchemaDialect = Kysely<Schema>;
 
 export type SchemaQueryBuilder<O, Tb extends keyof Schema = keyof Schema> = SelectQueryBuilder<

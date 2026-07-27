@@ -9,6 +9,7 @@ import {
 	type AxisValueType
 } from '../schema.js';
 import { sql, type SelectQueryBuilder } from 'kysely';
+import { fetchKitExportShapes, type KitExportShape } from '../resolve/export-shape.js';
 
 // TokenValue's view_id/view_ids (type: 'view' / 'view-list') are references to view rows, but they
 // live inside a jsonb blob rather than a real FK column -- the schema has no way to enforce or
@@ -279,6 +280,10 @@ export interface QueryAxis {
 		| undefined
 	>;
 	renameAxis: (axisId: string, newName: string) => Promise<void>;
+	// Explicit designer choice of how this axis's values compile in WebCodium's Kit-basis export --
+	// 'static' (BEM modifier classes) or 'dynamic' (real pseudo-class/state selectors). Global to
+	// the axis, not per-kit -- see AxisTable.variant_kind.
+	setAxisVariantKind: (axisId: string, variantKind: 'static' | 'dynamic') => Promise<void>;
 	deleteAxis: (axisId: string) => Promise<void>;
 	// Hard-delete an axis and everything tying it down, in one transaction. Plain deleteAxis
 	// FK-fails whenever the axis is still consumed (axes_consumed / axis_args are ON DELETE
@@ -308,6 +313,8 @@ export interface QueryAxis {
 			axisKind: string | null;
 			axisHint: any;
 			priorityIndex: number;
+			variantKind: 'static' | 'dynamic';
+			excludedFromExport: boolean;
 		}
 	>;
 }
@@ -355,8 +362,23 @@ export interface QueryAxisConsumed {
 	) => SelectQueryBuilder<
 		Schema,
 		'axes_consumed' | 'axes',
-		{ axisId: string; axisName: string | null; axisKind: string | null; priorityIndex: number }
+		{
+			axisId: string;
+			axisName: string | null;
+			axisKind: string | null;
+			priorityIndex: number;
+			variantKind: 'static' | 'dynamic';
+			excludedFromExport: boolean;
+		}
 	>;
+	// Toggles whether WebCodium's Kit-basis export collapses this axis to a single base rule for
+	// this kit instead of emitting a variant per value. Scoped to (kit, axis) -- see
+	// AxesConsumedTable.excluded_from_export.
+	setAxisExcludedFromExport: (
+		kitId: string,
+		axisId: string,
+		excluded: boolean
+	) => Promise<void>;
 	// Unused axes for a kit: axes in the kit's project not yet consumed by it (the mirror of
 	// getKitsExceptFromViewId for the Axes panel's add menu).
 	getAxesExceptFromKitId: (
@@ -584,6 +606,12 @@ export interface QueryAction {
 		name: string
 	) => Promise<{ id: string; project_id: string } | undefined>;
 	exportProject: (projectId: string) => Promise<any | undefined>;
+	// Unresolved, axis-args-independent per-Kit export shape for WebCodium's Kit-basis export --
+	// every layer's full condition set/entries plus axis metadata (variant_kind,
+	// excluded_from_export, values), NOT collapsed to a single winner the way resolve()/
+	// resolveManyViews() are. See resolve/export-shape.ts's own doc comment for why this is a
+	// separate function rather than a resolve() variant.
+	getKitExportShapes: (kitIds: string[]) => Promise<Map<string, KitExportShape>>;
 	// Inverse of exportProject -- `data` is expected to be shaped exactly like exportProject's
 	// return value (validated up front; throws a specific error for anything that doesn't look
 	// like a real export rather than failing deep inside the transaction). Creates a brand-new
@@ -731,6 +759,15 @@ export interface QueryAsset {
 		width: number;
 		height: number;
 	}) => Promise<AssetRow>;
+	// Single-row lookup by id -- used by the editor's image-reload scan (mirrors the font
+	// scan's Fontavious calls) to find an asset's `link` when its bytes aren't cached in
+	// IndexedDB yet (a fresh session, or a seeded asset that ships with a bundled `link`
+	// instead of ever going through the manual-upload byte-caching path).
+	getAssetById: (assetId: string) => Promise<AssetRow | undefined>;
+	// Batch lookup by id -- used by the kit10_get_asset_links host fn (WebCodium's Img export
+	// support) to resolve every asset referenced by a resolved viewport in one round trip
+	// instead of one per id.
+	getAssetsByIds: (assetIds: string[]) => Promise<AssetRow[]>;
 	deleteAsset: (assetId: string) => Promise<void>;
 }
 
@@ -752,96 +789,270 @@ export interface Api
 		QueryPlugin,
 		QueryAsset {}
 
-// Deep-clone a view subtree: the view row + its compositions, axis args, and view-scoped tokens.
-// Recurses through the view's own view-list token aliased `compositionKey`, cloning each referenced
-// child so every clone owns unique children (never a shared reference). `seen` is a DFS path guard:
-// a view already on the current ancestry path is a cycle -> stop (a diamond reached via a different
-// path is still cloned, since it's popped on exit). Other view-list tokens (non-composition) are
-// copied by value -- those are references, not owned structure.
+// A clone must never inherit the SOURCE view's own per-view export flags (hints.<providerId>.export,
+// see src/lib/plugins/export-flags.ts) -- those are a one-off opt-in a designer explicitly ticked
+// for one specific view, not authored structural data that should propagate to every copy. Left
+// unstripped, cloning a flagged view (or a view whose descendant subtree contains one, since this
+// function recurses) silently makes every resulting clone independently flagged too -- and the
+// Export panel's view list scans the WHOLE PROJECT for the flag (src/lib/editor/panels/Export.svelte's
+// flaggedViewsFor), not just the subtree the designer meant to export, so an unrelated clone shows
+// up in what looks like a single-view export run (reported live: cloning something under "Landing
+// Page" made the clones show up in a Landing-Page-only export). `providerId` is deliberately never
+// named here (manager must not hardcode a plugin id) -- this strips generically: any top-level
+// hints key whose value is a plain object carrying an `export` field loses just that field (the
+// whole namespace is dropped only if `export` was its sole content), leaving unrelated per-provider
+// hint data (hints.vellum.position, hints.charter.primitive, hints.view_icon) untouched.
+function stripExportFlags(hints: Record<string, unknown> | null | undefined): Record<string, unknown> {
+	const src = hints ?? {};
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(src)) {
+		if (value && typeof value === 'object' && 'export' in (value as Record<string, unknown>)) {
+			const { export: _export, ...rest } = value as Record<string, unknown>;
+			if (Object.keys(rest).length > 0) result[key] = rest;
+			continue;
+		}
+		result[key] = value;
+	}
+	return result;
+}
+
+// A single occurrence of a source view within the subtree being cloned. Not the same as "one per
+// distinct old id" -- a DIAMOND (the same old view id reachable via two different, non-overlapping
+// parent paths) gets a SEPARATE Site per path, each with its own freshly generated id, since each
+// occurrence must own an independent copy (never a shared reference -- see cloneViewSubtreeImpl's
+// doc comment). `ancestors` is this occurrence's own path from the root down (NOT including
+// itself), used to detect a genuine CYCLE (the same old id reachable from itself) vs. a diamond
+// (the same old id reachable from two DIFFERENT, non-overlapping ancestor sets) -- the two look
+// identical from a flat "have we seen this old id anywhere" perspective, which is exactly why a
+// naive global visited-set would incorrectly collapse a diamond into one shared clone.
+type CloneSite = { oldId: string; newId: string; ancestors: ReadonlySet<string> };
+
+// Deep-clone a view subtree in a small, constant number of round-trips regardless of the
+// subtree's size (was one select + one insert per view/composition/axis-arg/token, fully
+// sequential and recursive -- a real, reported perf bug: cloning a page-sized view with dozens of
+// descendants visibly created views "one by one," taking ~20s even after wrapping the whole thing
+// in one transaction, since a transaction removes the per-statement COMMIT cost but not the
+// round-trip COUNT). Two phases instead: (1) a breadth-first DISCOVERY walk that fetches every
+// level's `tokens` in one batched `WHERE view_id IN (...)` query (reused for the eventual token
+// clones too -- never re-fetched), producing the full `CloneSite[]` list with fresh ids
+// pre-generated client-side (`crypto.randomUUID()`, same approach `importProjectData` already
+// uses for its own bulk id-remapped inserts); then (2) one combined batched read each for
+// `views`/`compositions`/`axis_args` across every distinct old id touched, and one bulk
+// `insertInto(...).values([...])` per table for the whole subtree. Total round-trips: O(tree
+// depth) for the discovery reads, plus a small constant for the phase-2 reads/writes -- not
+// O(nodes) like the row-at-a-time version.
+//
+// Preserves the original recursive semantics exactly: a view-list token aliased `compositionKey`
+// is the one Charter-opinionated "this defines my children" edge (cloned recursively, each
+// occurrence getting its own independent copy -- see CloneSite's doc comment above for the
+// diamond/cycle distinction); every OTHER token (a different alias, or a `view`-type token) is
+// copied through untouched, still pointing at the original id -- it's a reference, not owned
+// structure. A dangling child id (the referenced view row doesn't actually exist) contributes
+// nothing, exactly like the old `if (!src) return null` bail, except now it just drops out of its
+// parent's cloned children list rather than aborting anything.
 async function cloneViewSubtreeImpl(
 	db: SchemaDialect,
 	viewId: string,
-	compositionKey: string,
-	seen: Set<string>
-): Promise<string | null> {
-	if (seen.has(viewId)) return null;
-	seen.add(viewId);
-	try {
-		const src = await db
-			.selectFrom('views')
-			.where('id', '=', viewId)
-			.select(['name', 'project_id', 'hints'])
-			.executeTakeFirst();
-		if (!src) return null;
+	compositionKey: string
+): Promise<{ cloneId: string; projectId: string } | null> {
+	const genId = () => crypto.randomUUID();
 
-		const clone = await db
-			.insertInto('views')
-			.values({
-				name: src.name,
-				project_id: src.project_id,
-				lock: false,
-				hide: false,
-				hints: (src.hints ?? {}) as any
-			} as any)
-			.returning('id')
-			.executeTakeFirstOrThrow();
-		const cloneId = clone.id;
+	const rootSite: CloneSite = { oldId: viewId, newId: genId(), ancestors: new Set() };
+	const allSites: CloneSite[] = [rootSite];
+	// Every token row for every distinct old id ever touched by the walk -- fetched once per BFS
+	// level (deduped against ids already cached), reused for BOTH child discovery (this loop) and
+	// building the eventual token-clone rows (phase 2), so it's never fetched twice for the same id.
+	const tokensByOldId = new Map<
+		string,
+		{ view_id: string | null; alias: string | null; value: unknown; hints: unknown }[]
+	>();
+	// Per site, per composition-key token index (a site could in principle carry more than one --
+	// the original recursive code never assumed uniqueness either), the ordered child sites created
+	// from that token's `view_ids` -- needed at phase-2 write time to rebuild that exact token's
+	// cloned value once dangling children (if any) are known and filtered out.
+	const compositionChildrenBySite = new Map<CloneSite, Map<number, CloneSite[]>>();
 
-		const comps = await db
-			.selectFrom('compositions')
-			.where('view_id', '=', viewId)
-			.select(['kit_id', 'priority_index'])
-			.execute();
-		for (const c of comps) {
-			await db
-				.insertInto('compositions')
-				.values({ view_id: cloneId, kit_id: c.kit_id, priority_index: c.priority_index })
-				.onConflict((oc) => oc.columns(['view_id', 'kit_id']).doNothing())
+	let frontier: CloneSite[] = [rootSite];
+	while (frontier.length > 0) {
+		const toFetch = [...new Set(frontier.map((s) => s.oldId).filter((id) => !tokensByOldId.has(id)))];
+		if (toFetch.length > 0) {
+			const rows = await db
+				.selectFrom('tokens')
+				.where('view_id', 'in', toFetch)
+				.select(['view_id', 'alias', 'value', 'hints'])
 				.execute();
+			for (const id of toFetch) tokensByOldId.set(id, []);
+			for (const row of rows) tokensByOldId.get(row.view_id!)?.push(row);
 		}
 
-		const args = await db
-			.selectFrom('axis_args')
-			.where('view_id', '=', viewId)
-			.select(['kit_id', 'axis_id', 'value'])
-			.execute();
-		for (const a of args) {
-			await db
-				.insertInto('axis_args')
-				.values({ view_id: cloneId, kit_id: a.kit_id, axis_id: a.axis_id, value: a.value } as any)
-				.execute();
-		}
-
-		const tokens = await db
-			.selectFrom('tokens')
-			.where('view_id', '=', viewId)
-			.select(['alias', 'value', 'hints'])
-			.execute();
-		for (const t of tokens) {
-			let value = t.value as TokenValue | null;
-			if (value && value.type === 'view-list' && t.alias === compositionKey) {
-				const clonedIds: string[] = [];
-				for (const childId of value.view_ids) {
-					const cid = await cloneViewSubtreeImpl(db, childId, compositionKey, seen);
-					if (cid) clonedIds.push(cid);
+		const nextFrontier: CloneSite[] = [];
+		for (const site of frontier) {
+			const myTokens = tokensByOldId.get(site.oldId) ?? [];
+			myTokens.forEach((t, tokenIndex) => {
+				const value = t.value as TokenValue | null;
+				if (t.alias !== compositionKey || value?.type !== 'view-list') return;
+				const childSites: CloneSite[] = [];
+				for (const childOldId of value.view_ids) {
+					// Cycle guard: the child is either this site itself or already an ancestor of
+					// it -- matches the original `seen.has(viewId)` check (seen = the current DFS
+					// path, which is exactly `ancestors ∪ {this site}`).
+					if (childOldId === site.oldId || site.ancestors.has(childOldId)) continue;
+					const childSite: CloneSite = {
+						oldId: childOldId,
+						newId: genId(),
+						ancestors: new Set([...site.ancestors, site.oldId])
+					};
+					allSites.push(childSite);
+					nextFrontier.push(childSite);
+					childSites.push(childSite);
 				}
-				value = { type: 'view-list', view_ids: clonedIds };
-			}
-			await db
-				.insertInto('tokens')
-				.values({
-					project_id: src.project_id,
-					alias: t.alias,
-					value: value as any,
-					hints: (t.hints ?? null) as any,
-					kit_id: null,
-					view_id: cloneId
-				} as any)
-				.execute();
+				if (!compositionChildrenBySite.has(site)) compositionChildrenBySite.set(site, new Map());
+				compositionChildrenBySite.get(site)!.set(tokenIndex, childSites);
+			});
 		}
-		return cloneId;
-	} finally {
-		seen.delete(viewId);
+		frontier = nextFrontier;
+	}
+
+	const distinctOldIds = [...new Set(allSites.map((s) => s.oldId))];
+	const viewRows = await db
+		.selectFrom('views')
+		.where('id', 'in', distinctOldIds)
+		.select(['id', 'name', 'project_id', 'hints'])
+		.execute();
+	const viewByOldId = new Map(viewRows.map((v) => [v.id, v]));
+
+	const rootView = viewByOldId.get(viewId);
+	if (!rootView) return null; // source view itself doesn't exist -- nothing to clone
+
+	// A site whose own view row doesn't exist (a dangling id some stale token still lists)
+	// contributes no rows at all, and is filtered out of whichever parent's cloned children list
+	// referenced it below -- same as the original code's per-child `if (cid) clonedIds.push(cid)`.
+	const validSites = allSites.filter((s) => viewByOldId.has(s.oldId));
+	const validOldIds = new Set(validSites.map((s) => s.oldId));
+
+	const compRows =
+		distinctOldIds.length === 0
+			? []
+			: await db
+					.selectFrom('compositions')
+					.where('view_id', 'in', distinctOldIds)
+					.select(['view_id', 'kit_id', 'priority_index'])
+					.execute();
+	const argRows =
+		distinctOldIds.length === 0
+			? []
+			: await db
+					.selectFrom('axis_args')
+					.where('view_id', 'in', distinctOldIds)
+					.select(['view_id', 'kit_id', 'axis_id', 'value'])
+					.execute();
+
+	await db
+		.insertInto('views')
+		.values(
+			validSites.map((s) => {
+				const v = viewByOldId.get(s.oldId)!;
+				return {
+					id: s.newId,
+					name: v.name,
+					project_id: v.project_id,
+					lock: false,
+					hide: false,
+					hints: stripExportFlags(v.hints as Record<string, unknown> | null | undefined) as any
+				};
+			})
+		)
+		.execute();
+
+	const compsToInsert = validSites.flatMap((s) =>
+		compRows
+			.filter((c) => c.view_id === s.oldId)
+			.map((c) => ({ view_id: s.newId, kit_id: c.kit_id, priority_index: c.priority_index }))
+	);
+	if (compsToInsert.length > 0) {
+		await db
+			.insertInto('compositions')
+			.values(compsToInsert)
+			.onConflict((oc) => oc.columns(['view_id', 'kit_id']).doNothing())
+			.execute();
+	}
+
+	const argsToInsert = validSites.flatMap((s) =>
+		argRows
+			.filter((a) => a.view_id === s.oldId)
+			.map((a) => ({ view_id: s.newId, kit_id: a.kit_id, axis_id: a.axis_id, value: a.value }) as any)
+	);
+	if (argsToInsert.length > 0) {
+		await db.insertInto('axis_args').values(argsToInsert).execute();
+	}
+
+	const tokensToInsert = validSites.flatMap((s) => {
+		const myTokens = tokensByOldId.get(s.oldId) ?? [];
+		const childrenByTokenIndex = compositionChildrenBySite.get(s);
+		return myTokens.map((t, tokenIndex) => {
+			const value = t.value as TokenValue | null;
+			const isCompositionToken = t.alias === compositionKey && value?.type === 'view-list';
+			const clonedValue = isCompositionToken
+				? {
+						type: 'view-list' as const,
+						view_ids: (childrenByTokenIndex?.get(tokenIndex) ?? [])
+							.filter((child) => validOldIds.has(child.oldId))
+							.map((child) => child.newId)
+					}
+				: value;
+			return {
+				project_id: rootView.project_id,
+				alias: t.alias,
+				value: clonedValue as any,
+				hints: (t.hints ?? null) as any,
+				kit_id: null,
+				view_id: s.newId
+			};
+		});
+	});
+	if (tokensToInsert.length > 0) {
+		await db.insertInto('tokens').values(tokensToInsert).execute();
+	}
+
+	return { cloneId: rootSite.newId, projectId: rootView.project_id };
+}
+
+// A clone's position relative to its own source view -- if `sourceViewId` is itself listed as a
+// child in some OTHER view's `compositionKey` token (project-wide, VIEW-scoped tokens only -- a
+// kit-scope DEFAULT template listing the same id is a different concept, see
+// instantiateKitDefaultsImpl, and must never be mutated by a one-off Clone action), the new clone
+// is inserted immediately after it in that same array, as a sibling -- not left as a free-floating
+// unattached top-level view the way every clone used to be. A view has at most one live parent at
+// a time (feedback_view_uniqueness), so the first match wins; a root/unattached source view has no
+// match at all, and its clone stays free-floating too, same as before this feature existed.
+async function attachCloneAsSibling(
+	db: SchemaDialect,
+	projectId: string,
+	sourceViewId: string,
+	cloneId: string,
+	compositionKey: string
+): Promise<void> {
+	const tokens = await db
+		.selectFrom('tokens')
+		.where('project_id', '=', projectId)
+		.where('alias', '=', compositionKey)
+		.where('view_id', 'is not', null)
+		.select(['id', 'value'])
+		.execute();
+
+	for (const t of tokens) {
+		const value = t.value as TokenValue | null;
+		if (value?.type !== 'view-list') continue;
+		const idx = value.view_ids.indexOf(sourceViewId);
+		if (idx === -1) continue;
+		const nextViewIds = [...value.view_ids];
+		nextViewIds.splice(idx + 1, 0, cloneId);
+		await db
+			.updateTable('tokens')
+			.set({ value: { ...value, view_ids: nextViewIds } as any })
+			.where('id', '=', t.id)
+			.execute();
+		return;
 	}
 }
 
@@ -889,11 +1100,10 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 			.executeTakeFirst();
 		if (own) continue;
 
-		const seen = new Set<string>();
 		const clonedIds: string[] = [];
 		for (const tid of template) {
-			const cid = await cloneViewSubtreeImpl(db, tid, alias, seen);
-			if (cid) clonedIds.push(cid);
+			const cloned = await cloneViewSubtreeImpl(db, tid, alias);
+			if (cloned) clonedIds.push(cloned.cloneId);
 		}
 		await db
 			.insertInto('tokens')
@@ -1057,6 +1267,10 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteWorkspace: async (workspaceId: string) => {
 		await db.deleteFrom('workspaces').where('workspaces.id', '=', workspaceId).execute();
+	},
+
+	getKitExportShapes: async (kitIds: string[]) => {
+		return await fetchKitExportShapes(db, kitIds);
 	},
 
 	exportProject: async (projectId: string) => {
@@ -1659,10 +1873,32 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		});
 	},
 
+	// Both entry points below run their entire (possibly deeply recursive) clone in ONE
+	// transaction, not the implicit per-statement autocommit every prior individual select/insert
+	// used to get -- cloning a subtree with many descendants (e.g. a real page-sized composition
+	// tree) previously took ~20s of visibly one-view-at-a-time creation, since PGlite persists to
+	// IndexedDB and every un-transacted statement pays its own commit/durability cost. A single
+	// `db.transaction()` around the whole walk defers that to one commit at the end. Neither
+	// `cloneViewSubtreeImpl` nor `instantiateKitDefaultsImpl` opens its own transaction -- they
+	// just use whatever `db`/`trx` handle they're given (same pattern `gcLayerIfEmptyAndConditioned`
+	// already establishes: a `Transaction<Schema>` satisfies a `db: SchemaDialect` parameter fine).
+	//
+	// `cloneViewSubtree` additionally re-attaches a NON-root clone as a sibling immediately after
+	// its own source view, inside the same transaction (attachCloneAsSibling) -- a clone used to
+	// always come out as a free-floating, unattached top-level view regardless of whether its
+	// source was itself someone's child. `instantiateKitDefaults` deliberately does NOT do this --
+	// it's building a fresh view's OWN children list from a Kit's default template, not a
+	// user-initiated "Clone this view" action with a sibling relationship to preserve.
 	cloneViewSubtree: async (viewId: string, compositionKey: string) =>
-		cloneViewSubtreeImpl(db, viewId, compositionKey, new Set()),
+		db.transaction().execute(async (trx) => {
+			const cloned = await cloneViewSubtreeImpl(trx, viewId, compositionKey);
+			if (!cloned) return null;
+			await attachCloneAsSibling(trx, cloned.projectId, viewId, cloned.cloneId, compositionKey);
+			return cloned.cloneId;
+		}),
 
-	instantiateKitDefaults: async (viewId: string) => instantiateKitDefaultsImpl(db, viewId),
+	instantiateKitDefaults: async (viewId: string) =>
+		db.transaction().execute((trx) => instantiateKitDefaultsImpl(trx, viewId)),
 
 	updateTokenAlias: async (tokenId: string, alias: string) => {
 		await db.updateTable('tokens').set({ alias }).where('tokens.id', '=', tokenId).execute();
@@ -1790,6 +2026,10 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	renameAxis: async (axisId: string, newName: string) => {
 		await db.updateTable('axes').set({ name: newName }).where('axes.id', '=', axisId).execute();
+	},
+
+	setAxisVariantKind: async (axisId: string, variantKind: 'static' | 'dynamic') => {
+		await db.updateTable('axes').set({ variant_kind: variantKind }).where('axes.id', '=', axisId).execute();
 	},
 
 	deleteAxis: async (axisId: string) => {
@@ -1945,6 +2185,15 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	unconsumeAxis: async (kitId: string, axisId: string) => {
 		await db
 			.deleteFrom('axes_consumed')
+			.where('axes_consumed.kit_id', '=', kitId)
+			.where('axes_consumed.axis_id', '=', axisId)
+			.execute();
+	},
+
+	setAxisExcludedFromExport: async (kitId: string, axisId: string, excluded: boolean) => {
+		await db
+			.updateTable('axes_consumed')
+			.set({ excluded_from_export: excluded })
 			.where('axes_consumed.kit_id', '=', kitId)
 			.where('axes_consumed.axis_id', '=', axisId)
 			.execute();
@@ -2640,7 +2889,9 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'axes.description as axisDescription',
 				'axes.kind as axisKind',
 				'axes.hint as axisHint',
-				'axes_consumed.priority_index as priorityIndex'
+				'axes_consumed.priority_index as priorityIndex',
+				'axes.variant_kind as variantKind',
+				'axes_consumed.excluded_from_export as excludedFromExport'
 			]);
 	},
 
@@ -2654,7 +2905,9 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'axes.id as axisId',
 				'axes.name as axisName',
 				'axes.kind as axisKind',
-				'axes_consumed.priority_index as priorityIndex'
+				'axes_consumed.priority_index as priorityIndex',
+				'axes.variant_kind as variantKind',
+				'axes_consumed.excluded_from_export as excludedFromExport'
 			]);
 	},
 
@@ -2862,6 +3115,15 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			})
 			.returningAll()
 			.executeTakeFirstOrThrow();
+	},
+
+	getAssetById: async (assetId: string) => {
+		return await db.selectFrom('assets').where('assets.id', '=', assetId).selectAll().executeTakeFirst();
+	},
+
+	getAssetsByIds: async (assetIds: string[]) => {
+		if (assetIds.length === 0) return [];
+		return await db.selectFrom('assets').where('assets.id', 'in', assetIds).selectAll().execute();
 	},
 
 	deleteAsset: async (assetId: string) => {

@@ -432,22 +432,74 @@ export async function seedDemoProject(
 
 	// An Image kit: declares an `src` render entry backed by a kit-scope token, so every view
 	// composing it supplies its own image source via a View-scope override. Same pattern as
-	// textKit's `content` token.
-	async function imageKit(name: string) {
+	// textKit's `content` token. `props` should always set an explicit width/height: an image
+	// view with no src override falls back to this kit-scope placeholder (empty string), which
+	// measures to a literal 0x0 (ImageSource::None, no intrinsic size) -- so without one the
+	// placeholder would occupy zero layout space instead of a visible slot.
+	async function imageKit(name: string, props: Record<string, string> = {}) {
 		const kit = (await api.createKitInProject(proj.id, name))!;
 		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
 		const srcTok = (await api.createToken(proj.id, 'src', s(''), { kitId: kit.id }))!;
 		await api.createRenderEntry(snip.id, 'src', null, srcTok.id);
+		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
 		return kit;
 	}
 
-	async function imageView(name: string, kit: { id: string }): Promise<string> {
+	// `src` is an asset id (see registerBundledAsset below), not a URL -- mirrors textView's
+	// `content` param exactly: every view composing an image kit supplies its own source via a
+	// View-scope token of the same alias, overriding the kit-scope empty-string placeholder.
+	// Optional -- a view with no real asset yet just keeps the kit's placeholder (see imageKit's
+	// own doc comment on why `props` must still set an explicit width/height in that case).
+	async function imageView(name: string, kit: { id: string }, src?: string): Promise<string> {
 		const v = (await api.createViewInProject(proj.id, name, {
 			charter: { primitive: 'image' },
 			view_icon: 'fa-solid fa-image'
 		}))!;
 		await api.attachKitToComposition(kit.id, v.id);
+		if (src) await api.createToken(proj.id, 'src', s(src), { viewId: v.id });
 		return v.id;
+	}
+
+	// Registers a bundled static file (served from `static/`, so `link` is a plain root-relative
+	// path) as a real project asset row, computing its real sha256 checksum for idempotent
+	// upsert-by-checksum. This is as far as manager-side seeding can go: the actual bytes only
+	// ever live in the browser's IndexedDB via app-side code (`assetBytes`,
+	// `src/lib/editor/asset-bytes.ts`), which this package cannot import (see CLAUDE.md's
+	// manager/app boundary). The editor's image-reload scan (`Editor.svelte`, mirrors the
+	// existing font-fetch scan) is what actually fetches `link` and caches the bytes into
+	// IndexedDB + Vellum, the first time any view resolves a `src` pointing at this asset's id --
+	// so the id returned here is real and stable, but the pixels only appear once that scan runs.
+	// Best-effort: a fetch/digest failure returns null, and the caller falls back to leaving the
+	// image kit's own empty-string placeholder (imageView's `src` param is optional for exactly
+	// this reason) rather than failing the whole seed.
+	async function registerBundledAsset(input: {
+		name: string;
+		link: string;
+		mimeType: string;
+		width: number;
+		height: number;
+	}): Promise<string | null> {
+		try {
+			const res = await fetch(input.link);
+			if (!res.ok) return null;
+			const bytes = new Uint8Array(await res.arrayBuffer());
+			const digest = await crypto.subtle.digest('SHA-256', bytes.buffer as ArrayBuffer);
+			const checksum = Array.from(new Uint8Array(digest))
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join('');
+			const asset = await api.upsertAsset({
+				projectId: proj.id,
+				name: input.name,
+				mimeType: input.mimeType,
+				checksum,
+				link: input.link,
+				width: input.width,
+				height: input.height
+			});
+			return asset.id;
+		} catch {
+			return null;
+		}
 	}
 
 	// --- Style kits ---
@@ -544,7 +596,16 @@ export async function seedDemoProject(
 		'align-items': 'center',
 		gap: '18px'
 	});
-	const srcImageKit = await imageKit('Image Source');
+	// Explicit width/height -- see imageKit's own doc comment for why this is required, not
+	// cosmetic, for a placeholder with no real src.
+	const srcImageKit = await imageKit('Image Source', { width: '360px', height: '280px' });
+	const heroImageAssetId = await registerBundledAsset({
+		name: 'favicon.png',
+		link: '/1x/favicon.png',
+		mimeType: 'image/png',
+		width: 623,
+		height: 476
+	});
 
 	// --- Leaf text views ---
 	const logo = await textView('Logo', h2Kit, 'KIT\u202210');
@@ -600,7 +661,7 @@ export async function seedDemoProject(
 		heroSubtitle,
 		heroCta
 	]);
-	const heroImg = await imageView('Hero Image', srcImageKit);
+	const heroImg = await imageView('Hero Image', srcImageKit, heroImageAssetId ?? undefined);
 	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
 	const features = await boxView('Features', featuresKit, [card1, card2, card3]);
 	const footer = await boxView('Footer', footerKit, [footerText]);

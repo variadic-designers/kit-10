@@ -215,6 +215,168 @@ describe('api', () => {
 		});
 	});
 
+	// ---- Clone ----
+
+	it('cloneViewSubtree strips the source view\'s own export flag from its hints, keeping other hint data', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v', {
+			webcodium: { export: true },
+			charter: { primitive: 'box' },
+			view_icon: 'fa-regular fa-window-maximize'
+		}))!;
+
+		const cloneId = await ctx.api.cloneViewSubtree(view.id, 'children');
+		expect(cloneId).toBeTruthy();
+
+		const row = await ctx.db
+			.selectFrom('views')
+			.select('hints')
+			.where('id', '=', cloneId!)
+			.executeTakeFirstOrThrow();
+
+		expect(row.hints).toEqual({
+			charter: { primitive: 'box' },
+			view_icon: 'fa-regular fa-window-maximize'
+		});
+	});
+
+	it('cloneViewSubtree strips export flags on recursively-cloned children too, not just the top-level view', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const child = (await ctx.api.createViewInProject(proj.id, 'Child', {
+			webcodium: { export: true }
+		}))!;
+		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([child.id]));
+
+		const cloneId = (await ctx.api.cloneViewSubtree(parent.id, 'children'))!;
+
+		const clonedTokens = await ctx.api.getTokensByViewId(cloneId).execute();
+		const childrenToken = clonedTokens.find((t) => t.tokenAlias === 'children');
+		const clonedChildId = (childrenToken!.tokenValue as { view_ids: string[] }).view_ids[0]!;
+
+		const clonedChildRow = await ctx.db
+			.selectFrom('views')
+			.select('hints')
+			.where('id', '=', clonedChildId)
+			.executeTakeFirstOrThrow();
+		expect(clonedChildRow.hints).toEqual({});
+	});
+
+	it('cloneViewSubtree clones a diamond-referenced view independently for each parent path (no shared reference)', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const root = (await ctx.api.createViewInProject(proj.id, 'Root'))!;
+		const x = (await ctx.api.createViewInProject(proj.id, 'X'))!;
+		const y = (await ctx.api.createViewInProject(proj.id, 'Y'))!;
+		const z = (await ctx.api.createViewInProject(proj.id, 'Z'))!;
+		await ctx.api.upsertViewToken(proj.id, root.id, 'children', vl([x.id, y.id]));
+		await ctx.api.upsertViewToken(proj.id, x.id, 'children', vl([z.id]));
+		await ctx.api.upsertViewToken(proj.id, y.id, 'children', vl([z.id]));
+
+		const cloneRootId = (await ctx.api.cloneViewSubtree(root.id, 'children'))!;
+
+		const childrenOf = async (viewId: string) => {
+			const toks = await ctx.api.getTokensByViewId(viewId).execute();
+			const t = toks.find((tok) => tok.tokenAlias === 'children');
+			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
+		};
+
+		const [cloneXId, cloneYId] = await childrenOf(cloneRootId);
+		expect(cloneXId).toBeTruthy();
+		expect(cloneYId).toBeTruthy();
+
+		const cloneXChildren = await childrenOf(cloneXId!);
+		const cloneYChildren = await childrenOf(cloneYId!);
+		expect(cloneXChildren).toHaveLength(1);
+		expect(cloneYChildren).toHaveLength(1);
+
+		// Z was cloned TWICE -- once per parent path -- never shared between X's clone and Y's clone.
+		expect(cloneXChildren[0]).not.toBe(z.id);
+		expect(cloneYChildren[0]).not.toBe(z.id);
+		expect(cloneXChildren[0]).not.toBe(cloneYChildren[0]);
+	});
+
+	it('cloneViewSubtree terminates on a genuine cycle, excluding the cycled-back id from its clone\'s children', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const a = (await ctx.api.createViewInProject(proj.id, 'A'))!;
+		const b = (await ctx.api.createViewInProject(proj.id, 'B'))!;
+		await ctx.api.upsertViewToken(proj.id, a.id, 'children', vl([b.id]));
+		await ctx.api.upsertViewToken(proj.id, b.id, 'children', vl([a.id])); // cycle back to A
+
+		const cloneAId = (await ctx.api.cloneViewSubtree(a.id, 'children'))!;
+
+		const childrenOf = async (viewId: string) => {
+			const toks = await ctx.api.getTokensByViewId(viewId).execute();
+			const t = toks.find((tok) => tok.tokenAlias === 'children');
+			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
+		};
+
+		const aChildren = await childrenOf(cloneAId);
+		expect(aChildren).toHaveLength(1);
+		const cloneBId = aChildren[0]!;
+		expect(cloneBId).not.toBe(b.id);
+
+		// B's own clone excludes A entirely -- A is on B's own ancestor path, a real cycle, not a
+		// diamond -- matching the original recursive `seen`-guard semantics exactly.
+		const bChildren = await childrenOf(cloneBId);
+		expect(bChildren).toHaveLength(0);
+	});
+
+	it('cloneViewSubtree inserts a non-root clone as a sibling immediately after its source view', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const before = (await ctx.api.createViewInProject(proj.id, 'Before'))!;
+		const target = (await ctx.api.createViewInProject(proj.id, 'Target'))!;
+		const after = (await ctx.api.createViewInProject(proj.id, 'After'))!;
+		await ctx.api.upsertViewToken(
+			proj.id,
+			parent.id,
+			'children',
+			vl([before.id, target.id, after.id])
+		);
+
+		const cloneId = (await ctx.api.cloneViewSubtree(target.id, 'children'))!;
+
+		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
+		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
+		expect(childrenToken!.tokenValue).toEqual({
+			type: 'view-list',
+			view_ids: [before.id, target.id, cloneId, after.id]
+		});
+	});
+
+	it('cloneViewSubtree leaves a root (unattached) view\'s clone free-floating, same as before', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const root = (await ctx.api.createViewInProject(proj.id, 'Root'))!;
+		const cloneId = await ctx.api.cloneViewSubtree(root.id, 'children');
+		expect(cloneId).toBeTruthy();
+
+		// No token anywhere references either the original or the clone as a child -- nothing to
+		// assert beyond "it didn't throw and produced a real clone."
+		const cloneRow = await ctx.db
+			.selectFrom('views')
+			.select('id')
+			.where('id', '=', cloneId!)
+			.executeTakeFirst();
+		expect(cloneRow).toBeDefined();
+	});
+
 	// ---- Kits + Composition ----
 
 	it('creates kit, attaches to view, and detaches', async () => {
@@ -361,6 +523,26 @@ describe('api', () => {
 		const list = await ctx.api.getConsumedAxesByKitId(kit.id).execute();
 		expect(list).toHaveLength(1);
 		expect(list[0]!.axisName).toBe('density');
+	});
+
+	it('defaults a new axis to static, not-excluded, and round-trips setAxisVariantKind/setAxisExcludedFromExport', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'state'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		await ctx.api.consumeAxis(kit.id, axis.id);
+
+		const before = await ctx.api.getConsumedAxesByKitId(kit.id).execute();
+		expect(before[0]!.variantKind).toBe('static');
+		expect(before[0]!.excludedFromExport).toBe(false);
+
+		await ctx.api.setAxisVariantKind(axis.id, 'dynamic');
+		await ctx.api.setAxisExcludedFromExport(kit.id, axis.id, true);
+
+		const after = await ctx.api.getConsumedAxesByKitId(kit.id).execute();
+		expect(after[0]!.variantKind).toBe('dynamic');
+		expect(after[0]!.excludedFromExport).toBe(true);
 	});
 
 	it('reorders axes in kit', async () => {
@@ -1217,5 +1399,83 @@ it('creates, updates, and deletes render entries', async () => {
 
 		const all = await ctx.api.listPlugins();
 		expect(all.map((p) => p.name).sort()).toEqual(['charter', 'fontavious']);
+	});
+
+	// ---- Assets ----
+
+	it('upserts an asset by checksum and looks it up by id', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const created = await ctx.api.upsertAsset({
+			projectId: proj.id,
+			name: 'favicon.png',
+			mimeType: 'image/png',
+			checksum: 'abc123',
+			link: '/1x/favicon.png',
+			width: 623,
+			height: 476
+		});
+		expect(created.name).toBe('favicon.png');
+
+		const again = await ctx.api.upsertAsset({
+			projectId: proj.id,
+			name: 'favicon.png',
+			mimeType: 'image/png',
+			checksum: 'abc123',
+			link: '/1x/favicon.png',
+			width: 623,
+			height: 476
+		});
+		expect(again.id).toBe(created.id);
+
+		const found = await ctx.api.getAssetById(created.id);
+		expect(found?.link).toBe('/1x/favicon.png');
+		expect(found?.width).toBe(623);
+	});
+
+	it('getAssetById returns undefined for an unknown id', async () => {
+		const found = await ctx.api.getAssetById('00000000-0000-0000-0000-000000000000');
+		expect(found).toBeUndefined();
+	});
+
+	it('getAssetsByIds batch-fetches only the requested ids, and tolerates unknown/empty input', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+
+		const a = await ctx.api.upsertAsset({
+			projectId: proj.id,
+			name: 'a.png',
+			mimeType: 'image/png',
+			checksum: 'aaa',
+			link: '/a.png',
+			width: 10,
+			height: 10
+		});
+		const b = await ctx.api.upsertAsset({
+			projectId: proj.id,
+			name: 'b.png',
+			mimeType: 'image/png',
+			checksum: 'bbb',
+			link: '/b.png',
+			width: 20,
+			height: 20
+		});
+		await ctx.api.upsertAsset({
+			projectId: proj.id,
+			name: 'c.png',
+			mimeType: 'image/png',
+			checksum: 'ccc',
+			link: '/c.png',
+			width: 30,
+			height: 30
+		});
+
+		const found = await ctx.api.getAssetsByIds([a.id, b.id, '00000000-0000-0000-0000-000000000000']);
+		expect(found.map((r) => r.link).sort()).toEqual(['/a.png', '/b.png']);
+
+		expect(await ctx.api.getAssetsByIds([])).toEqual([]);
 	});
 });

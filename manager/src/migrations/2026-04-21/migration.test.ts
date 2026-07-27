@@ -52,7 +52,27 @@ describe('migration 2026-04-21', () => {
 		expect(axes).toBeDefined();
 		const colNames = axes!.columns.map((c) => c.name).sort();
 		expect(colNames).toEqual(
-			['default_value', 'description', 'hint', 'hints', 'id', 'kind', 'name', 'project_id'].sort()
+			[
+				'default_value',
+				'description',
+				'hint',
+				'hints',
+				'id',
+				'kind',
+				'name',
+				'project_id',
+				'variant_kind'
+			].sort()
+		);
+	});
+
+	it('axes_consumed table has the correct columns', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const axesConsumed = cols.find((t) => t.name === 'axes_consumed');
+		expect(axesConsumed).toBeDefined();
+		const colNames = axesConsumed!.columns.map((c) => c.name).sort();
+		expect(colNames).toEqual(
+			['axis_id', 'excluded_from_export', 'kit_id', 'priority_index'].sort()
 		);
 	});
 

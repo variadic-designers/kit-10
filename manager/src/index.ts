@@ -107,3 +107,12 @@ export {
 	type CascadeLayer,
 	type CascadeKit
 } from './resolve/resolve.js';
+export {
+	fetchKitExportShapes,
+	type KitExportShape,
+	type AxisExportMeta,
+	type ExportAxisValue,
+	type ExportLayer,
+	type ExportLayerCondition,
+	type ExportLayerEntry
+} from './resolve/export-shape.js';

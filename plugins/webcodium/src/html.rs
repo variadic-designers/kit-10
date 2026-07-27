@@ -1,6 +1,6 @@
 // Markup rendering only -- css.rs owns stylesheet generation, tree.rs owns node-graph structure.
 
-use crate::tree::class_name;
+use crate::tree;
 use kit10_scene::UiNode;
 use std::collections::HashMap;
 
@@ -11,28 +11,66 @@ pub(crate) fn escape_html(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+// node_view_ids/node_kit_ids/kit_names feed tree::resolve_class_name's 3-tier scheme (Kit name /
+// primitive type / positional -- see its own doc comment) so the class attribute here always
+// matches whatever selector css.rs actually emitted for the same node. asset_links backs Img
+// support (see tree::resolved_img_src) -- an Img with no resolved link still emits nothing,
+// exactly like Phase 1/2's original "Img is out of scope" behavior, just now scoped to "no known
+// URL" rather than "always."
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_html(
     nodes: &[UiNode],
     children: &HashMap<usize, Vec<usize>>,
     roots: &[usize],
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    asset_links: &HashMap<String, String>,
     css: &str,
 ) -> String {
     let mut body = String::new();
+    // Only .is_some() is ever read below (whether to append the extra positional class) -- the
+    // actual normalized value doesn't matter here, but computing it the same way css.rs does keeps
+    // "is this root positioned" answered identically in both places, not by two separate notions.
+    let positions = tree::normalized_root_positions(nodes, roots);
     for &i in roots {
-        render_html_node(nodes, children, i, &mut body);
+        let position = positions.get(&i).copied();
+        render_html_node(
+            nodes,
+            children,
+            node_view_ids,
+            node_kit_ids,
+            kit_names,
+            asset_links,
+            i,
+            position,
+            &mut body,
+        );
     }
     format!(
         "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\">\n<style>\n{css}</style>\n</head>\n<body>\n{body}</body>\n</html>\n"
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_html_node(
     nodes: &[UiNode],
     children: &HashMap<usize, Vec<usize>>,
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    asset_links: &HashMap<String, String>,
     i: usize,
+    position: Option<(f32, f32)>,
     out: &mut String,
 ) {
-    let class = class_name(i);
+    let mut class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+    // See css.rs::render_scss_node's matching doc comment -- a positioned root's own class may be
+    // a Kit's shared selector, so world-space placement rides a second, always-unique class
+    // (tree::class_name(i)) instead of being folded into the first.
+    if position.is_some() {
+        class = format!("{class} {}", tree::class_name(i));
+    }
     match &nodes[i] {
         UiNode::Text(d) => {
             out.push_str(&format!("<p class=\"{class}\">{}</p>\n", escape_html(&d.content)));
@@ -41,15 +79,32 @@ fn render_html_node(
             out.push_str(&format!("<div class=\"{class}\">\n"));
             if let Some(kids) = children.get(&i) {
                 for &k in kids {
-                    render_html_node(nodes, children, k, out);
+                    render_html_node(
+                        nodes,
+                        children,
+                        node_view_ids,
+                        node_kit_ids,
+                        kit_names,
+                        asset_links,
+                        k,
+                        None,
+                        out,
+                    );
                 }
             }
             out.push_str("</div>\n");
         }
-        // Img nodes are out of scope for v1 -- emitting nothing rather than a broken <img> with
-        // no real src (ImageSource::Bytes/Ref both need decisions -- data URI vs. asset
-        // pipeline -- deferred).
-        UiNode::Img(_) => {}
+        // An Img with no resolved URL (ImageSource::None/Bytes, or a Ref id
+        // kit10_get_asset_links didn't return a link for) stays out of scope -- emitting nothing
+        // rather than a broken <img> with no real src.
+        UiNode::Img(_) => {
+            if let Some(src) = tree::resolved_img_src(&nodes[i], asset_links) {
+                out.push_str(&format!(
+                    "<img class=\"{class}\" src=\"{}\" alt=\"\">\n",
+                    escape_html(src)
+                ));
+            }
+        }
     }
 }
 

@@ -73,6 +73,8 @@ export function createPluginManager(api: Api) {
 	let viewportDataBinary = $state<Uint8Array | null>(null);
 	// Parallel to viewportData (same length/order) -- see OnResolveResult.node_view_ids.
 	let nodeViewIds = $state<string[]>([]);
+	// Parallel to viewportData/nodeViewIds (same length/order) -- see OnResolveResult.node_kit_ids.
+	let nodeKitIds = $state<string[]>([]);
 	// The concrete (family, weight, style) set the current viewport renders, post Charter
 	// weight-snapping. Editor.svelte's font scan fetches exactly these -- never re-deriving
 	// weights from raw kit properties (single decision point: Charter's resolve_font_weight).
@@ -252,6 +254,7 @@ export function createPluginManager(api: Api) {
 							buildInterpreterOutputPayload(
 								viewportData,
 								nodeViewIds,
+								nodeKitIds,
 								fieldCategories,
 								fontRequests
 							)
@@ -264,6 +267,84 @@ export function createPluginManager(api: Api) {
 				// host pre-marshaling it into a call's input. Lets multiple export-target plugins
 				// (Tenner today, others later) all pull the same data on demand without the host
 				// needing a per-plugin-shaped payload.
+				// Unresolved, axis-args-independent per-Kit export shape (every layer's full
+				// condition set/entries + axis metadata), for WebCodium's Kit-basis export -- see
+				// manager's resolve/export-shape.ts. Distinct from kit10_get_resolution, which only
+				// ever exposes the winner-only, current-view-scoped resolved properties.
+				async kit10_get_kit_export_shape(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { kit_ids } = JSON.parse(rawJson) as { kit_ids: string[] };
+
+					try {
+						const shapes = await api.getKitExportShapes(kit_ids);
+						return cp.store(
+							JSON.stringify({ success: true, kits: Object.fromEntries(shapes) })
+						);
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
+				// Resolves a batch of Img `src` asset ids to their `link` (a real URL, e.g. a static
+				// path or a future cloud-hosted link) for WebCodium's Img export support -- a plugin
+				// otherwise has no way to turn an opaque asset id (ImageSource::Ref) into something
+				// usable outside the app. Assets with no link (bytes-only, uploaded and never given
+				// one) are simply absent from the response map; the plugin treats a missing entry
+				// the same as "no known URL for this image" and skips it.
+				async kit10_get_asset_links(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { asset_ids } = JSON.parse(rawJson) as { asset_ids: string[] };
+
+					try {
+						const assets = await api.getAssetsByIds(asset_ids);
+						const links: Record<string, string> = {};
+						for (const asset of assets) {
+							if (asset.link) links[asset.id] = asset.link;
+						}
+						return cp.store(JSON.stringify({ success: true, links }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
+				// Resolves a batch of (family, weight, style) font requests to the real URL Fontavious
+				// would fetch for each -- the same no-hardcoded-provider mechanism as
+				// kit10_get_asset_links, just routed through Fontavious's own catalogue instead of the
+				// assets table. Calls the SAME `variant_url` export the editor's own font-fetch scan
+				// already uses (Editor.svelte's loadVariant), so a WebCodium export can never disagree
+				// with what the live editor would actually load for a given (family, weight, style).
+				// callUtilityPlugin('fontavious', ...) queues on its OWN per-plugin-name chain
+				// (utilityQueues), never `pluginQueue` or webcodium's own utility queue entry, so
+				// calling it from inside a host fn that's itself running as part of webcodium's
+				// export_html_css call cannot deadlock. Best-effort per request: a catalogue miss or
+				// plugin-load failure just omits that one entry from `links`, never fails the batch.
+				async kit10_get_font_links(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { requests } = JSON.parse(rawJson) as {
+						requests: { family: string; weight: number; style: string }[];
+					};
+
+					const links: { family: string; weight: number; style: string; url: string }[] = [];
+					for (const req of requests) {
+						try {
+							const result = await callUtilityPlugin(
+								'fontavious',
+								'variant_url',
+								JSON.stringify({ value: req.family, weight: req.weight, style: req.style })
+							);
+							const { url } = JSON.parse((result as { text(): string }).text()) as {
+								url: string;
+							};
+							if (url) links.push({ ...req, url });
+						} catch {
+							// best-effort -- a catalogue miss or uncatalogued family just omits this
+							// one (family, weight, style) from the response, same tolerance as the
+							// editor's own font-fetch scan.
+						}
+					}
+					return cp.store(JSON.stringify({ success: true, links }));
+				},
+
 				async kit10_get_project_export(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const { project_id } = JSON.parse(rawJson) as { project_id: string };
@@ -421,6 +502,7 @@ export function createPluginManager(api: Api) {
 				? base64ToBytes(parsed.viewport_data_binary)
 				: null;
 			nodeViewIds = parsed.node_view_ids ?? [];
+			nodeKitIds = parsed.node_kit_ids ?? [];
 			// Panel manifests are NOT read here — they're published via the `kit10_panel_publish`
 			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
 			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
@@ -459,6 +541,7 @@ export function createPluginManager(api: Api) {
 				const parsed = JSON.parse(result.text()) as {
 					viewport_data?: UiNode[];
 					node_view_ids?: string[];
+					node_kit_ids?: string[];
 					viewport_data_binary?: string;
 				};
 				// Same fix as runResolve above -- viewport_data and viewport_data_binary aren't
@@ -470,6 +553,7 @@ export function createPluginManager(api: Api) {
 					? base64ToBytes(parsed.viewport_data_binary)
 					: null;
 				nodeViewIds = parsed.node_view_ids ?? [];
+				nodeKitIds = parsed.node_kit_ids ?? [];
 			}
 		};
 	}
@@ -699,6 +783,7 @@ export function createPluginManager(api: Api) {
 		viewportData = '[]';
 		viewportDataBinary = null;
 		nodeViewIds = [];
+		nodeKitIds = [];
 	}
 
 	return {
@@ -725,6 +810,9 @@ export function createPluginManager(api: Api) {
 		},
 		get nodeViewIds() {
 			return nodeViewIds;
+		},
+		get nodeKitIds() {
+			return nodeKitIds;
 		},
 		get fontRequests() {
 			return fontRequests;

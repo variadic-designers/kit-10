@@ -78,6 +78,14 @@ describe('registerBuiltinPlugins', () => {
 						viewScoped: true
 					}
 				]
+			},
+			capabilities: {
+				hostFns: [
+					'kit10_get_interpreter_output',
+					'kit10_get_kit_export_shape',
+					'kit10_get_asset_links',
+					'kit10_get_font_links'
+				]
 			}
 		});
 		expect(webcodium.content_hash).toMatch(/^[0-9a-f]{64}$/);

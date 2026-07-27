@@ -56,6 +56,21 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 				viewScoped: true
 			}
 		]
+	},
+	// Must list every host fn WebCodium actually calls -- declaring this at all switches
+	// makeHostFunctions from "full set, ungated" to "exactly this list" (see PluginCapabilities'
+	// own doc comment), so omitting kit10_get_interpreter_output here would silently break the
+	// existing Phase 1/2 export path the moment Phase 3's kit10_get_kit_export_shape is added.
+	// kit10_get_asset_links backs Img export support (resolving an asset id to a real URL).
+	// kit10_get_font_links backs @font-face export support (resolving a font request to the real
+	// URL Fontavious would fetch, no hardcoded provider/URL anywhere in this plugin).
+	capabilities: {
+		hostFns: [
+			'kit10_get_interpreter_output',
+			'kit10_get_kit_export_shape',
+			'kit10_get_asset_links',
+			'kit10_get_font_links'
+		]
 	}
 };
 

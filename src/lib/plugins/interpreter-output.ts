@@ -21,17 +21,22 @@ export interface InterpreterOutputPayload {
 	available: true;
 	viewport_data: UiNode[];
 	node_view_ids: string[];
+	// Parallel to viewport_data/node_view_ids (same length/order) -- the highest-priority composed
+	// Kit's id for each node, "" for structural scaffolding or a kit-less view. See Charter's
+	// node_kit_ids doc comment (plugins/charter/src/lib.rs) and resources/webcodium-export-plan.md.
+	node_kit_ids: string[];
 	categories: FieldCategory[];
 	font_requests: FontRequest[];
 }
 
-// viewportData/nodeViewIds/categories/fontRequests are exactly the module-level $state
+// viewportData/nodeViewIds/nodeKitIds/categories/fontRequests are exactly the module-level $state
 // PluginManager already maintains in manager.svelte.ts (populated by runResolve /
 // makeSelectionChangeRunner) -- this function just decides what to hand a REQUESTING plugin,
 // never mutates or refetches anything itself.
 export function buildInterpreterOutputPayload(
 	viewportData: string,
 	nodeViewIds: string[],
+	nodeKitIds: string[],
 	categories: FieldCategory[],
 	fontRequests: FontRequest[]
 ): InterpreterOutputPayload {
@@ -39,6 +44,7 @@ export function buildInterpreterOutputPayload(
 		available: true,
 		viewport_data: JSON.parse(viewportData),
 		node_view_ids: nodeViewIds,
+		node_kit_ids: nodeKitIds,
 		categories,
 		font_requests: fontRequests
 	};

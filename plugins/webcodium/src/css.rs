@@ -2,17 +2,18 @@
 // resources/webcodium-export-plan.md). html.rs owns markup, tree.rs owns node-graph structure --
 // this module only ever turns a UiNode's own fields into declaration strings.
 
-use crate::tree::class_name;
+use crate::tree;
+use crate::variants::{self, KitExportShape};
 use kit10_scene::{
     AlignValue, Extent, FlexDir, FlexWrapValue, FontStyle, GridLine, JustifyValue, OklabColor,
     TextAlign, TextDecorationKind, TrackSize, UiNode,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // OklabColor's fields map directly onto CSS Color 4's oklab() function -- L as a percentage
 // (matching this codebase's own convention, e.g. manager.svelte.ts's log-color comments), a/b as
 // plain numbers, no gamut conversion needed since the browser interprets oklab() natively.
-fn oklab_css(c: &OklabColor) -> String {
+pub(crate) fn oklab_css(c: &OklabColor) -> String {
     format!("oklab({}% {} {} / {})", c.l * 100.0, c.a, c.b, c.alpha)
 }
 
@@ -50,7 +51,10 @@ fn text_decoration_css(d: &TextDecorationKind) -> &'static str {
     }
 }
 
-fn font_style_css(s: &FontStyle) -> &'static str {
+// pub(crate) -- also called from lib.rs's distinct_font_requests to derive the same style string
+// Fontavious's variant_url expects, so the (family, weight, style) key used for @font-face
+// requests always matches the literal string this module's own Text node_props emits.
+pub(crate) fn font_style_css(s: &FontStyle) -> &'static str {
     match s {
         FontStyle::Normal => "normal",
         FontStyle::Italic => "italic",
@@ -161,9 +165,65 @@ pub(crate) fn with_reset(generated: &str) -> String {
     format!("{BASELINE_RESET}\n{generated}")
 }
 
-// This node's own declarations, not including nested children -- None for Img (out of scope, see
-// html::render_html_node, which never wraps or recurses into an Img either).
-fn node_props(node: &UiNode) -> Option<Vec<String>> {
+// One `@font-face` block per resolved font request -- always emitted as `format("woff2")` since
+// that's the only format Fontavious ever fetches (see CLAUDE.md's Fontavious section: it streams
+// WOFF2 exclusively). A request with no resolved link (kit10_get_font_links found no URL for it --
+// a catalogue miss, or an uncatalogued family) is simply absent from `links`, so it's skipped here
+// too: the exported `font-family: "X";` declaration elsewhere in the stylesheet still stands, the
+// browser just falls back to a locally-installed or generic font for it, same as it always did
+// before this feature existed.
+pub(crate) fn render_font_faces(links: &[crate::ResolvedFontLink]) -> String {
+    let mut out = String::new();
+    for link in links {
+        out.push_str(&format!(
+            "@font-face {{\n  font-family: \"{}\";\n  font-weight: {};\n  font-style: {};\n  src: url(\"{}\") format(\"woff2\");\n}}\n",
+            link.family, link.weight, link.style, link.url
+        ));
+    }
+    out
+}
+
+// Shared by Box and Text -- both carry padding/background/border/border-radius/opacity
+// identically on the wire (mirrors Charter's own `extract_paint_props`, which is shared by
+// `build_box_node`/`build_text_node` for exactly this reason: real CSS text can have a
+// background, a border, and padding without stopping being text -- a highlighted/pill label --
+// and Vellum's `node_rect` draws these for `Text` exactly like it does for `Box`). Previously only
+// the `Box` match arm in `node_props` emitted these, so a highlighted/bordered/padded Text label
+// silently lost all four in export while rendering correctly in the editor canvas -- a real,
+// found-via-audit bug (2026-07-27), not a hypothetical.
+#[allow(clippy::too_many_arguments)]
+fn paint_props(
+    padding: [f32; 4],
+    bg_color: &OklabColor,
+    show_border: bool,
+    border_color: &OklabColor,
+    border_width: f32,
+    corner_radius: f32,
+    opacity: f32,
+) -> Vec<String> {
+    let mut props = Vec::new();
+    props.push(format!(
+        "padding: {}px {}px {}px {}px;",
+        padding[0], padding[1], padding[2], padding[3]
+    ));
+    props.push(format!("background: {};", oklab_css(bg_color)));
+    if show_border {
+        props.push(format!("border: {border_width}px solid {};", oklab_css(border_color)));
+    }
+    if corner_radius > 0.0 {
+        props.push(format!("border-radius: {corner_radius}px;"));
+    }
+    if opacity < 1.0 {
+        props.push(format!("opacity: {opacity};"));
+    }
+    props
+}
+
+// This node's own declarations, not including nested children. `has_resolved_img_src` gates the
+// Img case -- None when no real URL was resolved for this node's asset id (see lib.rs's
+// kit10_get_asset_links call and tree.rs's doc comment on why an unresolved image still emits no
+// rule at all, matching html::render_html_node emitting no `<img>` tag either).
+fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> {
     let mut props: Vec<String> = Vec::new();
     match node {
         UiNode::Box(d) => {
@@ -185,11 +245,15 @@ fn node_props(node: &UiNode) -> Option<Vec<String>> {
             if let Some(h) = extent_css(&d.max_height) {
                 props.push(format!("max-height: {h};"));
             }
-            props.push(format!(
-                "padding: {}px {}px {}px {}px;",
-                d.padding[0], d.padding[1], d.padding[2], d.padding[3]
+            props.extend(paint_props(
+                d.padding,
+                &d.bg_color,
+                d.show_border,
+                &d.border_color,
+                d.border_width,
+                d.corner_radius,
+                d.opacity,
             ));
-            props.push(format!("background: {};", oklab_css(&d.bg_color)));
 
             // display: grid vs flex -- mirrors Vellum's own rule exactly (apply_box_extra,
             // taf_can_do/src/layout/mod.rs): grid iff either template list is non-empty.
@@ -271,19 +335,6 @@ fn node_props(node: &UiNode) -> Option<Vec<String>> {
                 props.push(format!("flex-basis: {};", flex_basis_css(b)));
             }
 
-            if d.show_border {
-                props.push(format!(
-                    "border: {}px solid {};",
-                    d.border_width,
-                    oklab_css(&d.border_color)
-                ));
-            }
-            if d.corner_radius > 0.0 {
-                props.push(format!("border-radius: {}px;", d.corner_radius));
-            }
-            if d.opacity < 1.0 {
-                props.push(format!("opacity: {};", d.opacity));
-            }
             if d.extra.gap > 0.0 {
                 props.push(format!("gap: {}px;", d.extra.gap));
             }
@@ -292,6 +343,15 @@ fn node_props(node: &UiNode) -> Option<Vec<String>> {
             if let Some(w) = extent_css(&d.width) {
                 props.push(format!("width: {w};"));
             }
+            props.extend(paint_props(
+                d.padding,
+                &d.bg_color,
+                d.show_border,
+                &d.border_color,
+                d.border_width,
+                d.corner_radius,
+                d.opacity,
+            ));
             props.push(format!("color: {};", oklab_css(&d.text_color)));
             props.push(format!("font-family: \"{}\";", d.font_family));
             props.push(format!("font-size: {}px;", d.font_size));
@@ -306,7 +366,30 @@ fn node_props(node: &UiNode) -> Option<Vec<String>> {
                 props.push(format!("line-height: {}px;", d.line_height));
             }
         }
-        UiNode::Img(_) => return None,
+        UiNode::Img(d) => {
+            // No known URL for this image (see lib.rs's kit10_get_asset_links) -- no rule at
+            // all, matching html.rs emitting no `<img>` tag for the same node. ImageSource::None/
+            // Bytes sources are also out of scope (no data-URI embedding) -- both resolve to
+            // has_resolved_img_src == false at the call site.
+            if !has_resolved_img_src {
+                return None;
+            }
+            if let Some(w) = extent_css(&d.width) {
+                props.push(format!("width: {w};"));
+            }
+            if let Some(h) = extent_css(&d.height) {
+                props.push(format!("height: {h};"));
+            }
+            // `fit`/`object_position` are already real CSS vocabulary -- `fit` is one of
+            // "cover"/"contain"/"fill" (all valid `object-fit` keywords), and object_position's
+            // 0..1 fractions convert directly to CSS's percentage syntax.
+            props.push(format!("object-fit: {};", d.fit));
+            props.push(format!(
+                "object-position: {}% {}%;",
+                d.object_position[0] * 100.0,
+                d.object_position[1] * 100.0
+            ));
+        }
     }
     Some(props)
 }
@@ -325,55 +408,176 @@ fn node_props(node: &UiNode) -> Option<Vec<String>> {
 /// rendered node instance -- a pure syntax-target swap on top of Phase 1's existing per-node
 /// translation, not Phase 3's axis/Kit-aware rewrite (that needs the unresolved kit/axis shape,
 /// which this still never sees).
+// node_view_ids/node_kit_ids/kit_names/kit_shapes are the Kit-basis export plumbing (Phase 3):
+// a node whose node_kit_ids[i] names a Kit WITH a fetched shape gets its rule(s) synthesized from
+// that shape (variants::synthesize_base_declarations/synthesize_variant_rules) instead of from
+// node_props -- see the module-level doc comment on node_props' continued role for everything
+// else. A Kit's rule is emitted only once, on the first node instance encountered for that
+// kit_id (`emitted_kits`); later instances of the same Kit still open an (empty) wrapper block so
+// any NEW nested child Kit encountered under a later instance still nests at the correct depth,
+// they just don't repeat the already-emitted declarations/variant rules.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_scss(
     nodes: &[UiNode],
     children: &HashMap<usize, Vec<usize>>,
     roots: &[usize],
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    kit_shapes: &HashMap<String, KitExportShape>,
+    asset_links: &HashMap<String, String>,
 ) -> String {
     let mut out = String::new();
+    let mut emitted_kits: HashSet<String> = HashSet::new();
+    let positions = tree::normalized_root_positions(nodes, roots);
     for &i in roots {
-        render_scss_node(nodes, children, i, 0, &mut out);
+        let position = positions.get(&i).copied();
+        render_scss_node(
+            nodes,
+            children,
+            node_view_ids,
+            node_kit_ids,
+            kit_names,
+            kit_shapes,
+            asset_links,
+            &mut emitted_kits,
+            i,
+            0,
+            position,
+            &mut out,
+        );
     }
     out
 }
 
+// Img nodes never go through the Kit-basis variants.rs path, even when composed via a Kit
+// (node_kit_ids[i] non-empty) -- that machinery synthesizes CSS from literal PAINT/LAYOUT
+// properties (background, flex-direction, ...), and has no concept of `src`/`fit`/
+// `object-position` at all. Routing an Img through it would either silently drop those three
+// properties or flag them as "unsupported compiled" (neither is right -- they're perfectly
+// literal, just outside that module's vocabulary). Img still gets its class name from
+// resolve_class_name's normal 3-tier scheme (Kit name / "img" / positional), independent of this.
+#[allow(clippy::too_many_arguments)]
 fn render_scss_node(
     nodes: &[UiNode],
     children: &HashMap<usize, Vec<usize>>,
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    kit_shapes: &HashMap<String, KitExportShape>,
+    asset_links: &HashMap<String, String>,
+    emitted_kits: &mut HashSet<String>,
     i: usize,
     depth: usize,
+    position: Option<(f32, f32)>,
     out: &mut String,
 ) {
-    let Some(props) = node_props(&nodes[i]) else { return };
-    // Box/Text always push at least one property unconditionally above, so this is never empty
-    // in practice -- checked anyway so a future property-list change can't silently emit a
-    // dangling empty rule wrapper.
-    let has_rule = !props.is_empty();
+    let is_img = matches!(nodes[i], UiNode::Img(_));
+    let kit_id: Option<&String> = if is_img {
+        None
+    } else {
+        node_kit_ids.get(i).filter(|id| !id.is_empty() && kit_shapes.contains_key(id.as_str()))
+    };
+
+    let (props, variant_rules): (Option<Vec<String>>, Vec<variants::VariantRule>) = if is_img {
+        let has_resolved_img_src = tree::resolved_img_src(&nodes[i], asset_links).is_some();
+        (node_props(&nodes[i], has_resolved_img_src), Vec::new())
+    } else {
+        match kit_id {
+            Some(kid) => {
+                if emitted_kits.insert(kid.clone()) {
+                    let shape = &kit_shapes[kid];
+                    let is_box = matches!(nodes[i], UiNode::Box(_));
+                    (
+                        Some(variants::synthesize_base_declarations(shape, is_box)),
+                        variants::synthesize_variant_rules(shape, is_box),
+                    )
+                } else {
+                    // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
+                    // child this instance introduces) but no duplicate content.
+                    (Some(Vec::new()), Vec::new())
+                }
+            }
+            None => (node_props(&nodes[i], false), Vec::new()),
+        }
+    };
+
+    let Some(props) = props else { return };
+    // Box/Text always push at least one property unconditionally above, so a kit-less node is
+    // never empty in practice -- checked anyway so a future property-list change can't silently
+    // emit a dangling empty rule wrapper. A Kit-identified node always opens its wrapper
+    // regardless (see the doc comment above -- nesting-depth stability for later instances).
+    let has_rule = kit_id.is_some() || !props.is_empty();
+    let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
     let indent = "  ".repeat(depth);
+
+    // A pinned/positioned root's class may be a Kit's own SHARED selector (tree::resolve_class_name
+    // tier 1) -- the same class every other, unpositioned instance of that Kit also renders under.
+    // World-space (x, y) is per-VIEW-INSTANCE data, never per-Kit, so it can't be folded into that
+    // shared rule's own declarations without leaking this instance's position onto every other
+    // instance of the same Kit. Instead it always gets its own separate rule under
+    // tree::class_name(i) -- the plain positional fallback keyed on this node's own array index,
+    // which is guaranteed unique per node and therefore never collides with any other node's
+    // class, Kit-shared or not (see root_position's doc comment in tree.rs for the wrapper shape
+    // this reads). The rendered element carries both classes (see html.rs).
+    if let Some((x, y)) = position {
+        let inner_indent = "  ".repeat(depth + 1);
+        out.push_str(&format!("{indent}.{} {{\n", tree::class_name(i)));
+        out.push_str(&format!("{inner_indent}position: absolute;\n"));
+        out.push_str(&format!("{inner_indent}left: {x}px;\n"));
+        out.push_str(&format!("{inner_indent}top: {y}px;\n"));
+        out.push_str(&format!("{indent}}}\n"));
+    }
+
     if has_rule {
-        out.push_str(&format!("{indent}.{} {{\n", class_name(i)));
+        out.push_str(&format!("{indent}.{class} {{\n"));
         let inner_indent = "  ".repeat(depth + 1);
         for p in &props {
             out.push_str(&format!("{inner_indent}{p}\n"));
+        }
+        out.push_str(&format!("{indent}}}\n"));
+
+        // Static/dynamic variant rules ride at the SAME depth as the base rule, not nested
+        // inside it -- they're independent selectors on the same element (a BEM modifier class
+        // or a pseudo-class), not a descendant. Emitting them here, at this exact recursion
+        // point, is what makes a nested child Kit's OWN modifier compile to the correct full
+        // path (e.g. `.button .card--variant`) via plain SCSS/CSS nesting -- see the plan doc's
+        // nesting-vs-modifier decision.
+        for rule in &variant_rules {
+            out.push_str(&format!("{indent}.{class}{} {{\n", rule.selector_suffix));
+            for d in &rule.declarations {
+                out.push_str(&format!("{inner_indent}{d}\n"));
+            }
+            out.push_str(&format!("{indent}}}\n"));
         }
     }
     if matches!(nodes[i], UiNode::Box(_)) {
         if let Some(kids) = children.get(&i) {
             let child_depth = if has_rule { depth + 1 } else { depth };
             for &k in kids {
-                render_scss_node(nodes, children, k, child_depth, out);
+                render_scss_node(
+                    nodes,
+                    children,
+                    node_view_ids,
+                    node_kit_ids,
+                    kit_names,
+                    kit_shapes,
+                    asset_links,
+                    emitted_kits,
+                    k,
+                    child_depth,
+                    None,
+                    out,
+                );
             }
         }
-    }
-    if has_rule {
-        out.push_str(&format!("{indent}}}\n"));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::test_box;
+    use crate::test_support::{test_box, test_text};
     use kit10_scene::BoxExtra;
 
     #[test]
@@ -459,7 +663,7 @@ mod tests {
             extra: BoxExtra { justify_content: Some(JustifyValue::SpaceBetween), ..Default::default() },
             ..test_box(None)
         };
-        let props = node_props(&UiNode::Box(split)).unwrap();
+        let props = node_props(&UiNode::Box(split), false).unwrap();
         assert!(props.contains(&"justify-content: space-between;".to_string()));
     }
 
@@ -477,7 +681,7 @@ mod tests {
             },
             ..test_box(None)
         };
-        let child_props = node_props(&UiNode::Box(hug_child)).unwrap();
+        let child_props = node_props(&UiNode::Box(hug_child), false).unwrap();
         assert!(child_props.contains(&"flex-shrink: 0;".to_string()));
         assert!(!child_props.iter().any(|p| p.starts_with("flex-grow")));
 
@@ -485,7 +689,7 @@ mod tests {
             extra: BoxExtra { align_items: Some(AlignValue::Center), ..Default::default() },
             ..test_box(None)
         };
-        let parent_props = node_props(&UiNode::Box(split_parent)).unwrap();
+        let parent_props = node_props(&UiNode::Box(split_parent), false).unwrap();
         assert!(parent_props.contains(&"align-items: center;".to_string()));
     }
 
@@ -498,10 +702,73 @@ mod tests {
             },
             ..test_box(None)
         };
-        let props = node_props(&UiNode::Box(grid_box)).unwrap();
+        let props = node_props(&UiNode::Box(grid_box), false).unwrap();
         assert!(props.contains(&"display: grid;".to_string()));
         assert!(props.contains(&"grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));".to_string()));
         assert!(!props.iter().any(|p| p.starts_with("flex-direction")));
         assert!(!props.iter().any(|p| p == "display: flex;"));
+    }
+
+    fn test_img() -> kit10_scene::ImgData {
+        kit10_scene::ImgData {
+            parent_id: None,
+            width: Extent::Px(360.0),
+            height: Extent::Px(280.0),
+            source: kit10_scene::ImageSource::Ref("asset-1".to_string()),
+            fit: "contain".to_string(),
+            object_position: [0.0, 1.0],
+            selected: 0,
+            hovered: false,
+        }
+    }
+
+    #[test]
+    fn img_with_no_resolved_src_produces_no_rule_at_all() {
+        assert!(node_props(&UiNode::Img(test_img()), false).is_none());
+    }
+
+    #[test]
+    fn img_with_a_resolved_src_emits_size_and_object_fit_position() {
+        let props = node_props(&UiNode::Img(test_img()), true).unwrap();
+        assert!(props.contains(&"width: 360px;".to_string()));
+        assert!(props.contains(&"height: 280px;".to_string()));
+        assert!(props.contains(&"object-fit: contain;".to_string()));
+        assert!(props.contains(&"object-position: 0% 100%;".to_string()));
+    }
+
+    // Regression test for the reported audit finding: a highlighted/pill Text label (background +
+    // border + padding + radius + opacity, exactly what a real "highlight" panel category
+    // supports and Vellum's node_rect draws for Text identically to Box) must keep all five in
+    // export -- they were previously silently dropped for any non-Kit-basis Text node.
+    #[test]
+    fn text_with_a_highlight_keeps_background_border_padding_radius_and_opacity() {
+        let highlighted = kit10_scene::TextData {
+            padding: [4.0, 8.0, 4.0, 8.0],
+            bg_color: kit10_scene::OklabColor { l: 0.9, a: 0.02, b: -0.01, alpha: 1.0 },
+            show_border: true,
+            border_color: kit10_scene::OklabColor { l: 0.5, a: 0.0, b: 0.0, alpha: 1.0 },
+            border_width: 2.0,
+            corner_radius: 6.0,
+            opacity: 0.8,
+            ..test_text(None, "Pill")
+        };
+        let props = node_props(&UiNode::Text(highlighted), false).unwrap();
+        assert!(props.contains(&"padding: 4px 8px 4px 8px;".to_string()), "props were: {:?}", props);
+        assert!(props.iter().any(|p| p.starts_with("background:")));
+        assert!(props.contains(&"border: 2px solid oklab(50% 0 0 / 1);".to_string()));
+        assert!(props.contains(&"border-radius: 6px;".to_string()));
+        assert!(props.contains(&"opacity: 0.8;".to_string()));
+    }
+
+    #[test]
+    fn text_with_no_border_and_full_opacity_emits_neither() {
+        let plain = test_text(None, "Plain");
+        let props = node_props(&UiNode::Text(plain), false).unwrap();
+        assert!(!props.iter().any(|p| p.starts_with("border:")));
+        assert!(!props.iter().any(|p| p.starts_with("border-radius:")));
+        assert!(!props.iter().any(|p| p.starts_with("opacity:")));
+        // padding/background are still unconditionally present, matching Box's own convention.
+        assert!(props.iter().any(|p| p.starts_with("padding:")));
+        assert!(props.iter().any(|p| p.starts_with("background:")));
     }
 }

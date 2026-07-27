@@ -407,6 +407,24 @@
 		refreshTrigger++;
 	}
 
+	// Toggles whether WebCodium's (or any future export plugin's) Kit-basis export collapses this
+	// axis to a single base rule for the active kit, instead of emitting a variant per value.
+	// Scoped to (kit, axis) -- see AxesConsumedTable.excluded_from_export.
+	async function toggleAxisExcludedFromExport(axisId: string, currentlyExcluded: boolean) {
+		const kitId = editorActivity.activeKitId;
+		if (!kitId) return;
+		await api.setAxisExcludedFromExport(kitId, axisId, !currentlyExcluded);
+		refreshTrigger++;
+	}
+
+	// Toggles this axis's static/dynamic export classification -- static values become BEM
+	// modifier classes, dynamic values become real pseudo-class/state selectors. Global to the
+	// axis (not per-kit), see AxisTable.variant_kind.
+	async function toggleAxisVariantKind(axisId: string, current: 'static' | 'dynamic') {
+		await api.setAxisVariantKind(axisId, current === 'dynamic' ? 'static' : 'dynamic');
+		refreshTrigger++;
+	}
+
 	// Hard-delete the axis project-wide (cascade). Only offered by the row menu when the axis isn't
 	// used by another kit (see sharedAxisIds), so this never destroys another kit's work.
 	async function deleteAxisHard(axisId: string) {
@@ -716,6 +734,12 @@
 				onRemove={() => removeAxisFromKit(axisData.axisId)}
 				deletable={!sharedAxisIds.has(axisData.axisId)}
 				onDelete={() => deleteAxisHard(axisData.axisId)}
+				excludedFromExport={axisData.excludedFromExport === true}
+				onToggleExcludedFromExport={() =>
+					toggleAxisExcludedFromExport(axisData.axisId, axisData.excludedFromExport === true)}
+				variantKind={axisData.variantKind ?? 'static'}
+				onToggleVariantKind={() =>
+					toggleAxisVariantKind(axisData.axisId, axisData.variantKind ?? 'static')}
 				autoEdit={axisEditing[axisData.axisId] === true}
 				onRename={(name) => onRenameAxis(axisData.axisId, name)}
 				{valueEditing}

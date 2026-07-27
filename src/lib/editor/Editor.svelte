@@ -289,6 +289,7 @@
 	import { initializeEditorState } from 'manager';
 	import { createPluginManager, type PluginManager } from '$lib/plugins/manager.svelte.js';
 	import { getVellumInstance, requestVellumRender } from './vellum-instance.js';
+	import { assetBytes } from './asset-bytes.js';
 	import { STORE_CATALOGUE } from '$lib/plugin-catalogue.js';
 	import type { ExtismPluginOptions } from '@extism/extism';
 
@@ -749,6 +750,65 @@
 			}
 
 			loadVariant(req, key);
+		}
+	});
+
+	// Image reload scan -- mirrors the font-fetch scan above, but for `src` (asset-id) properties
+	// on Image kits. Vellum's `load_image`/`ImageCache` is purely push-based and has no persisted
+	// state of its own: bytes live in PGlite (the `assets` row) + the browser's IndexedDB
+	// (`assetBytes`), but Vellum's GPU texture cache is memory-only and resets on every page
+	// load. Without this scan, an asset uploaded in a PAST session (its row + IndexedDB bytes
+	// both still there) would never make it back into Vellum on a fresh reload -- it would just
+	// render blank until re-uploaded. `load_image` itself is idempotent (a pinned id is a no-op
+	// on a repeat call), so this only needs to dedupe which ids it's ALREADY ATTEMPTED this
+	// session (avoiding a redundant IndexedDB round-trip every resolve), not which ones actually
+	// succeeded.
+	const attemptedImageIds = new Set<string>();
+
+	async function loadImageAsset(assetId: string): Promise<void> {
+		const vellum = getVellumInstance();
+		const editor = editorLoading;
+		if (!vellum || !editor) {
+			attemptedImageIds.delete(assetId); // retry once Vellum/the DB itself has initialized
+			return;
+		}
+		try {
+			let bytes = await assetBytes.get(assetId);
+			if (!bytes) {
+				// Not cached locally yet -- e.g. a seeded asset that ships with a bundled `link`
+				// instead of ever going through the manual-upload byte-caching path (see
+				// manager/src/seed.ts's registerBundledAsset). Fetch it once and cache it in
+				// IndexedDB so this fallback only ever runs once per asset per browser.
+				const api = queryBuilder(editor.dialect);
+				const asset = await api.getAssetById(assetId);
+				if (!asset?.link) return; // genuinely missing/orphaned asset -- nothing to load
+				const res = await fetch(asset.link);
+				if (!res.ok) return;
+				bytes = new Uint8Array(await res.arrayBuffer());
+				await assetBytes.put(assetId, bytes);
+			}
+			vellum.load_image(assetId, bytes);
+			requestVellumRender();
+		} catch (err) {
+			console.warn(`[assets] failed to load image ${assetId} into vellum:`, err);
+		}
+	}
+
+	$effect(() => {
+		if (!pluginManager) return;
+
+		const ids = new Set<string>();
+		for (const view of resolvedViews) {
+			for (const kit of view.resolvedKits) {
+				const src = kit.properties.get('src')?.value;
+				if (src) ids.add(src);
+			}
+		}
+
+		for (const id of ids) {
+			if (attemptedImageIds.has(id)) continue;
+			attemptedImageIds.add(id);
+			loadImageAsset(id);
 		}
 	});
 </script>

@@ -105,6 +105,14 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 						viewScoped: true
 					}
 				]
+			},
+			capabilities: {
+				hostFns: [
+					'kit10_get_interpreter_output',
+					'kit10_get_kit_export_shape',
+					'kit10_get_asset_links',
+					'kit10_get_font_links'
+				]
 			}
 		}
 	},

@@ -195,6 +195,13 @@ struct OnResolveResult {
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
+    // Parallel to viewport_data (same length/order) — the highest-priority composed Kit's id for
+    // each node, "" for structural scaffolding or a kit-less view. Lets WebCodium's Kit-basis
+    // export (Phase 3) name which Kit a node came from -- a Kit has no subtree of its own in the
+    // merged output (merge_kits collapses composed kits into one property map per node), so this
+    // is the only place that fact survives past resolution. See resources/webcodium-export-plan.md.
+    #[serde(default)]
+    node_kit_ids: Vec<String>,
     // The concrete (family, weight, style) set the viewport renders, post weight-snapping —
     // what the editor's font scan should fetch (see resolve_font_weight). snake_case like the
     // rest of this Charter-authored struct.
@@ -297,6 +304,8 @@ struct PanelPublishInput {
 struct OnSelectionChangeResult {
     viewport_data: Vec<UiNode>,
     node_view_ids: Vec<String>,
+    #[serde(default)]
+    node_kit_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     viewport_data_binary: Option<String>,
 }
@@ -1737,12 +1746,25 @@ fn primitive_for_view(view: &ViewMeta) -> String {
         .unwrap_or_else(|| detect_primitive(&merged).to_string())
 }
 
+// The highest-priority (last, winning) composed Kit's id for a view -- matches merge_kits'
+// own "later kit wins" convention exactly, so node_kit_ids always names whichever Kit a
+// view's rendered properties actually came from. "" for a view with no composed kit.
+fn kit_id_for(kits: &[ResolvedKit]) -> String {
+    kits.last().map(|k| k.kit_id.clone()).unwrap_or_default()
+}
+
 // Render a view's nodes into the flat viewport buffer.
 // parent_id: the parent box index (grid cell for top-level, box idx for children).
 // depth guard prevents runaway recursion from circular view references.
 // node_view_ids: parallel accumulator to viewport — every push here is paired with a push
 // there recording which view (view_id) that node belongs to, for the editor's viewport
 // click-to-select hit-test lookup.
+// node_kit_ids: a second parallel accumulator (same length/order as viewport/node_view_ids),
+// recording the highest-priority composed Kit's id for that node -- "" for structural grid
+// scaffolding or a kit-less view. Lets WebCodium's Kit-basis export (Phase 3, see
+// resources/webcodium-export-plan.md) name which Kit a rendered node came from, since a Kit
+// has no subtree of its own in the merged output (merge_kits collapses composed kits into one
+// property map before a node is ever built).
 fn render_view_nodes(
     kits: &[ResolvedKit],
     hints: &std::collections::HashMap<String, serde_json::Value>,
@@ -1754,6 +1776,7 @@ fn render_view_nodes(
     parent_main_horizontal: Option<bool>,
     viewport: &mut Vec<UiNode>,
     node_view_ids: &mut Vec<String>,
+    node_kit_ids: &mut Vec<String>,
     depth: u8,
     view_map: &std::collections::HashMap<String, &ViewMeta>,
 ) {
@@ -1788,6 +1811,7 @@ fn render_view_nodes(
         }
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
+        node_kit_ids.push(kit_id_for(kits));
 
         // Containment rule (Charter's own opinion, not enforced anywhere upstream): a Text
         // view may contain other Text views (e.g. multiple inline runs), never a Box -- a
@@ -1812,6 +1836,7 @@ fn render_view_nodes(
                     parent_main_horizontal,
                     viewport,
                     node_view_ids,
+                    node_kit_ids,
                     depth + 1,
                     view_map,
                 );
@@ -1825,6 +1850,7 @@ fn render_view_nodes(
         }
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
+        node_kit_ids.push(kit_id_for(kits));
 
         // An image is a leaf — it has no children (no content tab, no children field).
         // Any child views assigned to an image view are silently ignored.
@@ -1839,6 +1865,7 @@ fn render_view_nodes(
 
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
+        node_kit_ids.push(kit_id_for(kits));
 
         // This box is the flex parent of its children; their fill/hug resolves against THIS box's
         // main axis (row -> width is main, column -> height is main). Default direction is Column.
@@ -1863,6 +1890,7 @@ fn render_view_nodes(
                     child_main_horizontal,
                     viewport,
                     node_view_ids,
+                    node_kit_ids,
                     depth + 1,
                     view_map,
                 );
@@ -1983,9 +2011,10 @@ fn collect_font_requests(nodes: &[UiNode]) -> Vec<FontRequest> {
     set.into_iter().collect()
 }
 
-fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
+fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<String>) {
     let mut viewport_data: Vec<UiNode> = Vec::new();
     let mut node_view_ids: Vec<String> = Vec::new();
+    let mut node_kit_ids: Vec<String> = Vec::new();
 
     let ctx = SelectionCtx {
         active_view_id: parsed.active_view_id.as_deref(),
@@ -2041,6 +2070,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
         let cell_idx = viewport_data.len();
         viewport_data.push(absolute_box("Column", pos.unwrap()));
         node_view_ids.push(String::new());
+        node_kit_ids.push(String::new());
         render_view_nodes(
             kits,
             &view.hints,
@@ -2052,6 +2082,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
             None,
             &mut viewport_data,
             &mut node_view_ids,
+            &mut node_kit_ids,
             0,
             &view_map,
         );
@@ -2069,11 +2100,13 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
         let root_idx = viewport_data.len();
         viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
         node_view_ids.push(String::new());
+        node_kit_ids.push(String::new());
 
         for row in flowing.chunks(COLS) {
             let row_idx = viewport_data.len();
             viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
             node_view_ids.push(String::new());
+            node_kit_ids.push(String::new());
 
             for (view, kits, _) in row {
                 let cell_idx = viewport_data.len();
@@ -2083,6 +2116,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
                     [0.0, GAP, 0.0, 0.0],
                 ));
                 node_view_ids.push(String::new());
+                node_kit_ids.push(String::new());
 
                 render_view_nodes(
                     kits,
@@ -2094,6 +2128,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
                     None,
                     &mut viewport_data,
                     &mut node_view_ids,
+                    &mut node_kit_ids,
                     0,
                     &view_map,
                 );
@@ -2103,7 +2138,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>) {
 
     snap_text_weights(&mut viewport_data, &parsed.font_facts);
 
-    (viewport_data, node_view_ids)
+    (viewport_data, node_view_ids, node_kit_ids)
 }
 
 fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
@@ -2280,13 +2315,14 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let _ = extism_pdk::var::set("last_resolve_input", input.as_str());
 
-    let (viewport_data, node_view_ids) = build_viewport(&parsed);
+    let (viewport_data, node_view_ids, node_kit_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
     let font_requests = collect_font_requests(&viewport_data);
     let result = OnResolveResult {
         categories: build_categories(&parsed),
         viewport_data,
         node_view_ids,
+        node_kit_ids,
         font_requests,
         viewport_data_binary,
     };
@@ -2323,6 +2359,7 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
         return Ok(serde_json::to_string(&OnSelectionChangeResult {
             viewport_data: vec![],
             node_view_ids: vec![],
+            node_kit_ids: vec![],
             viewport_data_binary: None,
         })?);
     }
@@ -2336,11 +2373,12 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
     }
     parsed.hovered_view_id = selection.hovered_view_id;
 
-    let (viewport_data, node_view_ids) = build_viewport(&parsed);
+    let (viewport_data, node_view_ids, node_kit_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
     Ok(serde_json::to_string(&OnSelectionChangeResult {
         viewport_data,
         node_view_ids,
+        node_kit_ids,
         viewport_data_binary,
     })?)
 }
@@ -2477,7 +2515,7 @@ mod position_wire_tests {
             font_facts: Default::default(),
         };
 
-        let (viewport, node_view_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
         println!(
             "viewport JSON: {}",
             serde_json::to_string_pretty(&viewport).unwrap()
@@ -2587,7 +2625,7 @@ mod selection_and_hover_tests {
     #[test]
     fn text_primitive_view_gets_selected_marking() {
         let input = input(vec![text_view("t1")], Some("t1"), None);
-        let (viewport, node_view_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
 
         let text_idx = node_view_ids
             .iter()
@@ -2607,7 +2645,7 @@ mod selection_and_hover_tests {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let input = input(vec![parent, child], Some("child"), None);
-        let (viewport, node_view_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
 
         let parent_idx = node_view_ids
             .iter()
@@ -2635,7 +2673,7 @@ mod selection_and_hover_tests {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let input = input(vec![parent, child], Some("parent"), Some("child"));
-        let (viewport, node_view_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
 
         let parent_idx = node_view_ids.iter().position(|id| id == "parent").unwrap();
         let child_idx = node_view_ids.iter().position(|id| id == "child").unwrap();
@@ -2662,7 +2700,7 @@ mod selection_and_hover_tests {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let input = input(vec![parent, child], None, None);
-        let (_viewport, node_view_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
 
         assert!(node_view_ids.contains(&"parent".to_string()));
         assert!(node_view_ids.contains(&"child".to_string()));
@@ -2671,11 +2709,52 @@ mod selection_and_hover_tests {
     #[test]
     fn structural_grid_scaffolding_has_empty_view_id() {
         let input = input(vec![box_view("v1", vec![])], None, None);
-        let (_viewport, node_view_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
         assert!(
             node_view_ids.contains(&String::new()),
             "root/row/cell wrapper boxes should be tagged as belonging to no view"
         );
+    }
+
+    #[test]
+    fn node_kit_ids_is_parallel_to_node_view_ids_and_empty_for_structural_nodes() {
+        let input = input(vec![box_view("v1", vec![])], None, None);
+        let (_viewport, node_view_ids, node_kit_ids) = build_viewport(&input);
+
+        assert_eq!(
+            node_view_ids.len(),
+            node_kit_ids.len(),
+            "node_kit_ids must be parallel (same length) to node_view_ids"
+        );
+        let v1_idx = node_view_ids.iter().position(|id| id == "v1").unwrap();
+        assert_eq!(node_kit_ids[v1_idx], "kit", "v1's node names its composed kit");
+        for (i, view_id) in node_view_ids.iter().enumerate() {
+            if view_id.is_empty() {
+                assert_eq!(
+                    node_kit_ids[i],
+                    String::new(),
+                    "structural scaffolding nodes must have an empty kit id too"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn node_kit_ids_names_the_highest_priority_composed_kit() {
+        let mut view = box_view("v1", vec![]);
+        // A second, higher-priority kit composed after the first -- merge_kits' own "later kit
+        // wins" convention means this one's properties win, so its id should be what node_kit_ids
+        // reports, not the first kit's.
+        view.resolved_kits.push(ResolvedKit {
+            kit_id: "kit-2".to_string(),
+            kit_name: "Kit Two".to_string(),
+            properties: std::collections::HashMap::new(),
+        });
+        let input = input(vec![view], None, None);
+        let (_viewport, node_view_ids, node_kit_ids) = build_viewport(&input);
+
+        let v1_idx = node_view_ids.iter().position(|id| id == "v1").unwrap();
+        assert_eq!(node_kit_ids[v1_idx], "kit-2");
     }
 
     // Regression test: OnResolveResult/OnSelectionChangeResult must serialize their fields as
@@ -2697,6 +2776,7 @@ mod selection_and_hover_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            node_kit_ids: vec![],
             font_requests: vec![],
             viewport_data_binary: None,
         };
@@ -2990,6 +3070,7 @@ mod selection_and_hover_tests {
         let result = OnSelectionChangeResult {
             viewport_data: vec![],
             node_view_ids: vec![],
+            node_kit_ids: vec![],
             viewport_data_binary: None,
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -3131,7 +3212,7 @@ mod children_containment_tests {
     fn box_parent_recurses_into_a_text_child() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = text_view("child", vec![]);
-        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3145,7 +3226,7 @@ mod children_containment_tests {
     fn text_parent_recurses_into_a_text_child() {
         let parent = text_view("parent", vec!["child".to_string()]);
         let child = text_view("child", vec![]);
-        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3159,7 +3240,7 @@ mod children_containment_tests {
     fn text_parent_skips_a_box_child() {
         let parent = text_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let (_viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
 
         assert!(
             !node_view_ids.contains(&"child".to_string()),
@@ -3171,7 +3252,7 @@ mod children_containment_tests {
     fn box_parent_still_recurses_into_a_box_child() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let (viewport, node_view_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3189,7 +3270,7 @@ mod children_containment_tests {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let orphan = box_view("orphan", vec![]);
-        let (_viewport, node_view_ids) = build_viewport(&input(vec![parent, child, orphan]));
+        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child, orphan]));
 
         let child_occurrences = node_view_ids.iter().filter(|id| **id == "child").count();
         assert_eq!(
@@ -3565,6 +3646,7 @@ mod text_paint_properties_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            node_kit_ids: vec![],
             font_requests: vec![],
             viewport_data_binary: Some("AAAA".to_string()),
         };
@@ -3993,6 +4075,7 @@ mod font_facts_tests {
             categories: vec![],
             viewport_data: vec![],
             node_view_ids: vec![],
+            node_kit_ids: vec![],
             font_requests: vec![FontRequest {
                 family: "Lato".to_string(),
                 weight: 700,

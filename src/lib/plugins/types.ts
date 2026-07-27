@@ -237,6 +237,10 @@ export interface OnResolveResult {
 	// structural grid scaffolding nodes that don't belong to any view. Used to resolve a
 	// viewport click-to-select hit-test index (from vellum.get_selection) back to a view id.
 	node_view_ids: string[];
+	// Parallel to viewport_data/node_view_ids (same length/order) -- the highest-priority composed
+	// Kit's id for each node, "" for structural scaffolding or a kit-less view. See Charter's
+	// node_kit_ids doc comment and resources/webcodium-export-plan.md.
+	node_kit_ids?: string[];
 	font_requests?: FontRequest[];
 	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
 	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified

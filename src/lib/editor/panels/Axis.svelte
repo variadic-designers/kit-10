@@ -43,6 +43,15 @@
 		// the "Delete Axis" menu item; when false only "Remove" is offered.
 		deletable?: boolean;
 		onDelete?: () => void;
+		// Per-(kit, axis) export exclusion -- when true, an export plugin's Kit-basis translation
+		// (e.g. WebCodium) collapses this axis to a single base value instead of a variant per
+		// value. Drives the "Expose" context-menu item's current label/icon.
+		excludedFromExport?: boolean;
+		onToggleExcludedFromExport?: () => void;
+		// Per-axis (not per-kit) static/dynamic export classification -- static values become BEM
+		// modifier classes, dynamic values become real pseudo-class/state selectors.
+		variantKind?: 'static' | 'dynamic';
+		onToggleVariantKind?: () => void;
 		// Opens the axis name straight into Renameable's edit mode -- set true right after creation
 		// so a freshly-created axis is immediately nameable instead of stuck as "New Axis".
 		autoEdit?: boolean;
@@ -108,6 +117,10 @@
 		onRemove,
 		deletable = false,
 		onDelete,
+		excludedFromExport = false,
+		onToggleExcludedFromExport,
+		variantKind = 'static',
+		onToggleVariantKind,
 		autoEdit = false,
 		onRename,
 		valueEditing = {},
@@ -194,11 +207,23 @@
 		},
 		'hr',
 		{
-			name: 'custom axis',
-			description: 'Mark as export',
-			displayText: 'Expose',
-			icon: 'fa-solid fa-tower-broadcast',
-			onClick: () => {}
+			name: 'toggle-excluded-from-export',
+			description: excludedFromExport
+				? 'Include this axis when an export plugin translates this kit'
+				: 'Exclude this axis from an export plugin\'s Kit-basis translation, collapsing it to one value',
+			displayText: excludedFromExport ? 'Include in Export' : 'Exclude from Export',
+			icon: excludedFromExport ? 'fa-solid fa-tower-broadcast' : 'fa-solid fa-tower-cell',
+			onClick: () => onToggleExcludedFromExport?.()
+		},
+		{
+			name: 'toggle-variant-kind',
+			description:
+				variantKind === 'dynamic'
+					? 'Values compile to real pseudo-class/state selectors (e.g. :hover) in Kit-basis export'
+					: 'Values compile to BEM modifier classes (e.g. --secondary) in Kit-basis export',
+			displayText: variantKind === 'dynamic' ? 'Set Static' : 'Set Dynamic',
+			icon: 'fa-solid fa-bolt',
+			onClick: () => onToggleVariantKind?.()
 		},
 		// Categorical-only (see axisKinds.ts) -- range/number have no discrete value list to add to.
 		...(kind === 'categorical' && onValueAdd

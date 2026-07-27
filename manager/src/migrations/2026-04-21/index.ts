@@ -154,6 +154,7 @@ export interface AxisTable {
 	hint: JSONColumnType<string[]> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	default_value: JSONColumnType<ArgValue> | null;
+	variant_kind: Generated<'static' | 'dynamic'>;
 }
 
 export interface AxisValuesTable {
@@ -168,6 +169,7 @@ export interface AxesConsumedTable {
 	kit_id: string;
 	axis_id: string;
 	priority_index: number;
+	excluded_from_export: Generated<boolean>;
 }
 
 // ------------------------------
@@ -291,6 +293,7 @@ export async function up(dialect: DAny) {
 		.addColumn('hint', 'jsonb')
 		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('default_value', 'jsonb')
+		.addColumn('variant_kind', 'text', (col) => col.notNull().defaultTo('static'))
 		.execute();
 
 	await dialect.schema
@@ -341,6 +344,7 @@ export async function up(dialect: DAny) {
 		.addColumn('kit_id', 'uuid', (col) => col.notNull().references('kits.id').onDelete('cascade'))
 		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('restrict'))
 		.addColumn('priority_index', 'integer', (col) => col.notNull())
+		.addColumn('excluded_from_export', 'boolean', (col) => col.notNull().defaultTo(sql<boolean>`false`))
 		.addPrimaryKeyConstraint('axis_consumed_pk', ['kit_id', 'axis_id'])
 		.addUniqueConstraint('unique_priority_of_axis_per_kit', ['kit_id', 'priority_index'])
 		.execute();
