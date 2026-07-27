@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Api } from 'manager';
 
 // Regression coverage for the "drag a view, release, and it visibly snaps back to the old
@@ -54,7 +54,7 @@ async function flush() {
 	}
 }
 
-const { createPluginManager } = await import('./manager.svelte.js');
+const { createPluginManager, resolveAbsoluteAssetLink } = await import('./manager.svelte.js');
 
 describe('createPluginManager selection-change staleness guard', () => {
 	beforeEach(() => {
@@ -213,5 +213,34 @@ describe('createPluginManager selection-change staleness guard', () => {
 		await flush();
 
 		expect(manager.viewportData).toContain('HOVER_RESULT');
+	});
+});
+
+// kit10_get_asset_links (WebCodium's Img export support) resolves a bundled asset's stored
+// `link` through this before handing it back -- a relative static path (manager/src/seed.ts's
+// registerBundledAsset) works fine for the in-editor reload scan (always same-origin), but the
+// exported HTML is a standalone file that may be opened from anywhere, so it needs an absolute,
+// portable URL instead.
+describe('resolveAbsoluteAssetLink', () => {
+	// This suite runs in a plain Node environment (no real `window`) -- stub just enough of it for
+	// the function's own `window.location.origin` read. In the real app this always runs inside
+	// the browser tab hosting the editor, where `window` is naturally defined.
+	beforeEach(() => {
+		vi.stubGlobal('window', { location: { origin: 'https://kit-10.example.com' } });
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
+	it('resolves a relative static path against the current origin', () => {
+		expect(resolveAbsoluteAssetLink('/1x/favicon.png')).toBe(
+			'https://kit-10.example.com/1x/favicon.png'
+		);
+	});
+
+	it('passes an already-absolute URL through unchanged (a future cloud-hosted link)', () => {
+		const absolute = 'https://cdn.example.com/assets/favicon.png';
+		expect(resolveAbsoluteAssetLink(absolute)).toBe(absolute);
 	});
 });

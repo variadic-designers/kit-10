@@ -57,6 +57,21 @@ function base64ToBytes(b64: string): Uint8Array {
 	return bytes;
 }
 
+// A stored asset `link` may be a plain relative static path (manager/src/seed.ts's
+// registerBundledAsset, e.g. "/1x/favicon.png") or a future cloud-hosted absolute URL. The
+// in-editor asset-reload scan (Editor.svelte's fetch(asset.link)) works fine with either as-is --
+// it's always same-origin. WebCodium's export is different: the exported HTML is a standalone
+// file that may be opened from anywhere, so a relative path would only ever resolve back to
+// wherever the file happens to be opened from, not this app's own deployment. Resolving against
+// `window.location.origin` at the moment of EXPORT (not baked in at seed time, which would freeze
+// in whatever origin was active the one time a project was first seeded) is exactly the correct
+// domain to embed -- the user is exporting assets that live on THIS deployment. `new URL(url,
+// base)` ignores `base` when `url` is already absolute, per the URL spec, so this is a safe no-op
+// for a future cloud-hosted link -- no branching needed to detect "already absolute."
+export function resolveAbsoluteAssetLink(link: string): string {
+	return new URL(link, window.location.origin).href;
+}
+
 export function createPluginManager(api: Api) {
 	let plugins = $state<LoadedPlugin[]>([]);
 	let fieldCategories = $state<FieldCategory[]>([]);
@@ -299,7 +314,7 @@ export function createPluginManager(api: Api) {
 						const assets = await api.getAssetsByIds(asset_ids);
 						const links: Record<string, string> = {};
 						for (const asset of assets) {
-							if (asset.link) links[asset.id] = asset.link;
+							if (asset.link) links[asset.id] = resolveAbsoluteAssetLink(asset.link);
 						}
 						return cp.store(JSON.stringify({ success: true, links }));
 					} catch (err) {
