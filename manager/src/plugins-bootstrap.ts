@@ -64,12 +64,15 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 	// kit10_get_asset_links backs Img export support (resolving an asset id to a real URL).
 	// kit10_get_font_links backs @font-face export support (resolving a font request to the real
 	// URL Fontavious would fetch, no hardcoded provider/URL anywhere in this plugin).
+	// kit10_get_project_tokens backs the `:root` CSS custom-property export (project-scope tokens
+	// only, see variants::ProjectTokens' doc comment on the Rust side).
 	capabilities: {
 		hostFns: [
 			'kit10_get_interpreter_output',
 			'kit10_get_kit_export_shape',
 			'kit10_get_asset_links',
-			'kit10_get_font_links'
+			'kit10_get_font_links',
+			'kit10_get_project_tokens'
 		]
 	}
 };

@@ -360,6 +360,36 @@ export function createPluginManager(api: Api) {
 					return cp.store(JSON.stringify({ success: true, links }));
 				},
 
+				// Resolves the exporting project's own PROJECT-scope tokens (kit_id AND view_id both
+				// null -- api.getTokensByProjectId already filters to exactly this scope) to their
+				// alias/resolved-value/format, for WebCodium's `:root` CSS custom-property export
+				// (variants::render_root_variables + var(--alias) substitution at usage sites). Only
+				// scalar tokens carry a CSS-representable value -- a view/view-list token has no CSS
+				// meaning and is silently excluded, same posture as "no known URL" for an unresolved
+				// asset link. Keyed by token id (not alias) so the Rust side can look an entry's own
+				// tokenId straight up without a second alias-based pass.
+				async kit10_get_project_tokens(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { project_id } = JSON.parse(rawJson) as { project_id: string };
+
+					try {
+						const rows = await api.getTokensByProjectId(project_id).execute();
+						const tokens: Record<string, { alias: string; value: string; format?: string }> = {};
+						for (const row of rows) {
+							const tv = row.tokenValue;
+							if (!row.tokenAlias || !tv || tv.type !== 'scalar') continue;
+							tokens[row.tokenId] = {
+								alias: row.tokenAlias,
+								value: tv.value,
+								format: tv.format
+							};
+						}
+						return cp.store(JSON.stringify({ success: true, tokens }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
 				async kit10_get_project_export(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const { project_id } = JSON.parse(rawJson) as { project_id: string };

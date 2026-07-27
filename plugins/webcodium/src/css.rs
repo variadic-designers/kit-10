@@ -426,6 +426,7 @@ pub(crate) fn render_scss(
     kit_names: &HashMap<String, String>,
     kit_shapes: &HashMap<String, KitExportShape>,
     asset_links: &HashMap<String, String>,
+    project_tokens: &variants::ProjectTokens,
 ) -> String {
     let mut out = String::new();
     let mut emitted_kits: HashSet<String> = HashSet::new();
@@ -440,6 +441,7 @@ pub(crate) fn render_scss(
             kit_names,
             kit_shapes,
             asset_links,
+            project_tokens,
             &mut emitted_kits,
             i,
             0,
@@ -466,6 +468,7 @@ fn render_scss_node(
     kit_names: &HashMap<String, String>,
     kit_shapes: &HashMap<String, KitExportShape>,
     asset_links: &HashMap<String, String>,
+    project_tokens: &variants::ProjectTokens,
     emitted_kits: &mut HashSet<String>,
     i: usize,
     depth: usize,
@@ -489,8 +492,12 @@ fn render_scss_node(
                     let shape = &kit_shapes[kid];
                     let is_box = matches!(nodes[i], UiNode::Box(_));
                     (
-                        Some(variants::synthesize_base_declarations(shape, is_box)),
-                        variants::synthesize_variant_rules(shape, is_box),
+                        Some(variants::synthesize_base_declarations_with_tokens(
+                            shape,
+                            is_box,
+                            project_tokens,
+                        )),
+                        variants::synthesize_variant_rules_with_tokens(shape, is_box, project_tokens),
                     )
                 } else {
                     // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
@@ -563,6 +570,7 @@ fn render_scss_node(
                     kit_names,
                     kit_shapes,
                     asset_links,
+                    project_tokens,
                     emitted_kits,
                     k,
                     child_depth,

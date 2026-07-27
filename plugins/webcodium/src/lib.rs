@@ -27,12 +27,19 @@ mod variants;
 // Fontavious would fetch for each -- backs @font-face export support, see fetch_font_links below.
 // No hardcoded font provider/URL anywhere in this plugin; every link comes from Fontavious's own
 // catalogue via the host, the same `variant_url` export the editor's own font-fetch scan uses.
+//
+// kit10_get_project_tokens resolves the exporting project's own PROJECT-scope tokens (kit_id AND
+// view_id both null) to their alias/resolved-value/format -- backs the `:root` CSS custom
+// property block (variants::render_root_variables) and `var(--alias)` substitution at usage
+// sites. Kit/view-scoped tokens are out of scope for this first cut (see variants::ProjectTokens'
+// doc comment).
 #[host_fn]
 extern "ExtismHost" {
     fn kit10_get_interpreter_output(_unused: String) -> String;
     fn kit10_get_kit_export_shape(input: String) -> String;
     fn kit10_get_asset_links(input: String) -> String;
     fn kit10_get_font_links(input: String) -> String;
+    fn kit10_get_project_tokens(input: String) -> String;
 }
 
 // Mirrors interpreter-output.ts's discriminated union, but flattened -- serde's tagged-enum
@@ -60,8 +67,10 @@ struct InterpreterOutput {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ExportInput {
+    // Now actually read -- backs fetch_project_tokens's kit10_get_project_tokens request (the
+    // `:root` CSS custom-property block, see variants::render_root_variables). Previously unused
+    // even though the Export panel already sent a real value on every call (Export.svelte).
     #[serde(default)]
-    #[allow(dead_code)]
     project_id: String,
     // Which views to export. Empty means "export nothing" -- there is no hidden fallback to
     // "everything" when this is empty, the checkbox state in the Export panel literally
@@ -125,6 +134,7 @@ pub fn export_html_css(input: String) -> FnResult<String> {
     let (kit_names, kit_shapes) = fetch_kit_export_shapes(&output.node_kit_ids);
     let asset_links = fetch_asset_links(&output.viewport_data);
     let font_links = fetch_font_links(&output.viewport_data);
+    let project_tokens = fetch_project_tokens(&req.project_id);
 
     let scss = css::render_scss(
         &output.viewport_data,
@@ -135,11 +145,18 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &kit_names,
         &kit_shapes,
         &asset_links,
+        &project_tokens,
     );
-    // @font-face blocks lead the stylesheet -- order doesn't affect CSS validity (a @font-face
-    // rule applies document-wide regardless of position), but it reads more naturally before the
-    // baseline reset and the rest of the generated rules.
-    let css = format!("{}{}", css::render_font_faces(&font_links), css::with_reset(&scss));
+    // :root variables lead the stylesheet (order is irrelevant to CSS custom-property lookup,
+    // which is resolved at compute time, not declaration order -- but reads more naturally before
+    // everything that might reference it), then @font-face blocks, then the baseline reset and
+    // the rest of the generated rules.
+    let css = format!(
+        "{}{}{}",
+        variants::render_root_variables(&project_tokens),
+        css::render_font_faces(&font_links),
+        css::with_reset(&scss)
+    );
     let html = html::render_html(
         &output.viewport_data,
         &children,
@@ -310,6 +327,38 @@ fn fetch_kit_export_shapes(
     (kit_names, kit_shapes)
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ProjectTokensResponse {
+    #[serde(default)]
+    success: bool,
+    #[serde(default)]
+    tokens: variants::ProjectTokens,
+}
+
+// Best-effort fetch of the exporting project's own PROJECT-scope tokens. Never fails the whole
+// export -- any error (host-fn call, JSON parse, `success: false`, or an empty project_id, e.g.
+// an older caller that never sends one) just leaves the map empty, which
+// variants::render_root_variables/resolve_properties_with_tokens already treat as "no
+// project-scope tokens available", falling through to plain literal substitution exactly like
+// before this feature existed -- never a hard export failure over this.
+fn fetch_project_tokens(project_id: &str) -> variants::ProjectTokens {
+    if project_id.is_empty() {
+        return variants::ProjectTokens::new();
+    }
+
+    let request = serde_json::json!({ "project_id": project_id }).to_string();
+    let Ok(raw) = (unsafe { kit10_get_project_tokens(request) }) else {
+        return variants::ProjectTokens::new();
+    };
+    let Ok(resp) = serde_json::from_str::<ProjectTokensResponse>(&raw) else {
+        return variants::ProjectTokens::new();
+    };
+    if !resp.success {
+        return variants::ProjectTokens::new();
+    }
+    resp.tokens
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,6 +389,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
         let html = html::render_html(
             nodes,
@@ -429,6 +479,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
         let html = html::render_html(
             &nodes,
@@ -477,6 +528,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
         let html = html::render_html(
             &nodes,
@@ -542,6 +594,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
 
         assert!(
@@ -683,6 +736,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
         let filtered_html = html::render_html(
             &nodes,
@@ -732,6 +786,7 @@ mod tests {
             property: property.to_string(),
             literal_value: Some(value.to_string()),
             token_value: None,
+            token_id: None,
         };
         let condition = |axis_id: &str, value: &str| ExportLayerCondition {
             axis_id: axis_id.to_string(),
@@ -807,6 +862,7 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
+            &variants::ProjectTokens::new(),
         );
         let html = html::render_html(
             &nodes,

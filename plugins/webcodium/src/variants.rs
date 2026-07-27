@@ -11,11 +11,13 @@
 //     only carries `background` in the worked example in the plan doc).
 //
 // v1 scope cut (deliberate, not an oversight): properties whose CSS meaning depends on
-// SIBLING/PARENT layout context this module doesn't have -- concretely, `resize`'s `fill`/`hug`
-// keywords on width/height (compile_resize's flex-grow/shrink/basis math needs to know the
-// parent's own main axis) -- are skipped with an explicit comment rather than guessed. The real
-// fix (a Charter `translate_properties` entrypoint the host round-trips arbitrary property maps
-// through) is deferred to a Phase 3.1 follow-up (see the plan doc).
+// SIBLING/PARENT layout context this module doesn't have. `resize`'s `fill` keyword on
+// width/height was originally cut alongside this for exactly that reason (compile_resize's real
+// flex-grow/shrink/basis math needs to know the parent's own main axis) -- but see
+// synthesize_resize below: the GROW half turned out not to need it after all, since flex-grow is
+// inherently main-axis-relative in real CSS regardless of flex-direction. flex-shrink/flex-basis/
+// min-width/min-height (Fill's "can shrink below content" half) remain genuinely axis-specific and
+// are still deferred -- see the plan doc's Phase 3.1 entry.
 //
 // `arrange` (Stack/Cluster/Split/Center/Grid) is NOT in that scope-cut category, despite being
 // Charter's own compiled preset -- `compile_arrange`/`resolve_flex_direction` need nothing from
@@ -38,7 +40,7 @@
 use crate::tree::kit_class_name;
 use kit10_scene::OklabColor;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +111,52 @@ pub(crate) struct ExportLayerEntry {
     pub literal_value: Option<String>,
     #[serde(default)]
     pub token_value: Option<TokenValueWire>,
+    // The token's own row id (distinct from token_value, which is that token's already-resolved
+    // VALUE) -- this is what lets resolve_properties look the entry up in the project-tokens map
+    // (see PROJECT_TOKENS.md-equivalent doc comment on css_var_name below) to decide whether this
+    // property should become a CSS `var(--alias)` reference instead of a literal. Previously
+    // dropped silently here even though export-shape.ts's ExportLayerEntry already sent it on the
+    // wire (serde ignores unknown JSON fields by default) -- see resolve_entry_value's own history.
+    #[serde(default)]
+    pub token_id: Option<String>,
+}
+
+// A single PROJECT-scope token (kit_id AND view_id both null -- see manager's
+// getTokensByProjectId), fetched via the kit10_get_project_tokens host fn. `format` mirrors
+// TokenValueScalar.format (schema.ts) -- the token's own declared hint for how to render its raw
+// string as valid CSS (a bare "16" needs "px" for a size token, "red" needs color-recognition
+// validation for a color token), used once when emitting this token's :root declaration (see
+// render_root_variables) since a token isn't tied to any single consuming property the way a raw
+// kit entry is.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectToken {
+    #[serde(default)]
+    pub alias: String,
+    #[serde(default)]
+    pub value: String,
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+// Kit/view-scoped tokens are deliberately OUT of scope for this first cut -- only whatever the
+// host's kit10_get_project_tokens call returns (project-scope only, by construction of the query
+// it wraps) is ever visible here, so there is nothing to additionally filter by scope on this
+// side. A future pass could extend this to kit/view-scoped tokens too; that needs its own alias
+// disambiguation story (two different kits' same-named token would collide in one flat :root) this
+// cut deliberately doesn't have to solve yet.
+pub(crate) type ProjectTokens = HashMap<String, ProjectToken>;
+
+// Converts a token alias (freeform, e.g. "colors.primary" or "Spacing / Medium") into a valid CSS
+// custom-property identifier -- anything outside [A-Za-z0-9_-] becomes a hyphen. Shared by both
+// the `:root` declaration (render_root_variables) and every `var(--...)` usage site
+// (resolve_properties), which is what keeps them from ever drifting out of sync with each other.
+pub(crate) fn css_var_name(alias: &str) -> String {
+    let cleaned: String = alias
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    if cleaned.is_empty() { "token".to_string() } else { cleaned }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -167,17 +215,31 @@ fn matches_condition(cond: &ExportLayerCondition, args: &HashMap<String, String>
     args.get(&cond.axis_id).map(|v| *v == cond.value.value).unwrap_or(false)
 }
 
+// Properties whose stored value is a MERGED/synthesized shorthand by the time declarations_for
+// ever sees it (synthesize_border folds "border"+"border-width" into one atomic value) -- a
+// project-token-backed "border" color would no longer literally equal the token's own value after
+// merging, so substituting a bare `var(--alias)` here would silently drop the width/style half of
+// the shorthand. Excluded at the SOURCE (this map is never populated for these keys) rather than
+// patched after the fact in every synthesize_* function that might touch them.
+const NEVER_TOKEN_SUBSTITUTED: &[&str] = &["border", "border-width"];
+
 // Winner-only resolve, matching resolve.ts's matchLayers: layers whose every condition matches
 // `args`, applied ascending by condition count (specificity) so a more-specific layer's entries
 // overwrite a less-specific one's. No priority-index tie-break (see module doc comment) -- v1's
 // synthetic single-axis-at-a-time matches don't need it. `is_box` gates synthesize_arrange (a
 // Text-primitive Kit never has arrange/flex-direction properties to begin with -- running it
 // unconditionally would inject a spurious flex-direction onto a Text kit that never asked for one).
-fn resolve_properties(
+//
+// Returns (resolved values, property -> CSS var name for properties backed by a PROJECT-scope
+// token). The second map is built in lockstep with the first: a later, more specific layer
+// overwriting a property with a plain literal clears any earlier token association for that same
+// property key, exactly mirroring how `result.insert` already overwrites the value itself.
+fn resolve_properties_with_tokens(
     shape: &KitExportShape,
     args: &HashMap<String, String>,
     is_box: bool,
-) -> HashMap<String, String> {
+    project_tokens: &ProjectTokens,
+) -> (HashMap<String, String>, HashMap<String, String>) {
     let mut matching: Vec<&ExportLayer> = shape
         .layers
         .iter()
@@ -186,19 +248,57 @@ fn resolve_properties(
     matching.sort_by_key(|l| l.conditions.len());
 
     let mut result = HashMap::new();
+    let mut token_vars: HashMap<String, String> = HashMap::new();
     for layer in matching {
         for entry in &layer.entries {
             result.insert(entry.property.clone(), resolve_entry_value(entry));
+
+            let project_var = entry
+                .token_id
+                .as_ref()
+                .filter(|_| !NEVER_TOKEN_SUBSTITUTED.contains(&entry.property.as_str()))
+                .and_then(|tid| project_tokens.get(tid))
+                .map(|pt| css_var_name(&pt.alias));
+            match project_var {
+                Some(var_name) => {
+                    token_vars.insert(entry.property.clone(), var_name);
+                }
+                None => {
+                    token_vars.remove(&entry.property);
+                }
+            }
         }
     }
     synthesize_border(&mut result);
+    synthesize_resize(&mut result);
     if is_box {
         synthesize_arrange(&mut result);
     } else {
         synthesize_line_height(&mut result);
     }
-    result
+    (result, token_vars)
 }
+
+// Replicates the flex-grow half of Charter's compile_resize (plugins/charter/src/lib.rs) directly
+// from a Kit's own raw width/height, with NO parent/sibling axis lookup needed -- this revises the
+// module's original v1 scope cut (see the top-of-file doc comment's history) for the grow half
+// specifically: flex-grow is inherently MAIN-AXIS-relative in real CSS regardless of the
+// container's actual flex-direction, so an unconditional `flex-grow: 1;` on the child correctly
+// reproduces Fill's "equal share of the main axis" behavior whichever axis turns out to be main at
+// render time -- no Charter round-trip (a hypothetical translate_properties host-fn) required
+// after all. `.entry(...).or_insert(...)` mirrors synthesize_arrange's own "only fires when never
+// explicitly set" rule -- an explicit raw `flex-grow` (the legacy item-level escape hatch) always
+// wins. Still deliberately NOT reproduced: flex-shrink/flex-basis/min-width/min-height, and Hug's
+// own flex-shrink:0 (Hug's flex-grow:0 already matches CSS's own default, so omitting it, as
+// today, is already correct) -- these remain axis-specific or otherwise out of this pass's scope.
+fn synthesize_resize(properties: &mut HashMap<String, String>) {
+    let wants_grow =
+        ["width", "height"].iter().any(|prop| properties.get(*prop).map(String::as_str) == Some("fill"));
+    if wants_grow {
+        properties.entry("flex-grow".to_string()).or_insert_with(|| "1".to_string());
+    }
+}
+
 
 // Replicates Charter's compile_arrange/resolve_flex_direction (plugins/charter/src/lib.rs)
 // exactly: the "arrange" raw property (Stack/Cluster/Split/Center/Grid, unrecognized/absent ->
@@ -536,7 +636,17 @@ fn format_font_weight(raw: &str) -> String {
     weight.to_string()
 }
 
-fn declarations_for(properties: &HashMap<String, String>, exclude: Option<&HashMap<String, String>>) -> Vec<String> {
+// `token_vars` is consulted only for a property that ALSO passed format_value -- a fill/hug
+// width/height (formats to None) has no declaration to emit at all regardless of token backing.
+// background/color get an extra is_recognized_color(value) gate on top: if the token's own
+// resolved value is genuinely unparseable, the marker-substitution safety net (format_value's own
+// job) must still win -- silently hiding a broken color behind `var(--alias)` would mean the
+// export renders it fine while Vellum shows the magenta warning for the identical bad data.
+fn declarations_for_with_tokens(
+    properties: &HashMap<String, String>,
+    token_vars: &HashMap<String, String>,
+    exclude: Option<&HashMap<String, String>>,
+) -> Vec<String> {
     let mut declarations: Vec<String> = Vec::new();
     let mut entries: Vec<(&String, &String)> = properties.iter().collect();
     entries.sort_by_key(|(k, _)| k.as_str());
@@ -553,8 +663,15 @@ fn declarations_for(properties: &HashMap<String, String>, exclude: Option<&HashM
             ));
             continue;
         }
-        if let Some(formatted) = format_value(property, value) {
-            declarations.push(format!("{property}: {formatted};"));
+        let Some(formatted) = format_value(property, value) else { continue };
+
+        let var_name = token_vars.get(property).filter(|_| match property.as_str() {
+            "background" | "color" => is_recognized_color(value),
+            _ => true,
+        });
+        match var_name {
+            Some(name) => declarations.push(format!("{property}: var(--{name});")),
+            None => declarations.push(format!("{property}: {formatted};")),
         }
     }
     declarations
@@ -580,11 +697,17 @@ fn box_display_declaration(properties: &HashMap<String, String>) -> String {
 // everything else at its unconditioned (null-layer) state. `is_box` is whether the node this
 // Kit's rule is being synthesized for is a Box (a Text/Img-primitive Kit never needs a `display`
 // declaration at all) -- see box_display_declaration's doc comment for why this can't just be
-// diffed off the raw properties like everything else.
-pub(crate) fn synthesize_base_declarations(shape: &KitExportShape, is_box: bool) -> Vec<String> {
+// diffed off the raw properties like everything else. `project_tokens` is the project-scope
+// token table (see ProjectTokens' doc comment) -- a property backed by one of these tokens emits
+// `var(--alias)` instead of the token's own resolved literal.
+pub(crate) fn synthesize_base_declarations_with_tokens(
+    shape: &KitExportShape,
+    is_box: bool,
+    project_tokens: &ProjectTokens,
+) -> Vec<String> {
     let base_args = excluded_axis_args(shape);
-    let base = resolve_properties(shape, &base_args, is_box);
-    let mut declarations = declarations_for(&base, None);
+    let (base, token_vars) = resolve_properties_with_tokens(shape, &base_args, is_box, project_tokens);
+    let mut declarations = declarations_for_with_tokens(&base, &token_vars, None);
     if is_box {
         declarations.insert(0, box_display_declaration(&base));
     }
@@ -615,10 +738,14 @@ fn dynamic_selector_suffix(value: &str) -> String {
 // One VariantRule per non-excluded axis value, holding only the delta against the Kit's own base
 // declarations. Empty declarations (the variant matches the base exactly) are skipped entirely --
 // no reason to emit an empty ruleset. `is_box` -- see synthesize_base_declarations/
-// synthesize_arrange's doc comments.
-pub(crate) fn synthesize_variant_rules(shape: &KitExportShape, is_box: bool) -> Vec<VariantRule> {
+// synthesize_arrange's doc comments. `project_tokens` -- see synthesize_base_declarations_with_tokens.
+pub(crate) fn synthesize_variant_rules_with_tokens(
+    shape: &KitExportShape,
+    is_box: bool,
+    project_tokens: &ProjectTokens,
+) -> Vec<VariantRule> {
     let base_args = excluded_axis_args(shape);
-    let base = resolve_properties(shape, &base_args, is_box);
+    let (base, _) = resolve_properties_with_tokens(shape, &base_args, is_box, project_tokens);
     let mut rules = Vec::new();
 
     for axis in &shape.axes {
@@ -631,9 +758,10 @@ pub(crate) fn synthesize_variant_rules(shape: &KitExportShape, is_box: bool) -> 
             }
             let mut variant_args = base_args.clone();
             variant_args.insert(axis.axis_id.clone(), value.value.value.clone());
-            let variant = resolve_properties(shape, &variant_args, is_box);
+            let (variant, variant_token_vars) =
+                resolve_properties_with_tokens(shape, &variant_args, is_box, project_tokens);
 
-            let declarations = declarations_for(&variant, Some(&base));
+            let declarations = declarations_for_with_tokens(&variant, &variant_token_vars, Some(&base));
             if declarations.is_empty() {
                 continue;
             }
@@ -649,6 +777,52 @@ pub(crate) fn synthesize_variant_rules(shape: &KitExportShape, is_box: bool) -> 
     rules
 }
 
+// Emits a `:root { --alias: value; }` block for every fetched PROJECT-scope scalar token,
+// regardless of whether anything in this export actually references it -- the same "declare the
+// whole design-token surface, not just what happens to be used on this page" posture a real
+// design system's generated custom-property sheet would have. A token with no alias is skipped
+// (nothing for a var() reference to name it by); a name collision after css_var_name's
+// sanitization (two different aliases sanitizing to the same string) gets a numeric suffix so
+// every declared variable stays addressable.
+pub(crate) fn render_root_variables(tokens: &ProjectTokens) -> String {
+    let mut entries: Vec<&ProjectToken> = tokens.values().filter(|t| !t.alias.is_empty()).collect();
+    if entries.is_empty() {
+        return String::new();
+    }
+    entries.sort_by(|a, b| a.alias.cmp(&b.alias));
+
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut lines = Vec::new();
+    for token in entries {
+        let base_name = css_var_name(&token.alias);
+        let mut name = base_name.clone();
+        let mut suffix = 2;
+        while !seen_names.insert(name.clone()) {
+            name = format!("{base_name}-{suffix}");
+            suffix += 1;
+        }
+        let value = format_token_root_value(token.format.as_deref(), &token.value);
+        lines.push(format!("  --{name}: {value};"));
+    }
+    format!(":root {{\n{}\n}}\n\n", lines.join("\n"))
+}
+
+// Mirrors format_value's own per-kind formatting, but dispatched off the TOKEN's declared
+// `format` hint (TokenValueScalar.format, schema.ts) rather than a consuming property's name --
+// a project token isn't tied to any single property, so there's no "{property}" to key off here.
+// Unknown/absent format passes the raw value through unchanged (matches format_value's own `_ =>`
+// fallback).
+fn format_token_root_value(format: Option<&str>, raw: &str) -> String {
+    match format {
+        Some("color") => {
+            if is_recognized_color(raw) { raw.to_string() } else { unparseable_color_marker() }
+        }
+        Some("size") | Some("font-size") => as_px_if_bare_number(raw),
+        Some("font-weight") => format_font_weight(raw),
+        _ => raw.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,6 +836,7 @@ mod tests {
             property: property.to_string(),
             literal_value: Some(value.to_string()),
             token_value: None,
+            token_id: None,
         }
     }
 
@@ -727,7 +902,7 @@ mod tests {
     #[test]
     fn base_declarations_come_from_the_null_layer() {
         let shape = button_shape();
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert_eq!(
             base,
             vec![
@@ -741,7 +916,7 @@ mod tests {
     #[test]
     fn static_axis_value_produces_a_bem_modifier_with_only_the_delta() {
         let shape = button_shape();
-        let rules = synthesize_variant_rules(&shape, true);
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
         assert_eq!(secondary.declarations, vec!["background: oklab(40% 0.05 -0.01 / 1);".to_string()]);
     }
@@ -749,7 +924,7 @@ mod tests {
     #[test]
     fn dynamic_axis_value_with_a_recognized_name_produces_a_real_pseudo_class() {
         let shape = button_shape();
-        let rules = synthesize_variant_rules(&shape, true);
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         let hover = rules.iter().find(|r| r.selector_suffix == ":hover").unwrap();
         assert_eq!(hover.declarations, vec!["background: oklab(65% 0.1 0.02 / 1);".to_string()]);
     }
@@ -766,12 +941,12 @@ mod tests {
         shape.axes[1].excluded_from_export = true; // exclude `state`
         // A layer conditioned on the excluded axis's own default (none set -- falls back to its
         // lowest-priority value, "hover", the only value it has) should still fold into the base.
-        let rules = synthesize_variant_rules(&shape, true);
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(
             rules.iter().all(|r| r.selector_suffix != ":hover"),
             "an excluded axis must not produce a variant rule for any of its values"
         );
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert_eq!(
             base,
             vec![
@@ -795,13 +970,13 @@ mod tests {
                 entries: vec![literal_entry("flex-direction", "row")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"display: flex;".to_string()), "base was: {:?}", base);
         assert!(base.contains(&"flex-direction: row;".to_string()));
 
         let mut grid_shape = shape.clone();
         grid_shape.layers[0].entries.push(literal_entry("grid-template-columns", "200px 1fr"));
-        let grid_base = synthesize_base_declarations(&grid_shape, true);
+        let grid_base = synthesize_base_declarations_with_tokens(&grid_shape, true, &ProjectTokens::new());
         assert!(grid_base.contains(&"display: grid;".to_string()), "base was: {:?}", grid_base);
         assert!(!grid_base.contains(&"display: flex;".to_string()));
     }
@@ -818,7 +993,7 @@ mod tests {
                 entries: vec![literal_entry("color", "#111111")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(!base.iter().any(|d| d.starts_with("display:")));
     }
 
@@ -837,7 +1012,7 @@ mod tests {
                 entries: vec![literal_entry("border", "#000000")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         // is_box=false also synthesizes the default ratio-ramp line-height (no font-size set -> 16px
         // default -> 24px) -- see synthesize_line_height's own tests for that logic in isolation.
         assert_eq!(
@@ -858,7 +1033,7 @@ mod tests {
                 entries: vec![literal_entry("border", "#000000"), literal_entry("border-width", "3")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(
             base,
             vec!["border: 3px solid #000000;".to_string(), "line-height: 24px;".to_string()]
@@ -877,7 +1052,7 @@ mod tests {
                 entries: vec![literal_entry("border-width", "3")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(
             base,
             vec!["line-height: 24px;".to_string()],
@@ -898,7 +1073,7 @@ mod tests {
                 entries: vec![literal_entry("border", "none")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(base, vec!["line-height: 24px;".to_string()]);
     }
 
@@ -919,7 +1094,7 @@ mod tests {
                 ],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(
             base.contains(&"line-height: 30px;".to_string()),
             "expected font_size(20) * 1.5 = 30px, got {:?}",
@@ -942,7 +1117,7 @@ mod tests {
                 ],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"line-height: 40px;".to_string()), "{:?}", base);
     }
 
@@ -959,7 +1134,7 @@ mod tests {
                 entries: vec![literal_entry("font-size", "16")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"line-height: 24px;".to_string()), "16 * 1.5 = 24: {:?}", base);
     }
 
@@ -976,7 +1151,7 @@ mod tests {
                 entries: vec![literal_entry("font-size", "48")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         let line_height = base
             .iter()
             .find_map(|d| d.strip_prefix("line-height: ").and_then(|v| v.strip_suffix("px;")))
@@ -999,7 +1174,7 @@ mod tests {
                 entries: vec![literal_entry("font-size", "16")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.iter().all(|d| !d.contains("line-height")), "{:?}", base);
     }
 
@@ -1015,7 +1190,7 @@ mod tests {
                 entries: vec![literal_entry("background", "oklch(50% 0.1 200)")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"background: oklch(50% 0.1 200);".to_string()), "{:?}", base);
     }
 
@@ -1035,7 +1210,7 @@ mod tests {
                 entries: vec![literal_entry("color", "red")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         let expected = format!("color: {};", unparseable_color_marker());
         assert!(base.contains(&expected), "expected {:?}, got {:?}", expected, base);
         assert!(!base.iter().any(|d| d.contains("red")), "{:?}", base);
@@ -1053,7 +1228,7 @@ mod tests {
                 entries: vec![literal_entry("border", "cornflowerblue")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         let expected = format!("border: 1px solid {};", unparseable_color_marker());
         assert!(base.contains(&expected), "expected {:?}, got {:?}", expected, base);
         assert!(!base.iter().any(|d| d.contains("cornflowerblue")), "{:?}", base);
@@ -1091,7 +1266,7 @@ mod tests {
                 },
             ],
         };
-        let rules = synthesize_variant_rules(&shape, true);
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         let danger = rules.iter().find(|r| r.selector_suffix == "--danger").unwrap();
         // The variant only overrode "border" (color), not "border-width" -- but since border is
         // one atomic shorthand, the recomputed value still carries the base's 2px width, not the
@@ -1112,7 +1287,7 @@ mod tests {
             conditions: vec![condition("theme", "secondary")],
             entries: vec![literal_entry("flex-basis", "0")],
         });
-        let rules = synthesize_variant_rules(&shape, true);
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
         assert!(
             secondary
@@ -1142,7 +1317,7 @@ mod tests {
                 ],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"grid-auto-rows: 100px;".to_string()), "{:?}", base);
         assert!(base.contains(&"grid-auto-columns: minmax(100px, 1fr);".to_string()), "{:?}", base);
         assert!(base.contains(&"grid-column: span 2;".to_string()), "{:?}", base);
@@ -1165,7 +1340,7 @@ mod tests {
                 ],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"flex-grow: 2;".to_string()), "{:?}", base);
         assert!(base.contains(&"flex-shrink: 0;".to_string()), "{:?}", base);
         assert!(base.contains(&"align-self: flex-end;".to_string()), "{:?}", base);
@@ -1186,7 +1361,7 @@ mod tests {
                 entries: vec![literal_entry("arrange", "split")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"display: flex;".to_string()), "base was: {:?}", base);
         assert!(base.contains(&"flex-direction: row;".to_string()), "base was: {:?}", base);
         assert!(base.contains(&"justify-content: space-between;".to_string()), "base was: {:?}", base);
@@ -1207,7 +1382,7 @@ mod tests {
                 entries: vec![literal_entry("arrange", "cluster")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"flex-direction: row;".to_string()));
         assert!(base.contains(&"flex-wrap: wrap;".to_string()));
         assert!(base.contains(&"align-items: flex-start;".to_string()));
@@ -1231,7 +1406,7 @@ mod tests {
                 ],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"align-items: flex-end;".to_string()), "base was: {:?}", base);
         assert!(!base.iter().any(|d| d == "align-items: center;"));
     }
@@ -1248,7 +1423,7 @@ mod tests {
                 entries: vec![literal_entry("arrange", "grid"), literal_entry("grid-cell-min", "200")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, true);
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"display: grid;".to_string()), "base was: {:?}", base);
         assert!(
             base.contains(&"grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));".to_string()),
@@ -1272,7 +1447,7 @@ mod tests {
                 entries: vec![literal_entry("color", "#111111")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(!base.iter().any(|d| d.starts_with("flex-direction") || d.starts_with("display")));
     }
 
@@ -1288,7 +1463,7 @@ mod tests {
                 entries: vec![literal_entry("gap", "16"), literal_entry("padding", "8 16")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"gap: 16px;".to_string()));
         assert!(base.contains(&"padding: 8px 16px;".to_string()));
     }
@@ -1305,7 +1480,7 @@ mod tests {
                 entries: vec![literal_entry("font-weight", "600")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"font-weight: 600;".to_string()), "{:?}", base);
     }
 
@@ -1324,13 +1499,39 @@ mod tests {
                 entries: vec![literal_entry("font-weight", "bold")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert!(base.contains(&"font-weight: 400;".to_string()), "{:?}", base);
         assert!(!base.iter().any(|d| d.contains("bold")), "{:?}", base);
     }
 
     #[test]
-    fn fill_and_hug_width_keywords_are_compiled_and_produce_no_declaration() {
+    fn hug_width_keyword_is_compiled_and_produces_no_declaration() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("width", "hug")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
+        assert_eq!(
+            base,
+            vec!["line-height: 24px;".to_string()],
+            "hug is Charter's compiled keyword, not a literal size, and its flex-grow:0 already \
+             matches CSS's own default so omitting it is correct: {:?}",
+            base
+        );
+    }
+
+    #[test]
+    fn fill_width_keyword_produces_no_width_declaration_but_does_produce_flex_grow() {
+        // The revised scope: Fill's GROW half no longer needs the parent's own axis (flex-grow is
+        // inherently main-axis-relative), so it's a real, emitted declaration now -- see
+        // synthesize_resize's doc comment. The literal "width: fill;" itself must still never leak
+        // through (fill isn't a real CSS size value).
         let shape = KitExportShape {
             kit_id: "card".to_string(),
             kit_name: "Card".to_string(),
@@ -1341,13 +1542,48 @@ mod tests {
                 entries: vec![literal_entry("width", "fill")],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(
             base,
-            vec!["line-height: 24px;".to_string()],
-            "fill/hug are Charter's compiled keywords, not a literal size: {:?}",
+            vec!["flex-grow: 1;".to_string(), "line-height: 24px;".to_string()],
+            "{:?}",
             base
         );
+    }
+
+    #[test]
+    fn fill_height_keyword_also_produces_flex_grow() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("height", "fill")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
+        assert!(base.contains(&"flex-grow: 1;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn an_explicit_raw_flex_grow_wins_over_fills_own_default() {
+        // Mirrors synthesize_arrange's "only fires when never explicitly set" rule -- the legacy
+        // item-level flex-grow escape hatch must not be clobbered by Fill's own default.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("width", "fill"), literal_entry("flex-grow", "2")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
+        assert!(base.contains(&"flex-grow: 2;".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d == "flex-grow: 1;"), "{:?}", base);
     }
 
     #[test]
@@ -1367,13 +1603,253 @@ mod tests {
                         value: Some("#3b82f6".to_string()),
                         view_id: None,
                     }),
+                    token_id: None,
                 }],
             }],
         };
-        let base = synthesize_base_declarations(&shape, false);
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(
             base,
             vec!["color: #3b82f6;".to_string(), "line-height: 24px;".to_string()]
         );
+    }
+
+    fn project_token_entry(property: &str, token_id: &str) -> ExportLayerEntry {
+        ExportLayerEntry {
+            property: property.to_string(),
+            literal_value: None,
+            token_value: Some(TokenValueWire {
+                kind: "scalar".to_string(),
+                value: Some("oklch(62% 0.18 260)".to_string()),
+                view_id: None,
+            }),
+            token_id: Some(token_id.to_string()),
+        }
+    }
+
+    fn project_tokens_fixture() -> ProjectTokens {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-1".to_string(),
+            ProjectToken {
+                alias: "colors.primary".to_string(),
+                value: "oklch(62% 0.18 260)".to_string(),
+                format: Some("color".to_string()),
+            },
+        );
+        tokens
+    }
+
+    #[test]
+    fn a_property_backed_by_a_project_scope_token_emits_a_css_variable_reference() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![project_token_entry("background", "tok-1")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &project_tokens_fixture());
+        assert_eq!(
+            base,
+            vec!["background: var(--colors-primary);".to_string(), "line-height: 24px;".to_string()]
+        );
+    }
+
+    #[test]
+    fn a_token_id_not_present_in_the_project_tokens_map_falls_back_to_the_literal() {
+        // The token backing this entry is kit/view-scoped (or the fetch failed) -- either way it's
+        // simply absent from the project-tokens map, and the resolved literal must still render.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![project_token_entry("background", "some-other-token")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &project_tokens_fixture());
+        assert!(base.contains(&"background: oklch(62% 0.18 260);".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d.contains("var(--")), "{:?}", base);
+    }
+
+    #[test]
+    fn border_never_substitutes_a_variable_even_when_token_backed() {
+        // synthesize_border merges "border" into a "{width}px solid {color}" shorthand -- a bare
+        // var(--alias) here would silently drop the width/style half.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![project_token_entry("border", "tok-1")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &project_tokens_fixture());
+        assert!(
+            base.contains(&"border: 1px solid oklch(62% 0.18 260);".to_string()),
+            "{:?}",
+            base
+        );
+        assert!(!base.iter().any(|d| d.contains("var(--")), "{:?}", base);
+    }
+
+    #[test]
+    fn an_unparseable_token_backed_color_still_gets_the_magenta_marker_not_a_variable() {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-bad".to_string(),
+            ProjectToken {
+                alias: "colors.oops".to_string(),
+                value: "cornflowerblue".to_string(),
+                format: Some("color".to_string()),
+            },
+        );
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![ExportLayerEntry {
+                    property: "color".to_string(),
+                    literal_value: None,
+                    token_value: Some(TokenValueWire {
+                        kind: "scalar".to_string(),
+                        value: Some("cornflowerblue".to_string()),
+                        view_id: None,
+                    }),
+                    token_id: Some("tok-bad".to_string()),
+                }],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &tokens);
+        let expected = format!("color: {};", unparseable_color_marker());
+        assert!(base.contains(&expected), "expected {:?}, got {:?}", expected, base);
+        assert!(!base.iter().any(|d| d.contains("var(--")), "{:?}", base);
+    }
+
+    #[test]
+    fn a_variant_can_override_a_base_project_token_with_a_plain_literal() {
+        // A more-specific layer overwriting the same property with a literal must clear the
+        // earlier layer's token association, not just its value.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![AxisExportMeta {
+                axis_id: "theme".to_string(),
+                axis_name: Some("theme".to_string()),
+                kind: Some("categorical".to_string()),
+                variant_kind: "static".to_string(),
+                excluded_from_export: false,
+                default_value: None,
+                priority_index: 0,
+                values: vec![ExportAxisValue {
+                    axis_value_id: "v1".to_string(),
+                    value: literal("dark"),
+                    priority_index: 0,
+                }],
+            }],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![project_token_entry("background", "tok-1")],
+                },
+                ExportLayer {
+                    layer_id: "dark".to_string(),
+                    conditions: vec![condition("theme", "dark")],
+                    entries: vec![literal_entry("background", "oklch(20% 0.02 260)")],
+                },
+            ],
+        };
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &project_tokens_fixture());
+        let dark = rules.iter().find(|r| r.selector_suffix == "--dark").unwrap();
+        assert_eq!(dark.declarations, vec!["background: oklch(20% 0.02 260);".to_string()]);
+    }
+
+    #[test]
+    fn render_root_variables_emits_one_declaration_per_aliased_token_sorted_by_alias() {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-b".to_string(),
+            ProjectToken {
+                alias: "colors.bg".to_string(),
+                value: "oklch(100% 0 0)".to_string(),
+                format: Some("color".to_string()),
+            },
+        );
+        tokens.insert(
+            "tok-a".to_string(),
+            ProjectToken {
+                alias: "colors.primary".to_string(),
+                value: "oklch(62% 0.18 260)".to_string(),
+                format: Some("color".to_string()),
+            },
+        );
+        tokens.insert(
+            "tok-noalias".to_string(),
+            ProjectToken { alias: String::new(), value: "16".to_string(), format: None },
+        );
+        let out = render_root_variables(&tokens);
+        assert_eq!(
+            out,
+            ":root {\n  --colors-bg: oklch(100% 0 0);\n  --colors-primary: oklch(62% 0.18 260);\n}\n\n"
+        );
+    }
+
+    #[test]
+    fn render_root_variables_applies_the_size_format_hint() {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-1".to_string(),
+            ProjectToken {
+                alias: "spacing.md".to_string(),
+                value: "16".to_string(),
+                format: Some("size".to_string()),
+            },
+        );
+        let out = render_root_variables(&tokens);
+        assert_eq!(out, ":root {\n  --spacing-md: 16px;\n}\n\n");
+    }
+
+    #[test]
+    fn render_root_variables_sanitizes_dots_and_spaces_in_the_alias() {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-1".to_string(),
+            ProjectToken {
+                alias: "Spacing / Medium".to_string(),
+                value: "8px".to_string(),
+                format: None,
+            },
+        );
+        let out = render_root_variables(&tokens);
+        assert_eq!(out, ":root {\n  --Spacing---Medium: 8px;\n}\n\n");
+    }
+
+    #[test]
+    fn render_root_variables_disambiguates_colliding_sanitized_names() {
+        let mut tokens = ProjectTokens::new();
+        tokens.insert(
+            "tok-1".to_string(),
+            ProjectToken { alias: "a.b".to_string(), value: "1px".to_string(), format: Some("size".to_string()) },
+        );
+        tokens.insert(
+            "tok-2".to_string(),
+            ProjectToken { alias: "a-b".to_string(), value: "2px".to_string(), format: Some("size".to_string()) },
+        );
+        let out = render_root_variables(&tokens);
+        // Sort order is by RAW alias ("a-b" < "a.b" lexicographically), so "a-b" claims the
+        // unsuffixed name first and "a.b" (sanitizing to the same string) gets "-2".
+        assert_eq!(out, ":root {\n  --a-b: 2px;\n  --a-b-2: 1px;\n}\n\n");
     }
 }
