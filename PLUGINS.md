@@ -252,7 +252,40 @@ Returns the current resolved kits for the active view as `ResolvedKit[]`. Useful
 
 ### `kit10_get_interpreter_output() -> string`
 
-Returns the active interpreter's last resolved output (`viewport_data`, `node_view_ids`, `categories`, `font_requests`) to any plugin that declares this in `capabilities.hostFns` -- the same public-access pattern as `kit10_get_resolution`, one level further down the pipeline (post-translation, not just resolved kit properties). Always `{ "available": true, ... }` once any resolve has happened -- `viewport_data` is a required field on Charter's output, always sent alongside the optional MessagePack `viewport_data_binary` (used only for Vellum's own large-scene fast path), never replaced by it.
+Returns the active interpreter's last resolved output (`viewport_data`, `node_view_ids`, `node_kit_ids`, `categories`, `font_requests`) to any plugin that declares this in `capabilities.hostFns` -- the same public-access pattern as `kit10_get_resolution`, one level further down the pipeline (post-translation, not just resolved kit properties). Always `{ "available": true, ... }` once any resolve has happened -- `viewport_data` is a required field on Charter's output, always sent alongside the optional MessagePack `viewport_data_binary` (used only for Vellum's own large-scene fast path), never replaced by it. `node_kit_ids` is parallel to `viewport_data`/`node_view_ids` (same length/order) -- the highest-priority composed Kit's id for each node, `""` for structural scaffolding or a kit-less view.
+
+---
+
+### `kit10_get_kit_export_shape(input: string) -> string`
+
+Returns the unresolved, axis-args-independent shape of one or more Kits -- every layer's full condition set and entries, plus axis metadata (`variantKind`, `excludedFromExport`, ordered values) -- NOT collapsed to a single winner the way `kit10_get_resolution`/`on_resolve` are. Built for WebCodium's Kit-basis export (see `resources/webcodium-export-plan.md`), which needs to know which axis/value combinations exist on a Kit and which layers set a property under which conditions, not just the one value that currently wins for some view's live `axis_args`.
+
+```json
+// in:  { "kit_ids": ["uuid", ...] }
+// out: { "success": true, "kits": { "<kitId>": KitExportShape } }
+```
+
+---
+
+### `kit10_get_asset_links(input: string) -> string`
+
+Resolves a batch of asset ids to their `link` (a real URL -- a static path, or a future cloud-hosted link) for WebCodium's Img export support. An asset with no `link` (bytes-only, uploaded and never given one) is simply absent from the response map; the plugin treats a missing entry as "no known URL for this image" and skips it rather than guessing.
+
+```json
+// in:  { "asset_ids": ["uuid", ...] }
+// out: { "success": true, "links": { "<assetId>": "/1x/favicon.png" } }
+```
+
+---
+
+### `kit10_get_font_links(input: string) -> string`
+
+Resolves a batch of `(family, weight, style)` font requests to the real URL Fontavious would fetch for each -- backs WebCodium's `@font-face` export support. Routes through the SAME `variant_url` export the editor's own font-fetch scan (`Editor.svelte`'s `loadVariant`) already uses, so an export can never disagree with what the live editor actually loads. No hardcoded provider or URL anywhere in the calling plugin -- every link comes from Fontavious's own catalogue. Best-effort per request: a catalogue miss or uncatalogued family just omits that entry from `links`, never fails the whole batch.
+
+```json
+// in:  { "requests": [{ "family": "Inter", "weight": 700, "style": "normal" }] }
+// out: { "success": true, "links": [{ "family": "Inter", "weight": 700, "style": "normal", "url": "https://..." }] }
+```
 
 ---
 
