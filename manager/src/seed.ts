@@ -5,6 +5,138 @@ import type { BuiltinPlugins } from './plugins-bootstrap.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
+// Shared view/kit builders used by seedDemoProject's landing page section and every other
+// seeded landing-page project below. Factored out once four call sites needed the identical
+// boxKit/textKit/textView/boxView/imageKit/imageView/registerBundledAsset shapes; each closes
+// over one project id so callers never have to thread it through every call.
+function makeSeedHelpers(api: Api, projectId: string) {
+	// A Box layout kit: all its properties baked on the null layer (unconditional).
+	async function boxKit(name: string, props: Record<string, string>) {
+		const kit = (await api.createKitInProject(projectId, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
+		return kit;
+	}
+
+	// A Text style kit: baked font/paint style + a token-backed `content` entry, so every view
+	// composing it supplies its OWN text via a View-scope `content` token (which overrides the
+	// kit default by alias). One style kit, many distinct-text views.
+	async function textKit(name: string, style: Record<string, string>) {
+		const kit = (await api.createKitInProject(projectId, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		await api.createRenderEntry(snip.id, 'font-family', 'Inter');
+		for (const [k, v] of Object.entries(style)) await api.createRenderEntry(snip.id, k, v);
+		const contentTok = (await api.createToken(projectId, 'content', s(''), { kitId: kit.id }))!;
+		await api.createRenderEntry(snip.id, 'content', null, contentTok.id);
+		return kit;
+	}
+
+	async function textView(name: string, kit: { id: string }, content: string): Promise<string> {
+		const v = (await api.createViewInProject(projectId, name, {
+			charter: { primitive: 'text' },
+			view_icon: 'fa-solid fa-italic'
+		}))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		await api.createToken(projectId, 'content', s(content), { viewId: v.id });
+		return v.id;
+	}
+
+	async function boxView(
+		name: string,
+		kit: { id: string },
+		childIds: string[],
+		hints: Record<string, unknown> = {
+			charter: { primitive: 'box' },
+			view_icon: 'fa-regular fa-window-maximize'
+		}
+	): Promise<string> {
+		const v = (await api.createViewInProject(projectId, name, hints))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		if (childIds.length)
+			await api.createToken(
+				projectId,
+				'children',
+				{ type: 'view-list', view_ids: childIds },
+				{ viewId: v.id }
+			);
+		return v.id;
+	}
+
+	// An Image kit: declares an `src` render entry backed by a kit-scope token, so every view
+	// composing it supplies its own image source via a View-scope override. Same pattern as
+	// textKit's `content` token. `props` should always set an explicit width/height: an image
+	// view with no src override falls back to this kit-scope placeholder (empty string), which
+	// measures to a literal 0x0 (ImageSource::None, no intrinsic size) -- so without one the
+	// placeholder would occupy zero layout space instead of a visible slot.
+	async function imageKit(name: string, props: Record<string, string> = {}) {
+		const kit = (await api.createKitInProject(projectId, name))!;
+		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
+		const srcTok = (await api.createToken(projectId, 'src', s(''), { kitId: kit.id }))!;
+		await api.createRenderEntry(snip.id, 'src', null, srcTok.id);
+		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
+		return kit;
+	}
+
+	// `src` is an asset id (see registerBundledAsset below), not a URL -- mirrors textView's
+	// `content` param exactly: every view composing an image kit supplies its own source via a
+	// View-scope token of the same alias, overriding the kit-scope empty-string placeholder.
+	// Optional -- a view with no real asset yet just keeps the kit's placeholder (see imageKit's
+	// own doc comment on why `props` must still set an explicit width/height in that case).
+	async function imageView(name: string, kit: { id: string }, src?: string): Promise<string> {
+		const v = (await api.createViewInProject(projectId, name, {
+			charter: { primitive: 'image' },
+			view_icon: 'fa-solid fa-image'
+		}))!;
+		await api.attachKitToComposition(kit.id, v.id);
+		if (src) await api.createToken(projectId, 'src', s(src), { viewId: v.id });
+		return v.id;
+	}
+
+	// Registers a bundled static file (served from `static/`, so `link` is a plain root-relative
+	// path) as a real project asset row, computing its real sha256 checksum for idempotent
+	// upsert-by-checksum. This is as far as manager-side seeding can go: the actual bytes only
+	// ever live in the browser's IndexedDB via app-side code (`assetBytes`,
+	// `src/lib/editor/asset-bytes.ts`), which this package cannot import (see CLAUDE.md's
+	// manager/app boundary). The editor's image-reload scan (`Editor.svelte`, mirrors the
+	// existing font-fetch scan) is what actually fetches `link` and caches the bytes into
+	// IndexedDB + Vellum, the first time any view resolves a `src` pointing at this asset's id --
+	// so the id returned here is real and stable, but the pixels only appear once that scan runs.
+	// Best-effort: a fetch/digest failure returns null, and the caller falls back to leaving the
+	// image kit's own empty-string placeholder (imageView's `src` param is optional for exactly
+	// this reason) rather than failing the whole seed.
+	async function registerBundledAsset(input: {
+		name: string;
+		link: string;
+		mimeType: string;
+		width: number;
+		height: number;
+	}): Promise<string | null> {
+		try {
+			const res = await fetch(input.link);
+			if (!res.ok) return null;
+			const bytes = new Uint8Array(await res.arrayBuffer());
+			const digest = await crypto.subtle.digest('SHA-256', bytes.buffer as ArrayBuffer);
+			const checksum = Array.from(new Uint8Array(digest))
+				.map((b) => b.toString(16).padStart(2, '0'))
+				.join('');
+			const asset = await api.upsertAsset({
+				projectId,
+				name: input.name,
+				mimeType: input.mimeType,
+				checksum,
+				link: input.link,
+				width: input.width,
+				height: input.height
+			});
+			return asset.id;
+		} catch {
+			return null;
+		}
+	}
+
+	return { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset };
+}
+
 export async function seedDemoProject(
 	dialect: SchemaDialect,
 	builtinPlugins: BuiltinPlugins
@@ -378,129 +510,8 @@ export async function seedDemoProject(
 	// parent's children token must reference views that already exist.
 	// ==========================================================================================
 
-	// A Box layout kit: all its properties baked on the null layer (unconditional).
-	async function boxKit(name: string, props: Record<string, string>) {
-		const kit = (await api.createKitInProject(proj.id, name))!;
-		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
-		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
-		return kit;
-	}
-
-	// A Text style kit: baked font/paint style + a token-backed `content` entry, so every view
-	// composing it supplies its OWN text via a View-scope `content` token (which overrides the kit
-	// default by alias). One style kit, many distinct-text views.
-	async function textKit(name: string, style: Record<string, string>) {
-		const kit = (await api.createKitInProject(proj.id, name))!;
-		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
-		await api.createRenderEntry(snip.id, 'font-family', 'Inter');
-		for (const [k, v] of Object.entries(style)) await api.createRenderEntry(snip.id, k, v);
-		const contentTok = (await api.createToken(proj.id, 'content', s(''), { kitId: kit.id }))!;
-		await api.createRenderEntry(snip.id, 'content', null, contentTok.id);
-		return kit;
-	}
-
-	async function textView(name: string, kit: { id: string }, content: string): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, {
-			charter: { primitive: 'text' },
-			view_icon: 'fa-solid fa-italic'
-		}))!;
-		await api.attachKitToComposition(kit.id, v.id);
-		await api.createToken(proj.id, 'content', s(content), { viewId: v.id });
-		return v.id;
-	}
-
-	async function boxView(
-		name: string,
-		kit: { id: string },
-		childIds: string[],
-		hints: Record<string, unknown> = {
-			charter: { primitive: 'box' },
-			view_icon: 'fa-regular fa-window-maximize'
-		}
-	): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, hints))!;
-		await api.attachKitToComposition(kit.id, v.id);
-		if (childIds.length)
-			await api.createToken(
-				proj.id,
-				'children',
-				{ type: 'view-list', view_ids: childIds },
-				{ viewId: v.id }
-			);
-		return v.id;
-	}
-
-	// An Image kit: declares an `src` render entry backed by a kit-scope token, so every view
-	// composing it supplies its own image source via a View-scope override. Same pattern as
-	// textKit's `content` token. `props` should always set an explicit width/height: an image
-	// view with no src override falls back to this kit-scope placeholder (empty string), which
-	// measures to a literal 0x0 (ImageSource::None, no intrinsic size) -- so without one the
-	// placeholder would occupy zero layout space instead of a visible slot.
-	async function imageKit(name: string, props: Record<string, string> = {}) {
-		const kit = (await api.createKitInProject(proj.id, name))!;
-		const snip = (await api.createRenderSnippet((await api.createLayer(kit.id))!.id))!;
-		const srcTok = (await api.createToken(proj.id, 'src', s(''), { kitId: kit.id }))!;
-		await api.createRenderEntry(snip.id, 'src', null, srcTok.id);
-		for (const [k, v] of Object.entries(props)) await api.createRenderEntry(snip.id, k, v);
-		return kit;
-	}
-
-	// `src` is an asset id (see registerBundledAsset below), not a URL -- mirrors textView's
-	// `content` param exactly: every view composing an image kit supplies its own source via a
-	// View-scope token of the same alias, overriding the kit-scope empty-string placeholder.
-	// Optional -- a view with no real asset yet just keeps the kit's placeholder (see imageKit's
-	// own doc comment on why `props` must still set an explicit width/height in that case).
-	async function imageView(name: string, kit: { id: string }, src?: string): Promise<string> {
-		const v = (await api.createViewInProject(proj.id, name, {
-			charter: { primitive: 'image' },
-			view_icon: 'fa-solid fa-image'
-		}))!;
-		await api.attachKitToComposition(kit.id, v.id);
-		if (src) await api.createToken(proj.id, 'src', s(src), { viewId: v.id });
-		return v.id;
-	}
-
-	// Registers a bundled static file (served from `static/`, so `link` is a plain root-relative
-	// path) as a real project asset row, computing its real sha256 checksum for idempotent
-	// upsert-by-checksum. This is as far as manager-side seeding can go: the actual bytes only
-	// ever live in the browser's IndexedDB via app-side code (`assetBytes`,
-	// `src/lib/editor/asset-bytes.ts`), which this package cannot import (see CLAUDE.md's
-	// manager/app boundary). The editor's image-reload scan (`Editor.svelte`, mirrors the
-	// existing font-fetch scan) is what actually fetches `link` and caches the bytes into
-	// IndexedDB + Vellum, the first time any view resolves a `src` pointing at this asset's id --
-	// so the id returned here is real and stable, but the pixels only appear once that scan runs.
-	// Best-effort: a fetch/digest failure returns null, and the caller falls back to leaving the
-	// image kit's own empty-string placeholder (imageView's `src` param is optional for exactly
-	// this reason) rather than failing the whole seed.
-	async function registerBundledAsset(input: {
-		name: string;
-		link: string;
-		mimeType: string;
-		width: number;
-		height: number;
-	}): Promise<string | null> {
-		try {
-			const res = await fetch(input.link);
-			if (!res.ok) return null;
-			const bytes = new Uint8Array(await res.arrayBuffer());
-			const digest = await crypto.subtle.digest('SHA-256', bytes.buffer as ArrayBuffer);
-			const checksum = Array.from(new Uint8Array(digest))
-				.map((b) => b.toString(16).padStart(2, '0'))
-				.join('');
-			const asset = await api.upsertAsset({
-				projectId: proj.id,
-				name: input.name,
-				mimeType: input.mimeType,
-				checksum,
-				link: input.link,
-				width: input.width,
-				height: input.height
-			});
-			return asset.id;
-		} catch {
-			return null;
-		}
-	}
+	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =
+		makeSeedHelpers(api, proj.id);
 
 	// --- Style kits ---
 	const h1Kit = await textKit('Heading', {
@@ -768,4 +779,1319 @@ export async function seedDemoProject(
 	});
 
 	console.log('Demo project seeded: KIT\u202210 Demo');
+}
+
+// ==========================================================================================
+// Tropika Juice Co. -- canned juice landing page (pineapple / starfruit / grape).
+//
+// Exercises: a real per-instance axis resolution (Flavor: pineapple/starfruit/grape) on the
+// Can kit via setAxisArg -- unlike seedDemoProject's Button/ButtonLabel kits, which stay
+// unattached library kits, these three Can views are real, resolved, differently-colored
+// instances of one kit. Also covers Stack/Cluster/Split/Center/Grid (all five compile_arrange
+// opinions), resize fill/hug, the padding shorthand ladder (1/2/3/4-value), text-decoration
+// (line-through), text-align + line-height on a real stretched paragraph, and one bundled Img.
+// ==========================================================================================
+export async function seedJuiceLandingPage(
+	dialect: SchemaDialect,
+	builtinPlugins: BuiltinPlugins
+): Promise<void> {
+	const api: Api = queryBuilder(dialect);
+	const ws = (await api.getAllWorkspaces().execute())[0]!;
+	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'Tropika Juice Co.'))!;
+	await api.setProjectInterpreter(proj.id, builtinPlugins.charter.id);
+
+	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =
+		makeSeedHelpers(api, proj.id);
+
+	// --- Flavor axis: the Can kit's background is resolved per-instance below via setAxisArg,
+	// not baked per view -- three views compose the SAME kit and each picks a different Flavor.
+	const flavorAxis = (await api.createAxis(
+		proj.id,
+		'Flavor',
+		'Which fruit this can is',
+		'categorical'
+	))!;
+	const flavorPineapple = (await api.createAxisValue(flavorAxis.id, {
+		type: 'literal',
+		value: 'pineapple'
+	}))!;
+	const flavorStarfruit = (await api.createAxisValue(flavorAxis.id, {
+		type: 'literal',
+		value: 'starfruit'
+	}))!;
+	const flavorGrape = (await api.createAxisValue(flavorAxis.id, {
+		type: 'literal',
+		value: 'grape'
+	}))!;
+
+	const canKit = (await api.createKitInProject(proj.id, 'Can'))!;
+	await api.consumeAxis(canKit.id, flavorAxis.id);
+
+	const canNull = (await api.createLayer(canKit.id))!;
+	const canNullSnip = (await api.createRenderSnippet(canNull.id))!;
+	await api.createRenderEntry(canNullSnip.id, 'arrange', 'stack');
+	await api.createRenderEntry(canNullSnip.id, 'align-items', 'center');
+	await api.createRenderEntry(canNullSnip.id, 'gap', '6px');
+	await api.createRenderEntry(canNullSnip.id, 'padding', '24px');
+	await api.createRenderEntry(canNullSnip.id, 'border-radius', '20px');
+	await api.createRenderEntry(canNullSnip.id, 'width', 'fill');
+	await api.createRenderEntry(canNullSnip.id, 'background', 'oklch(90% 0.01 264)');
+
+	const canPineapple = (await api.createLayer(canKit.id))!;
+	await api.addAxisValueToLayer(canPineapple.id, flavorPineapple.id);
+	const canPineappleSnip = (await api.createRenderSnippet(canPineapple.id))!;
+	await api.createRenderEntry(canPineappleSnip.id, 'background', 'oklch(86% 0.15 95)');
+
+	const canStarfruit = (await api.createLayer(canKit.id))!;
+	await api.addAxisValueToLayer(canStarfruit.id, flavorStarfruit.id);
+	const canStarfruitSnip = (await api.createRenderSnippet(canStarfruit.id))!;
+	await api.createRenderEntry(canStarfruitSnip.id, 'background', 'oklch(87% 0.17 135)');
+
+	const canGrape = (await api.createLayer(canKit.id))!;
+	await api.addAxisValueToLayer(canGrape.id, flavorGrape.id);
+	const canGrapeSnip = (await api.createRenderSnippet(canGrape.id))!;
+	await api.createRenderEntry(canGrapeSnip.id, 'background', 'oklch(45% 0.19 310)');
+
+	// --- Style kits ---
+	const h1Kit = await textKit('Heading', {
+		'font-size': '42px',
+		'font-weight': '700',
+		color: 'oklch(23% 0.03 264)'
+	});
+	const h2Kit = await textKit('Subheading', {
+		'font-size': '19px',
+		'font-weight': '700',
+		color: 'oklch(23% 0.03 264)'
+	});
+	const bodyKit = await textKit('Body', {
+		'font-size': '15px',
+		'font-weight': '400',
+		color: 'oklch(54% 0.03 264)'
+	});
+	const ctaLabelKit = await textKit('CTA Label', {
+		'font-size': '15px',
+		'font-weight': '600',
+		color: 'oklch(100% 0 0)'
+	});
+	const navLinkKit = await textKit('Nav Link', {
+		'font-size': '14px',
+		'font-weight': '600',
+		color: 'oklch(23% 0.03 264)'
+	});
+	const bandTextKit = await textKit('Band Text', {
+		'font-size': '19px',
+		'font-weight': '500',
+		color: 'oklch(23% 0.03 264)',
+		'line-height': '1.6',
+		'text-align': 'center'
+	});
+	const canLabelKit = await textKit('Can Label', {
+		'font-size': '20px',
+		'font-weight': '700',
+		color: 'oklch(30% 0.06 90)'
+	});
+	const canNoteKit = await textKit('Can Note', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: 'oklch(30% 0.06 90)'
+	});
+	const canPriceKit = await textKit('Can Price', {
+		'font-size': '16px',
+		'font-weight': '700',
+		color: 'oklch(30% 0.06 90)'
+	});
+	const canLabelLightKit = await textKit('Can Label Light', {
+		'font-size': '20px',
+		'font-weight': '700',
+		color: 'oklch(96% 0.02 310)'
+	});
+	const canNoteLightKit = await textKit('Can Note Light', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: 'oklch(90% 0.03 310)'
+	});
+	const canPriceLightKit = await textKit('Can Price Light', {
+		'font-size': '16px',
+		'font-weight': '700',
+		color: 'oklch(96% 0.02 310)'
+	});
+	const chipKit = await textKit('Flavor Chip', {
+		'font-size': '13px',
+		'font-weight': '600',
+		color: 'oklch(30% 0.09 190)',
+		background: 'oklch(93% 0.05 190)',
+		'border-radius': '999px',
+		padding: '6px 14px'
+	});
+	const nutritionLabelKit = await textKit('Nutrition Label', {
+		'font-size': '14px',
+		'font-weight': '600',
+		color: 'oklch(28% 0.07 190)',
+		'text-align': 'center'
+	});
+	const priceOldKit = await textKit('Price Old', {
+		'font-size': '15px',
+		'font-weight': '500',
+		color: 'oklch(54% 0.03 264)',
+		'text-decoration': 'line-through'
+	});
+	const priceNewKit = await textKit('Price New', {
+		'font-size': '22px',
+		'font-weight': '700',
+		color: 'oklch(62% 0.14 190)'
+	});
+	const footerTextKit = await textKit('Footer Text', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: 'oklch(85% 0.01 264)'
+	});
+
+	// --- Layout kits ---
+	const pageKit = await boxKit('Page', {
+		arrange: 'stack',
+		background: 'oklch(98.3% 0.0106 90)',
+		width: '900px',
+		gap: '0px',
+		padding: '0px'
+	});
+	const navKit = await boxKit('Nav', {
+		arrange: 'split',
+		padding: '20px 40px',
+		background: 'oklch(100% 0 0)'
+	});
+	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
+	const ctaKit = await boxKit('CTA', {
+		arrange: 'center',
+		padding: '13px 26px',
+		background: 'oklch(62% 0.14 190)',
+		'border-radius': '999px',
+		width: 'hug'
+	});
+	const heroKit = await boxKit('Hero', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'center',
+		gap: '32px',
+		padding: '56px 64px',
+		background: 'oklch(96% 0.02 95)'
+	});
+	const heroContentKit = await boxKit('Hero Content', {
+		arrange: 'stack',
+		'align-items': 'center',
+		gap: '18px'
+	});
+	const bandKit = await boxKit('Band', {
+		arrange: 'stack',
+		'align-items': 'stretch',
+		padding: '48px 120px',
+		background: 'oklch(100% 0 0)'
+	});
+	const flavorRowKit = await boxKit('Flavor Row', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'stretch',
+		gap: '20px',
+		padding: '48px 64px 56px 64px',
+		background: 'oklch(98.3% 0.0106 90)'
+	});
+	const nutritionGridKit = await boxKit('Nutrition Grid', {
+		arrange: 'grid',
+		'grid-cell-min': '140px',
+		gap: '16px',
+		padding: '48px'
+	});
+	const nutritionTileKit = await boxKit('Nutrition Tile', {
+		arrange: 'center',
+		padding: '20px 12px',
+		background: 'oklch(94% 0.03 190)',
+		'border-radius': '14px',
+		height: '96px'
+	});
+	const chipClusterKit = await boxKit('Chip Cluster', {
+		arrange: 'cluster',
+		gap: '10px',
+		padding: '0px 64px 48px'
+	});
+	const subscribeKit = await boxKit('Subscribe Row', {
+		arrange: 'split',
+		padding: '32px 64px',
+		background: 'oklch(94% 0.02 90)'
+	});
+	const priceStackKit = await boxKit('Price Stack', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'center',
+		gap: '16px'
+	});
+	const footerKit = await boxKit('Footer', {
+		arrange: 'center',
+		padding: '28px 64px',
+		background: 'oklch(20% 0.02 264)'
+	});
+
+	// Explicit width/height placeholder (see imageKit's own doc comment on why this is required).
+	// Real, freely-licensed photos (Wikimedia Commons, CC/public-domain), downsized to ~960px and
+	// bundled under static/1x/stock/ like every other seeded asset -- NOT hotlinked live. Every
+	// app boot wipes and reseeds PGlite from scratch (no seed-only-if-empty guard), which calls
+	// registerBundledAsset again on every single load; a live cross-origin fetch on that path
+	// once caused a real, reported multi-second stall/lag on every reload once Wikimedia's CDN
+	// throttled repeated requests. Same-origin static files keep the "real photo, not an abstract
+	// shape" win without paying a network round trip (let alone a rate-limited one) on every boot.
+	const srcImageKit = await imageKit('Image Source', { width: '320px', height: '260px' });
+	const splashAssetId = await registerBundledAsset({
+		name: 'juice-hero-pineapple.jpg',
+		link: '/1x/stock/juice-hero-pineapple.jpg',
+		mimeType: 'image/jpeg',
+		width: 319,
+		height: 640
+	});
+	const canPhotoKit = await imageKit('Can Photo', {
+		width: '100%',
+		height: '130px',
+		fit: 'cover'
+	});
+	const pineapplePhotoAssetId = await registerBundledAsset({
+		name: 'juice-pineapple.jpg',
+		link: '/1x/stock/juice-pineapple.jpg',
+		mimeType: 'image/jpeg',
+		width: 360,
+		height: 480
+	});
+	const starfruitPhotoAssetId = await registerBundledAsset({
+		name: 'juice-starfruit.jpg',
+		link: '/1x/stock/juice-starfruit.jpg',
+		mimeType: 'image/jpeg',
+		width: 360,
+		height: 480
+	});
+	const grapePhotoAssetId = await registerBundledAsset({
+		name: 'juice-grape.jpg',
+		link: '/1x/stock/juice-grape.jpg',
+		mimeType: 'image/jpeg',
+		width: 326,
+		height: 480
+	});
+
+	// --- Leaf text views ---
+	const logo = await textView('Logo', h2Kit, 'TROPIKA');
+	const navLinkShop = await textView('Nav Link: Shop', navLinkKit, 'Shop');
+	const navLinkFlavors = await textView('Nav Link: Flavors', navLinkKit, 'Flavors');
+	const navCtaLabel = await textView('Nav CTA Label', ctaLabelKit, 'Subscribe');
+	const heroHeading = await textView('Hero Heading', h1Kit, 'Sunshine in a can.');
+	const heroSubtitle = await textView(
+		'Hero Subtitle',
+		bodyKit,
+		'Cold-pressed pineapple, starfruit, and grape, canned at peak ripeness. No added sugar, no concentrate.'
+	);
+	const heroCtaLabel = await textView('Hero CTA Label', ctaLabelKit, 'Try the Variety Pack');
+	const bandText = await textView(
+		'Band Text',
+		bandTextKit,
+		'Every can is cold-pressed within 24 hours of harvest, then sealed without heat or water, so what you taste is just the fruit.'
+	);
+
+	const pineappleTitle = await textView('Pineapple Title', canLabelKit, 'Pineapple');
+	const pineappleNote = await textView(
+		'Pineapple Note',
+		canNoteKit,
+		'Bright, golden, straight off the stem.'
+	);
+	const pineapplePrice = await textView('Pineapple Price', canPriceKit, '$2.49');
+
+	const starfruitTitle = await textView('Starfruit Title', canLabelKit, 'Starfruit');
+	const starfruitNote = await textView(
+		'Starfruit Note',
+		canNoteKit,
+		'Crisp, tart, quietly tropical.'
+	);
+	const starfruitPrice = await textView('Starfruit Price', canPriceKit, '$2.49');
+
+	const grapeTitle = await textView('Grape Title', canLabelLightKit, 'Grape');
+	const grapeNote = await textView('Grape Note', canNoteLightKit, 'Deep, jammy, Concord-dark.');
+	const grapePrice = await textView('Grape Price', canPriceLightKit, '$2.49');
+
+	const nutritionSugar = await textView('Nutrition: Sugar', nutritionLabelKit, '0g Added Sugar');
+	const nutritionCold = await textView('Nutrition: Cold-Pressed', nutritionLabelKit, 'Cold-Pressed');
+	const nutritionReal = await textView('Nutrition: Real Fruit', nutritionLabelKit, 'Real Fruit Only');
+	const nutritionCan = await textView('Nutrition: BPA-Free', nutritionLabelKit, 'BPA-Free Can');
+
+	const chipTropical = await textView('Chip: Tropical', chipKit, 'Tropical');
+	const chipRefreshing = await textView('Chip: Refreshing', chipKit, 'Refreshing');
+	const chipAntioxidant = await textView('Chip: Antioxidant-Rich', chipKit, 'Antioxidant-Rich');
+	const chipNonGmo = await textView('Chip: Non-GMO', chipKit, 'Non-GMO');
+	const chipVegan = await textView('Chip: Vegan', chipKit, 'Vegan');
+
+	const subscribeLabel = await textView(
+		'Subscribe Label',
+		bodyKit,
+		'Subscribe & save 15% on every case.'
+	);
+	const priceOld = await textView('Price Old', priceOldKit, '$29.99');
+	const priceNew = await textView('Price New', priceNewKit, '$25.49');
+	const subscribeCtaLabel = await textView('Subscribe CTA Label', ctaLabelKit, 'Subscribe');
+
+	const footerText = await textView(
+		'Footer Text',
+		footerTextKit,
+		'\u00a9 2026 Tropika Beverage Co. \u2014 canned fresh, shipped cold.'
+	);
+
+	// --- Composed sections ---
+	const navCta = await boxView('Nav CTA', ctaKit, [navCtaLabel]);
+	const navLinks = await boxView('Nav Links', navLinksKit, [navLinkShop, navLinkFlavors, navCta]);
+	const nav = await boxView('Nav Bar', navKit, [logo, navLinks]);
+
+	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
+	const heroContent = await boxView('Hero Content', heroContentKit, [
+		heroHeading,
+		heroSubtitle,
+		heroCta
+	]);
+	const heroImg = await imageView('Hero Image', srcImageKit, splashAssetId ?? undefined);
+	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
+
+	const band = await boxView('Brand Statement', bandKit, [bandText]);
+
+	const pineapplePhoto = await imageView(
+		'Pineapple Photo',
+		canPhotoKit,
+		pineapplePhotoAssetId ?? undefined
+	);
+	const canPineappleView = await boxView('Can: Pineapple', canKit, [
+		pineapplePhoto,
+		pineappleTitle,
+		pineappleNote,
+		pineapplePrice
+	]);
+	await api.setAxisArg(canPineappleView, canKit.id, flavorAxis.id, {
+		type: 'literal',
+		value: 'pineapple'
+	});
+	const starfruitPhoto = await imageView(
+		'Starfruit Photo',
+		canPhotoKit,
+		starfruitPhotoAssetId ?? undefined
+	);
+	const canStarfruitView = await boxView('Can: Starfruit', canKit, [
+		starfruitPhoto,
+		starfruitTitle,
+		starfruitNote,
+		starfruitPrice
+	]);
+	await api.setAxisArg(canStarfruitView, canKit.id, flavorAxis.id, {
+		type: 'literal',
+		value: 'starfruit'
+	});
+	const grapePhoto = await imageView('Grape Photo', canPhotoKit, grapePhotoAssetId ?? undefined);
+	const canGrapeView = await boxView('Can: Grape', canKit, [
+		grapePhoto,
+		grapeTitle,
+		grapeNote,
+		grapePrice
+	]);
+	await api.setAxisArg(canGrapeView, canKit.id, flavorAxis.id, { type: 'literal', value: 'grape' });
+
+	const flavorRow = await boxView('Flavor Row', flavorRowKit, [
+		canPineappleView,
+		canStarfruitView,
+		canGrapeView
+	]);
+
+	const nutritionTileSugar = await boxView('Nutrition Tile: Sugar', nutritionTileKit, [
+		nutritionSugar
+	]);
+	const nutritionTileCold = await boxView('Nutrition Tile: Cold', nutritionTileKit, [
+		nutritionCold
+	]);
+	const nutritionTileReal = await boxView('Nutrition Tile: Real Fruit', nutritionTileKit, [
+		nutritionReal
+	]);
+	const nutritionTileCan = await boxView('Nutrition Tile: Can', nutritionTileKit, [nutritionCan]);
+	const nutritionGrid = await boxView('Nutrition Grid', nutritionGridKit, [
+		nutritionTileSugar,
+		nutritionTileCold,
+		nutritionTileReal,
+		nutritionTileCan
+	]);
+
+	const chipCluster = await boxView('Chip Cluster', chipClusterKit, [
+		chipTropical,
+		chipRefreshing,
+		chipAntioxidant,
+		chipNonGmo,
+		chipVegan
+	]);
+
+	const priceStack = await boxView('Price Stack', priceStackKit, [priceOld, priceNew]);
+	const subscribeCta = await boxView('Subscribe CTA', ctaKit, [subscribeCtaLabel]);
+	const subscribeRight = await boxView('Subscribe Right', priceStackKit, [
+		priceStack,
+		subscribeCta
+	]);
+	const subscribe = await boxView('Subscribe Row', subscribeKit, [subscribeLabel, subscribeRight]);
+
+	const footer = await boxView('Footer', footerKit, [footerText]);
+
+	await boxView('Landing Page', pageKit, [
+		nav,
+		hero,
+		band,
+		flavorRow,
+		nutritionGrid,
+		chipCluster,
+		subscribe,
+		footer
+	]);
+
+	console.log('Demo project seeded: Tropika Juice Co.');
+}
+
+// ==========================================================================================
+// Forge Wellness Club -- gym & wellness center landing page, subscription-tier pricing.
+//
+// Exercises: a Plan axis (basic/pro/elite) resolved per-instance on the Plan Card kit --
+// unlike Flavor above (which only varies background), Plan varies background AND border AND
+// padding together, and the null layer covers Basic entirely (no {plan:basic} layer exists --
+// Basic is just "whatever the unconditioned card looks like", the same "no divergence needed"
+// shape as seedDemoProject's own theme/density button layers). Also nests a Cluster of feature
+// chips inside a Stack card inside a Stack row (composition depth), and covers the Center
+// arrangement on a two-child (heading + CTA) banner without forcing a stretch.
+// ==========================================================================================
+export async function seedGymLandingPage(
+	dialect: SchemaDialect,
+	builtinPlugins: BuiltinPlugins
+): Promise<void> {
+	const api: Api = queryBuilder(dialect);
+	const ws = (await api.getAllWorkspaces().execute())[0]!;
+	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'Forge Wellness Club'))!;
+	await api.setProjectInterpreter(proj.id, builtinPlugins.charter.id);
+
+	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =
+		makeSeedHelpers(api, proj.id);
+
+	// --- Plan axis: Basic has no conditioned layer at all -- it's just the null layer's own
+	// unconditioned look, same shape as a design system where the "default" tier needs no
+	// bespoke treatment. Pro and Elite each diverge on background + border + padding together.
+	const planAxis = (await api.createAxis(
+		proj.id,
+		'Plan',
+		'Which membership tier this card represents',
+		'categorical'
+	))!;
+	await api.createAxisValue(planAxis.id, { type: 'literal', value: 'basic' });
+	const planPro = (await api.createAxisValue(planAxis.id, { type: 'literal', value: 'pro' }))!;
+	const planElite = (await api.createAxisValue(planAxis.id, { type: 'literal', value: 'elite' }))!;
+
+	const planCardKit = (await api.createKitInProject(proj.id, 'Plan Card'))!;
+	await api.consumeAxis(planCardKit.id, planAxis.id);
+
+	const planNull = (await api.createLayer(planCardKit.id))!;
+	const planNullSnip = (await api.createRenderSnippet(planNull.id))!;
+	await api.createRenderEntry(planNullSnip.id, 'arrange', 'stack');
+	await api.createRenderEntry(planNullSnip.id, 'align-items', 'stretch');
+	await api.createRenderEntry(planNullSnip.id, 'gap', '16px');
+	await api.createRenderEntry(planNullSnip.id, 'padding', '28px');
+	await api.createRenderEntry(planNullSnip.id, 'border', 'oklch(88% 0.01 260)');
+	await api.createRenderEntry(planNullSnip.id, 'border-radius', '16px');
+	await api.createRenderEntry(planNullSnip.id, 'background', 'oklch(100% 0 0)');
+	await api.createRenderEntry(planNullSnip.id, 'width', 'fill');
+
+	const planProLayer = (await api.createLayer(planCardKit.id))!;
+	await api.addAxisValueToLayer(planProLayer.id, planPro.id);
+	const planProSnip = (await api.createRenderSnippet(planProLayer.id))!;
+	await api.createRenderEntry(planProSnip.id, 'border', 'oklch(64% 0.19 35)');
+	await api.createRenderEntry(planProSnip.id, 'background', 'oklch(97% 0.02 35)');
+
+	const planEliteLayer = (await api.createLayer(planCardKit.id))!;
+	await api.addAxisValueToLayer(planEliteLayer.id, planElite.id);
+	const planEliteSnip = (await api.createRenderSnippet(planEliteLayer.id))!;
+	await api.createRenderEntry(planEliteSnip.id, 'border', 'oklch(80% 0.13 85)');
+	await api.createRenderEntry(planEliteSnip.id, 'background', 'oklch(16% 0.01 260)');
+	await api.createRenderEntry(planEliteSnip.id, 'padding', '32px');
+
+	// --- Style kits ---
+	const h1Kit = await textKit('Heading', {
+		'font-size': '42px',
+		// Inter's catalogued variant tops out at 700 (see plugins/fontavious/catalogue.json) --
+		// 700 is the boldest weight this family actually ships, not an arbitrary choice.
+		'font-weight': '700',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const h2Kit = await textKit('Subheading', {
+		'font-size': '19px',
+		'font-weight': '700',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const bodyKit = await textKit('Body', {
+		'font-size': '15px',
+		'font-weight': '400',
+		color: 'oklch(50% 0.01 260)'
+	});
+	const ctaLabelKit = await textKit('CTA Label', {
+		'font-size': '15px',
+		'font-weight': '600',
+		color: 'oklch(100% 0 0)'
+	});
+	const navLinkKit = await textKit('Nav Link', {
+		'font-size': '14px',
+		'font-weight': '600',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const bandTextKit = await textKit('Band Text', {
+		'font-size': '19px',
+		'font-weight': '500',
+		color: 'oklch(18% 0.01 260)',
+		'line-height': '1.6',
+		'text-align': 'center'
+	});
+	const bannerHeadingKit = await textKit('Banner Heading', {
+		'font-size': '24px',
+		'font-weight': '700',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const tierNameKit = await textKit('Tier Name', {
+		'font-size': '20px',
+		'font-weight': '700',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const priceKit = await textKit('Tier Price', {
+		'font-size': '28px',
+		'font-weight': '700',
+		color: 'oklch(18% 0.01 260)'
+	});
+	const tierNameLightKit = await textKit('Tier Name Light', {
+		'font-size': '20px',
+		'font-weight': '700',
+		color: 'oklch(95% 0 0)'
+	});
+	const priceLightKit = await textKit('Tier Price Light', {
+		'font-size': '28px',
+		'font-weight': '700',
+		color: 'oklch(80% 0.13 85)'
+	});
+	const badgeKit = await textKit('Most Popular Badge', {
+		'font-size': '12px',
+		'font-weight': '700',
+		color: 'oklch(64% 0.19 35)',
+		'text-decoration': 'underline'
+	});
+	const featureChipKit = await textKit('Feature Chip', {
+		'font-size': '13px',
+		'font-weight': '500',
+		color: 'oklch(30% 0.06 35)',
+		background: 'oklch(95% 0.03 35)',
+		'border-radius': '999px',
+		padding: '5px 12px'
+	});
+	const featureChipLightKit = await textKit('Feature Chip Light', {
+		'font-size': '13px',
+		'font-weight': '500',
+		color: 'oklch(90% 0.05 85)',
+		background: 'oklch(24% 0.02 260)',
+		'border-radius': '999px',
+		padding: '5px 12px'
+	});
+	const classLabelKit = await textKit('Class Label', {
+		'font-size': '14px',
+		'font-weight': '600',
+		color: 'oklch(18% 0.01 260)',
+		'text-align': 'center'
+	});
+	const communityChipKit = await textKit('Community Chip', {
+		'font-size': '13px',
+		'font-weight': '600',
+		color: 'oklch(45% 0.14 35)',
+		background: 'oklch(95% 0.03 35)',
+		'border-radius': '999px',
+		padding: '6px 14px'
+	});
+	const footerTextKit = await textKit('Footer Text', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: 'oklch(50% 0.01 260)'
+	});
+
+	// --- Layout kits ---
+	const pageKit = await boxKit('Page', {
+		arrange: 'stack',
+		background: 'oklch(99% 0 0)',
+		width: '960px',
+		gap: '0px',
+		padding: '0px'
+	});
+	const navKit = await boxKit('Nav', {
+		arrange: 'split',
+		padding: '20px 40px',
+		background: 'oklch(100% 0 0)'
+	});
+	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
+	const ctaKit = await boxKit('CTA', {
+		arrange: 'center',
+		padding: '13px 26px',
+		background: 'oklch(64% 0.19 35)',
+		'border-radius': '10px',
+		width: 'hug'
+	});
+	const heroKit = await boxKit('Hero', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'center',
+		gap: '32px',
+		padding: '56px 64px',
+		background: 'oklch(97% 0.01 260)'
+	});
+	const heroContentKit = await boxKit('Hero Content', {
+		arrange: 'stack',
+		'align-items': 'center',
+		gap: '18px'
+	});
+	const bandKit = await boxKit('Band', {
+		arrange: 'stack',
+		'align-items': 'stretch',
+		padding: '48px 120px',
+		background: 'oklch(100% 0 0)'
+	});
+	const bannerKit = await boxKit('Trial Banner', {
+		arrange: 'center',
+		gap: '20px',
+		padding: '40px',
+		background: 'oklch(95% 0.03 35)'
+	});
+	const plansRowKit = await boxKit('Plans Row', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'stretch',
+		gap: '20px',
+		padding: '48px 64px 56px 64px',
+		background: 'oklch(99% 0 0)'
+	});
+	const featuresClusterKit = await boxKit('Features Cluster', { arrange: 'cluster', gap: '8px' });
+	const classGridKit = await boxKit('Class Grid', {
+		arrange: 'grid',
+		'grid-cell-min': '130px',
+		gap: '14px',
+		padding: '48px'
+	});
+	const classTileKit = await boxKit('Class Tile', {
+		arrange: 'stack',
+		'align-items': 'center',
+		gap: '10px',
+		padding: '18px 10px',
+		background: 'oklch(97% 0.01 260)',
+		'border-radius': '14px'
+	});
+	const classIconKit = await boxKit('Class Icon', {
+		width: '36px',
+		height: '36px',
+		'border-radius': '10px',
+		background: 'oklch(64% 0.19 35)'
+	});
+	const communityClusterKit = await boxKit('Community Cluster', {
+		arrange: 'cluster',
+		gap: '10px',
+		padding: '0px 64px 48px'
+	});
+	const footerKit = await boxKit('Footer', {
+		arrange: 'split',
+		padding: '28px 64px',
+		background: 'oklch(97% 0.01 260)'
+	});
+	const footerLinksKit = await boxKit('Footer Links', { arrange: 'cluster', gap: '16px' });
+
+	// Real, freely-licensed photo, bundled locally -- see the note in seedJuiceLandingPage above
+	// on why this is NOT hotlinked (every app boot reseeds from scratch, and a live cross-origin
+	// fetch on that path caused a real, reported lag/stall on every reload).
+	const srcImageKit = await imageKit('Image Source', { width: '340px', height: '230px' });
+	const heroAssetId = await registerBundledAsset({
+		name: 'gym-hero.jpg',
+		link: '/1x/stock/gym-hero.jpg',
+		mimeType: 'image/jpeg',
+		width: 640,
+		height: 360
+	});
+
+	// --- Leaf text views ---
+	const logo = await textView('Logo', h2Kit, 'FORGE');
+	const navLinkClasses = await textView('Nav Link: Classes', navLinkKit, 'Classes');
+	const navLinkCoaches = await textView('Nav Link: Coaches', navLinkKit, 'Coaches');
+	const navCtaLabel = await textView('Nav CTA Label', ctaLabelKit, 'Join Now');
+	const heroHeading = await textView('Hero Heading', h1Kit, 'Train harder. Recover smarter.');
+	const heroSubtitle = await textView(
+		'Hero Subtitle',
+		bodyKit,
+		'Strength, conditioning, and recovery under one roof, with coaching built into every membership.'
+	);
+	const heroCtaLabel = await textView('Hero CTA Label', ctaLabelKit, 'Book a Free Trial');
+	const bandText = await textView(
+		'Band Text',
+		bandTextKit,
+		'Every membership pairs strength and conditioning work with real recovery: sauna, mobility, and a coach who actually watches your form.'
+	);
+	const bannerHeading = await textView('Banner Heading', bannerHeadingKit, 'Your first class is on us.');
+	const bannerCtaLabel = await textView('Banner CTA Label', ctaLabelKit, 'Reserve Your Spot');
+
+	const basicName = await textView('Basic Name', tierNameKit, 'Basic');
+	const basicPrice = await textView('Basic Price', priceKit, '$39/mo');
+	const basicF1 = await textView('Basic Feature 1', featureChipKit, 'Gym floor access');
+	const basicF2 = await textView('Basic Feature 2', featureChipKit, 'Locker room');
+	const basicF3 = await textView('Basic Feature 3', featureChipKit, '2 group classes/mo');
+
+	const proName = await textView('Pro Name', tierNameKit, 'Pro');
+	const proBadge = await textView('Pro Badge', badgeKit, 'MOST POPULAR');
+	const proPrice = await textView('Pro Price', priceKit, '$79/mo');
+	const proF1 = await textView('Pro Feature 1', featureChipKit, 'Unlimited classes');
+	const proF2 = await textView('Pro Feature 2', featureChipKit, 'Sauna & recovery suite');
+	const proF3 = await textView('Pro Feature 3', featureChipKit, 'Monthly body scan');
+
+	const eliteName = await textView('Elite Name', tierNameLightKit, 'Elite');
+	const elitePrice = await textView('Elite Price', priceLightKit, '$149/mo');
+	const eliteF1 = await textView('Elite Feature 1', featureChipLightKit, 'Everything in Pro');
+	const eliteF2 = await textView('Elite Feature 2', featureChipLightKit, '2x personal training/mo');
+	const eliteF3 = await textView('Elite Feature 3', featureChipLightKit, 'Priority booking');
+
+	const classNames = ['Strength', 'HIIT', 'Cycling', 'Yoga', 'Boxing', 'Mobility'];
+	const classLabelViews: string[] = [];
+	for (const name of classNames)
+		classLabelViews.push(await textView(`Class Label: ${name}`, classLabelKit, name));
+
+	const communityMembers = await textView('Community: Members', communityChipKit, '500+ Members');
+	const communityCoaches = await textView('Community: Coaches', communityChipKit, '12 Coaches');
+	const communityHours = await textView('Community: Hours', communityChipKit, 'Open 5am\u201311pm');
+	const communityLocations = await textView(
+		'Community: Locations',
+		communityChipKit,
+		'3 Locations'
+	);
+
+	const footerText = await textView('Footer Text', footerTextKit, '\u00a9 2026 Forge Wellness Club.');
+	const footerLinkMembership = await textView('Footer Link: Membership', navLinkKit, 'Membership');
+	const footerLinkSchedule = await textView('Footer Link: Schedule', navLinkKit, 'Schedule');
+	const footerLinkContact = await textView('Footer Link: Contact', navLinkKit, 'Contact');
+
+	// --- Composed sections ---
+	const navCta = await boxView('Nav CTA', ctaKit, [navCtaLabel]);
+	const navLinks = await boxView('Nav Links', navLinksKit, [
+		navLinkClasses,
+		navLinkCoaches,
+		navCta
+	]);
+	const nav = await boxView('Nav Bar', navKit, [logo, navLinks]);
+
+	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
+	const heroContent = await boxView('Hero Content', heroContentKit, [
+		heroHeading,
+		heroSubtitle,
+		heroCta
+	]);
+	const heroImg = await imageView('Hero Image', srcImageKit, heroAssetId ?? undefined);
+	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
+
+	const band = await boxView('Philosophy Band', bandKit, [bandText]);
+
+	const bannerCta = await boxView('Banner CTA', ctaKit, [bannerCtaLabel]);
+	const banner = await boxView('Trial Banner', bannerKit, [bannerHeading, bannerCta]);
+
+	const basicFeatures = await boxView('Basic Features', featuresClusterKit, [
+		basicF1,
+		basicF2,
+		basicF3
+	]);
+	const basicCard = await boxView('Plan: Basic', planCardKit, [basicName, basicPrice, basicFeatures]);
+	await api.setAxisArg(basicCard, planCardKit.id, planAxis.id, { type: 'literal', value: 'basic' });
+
+	const proFeatures = await boxView('Pro Features', featuresClusterKit, [proF1, proF2, proF3]);
+	const proCard = await boxView('Plan: Pro', planCardKit, [
+		proName,
+		proBadge,
+		proPrice,
+		proFeatures
+	]);
+	await api.setAxisArg(proCard, planCardKit.id, planAxis.id, { type: 'literal', value: 'pro' });
+
+	const eliteFeatures = await boxView('Elite Features', featuresClusterKit, [
+		eliteF1,
+		eliteF2,
+		eliteF3
+	]);
+	const eliteCard = await boxView('Plan: Elite', planCardKit, [
+		eliteName,
+		elitePrice,
+		eliteFeatures
+	]);
+	await api.setAxisArg(eliteCard, planCardKit.id, planAxis.id, { type: 'literal', value: 'elite' });
+
+	const plansRow = await boxView('Plans Row', plansRowKit, [basicCard, proCard, eliteCard]);
+
+	const classTiles: string[] = [];
+	for (const labelId of classLabelViews) {
+		const icon = await boxView('Class Icon', classIconKit, []);
+		classTiles.push(await boxView('Class Tile', classTileKit, [icon, labelId]));
+	}
+	const classGrid = await boxView('Class Grid', classGridKit, classTiles);
+
+	const communityCluster = await boxView('Community Cluster', communityClusterKit, [
+		communityMembers,
+		communityCoaches,
+		communityHours,
+		communityLocations
+	]);
+
+	const footerLinks = await boxView('Footer Links', footerLinksKit, [
+		footerLinkMembership,
+		footerLinkSchedule,
+		footerLinkContact
+	]);
+	const footer = await boxView('Footer', footerKit, [footerText, footerLinks]);
+
+	await boxView('Landing Page', pageKit, [
+		nav,
+		hero,
+		band,
+		banner,
+		plansRow,
+		classGrid,
+		communityCluster,
+		footer
+	]);
+
+	console.log('Demo project seeded: Forge Wellness Club');
+}
+
+// ==========================================================================================
+// Meridian -- a minimalist "premium essentials" apparel store, selling ordinary shirts and
+// pants dressed up in editorial copy and a monochrome + single-accent palette.
+//
+// Exercises: a Category axis (shirts/pants) resolved per-instance on the Product Tile kit
+// (border color only, the lightest-touch axis divergence of the three landing pages); the
+// Center arrangement on a hug-sized (not stretched) hero, so its children keep their own
+// natural width; a full-bleed Img at width:'100%' with fit:'contain' (vs. the other two pages'
+// fixed-px cover default); text-align:'justify' on a real stretched paragraph (distinct from
+// the other two pages' 'center'); and a nested Split-containing-Cluster nav.
+// ==========================================================================================
+export async function seedMerchLandingPage(
+	dialect: SchemaDialect,
+	builtinPlugins: BuiltinPlugins
+): Promise<void> {
+	const api: Api = queryBuilder(dialect);
+	const ws = (await api.getAllWorkspaces().execute())[0]!;
+	const proj = (await api.createProjectInWorkspace(ws.workspaceId, 'Meridian'))!;
+	await api.setProjectInterpreter(proj.id, builtinPlugins.charter.id);
+
+	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =
+		makeSeedHelpers(api, proj.id);
+
+	// --- Category axis: the lightest-touch divergence of the three landing pages -- only the
+	// tile's own border color changes; everything else (padding, radius, layout) stays uniform
+	// across categories, which is itself a legitimate axis-usage shape (not every axis needs to
+	// touch many properties to be worth modeling).
+	const categoryAxis = (await api.createAxis(
+		proj.id,
+		'Category',
+		'Which product category this tile represents',
+		'categorical'
+	))!;
+	const categoryShirts = (await api.createAxisValue(categoryAxis.id, {
+		type: 'literal',
+		value: 'shirts'
+	}))!;
+	const categoryPants = (await api.createAxisValue(categoryAxis.id, {
+		type: 'literal',
+		value: 'pants'
+	}))!;
+
+	const productTileKit = (await api.createKitInProject(proj.id, 'Product Tile'))!;
+	await api.consumeAxis(productTileKit.id, categoryAxis.id);
+
+	const tileNull = (await api.createLayer(productTileKit.id))!;
+	const tileNullSnip = (await api.createRenderSnippet(tileNull.id))!;
+	await api.createRenderEntry(tileNullSnip.id, 'arrange', 'stack');
+	await api.createRenderEntry(tileNullSnip.id, 'align-items', 'stretch');
+	await api.createRenderEntry(tileNullSnip.id, 'gap', '10px');
+	await api.createRenderEntry(tileNullSnip.id, 'padding', '20px');
+	await api.createRenderEntry(tileNullSnip.id, 'border', 'oklch(85% 0 0)');
+	await api.createRenderEntry(tileNullSnip.id, 'border-radius', '4px');
+	await api.createRenderEntry(tileNullSnip.id, 'background', 'oklch(100% 0 0)');
+
+	const tileShirts = (await api.createLayer(productTileKit.id))!;
+	await api.addAxisValueToLayer(tileShirts.id, categoryShirts.id);
+	const tileShirtsSnip = (await api.createRenderSnippet(tileShirts.id))!;
+	await api.createRenderEntry(tileShirtsSnip.id, 'border', 'oklch(45% 0.09 40)');
+
+	const tilePants = (await api.createLayer(productTileKit.id))!;
+	await api.addAxisValueToLayer(tilePants.id, categoryPants.id);
+	const tilePantsSnip = (await api.createRenderSnippet(tilePants.id))!;
+	await api.createRenderEntry(tilePantsSnip.id, 'border', 'oklch(40% 0.05 250)');
+
+	// --- Style kits ---
+	const h1Kit = await textKit('Heading', {
+		'font-size': '40px',
+		'font-weight': '700',
+		color: 'oklch(12% 0 0)',
+		'text-align': 'center',
+		'line-height': '1.1'
+	});
+	const h2Kit = await textKit('Subheading', {
+		'font-size': '20px',
+		// Inter's catalogued variant tops out at 700 -- see the h1Kit comment above.
+		'font-weight': '700',
+		color: 'oklch(12% 0 0)'
+	});
+	const bodyKit = await textKit('Body', {
+		'font-size': '16px',
+		'font-weight': '400',
+		color: 'oklch(45% 0 0)',
+		'text-align': 'center',
+		'line-height': '1.5'
+	});
+	const ctaLabelKit = await textKit('CTA Label', {
+		'font-size': '14px',
+		'font-weight': '700',
+		color: 'oklch(96% 0 0)'
+	});
+	const navLinkKit = await textKit('Nav Link', {
+		'font-size': '13px',
+		'font-weight': '600',
+		color: 'oklch(12% 0 0)'
+	});
+	const bandTextKit = await textKit('Band Text', {
+		'font-size': '16px',
+		'font-weight': '400',
+		color: 'oklch(30% 0 0)',
+		'line-height': '1.6',
+		'text-align': 'justify'
+	});
+	const shippingLabelKit = await textKit('Shipping Label', {
+		'font-size': '14px',
+		'font-weight': '600',
+		color: 'oklch(12% 0 0)',
+		'text-align': 'center'
+	});
+	const productNameKit = await textKit('Product Name', {
+		'font-size': '15px',
+		'font-weight': '600',
+		color: 'oklch(12% 0 0)'
+	});
+	const priceOldKit = await textKit('Price Old', {
+		'font-size': '13px',
+		'font-weight': '500',
+		color: 'oklch(55% 0 0)',
+		'text-decoration': 'line-through'
+	});
+	const priceNewKit = await textKit('Price New', {
+		'font-size': '16px',
+		'font-weight': '700',
+		color: 'oklch(12% 0 0)'
+	});
+	const materialChipKit = await textKit('Material Chip', {
+		'font-size': '13px',
+		'font-weight': '500',
+		color: 'oklch(96% 0 0)',
+		background: 'oklch(22% 0 0)',
+		'border-radius': '999px',
+		padding: '6px 14px'
+	});
+	const footerTextKit = await textKit('Footer Text', {
+		'font-size': '13px',
+		'font-weight': '400',
+		color: 'oklch(45% 0 0)'
+	});
+
+	// --- Layout kits ---
+	const pageKit = await boxKit('Page', {
+		arrange: 'stack',
+		background: 'oklch(100% 0 0)',
+		width: '900px',
+		gap: '0px',
+		padding: '0px'
+	});
+	const navKit = await boxKit('Nav', {
+		arrange: 'split',
+		padding: '24px 48px',
+		background: 'oklch(100% 0 0)'
+	});
+	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '24px' });
+	const ctaKit = await boxKit('CTA', {
+		arrange: 'center',
+		padding: '14px 28px',
+		background: 'oklch(12% 0 0)',
+		'border-radius': '2px',
+		width: 'hug'
+	});
+	const heroKit = await boxKit('Hero', {
+		arrange: 'center',
+		gap: '20px',
+		padding: '96px 64px 80px'
+	});
+	const shippingRowKit = await boxKit('Shipping Row', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'stretch',
+		gap: '1px',
+		padding: '0px',
+		background: 'oklch(90% 0 0)'
+	});
+	const shippingBoxKit = await boxKit('Shipping Box', {
+		arrange: 'center',
+		padding: '28px 20px',
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
+	});
+	const bandKit = await boxKit('Band', {
+		arrange: 'stack',
+		'align-items': 'stretch',
+		padding: '48px 140px',
+		background: 'oklch(100% 0 0)'
+	});
+	const productGridKit = await boxKit('Product Grid', {
+		arrange: 'grid',
+		'grid-cell-min': '190px',
+		gap: '20px',
+		padding: '0px 64px 56px'
+	});
+	const priceRowKit = await boxKit('Price Row', {
+		arrange: 'stack',
+		'flex-direction': 'row',
+		'align-items': 'center',
+		gap: '10px'
+	});
+	const materialsKit = await boxKit('Materials Band', {
+		arrange: 'cluster',
+		gap: '10px',
+		padding: '40px 64px',
+		background: 'oklch(10% 0 0)'
+	});
+	const footerKit = await boxKit('Footer', {
+		arrange: 'split',
+		padding: '28px 64px',
+		background: 'oklch(100% 0 0)'
+	});
+	const footerLinksKit = await boxKit('Footer Links', { arrange: 'cluster', gap: '18px' });
+
+	// Real, freely-licensed photos, bundled locally rather than flat color swatches -- see the
+	// matching note in seedJuiceLandingPage above on why these are NOT hotlinked. Also replaces
+	// the four product tiles' plain color-swatch placeholders with a real photo per product.
+	const srcImageKit = await imageKit('Image Source', { width: '100%', height: '360px', fit: 'contain' });
+	const lookbookAssetId = await registerBundledAsset({
+		name: 'merch-lookbook.jpg',
+		link: '/1x/stock/merch-lookbook.jpg',
+		mimeType: 'image/jpeg',
+		width: 900,
+		height: 675
+	});
+	const productPhotoKit = await imageKit('Product Photo', {
+		width: '100%',
+		height: '160px',
+		fit: 'cover'
+	});
+	const oxfordPhotoAssetId = await registerBundledAsset({
+		name: 'merch-oxford.jpg',
+		link: '/1x/stock/merch-oxford.jpg',
+		mimeType: 'image/jpeg',
+		width: 360,
+		height: 480
+	});
+	const teePhotoAssetId = await registerBundledAsset({
+		name: 'merch-tee.jpg',
+		link: '/1x/stock/merch-tee.jpg',
+		mimeType: 'image/jpeg',
+		width: 360,
+		height: 480
+	});
+	const trouserPhotoAssetId = await registerBundledAsset({
+		name: 'merch-trouser.jpg',
+		link: '/1x/stock/merch-trouser.jpg',
+		mimeType: 'image/jpeg',
+		width: 480,
+		height: 360
+	});
+	const denimPhotoAssetId = await registerBundledAsset({
+		name: 'merch-denim.jpg',
+		link: '/1x/stock/merch-denim.jpg',
+		mimeType: 'image/jpeg',
+		width: 480,
+		height: 270
+	});
+
+	// --- Leaf text views ---
+	const wordmark = await textView('Wordmark', h2Kit, 'MERIDIAN');
+	const navLinkShirts = await textView('Nav Link: Shirts', navLinkKit, 'Shirts');
+	const navLinkPants = await textView('Nav Link: Pants', navLinkKit, 'Pants');
+	const navLinkAbout = await textView('Nav Link: About', navLinkKit, 'About');
+	const navLinkCart = await textView('Nav Link: Cart', navLinkKit, 'Cart (0)');
+	const heroHeading = await textView('Hero Heading', h1Kit, 'Fewer things. Made better.');
+	const heroSubtitle = await textView(
+		'Hero Subtitle',
+		bodyKit,
+		'Considered essentials in long-staple cotton and Japanese denim, cut to last and priced to match the work that goes into them.'
+	);
+	const heroCtaLabel = await textView('Hero CTA Label', ctaLabelKit, 'Shop the Edit');
+
+	const shippingFree = await textView('Shipping: Free', shippingLabelKit, 'Free Shipping over $150');
+	const shippingReturns = await textView(
+		'Shipping: Returns',
+		shippingLabelKit,
+		'30-Day Returns, No Questions'
+	);
+	const shippingCarbon = await textView(
+		'Shipping: Carbon',
+		shippingLabelKit,
+		'Carbon-Neutral Delivery'
+	);
+
+	const bandText = await textView(
+		'Band Text',
+		bandTextKit,
+		'We work with four mills, all audited for labor and environmental standards, and produce in small batches so nothing sits in a warehouse waiting to go on sale. If a style does not sell, we do not remake it. That is the whole model.'
+	);
+
+	const oxfordName = await textView('Oxford Name', productNameKit, 'The Oxford Shirt');
+	const oxfordOld = await textView('Oxford Old Price', priceOldKit, '$128');
+	const oxfordNew = await textView('Oxford New Price', priceNewKit, '$98');
+
+	const teeName = await textView('Tee Name', productNameKit, 'The Everyday Tee');
+	const teeOld = await textView('Tee Old Price', priceOldKit, '$58');
+	const teeNew = await textView('Tee New Price', priceNewKit, '$48');
+
+	const trouserName = await textView('Trouser Name', productNameKit, 'The Straight Trouser');
+	const trouserOld = await textView('Trouser Old Price', priceOldKit, '$168');
+	const trouserNew = await textView('Trouser New Price', priceNewKit, '$138');
+
+	const denimName = await textView('Denim Name', productNameKit, 'The Selvedge Denim');
+	const denimOld = await textView('Denim Old Price', priceOldKit, '$198');
+	const denimNew = await textView('Denim New Price', priceNewKit, '$168');
+
+	const materialCotton = await textView(
+		'Material: Cotton',
+		materialChipKit,
+		'100% Long-Staple Cotton'
+	);
+	const materialDyed = await textView('Material: Dyed', materialChipKit, 'Garment-Dyed');
+	const materialOrigin = await textView('Material: Origin', materialChipKit, 'Made in Portugal');
+	const materialBatch = await textView(
+		'Material: Batch',
+		materialChipKit,
+		'Small-Batch, No Overproduction'
+	);
+
+	const footerText = await textView('Footer Text', footerTextKit, '\u00a9 2026 Meridian.');
+	const footerLinkShipping = await textView('Footer Link: Shipping', navLinkKit, 'Shipping');
+	const footerLinkReturns = await textView('Footer Link: Returns', navLinkKit, 'Returns');
+	const footerLinkSize = await textView('Footer Link: Size Guide', navLinkKit, 'Size Guide');
+
+	// --- Composed sections ---
+	const navLinks = await boxView('Nav Links', navLinksKit, [
+		navLinkShirts,
+		navLinkPants,
+		navLinkAbout,
+		navLinkCart
+	]);
+	const nav = await boxView('Nav Bar', navKit, [wordmark, navLinks]);
+
+	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
+	const hero = await boxView('Hero Section', heroKit, [heroHeading, heroSubtitle, heroCta]);
+
+	const lookbookImg = await imageView('Lookbook Image', srcImageKit, lookbookAssetId ?? undefined);
+
+	const shippingBoxFree = await boxView('Shipping Box: Free', shippingBoxKit, [shippingFree]);
+	const shippingBoxReturns = await boxView('Shipping Box: Returns', shippingBoxKit, [
+		shippingReturns
+	]);
+	const shippingBoxCarbon = await boxView('Shipping Box: Carbon', shippingBoxKit, [shippingCarbon]);
+	const shippingRow = await boxView('Shipping Row', shippingRowKit, [
+		shippingBoxFree,
+		shippingBoxReturns,
+		shippingBoxCarbon
+	]);
+
+	const band = await boxView('Our Approach Band', bandKit, [bandText]);
+
+	const oxfordPrices = await boxView('Oxford Prices', priceRowKit, [oxfordOld, oxfordNew]);
+	const oxfordPhoto = await imageView(
+		'Oxford Photo',
+		productPhotoKit,
+		oxfordPhotoAssetId ?? undefined
+	);
+	const oxfordTile = await boxView('Product: Oxford Shirt', productTileKit, [
+		oxfordPhoto,
+		oxfordName,
+		oxfordPrices
+	]);
+	await api.setAxisArg(oxfordTile, productTileKit.id, categoryAxis.id, {
+		type: 'literal',
+		value: 'shirts'
+	});
+
+	const teePrices = await boxView('Tee Prices', priceRowKit, [teeOld, teeNew]);
+	const teePhoto = await imageView('Tee Photo', productPhotoKit, teePhotoAssetId ?? undefined);
+	const teeTile = await boxView('Product: Everyday Tee', productTileKit, [
+		teePhoto,
+		teeName,
+		teePrices
+	]);
+	await api.setAxisArg(teeTile, productTileKit.id, categoryAxis.id, {
+		type: 'literal',
+		value: 'shirts'
+	});
+
+	const trouserPrices = await boxView('Trouser Prices', priceRowKit, [trouserOld, trouserNew]);
+	const trouserPhoto = await imageView(
+		'Trouser Photo',
+		productPhotoKit,
+		trouserPhotoAssetId ?? undefined
+	);
+	const trouserTile = await boxView('Product: Straight Trouser', productTileKit, [
+		trouserPhoto,
+		trouserName,
+		trouserPrices
+	]);
+	await api.setAxisArg(trouserTile, productTileKit.id, categoryAxis.id, {
+		type: 'literal',
+		value: 'pants'
+	});
+
+	const denimPrices = await boxView('Denim Prices', priceRowKit, [denimOld, denimNew]);
+	const denimPhoto = await imageView('Denim Photo', productPhotoKit, denimPhotoAssetId ?? undefined);
+	const denimTile = await boxView('Product: Selvedge Denim', productTileKit, [
+		denimPhoto,
+		denimName,
+		denimPrices
+	]);
+	await api.setAxisArg(denimTile, productTileKit.id, categoryAxis.id, {
+		type: 'literal',
+		value: 'pants'
+	});
+
+	const productGrid = await boxView('Product Grid', productGridKit, [
+		oxfordTile,
+		teeTile,
+		trouserTile,
+		denimTile
+	]);
+
+	const materials = await boxView('Materials Band', materialsKit, [
+		materialCotton,
+		materialDyed,
+		materialOrigin,
+		materialBatch
+	]);
+
+	const footerLinks = await boxView('Footer Links', footerLinksKit, [
+		footerLinkShipping,
+		footerLinkReturns,
+		footerLinkSize
+	]);
+	const footer = await boxView('Footer', footerKit, [footerText, footerLinks]);
+
+	await boxView('Landing Page', pageKit, [
+		nav,
+		hero,
+		lookbookImg,
+		shippingRow,
+		band,
+		productGrid,
+		materials,
+		footer
+	]);
+
+	console.log('Demo project seeded: Meridian');
 }

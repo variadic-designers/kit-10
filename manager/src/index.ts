@@ -57,7 +57,12 @@ export const initializeEditorState: () => Promise<EditorState | undefined> = asy
 };
 
 import { up, down } from './migrations/2026-04-21/index.js';
-import { seedDemoProject } from './seed.js';
+import {
+	seedDemoProject,
+	seedJuiceLandingPage,
+	seedGymLandingPage,
+	seedMerchLandingPage
+} from './seed.js';
 import { registerBuiltinPlugins } from './plugins-bootstrap.js';
 
 export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (dialect) => {
@@ -69,6 +74,9 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 	await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
 	const builtinPlugins = await registerBuiltinPlugins(dialect);
 	await seedDemoProject(dialect, builtinPlugins);
+	await seedJuiceLandingPage(dialect, builtinPlugins);
+	await seedGymLandingPage(dialect, builtinPlugins);
+	await seedMerchLandingPage(dialect, builtinPlugins);
 
 	console.log('-------- Projects --------');
 	const projects = await dialect.selectFrom('projects').selectAll().execute();
