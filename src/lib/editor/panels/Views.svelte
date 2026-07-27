@@ -85,6 +85,22 @@
 		selectViewShared(editorActivity, selection, id);
 	};
 
+	// Scrolls a row into view the moment it becomes the active view -- mirrors Viewport.svelte's
+	// own ensure_index_visible pan-to-selection effect, so selecting a view from ANY origin (a
+	// canvas click, `[`/`]`/arrow nav, Clone) reveals its row here too, not just the canvas. Every
+	// row in the (never collapsed/virtualized) tree gets this action, gated on its own selected
+	// state -- Svelte re-invokes `update` whenever that boolean changes, so at most one row per
+	// selection change actually scrolls. `block: 'nearest'` is a no-op when already visible, same
+	// posture as SuggestField's own scrollHighlightedIntoView and Vellum's own pan effect.
+	function scrollIntoViewWhenSelected(node: HTMLElement, selected: boolean) {
+		if (selected) node.scrollIntoView({ block: 'nearest' });
+		return {
+			update(next: boolean) {
+				if (next) node.scrollIntoView({ block: 'nearest' });
+			}
+		};
+	}
+
 	let viewEditing: Record<string, boolean> = $state({});
 
 	// A freshly created Box view starts with zero kit compositions, which means
@@ -506,6 +522,7 @@
 			class="view-field"
 			class:selected={editorActivity.activeViewId === v.viewId}
 			class:hovered={hoveredViewId === v.viewId}
+			use:scrollIntoViewWhenSelected={editorActivity.activeViewId === v.viewId}
 			use:draggable={{
 				disabled: viewEditing[v.viewId] === true,
 				preview: v.viewName ?? 'View',

@@ -364,16 +364,27 @@
 	// to (lastPanSelection), and skipping when the selected view hasn't actually changed, hover
 	// updates still fire the effect (necessary to re-read nodeViewIds if a DB-write shifted
 	// indices) but produce no re-center overshoot.
+	//
+	// `lastPanSelection` is only set once `ensure_index_visible` is actually CALLED (index found),
+	// never on a failed attempt -- a freshly created-then-selected view (Views.svelte's clone/
+	// add-child ops call `selectView(newId, ...)` immediately after the DB write, before the next
+	// live-query resolve has run) isn't in `nodeViewIds` yet on the first pass, so `index === -1`.
+	// Marking it "handled" anyway (the previous behavior) meant the guard on line 2 below would
+	// then silently swallow every later re-run too -- including the one where `nodeViewIds` finally
+	// DOES contain it once resolve catches up -- so the camera never panned to the new view at all,
+	// with no visual signal it was ever created. Leaving `lastPanSelection` untouched on a failed
+	// attempt lets the effect keep retrying (still gated on `nodeViewIds` actually changing, so it's
+	// not a busy-loop) until the view resolves or the user selects something else.
 	let lastPanSelection: string | null = null;
 
 	$effect(() => {
 		const viewId = selection.selectedViewPrimary;
 		if (!initialized || !vellum || !hasData || !viewId) return;
 		if (viewId === lastPanSelection) return;
-		lastPanSelection = viewId;
 		const ids = nodeViewIds;
 		const index = ids.indexOf(viewId);
 		if (index === -1) return;
+		lastPanSelection = viewId;
 		if (vellum.ensure_index_visible(index)) requestRender();
 	});
 
