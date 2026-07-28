@@ -4,11 +4,15 @@
 // unresolved KitExportShape (fetched via the kit10_get_kit_export_shape host fn) and produces:
 //
 //   - The Kit's own BASE declarations (excluded axes collapsed to their default/lowest value).
-//   - One VariantRule per non-excluded axis value: a BEM-style static modifier
-//     (`--{value}`) or a real dynamic selector (`:hover`/`.is-{value}`), holding only the
-//     DELTA against the base -- i.e. what CSS's own cascade needs the modifier class to
-//     override, not a full re-statement of every property (mirrors how `.button--secondary`
-//     only carries `background` in the worked example in the plan doc).
+//   - One VariantRule per non-excluded, non-null LAYER: a BEM-style static modifier chain, one
+//     axis-prefixed fragment per condition (`--{axis}-{value}`, e.g. a layer conditioned on
+//     {plan: elite} alone gets `--plan-elite`; conditioned on {plan: elite, theme: dark} together
+//     gets a compound selector chaining BOTH `--plan-elite` and `--theme-dark`), or a real dynamic
+//     selector (`:hover`/`.is-{value}`) for a single-condition layer on a `variant_kind: "dynamic"`
+//     axis. Holds only the DELTA against the base -- i.e. what CSS's own cascade needs the
+//     modifier class(es) to override, not a full re-statement of every property (mirrors how
+//     `.button.button--theme-secondary` only carries `background` in the worked example in the
+//     plan doc). See VariantRule's own doc comment for the static/dynamic suffix shape.
 //
 // v1 scope cut (deliberate, not an oversight): properties whose CSS meaning depends on
 // SIBLING/PARENT layout context this module doesn't have. `resize`'s `fill` keyword on
@@ -29,13 +33,22 @@
 // layout -- "Split" silently did nothing in the export while looking correct in the editor.
 //
 // Also v1 scope: only "literal"/"discrete" axis values are matched (range axes are disabled
-// project-wide today, resources/layer-authoring.md) and only single-axis conditions are
-// resolved against -- a layer conditioned on two non-excluded axes together never gets its own
-// combined variant class in v1. This mirrors resolve.ts's matchesArg/matchLayers cascade
-// (manager/src/resolve/resolve.ts) closely enough that a change to one should prompt checking
-// the other, but is NOT the same code -- this is a small, explicitly-scoped Rust port, not a
-// shared crate, since resolve.ts's version also handles range intervals and priority-index
-// tie-breaking this module doesn't need.
+// project-wide today, resources/layer-authoring.md). Multi-axis conditions ARE now supported
+// (see synthesize_variant_rules_with_tokens) -- always as a static BEM chain, regardless of any
+// contributing axis's own variant_kind ("assume everything is static for now"); combining several
+// axes' worth of DYNAMIC pseudo-classes into one compound selector isn't a coherent concept and
+// stays out of scope. This mirrors resolve.ts's matchesArg/matchLayers cascade (manager/src/
+// resolve/resolve.ts) closely enough that a change to one should prompt checking the other, but is
+// NOT the same code -- this is a small, explicitly-scoped Rust port, not a shared crate, since
+// resolve.ts's version also handles range intervals and priority-index tie-breaking this module
+// doesn't need.
+//
+// A rule's own CSS selector text and the classes an HTML element needs for it to actually match
+// are two separate concerns -- this module only ever decides what CSS RULES exist per Kit (see
+// css.rs::variant_rule_selector for how a VariantRule becomes selector text). Which node instances
+// should carry which of those rules' classes is a per-VIEW-INSTANCE decision (this Kit's shape has
+// no notion of instances at all) made in lib.rs, via rule_matches_args against that instance's own
+// resolved axis args (kit10_get_view_axis_args) -- see lib.rs's export_html_css.
 
 use crate::tree::kit_class_name;
 use kit10_scene::OklabColor;
@@ -715,10 +728,25 @@ pub(crate) fn synthesize_base_declarations_with_tokens(
 }
 
 pub(crate) struct VariantRule {
-    // Appended directly after the Kit's own class name -- "--secondary" (static BEM modifier),
-    // ":hover" (a recognized dynamic pseudo-class), or ".is-loading" (dynamic JS-toggle fallback).
-    pub selector_suffix: String,
+    // STATIC (dynamic == false): one axis-prefixed BEM fragment per contributing condition, e.g.
+    // ["--theme-secondary"] (single condition) or ["--plan-elite", "--theme-dark"] (a layer
+    // conditioned on two axes together, chained). Rendered by css.rs as `.{class}` repeated once
+    // per fragment (a compound selector), never as one fused/concatenated string -- see
+    // css.rs::variant_rule_selector.
+    //
+    // DYNAMIC (dynamic == true): always exactly one entry -- a real pseudo-class (":hover") or a
+    // ".is-{value}" JS-toggle fallback. Rendered as a direct `.{class}{suffix}` concatenation, no
+    // repeated base token. A multi-condition layer never produces dynamic == true in this pass
+    // (see synthesize_variant_rules_with_tokens's doc comment) -- dynamic is only ever reachable
+    // via a single-condition layer, unchanged from before multi-condition support existed.
+    pub suffixes: Vec<String>,
+    pub dynamic: bool,
     pub declarations: Vec<String>,
+    // The exact conditions these suffixes were derived from (post excluded-axis filtering), same
+    // order as `suffixes`. Not consumed by anything in this file -- exists so a caller can test
+    // "does this rule apply to some node instance's own resolved axis args" (see
+    // rule_matches_args) without re-deriving anything from the shape.
+    pub conditions: Vec<ExportLayerCondition>,
 }
 
 fn dynamic_selector_suffix(value: &str) -> String {
@@ -735,10 +763,46 @@ fn dynamic_selector_suffix(value: &str) -> String {
     }
 }
 
-// One VariantRule per non-excluded axis value, holding only the delta against the Kit's own base
-// declarations. Empty declarations (the variant matches the base exactly) are skipped entirely --
-// no reason to emit an empty ruleset. `is_box` -- see synthesize_base_declarations/
-// synthesize_arrange's doc comments. `project_tokens` -- see synthesize_base_declarations_with_tokens.
+// Axis-name-prefixed static BEM fragment for ONE layer condition: "--{axis-slug}-{value-slug}".
+// Axis-prefixed (not the bare "--{value}" this used to be) so two different axes with same-named
+// values (a "plan" axis's "elite" and an unrelated "tier" axis's "elite") never collide on the
+// same modifier class. Falls back to the axis's own id when axis_name is unset/empty -- axis_id is
+// always present even when a human-readable name isn't. Reuses kit_class_name for both halves so
+// this can never drift from how the Kit's own class name / the dynamic .is-{value} fallback are
+// slugified.
+fn static_condition_fragment(axis: &AxisExportMeta, value: &str) -> String {
+    let axis_slug = axis
+        .axis_name
+        .as_deref()
+        .map(kit_class_name)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| kit_class_name(&axis.axis_id));
+    format!("--{axis_slug}-{}", kit_class_name(value))
+}
+
+// Does this rule's own conditions ALL hold against a node instance's resolved axis args? Reuses
+// the exact same equality-match semantics as matches_condition, just against a plain
+// String->String args map instead of the full ExportLayerCondition machinery, since VariantRule
+// already carries its own resolved condition list.
+pub(crate) fn rule_matches_args(rule: &VariantRule, args: &HashMap<String, String>) -> bool {
+    !rule.conditions.is_empty()
+        && rule.conditions.iter().all(|c| args.get(&c.axis_id) == Some(&c.value.value))
+}
+
+// One VariantRule per LAYER with at least one non-excluded, literal/discrete condition, holding
+// only the delta against the Kit's own base declarations. A layer conditioned on more than one
+// axis together (e.g. {plan: elite, theme: dark}) gets its own combined rule -- a compound
+// selector chaining one static BEM fragment per condition (see VariantRule's doc comment) -- this
+// used to be invisible entirely (v1 originally only ever walked one axis value at a time, never a
+// layer's actual condition set). "Assume everything is static for now": a multi-condition layer
+// ALWAYS produces a static chain regardless of any contributing axis's own variant_kind -- mixing
+// several dynamic pseudo-classes into one compound selector isn't a coherent concept and is out of
+// scope here. Only a layer with exactly one (post-filter) condition on a `variant_kind: "dynamic"`
+// axis still takes the pseudo-class/`.is-` path, exactly as before.
+//
+// Empty declarations (the variant matches the base exactly) are skipped entirely -- no reason to
+// emit an empty ruleset. `is_box` -- see synthesize_base_declarations/synthesize_arrange's doc
+// comments. `project_tokens` -- see synthesize_base_declarations_with_tokens.
 pub(crate) fn synthesize_variant_rules_with_tokens(
     shape: &KitExportShape,
     is_box: bool,
@@ -746,33 +810,89 @@ pub(crate) fn synthesize_variant_rules_with_tokens(
 ) -> Vec<VariantRule> {
     let base_args = excluded_axis_args(shape);
     let (base, _) = resolve_properties_with_tokens(shape, &base_args, is_box, project_tokens);
-    let mut rules = Vec::new();
+    let axes_by_id: HashMap<&str, &AxisExportMeta> =
+        shape.axes.iter().map(|a| (a.axis_id.as_str(), a)).collect();
 
-    for axis in &shape.axes {
-        if axis.excluded_from_export {
+    let mut rules = Vec::new();
+    let mut seen_condition_sets: HashSet<Vec<(String, String)>> = HashSet::new();
+
+    for layer in &shape.layers {
+        if layer.conditions.is_empty() {
+            continue; // the null/base layer -- already folded into `base` above
+        }
+        if layer.conditions.iter().any(|c| c.value.kind != "literal" && c.value.kind != "discrete") {
+            continue; // range condition -- v1 scope cut, see module doc comment
+        }
+
+        // Drop no-op conditions on excluded axes (already baked into base_args); bail on the
+        // whole layer if an excluded axis's condition value isn't that axis's own collapsed
+        // default -- it can never fire for this export's pinned excluded-axis state.
+        let mut relevant: Vec<&ExportLayerCondition> = Vec::new();
+        let mut skip_layer = false;
+        for cond in &layer.conditions {
+            let Some(axis) = axes_by_id.get(cond.axis_id.as_str()) else {
+                skip_layer = true; // defensive: condition on an axis this Kit doesn't consume
+                break;
+            };
+            if axis.excluded_from_export {
+                if excluded_axis_value(axis).as_deref() != Some(cond.value.value.as_str()) {
+                    skip_layer = true;
+                    break;
+                }
+                continue; // no-op, drop from the fragment list
+            }
+            relevant.push(cond);
+        }
+        if skip_layer || relevant.is_empty() {
             continue;
         }
-        for value in &axis.values {
-            if value.value.kind != "literal" && value.value.kind != "discrete" {
-                continue; // range axis values -- v1 scope cut, see module doc comment
-            }
-            let mut variant_args = base_args.clone();
-            variant_args.insert(axis.axis_id.clone(), value.value.value.clone());
-            let (variant, variant_token_vars) =
-                resolve_properties_with_tokens(shape, &variant_args, is_box, project_tokens);
 
-            let declarations = declarations_for_with_tokens(&variant, &variant_token_vars, Some(&base));
-            if declarations.is_empty() {
-                continue;
-            }
+        // Determinism: a layer's condition row order isn't guaranteed by the DB query that builds
+        // it, so sort by axis_id -- the same underlying data must always render the same selector
+        // text, mirroring resolve.ts's matchLayers doing exactly this for exactly this reason.
+        relevant.sort_by(|a, b| a.axis_id.cmp(&b.axis_id));
 
-            let selector_suffix = if axis.variant_kind == "dynamic" {
-                dynamic_selector_suffix(&value.value.value)
-            } else {
-                format!("--{}", kit_class_name(&value.value.value))
-            };
-            rules.push(VariantRule { selector_suffix, declarations });
+        let mut key: Vec<(String, String)> =
+            relevant.iter().map(|c| (c.axis_id.clone(), c.value.value.clone())).collect();
+        key.sort();
+        if !seen_condition_sets.insert(key) {
+            continue; // defensive: two distinct layers sharing one condition set would otherwise
+                       // emit two textually-identical rules
         }
+
+        let mut variant_args = base_args.clone();
+        for cond in &relevant {
+            variant_args.insert(cond.axis_id.clone(), cond.value.value.clone());
+        }
+        let (variant, variant_token_vars) =
+            resolve_properties_with_tokens(shape, &variant_args, is_box, project_tokens);
+        let declarations = declarations_for_with_tokens(&variant, &variant_token_vars, Some(&base));
+        if declarations.is_empty() {
+            continue;
+        }
+
+        let (suffixes, dynamic) = if relevant.len() == 1 {
+            let cond = relevant[0];
+            let axis = axes_by_id[cond.axis_id.as_str()];
+            if axis.variant_kind == "dynamic" {
+                (vec![dynamic_selector_suffix(&cond.value.value)], true)
+            } else {
+                (vec![static_condition_fragment(axis, &cond.value.value)], false)
+            }
+        } else {
+            let frags = relevant
+                .iter()
+                .map(|c| static_condition_fragment(axes_by_id[c.axis_id.as_str()], &c.value.value))
+                .collect();
+            (frags, false)
+        };
+
+        rules.push(VariantRule {
+            suffixes,
+            dynamic,
+            declarations,
+            conditions: relevant.into_iter().cloned().collect(),
+        });
     }
     rules
 }
@@ -917,7 +1037,8 @@ mod tests {
     fn static_axis_value_produces_a_bem_modifier_with_only_the_delta() {
         let shape = button_shape();
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
-        let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
+        let secondary = rules.iter().find(|r| r.suffixes == vec!["--theme-secondary"]).unwrap();
+        assert!(!secondary.dynamic);
         assert_eq!(secondary.declarations, vec!["background: oklab(40% 0.05 -0.01 / 1);".to_string()]);
     }
 
@@ -925,7 +1046,8 @@ mod tests {
     fn dynamic_axis_value_with_a_recognized_name_produces_a_real_pseudo_class() {
         let shape = button_shape();
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
-        let hover = rules.iter().find(|r| r.selector_suffix == ":hover").unwrap();
+        let hover = rules.iter().find(|r| r.dynamic).unwrap();
+        assert_eq!(hover.suffixes, vec![":hover".to_string()]);
         assert_eq!(hover.declarations, vec!["background: oklab(65% 0.1 0.02 / 1);".to_string()]);
     }
 
@@ -943,7 +1065,7 @@ mod tests {
         // lowest-priority value, "hover", the only value it has) should still fold into the base.
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(
-            rules.iter().all(|r| r.selector_suffix != ":hover"),
+            rules.iter().all(|r| !r.dynamic),
             "an excluded axis must not produce a variant rule for any of its values"
         );
         let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
@@ -955,6 +1077,142 @@ mod tests {
                 "flex-direction: column;".to_string()
             ],
             "excluded axis collapses into the base using its lowest-priority value (no default_value set)"
+        );
+    }
+
+    fn two_axis_shape() -> KitExportShape {
+        KitExportShape {
+            kit_id: "button".to_string(),
+            kit_name: "Button".to_string(),
+            axes: vec![
+                AxisExportMeta {
+                    axis_id: "theme".to_string(),
+                    axis_name: Some("theme".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "static".to_string(),
+                    excluded_from_export: false,
+                    default_value: Some(literal("primary")),
+                    priority_index: 0,
+                    values: vec![
+                        ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("primary"), priority_index: 0 },
+                        ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("secondary"), priority_index: 1000 },
+                    ],
+                },
+                AxisExportMeta {
+                    axis_id: "plan".to_string(),
+                    axis_name: Some("plan".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "static".to_string(),
+                    excluded_from_export: false,
+                    default_value: Some(literal("basic")),
+                    priority_index: 1000,
+                    values: vec![
+                        ExportAxisValue { axis_value_id: "v3".to_string(), value: literal("basic"), priority_index: 0 },
+                        ExportAxisValue { axis_value_id: "v4".to_string(), value: literal("elite"), priority_index: 1000 },
+                    ],
+                },
+            ],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("background", "oklab(60% 0.1 0.02 / 1)")],
+                },
+                ExportLayer {
+                    layer_id: "secondary-elite".to_string(),
+                    conditions: vec![condition("theme", "secondary"), condition("plan", "elite")],
+                    entries: vec![literal_entry("background", "oklab(20% 0.1 0.02 / 1)")],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn multi_condition_layer_produces_a_chained_compound_selector_of_axis_prefixed_fragments() {
+        let shape = two_axis_shape();
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        let combo = rules.iter().find(|r| r.suffixes.len() == 2).unwrap();
+        assert!(!combo.dynamic);
+        // Sorted by axis_id ("plan" < "theme") for deterministic selector text regardless of DB
+        // condition row order.
+        assert_eq!(combo.suffixes, vec!["--plan-elite".to_string(), "--theme-secondary".to_string()]);
+        assert_eq!(combo.conditions.len(), 2);
+        assert_eq!(combo.declarations, vec!["background: oklab(20% 0.1 0.02 / 1);".to_string()]);
+    }
+
+    #[test]
+    fn single_condition_dynamic_layer_still_produces_a_bare_pseudo_class_suffix_not_a_chain() {
+        let shape = button_shape();
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        let hover = rules.iter().find(|r| r.dynamic).unwrap();
+        assert_eq!(hover.suffixes.len(), 1);
+        assert_eq!(hover.suffixes, vec![":hover".to_string()]);
+    }
+
+    #[test]
+    fn a_layer_mixing_an_excluded_axis_no_op_condition_with_a_real_condition_still_gets_single_condition_treatment() {
+        let mut shape = button_shape();
+        shape.axes[1].excluded_from_export = true; // exclude `state`, default-collapses to "hover"
+        shape.layers.push(ExportLayer {
+            layer_id: "secondary-hover".to_string(),
+            // "state: hover" is a no-op here (matches the excluded axis's own collapsed default),
+            // so this must behave exactly like a plain single-condition {theme: secondary} layer.
+            conditions: vec![condition("theme", "secondary"), condition("state", "hover")],
+            entries: vec![literal_entry("background", "oklab(10% 0.1 0.02 / 1)")],
+        });
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        let matched = rules
+            .iter()
+            .find(|r| r.declarations == vec!["background: oklab(10% 0.1 0.02 / 1);".to_string()])
+            .unwrap();
+        assert_eq!(matched.conditions.len(), 1, "the no-op excluded-axis condition must be dropped");
+        assert!(!matched.dynamic);
+        assert_eq!(matched.suffixes, vec!["--theme-secondary".to_string()]);
+    }
+
+    #[test]
+    fn a_layer_conditioned_on_an_excluded_axiss_non_default_value_is_never_matched() {
+        let mut shape = button_shape();
+        shape.axes[1].excluded_from_export = true; // exclude `state`, collapses to "hover"
+        shape.layers.push(ExportLayer {
+            layer_id: "secondary-focus".to_string(),
+            // "state: focus" is NOT the excluded axis's collapsed default ("hover") -- can never
+            // fire for this export's pinned excluded-axis state, so the WHOLE layer is dropped.
+            conditions: vec![condition("theme", "secondary"), condition("state", "focus")],
+            entries: vec![literal_entry("background", "oklab(5% 0.1 0.02 / 1)")],
+        });
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(
+            rules.iter().all(|r| r.declarations != vec!["background: oklab(5% 0.1 0.02 / 1);".to_string()]),
+            "a layer pinned to an excluded axis's non-default value must never produce a rule"
+        );
+    }
+
+    #[test]
+    fn rule_matches_args_true_when_every_condition_holds_false_otherwise() {
+        let rule = VariantRule {
+            suffixes: vec!["--plan-elite".to_string(), "--theme-secondary".to_string()],
+            dynamic: false,
+            declarations: vec![],
+            conditions: vec![condition("plan", "elite"), condition("theme", "secondary")],
+        };
+        let matching =
+            HashMap::from([("plan".to_string(), "elite".to_string()), ("theme".to_string(), "secondary".to_string())]);
+        assert!(rule_matches_args(&rule, &matching));
+
+        let partial = HashMap::from([("plan".to_string(), "elite".to_string())]);
+        assert!(!rule_matches_args(&rule, &partial), "must require EVERY condition, not just one");
+
+        let wrong_value = HashMap::from([
+            ("plan".to_string(), "basic".to_string()),
+            ("theme".to_string(), "secondary".to_string()),
+        ]);
+        assert!(!rule_matches_args(&rule, &wrong_value));
+
+        let empty_rule = VariantRule { suffixes: vec![], dynamic: false, declarations: vec![], conditions: vec![] };
+        assert!(
+            !rule_matches_args(&empty_rule, &matching),
+            "a rule with no conditions must never claim to match"
         );
     }
 
@@ -1267,7 +1525,7 @@ mod tests {
             ],
         };
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
-        let danger = rules.iter().find(|r| r.selector_suffix == "--danger").unwrap();
+        let danger = rules.iter().find(|r| r.suffixes == vec!["--theme-danger"]).unwrap();
         // The variant only overrode "border" (color), not "border-width" -- but since border is
         // one atomic shorthand, the recomputed value still carries the base's 2px width, not the
         // 1px-if-unset default.
@@ -1288,7 +1546,7 @@ mod tests {
             entries: vec![literal_entry("flex-basis", "0")],
         });
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
-        let secondary = rules.iter().find(|r| r.selector_suffix == "--secondary").unwrap();
+        let secondary = rules.iter().find(|r| r.suffixes == vec!["--theme-secondary"]).unwrap();
         assert!(
             secondary
                 .declarations
@@ -1772,7 +2030,7 @@ mod tests {
             ],
         };
         let rules = synthesize_variant_rules_with_tokens(&shape, true, &project_tokens_fixture());
-        let dark = rules.iter().find(|r| r.selector_suffix == "--dark").unwrap();
+        let dark = rules.iter().find(|r| r.suffixes == vec!["--theme-dark"]).unwrap();
         assert_eq!(dark.declarations, vec!["background: oklch(20% 0.02 260);".to_string()]);
     }
 

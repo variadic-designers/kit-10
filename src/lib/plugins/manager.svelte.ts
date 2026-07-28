@@ -300,6 +300,34 @@ export function createPluginManager(api: Api) {
 					}
 				},
 
+				// Per-VIEW-INSTANCE axis args (which axis value a given view actually resolved to per
+				// composed kit), a different question from kit10_get_kit_export_shape's per-Kit CSS
+				// rules -- WebCodium needs both to know which of a Kit's variant rules a given exported
+				// element should actually carry as classes (see plugins/webcodium/src/variants.rs's
+				// rule_matches_args).
+				async kit10_get_view_axis_args(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { view_ids } = JSON.parse(rawJson) as { view_ids: string[] };
+
+					try {
+						const rows = await api.getViewAxisArgs(view_ids);
+						const outRows: { view_id: string; kit_id: string; axis_id: string; value: string }[] =
+							[];
+						for (const r of rows) {
+							if (r.value.type !== 'literal') continue;
+							outRows.push({
+								view_id: r.viewId,
+								kit_id: r.kitId,
+								axis_id: r.axisId,
+								value: r.value.value
+							});
+						}
+						return cp.store(JSON.stringify({ success: true, rows: outRows }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
 				// Resolves a batch of Img `src` asset ids to their `link` (a real URL, e.g. a static
 				// path or a future cloud-hosted link) for WebCodium's Img export support -- a plugin
 				// otherwise has no way to turn an opaque asset id (ImageSource::Ref) into something

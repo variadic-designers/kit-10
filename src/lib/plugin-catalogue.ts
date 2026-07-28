@@ -112,7 +112,8 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 					'kit10_get_kit_export_shape',
 					'kit10_get_asset_links',
 					'kit10_get_font_links',
-					'kit10_get_project_tokens'
+					'kit10_get_project_tokens',
+					'kit10_get_view_axis_args'
 				]
 			}
 		}

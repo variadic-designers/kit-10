@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
-import { fetchKitExportShapes } from './export-shape.js';
+import { fetchKitExportShapes, fetchViewAxisArgs } from './export-shape.js';
 
 describe('fetchKitExportShapes', () => {
 	let ctx: TestContext;
@@ -143,5 +143,62 @@ describe('fetchKitExportShapes', () => {
 		expect(result.get(s1.kit.id)!.layers).toHaveLength(3);
 		expect(result.get(kit2.id)!.layers).toHaveLength(1);
 		expect(result.get(kit2.id)!.axes).toHaveLength(0);
+	});
+});
+
+describe('fetchViewAxisArgs', () => {
+	let ctx: TestContext;
+
+	beforeEach(async () => {
+		ctx = await createTestDb();
+	});
+
+	afterEach(async () => {
+		await ctx.pg.close();
+	});
+
+	async function seedViewWithAxisArg() {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Design System'))!;
+		const themeAxis = (await ctx.api.createAxis(
+			proj.id,
+			'theme',
+			'Primary or secondary look',
+			'categorical',
+			['primary', 'secondary']
+		))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+		await ctx.api.consumeAxis(kit.id, themeAxis.id);
+		const view = (await ctx.api.createViewInProject(proj.id, 'Hero CTA'))!;
+		await ctx.api.attachKitToComposition(kit.id, view.id);
+		await ctx.api.setAxisArg(view.id, kit.id, themeAxis.id, { type: 'literal', value: 'secondary' });
+
+		return { proj, kit, view, themeAxis };
+	}
+
+	it('returns an empty array for an empty viewIds list', async () => {
+		const result = await fetchViewAxisArgs(ctx.db, []);
+		expect(result).toEqual([]);
+	});
+
+	it('returns the axis args a view actually set, scoped to the requested view ids', async () => {
+		const s = await seedViewWithAxisArg();
+		const otherView = (await ctx.api.createViewInProject(s.proj.id, 'Unrelated'))!;
+
+		const result = await fetchViewAxisArgs(ctx.db, [s.view.id, otherView.id]);
+		expect(result).toEqual([
+			{
+				viewId: s.view.id,
+				kitId: s.kit.id,
+				axisId: s.themeAxis.id,
+				value: { type: 'literal', value: 'secondary' }
+			}
+		]);
+	});
+
+	it('does not return args for a view outside the requested ids', async () => {
+		await seedViewWithAxisArg();
+		const result = await fetchViewAxisArgs(ctx.db, ['00000000-0000-0000-0000-000000000000']);
+		expect(result).toEqual([]);
 	});
 });

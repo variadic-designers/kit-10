@@ -111,6 +111,23 @@ pub(crate) fn distinct_kit_ids(node_kit_ids: &[String]) -> Vec<String> {
     result
 }
 
+// Same dedup shape as distinct_kit_ids, applied to node_view_ids instead -- feeds the
+// kit10_get_view_axis_args request body, scoping the fetch to only the views actually present in
+// this export instead of the whole project.
+pub(crate) fn distinct_view_ids(node_view_ids: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for id in node_view_ids {
+        if id.is_empty() {
+            continue;
+        }
+        if seen.insert(id.clone()) {
+            result.push(id.clone());
+        }
+    }
+    result
+}
+
 pub(crate) fn parent_of(node: &UiNode) -> Option<usize> {
     match node {
         UiNode::Box(d) => d.parent_id,
@@ -341,6 +358,18 @@ mod tests {
             "".to_string(),
         ];
         assert_eq!(distinct_kit_ids(&ids), vec!["kit-b".to_string(), "kit-a".to_string()]);
+    }
+
+    #[test]
+    fn distinct_view_ids_dedupes_and_excludes_empty_in_first_appearance_order() {
+        let ids = vec![
+            "".to_string(),
+            "view-b".to_string(),
+            "view-a".to_string(),
+            "view-b".to_string(),
+            "".to_string(),
+        ];
+        assert_eq!(distinct_view_ids(&ids), vec!["view-b".to_string(), "view-a".to_string()]);
     }
 
     #[test]

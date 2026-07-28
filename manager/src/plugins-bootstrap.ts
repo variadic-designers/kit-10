@@ -66,13 +66,17 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 	// URL Fontavious would fetch, no hardcoded provider/URL anywhere in this plugin).
 	// kit10_get_project_tokens backs the `:root` CSS custom-property export (project-scope tokens
 	// only, see variants::ProjectTokens' doc comment on the Rust side).
+	// kit10_get_view_axis_args backs per-instance variant modifier classes -- which of a Kit's
+	// variant rules a given exported element's class="" attribute should actually carry, decided
+	// from that element's own view's resolved axis args (see rule_matches_args on the Rust side).
 	capabilities: {
 		hostFns: [
 			'kit10_get_interpreter_output',
 			'kit10_get_kit_export_shape',
 			'kit10_get_asset_links',
 			'kit10_get_font_links',
-			'kit10_get_project_tokens'
+			'kit10_get_project_tokens',
+			'kit10_get_view_axis_args'
 		]
 	}
 };

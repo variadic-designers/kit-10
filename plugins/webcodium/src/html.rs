@@ -16,7 +16,9 @@ pub(crate) fn escape_html(s: &str) -> String {
 // matches whatever selector css.rs actually emitted for the same node. asset_links backs Img
 // support (see tree::resolved_img_src) -- an Img with no resolved link still emits nothing,
 // exactly like Phase 1/2's original "Img is out of scope" behavior, just now scoped to "no known
-// URL" rather than "always."
+// URL" rather than "always." instance_modifier_classes (lib.rs's compute_instance_modifier_classes)
+// is node-index -> extra static variant modifier class(es) that specific node instance's own
+// resolved axis args earned -- without this, css.rs's variant rules can never match anything.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_html(
     nodes: &[UiNode],
@@ -27,6 +29,7 @@ pub(crate) fn render_html(
     kit_names: &HashMap<String, String>,
     asset_links: &HashMap<String, String>,
     css: &str,
+    instance_modifier_classes: &HashMap<usize, Vec<String>>,
 ) -> String {
     let mut body = String::new();
     // Only .is_some() is ever read below (whether to append the extra positional class) -- the
@@ -42,6 +45,7 @@ pub(crate) fn render_html(
             node_kit_ids,
             kit_names,
             asset_links,
+            instance_modifier_classes,
             i,
             position,
             &mut body,
@@ -60,11 +64,22 @@ fn render_html_node(
     node_kit_ids: &[String],
     kit_names: &HashMap<String, String>,
     asset_links: &HashMap<String, String>,
+    instance_modifier_classes: &HashMap<usize, Vec<String>>,
     i: usize,
     position: Option<(f32, f32)>,
     out: &mut String,
 ) {
     let mut class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+    // Static variant modifier classes this SPECIFIC node instance's own view resolved to (see
+    // lib.rs's compute_instance_modifier_classes) -- without this, css.rs's variant rules
+    // (`.button.button--theme-secondary`) are unreachable dead CSS, since nothing else ever puts a
+    // modifier class on any element. Applied before the positional class below -- attribute token
+    // order is irrelevant to CSS matching.
+    if let Some(extra) = instance_modifier_classes.get(&i) {
+        for c in extra {
+            class = format!("{class} {c}");
+        }
+    }
     // See css.rs::render_scss_node's matching doc comment -- a positioned root's own class may be
     // a Kit's shared selector, so world-space placement rides a second, always-unique class
     // (tree::class_name(i)) instead of being folded into the first.
@@ -86,6 +101,7 @@ fn render_html_node(
                         node_kit_ids,
                         kit_names,
                         asset_links,
+                        instance_modifier_classes,
                         k,
                         None,
                         out,

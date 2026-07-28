@@ -56,6 +56,46 @@ export interface KitExportShape {
 	layers: ExportLayer[];
 }
 
+// One view's own resolved axis selection for one composed kit -- the axis_args a designer actually
+// set on this particular view instance, as opposed to KitExportShape's axis-args-INDEPENDENT
+// layer/condition data above. WebCodium needs both: KitExportShape to know what CSS rules exist
+// per Kit, this to know which of those rules a given exported node instance's own view should
+// actually carry as classes (see plugins/webcodium/src/variants.rs's rule_matches_args).
+export interface ViewAxisArgRow {
+	viewId: string;
+	kitId: string;
+	axisId: string;
+	value: ArgValue;
+}
+
+// Flat rows, not pre-nested into a Map -- mirrors this file's own conditionRows/entryRows
+// convention (let the Rust side reassemble whatever shape it needs) rather than picking a nesting
+// order here that may not match every caller.
+export async function fetchViewAxisArgs(
+	db: SchemaDialect,
+	viewIds: string[]
+): Promise<ViewAxisArgRow[]> {
+	if (viewIds.length === 0) return [];
+
+	const rows = await db
+		.selectFrom('axis_args')
+		.where('axis_args.view_id', 'in', viewIds)
+		.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+		.execute();
+
+	const result: ViewAxisArgRow[] = [];
+	for (const row of rows) {
+		if (!row.value) continue;
+		result.push({
+			viewId: row.view_id,
+			kitId: row.kit_id,
+			axisId: row.axis_id,
+			value: row.value as unknown as ArgValue
+		});
+	}
+	return result;
+}
+
 export async function fetchKitExportShapes(
 	db: SchemaDialect,
 	kitIds: string[]

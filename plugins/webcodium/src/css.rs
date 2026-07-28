@@ -165,19 +165,42 @@ pub(crate) fn with_reset(generated: &str) -> String {
     format!("{BASELINE_RESET}\n{generated}")
 }
 
-// One `@font-face` block per resolved font request -- always emitted as `format("woff2")` since
-// that's the only format Fontavious ever fetches (see CLAUDE.md's Fontavious section: it streams
-// WOFF2 exclusively). A request with no resolved link (kit10_get_font_links found no URL for it --
-// a catalogue miss, or an uncatalogued family) is simply absent from `links`, so it's skipped here
-// too: the exported `font-family: "X";` declaration elsewhere in the stylesheet still stands, the
-// browser just falls back to a locally-installed or generic font for it, same as it always did
-// before this feature existed.
+// One `@font-face` block per distinct (family, style, URL) -- always emitted as `format("woff2")`
+// since that's the only format Fontavious ever fetches (see CLAUDE.md's Fontavious section: it
+// streams WOFF2 exclusively). A request with no resolved link (kit10_get_font_links found no URL
+// for it -- a catalogue miss, or an uncatalogued family) is simply absent from `links`, so it's
+// skipped here too: the exported `font-family: "X";` declaration elsewhere in the stylesheet still
+// stands, the browser just falls back to a locally-installed or generic font for it, same as it
+// always did before this feature existed.
+//
+// Grouped by URL, not by request: several distinct (family, weight, style) requests can legitimately
+// resolve to the SAME url (CLAUDE.md's Fontavious section -- "most catalogued families are variable
+// fonts where one URL covers a continuous range"). Emitting one block per REQUEST repeated the
+// identical file's `src` once per weight -- four blocks for Inter 400/500/600/700 all pointing at
+// the same variable woff2. Two requests can only ever share a url by construction of what
+// Fontavious returns for a variable font, so collapsing them into ONE block with a font-weight
+// RANGE (`font-weight: 400 700;`, real CSS variable-font syntax) is always correct, never a false
+// merge of two unrelated static files -- those always have distinct urls and stay separate blocks
+// (`min == max`, a plain single-value descriptor, exactly like before).
 pub(crate) fn render_font_faces(links: &[crate::ResolvedFontLink]) -> String {
-    let mut out = String::new();
+    let mut groups: Vec<(String, String, String)> = Vec::new(); // (family, style, url), first-seen order
+    let mut weights_by_group: HashMap<(String, String, String), Vec<u16>> = HashMap::new();
     for link in links {
+        let key = (link.family.clone(), link.style.clone(), link.url.clone());
+        if !weights_by_group.contains_key(&key) {
+            groups.push(key.clone());
+        }
+        weights_by_group.entry(key).or_default().push(link.weight);
+    }
+
+    let mut out = String::new();
+    for key @ (family, style, url) in &groups {
+        let weights = &weights_by_group[key];
+        let min = *weights.iter().min().unwrap();
+        let max = *weights.iter().max().unwrap();
+        let weight_descriptor = if min == max { min.to_string() } else { format!("{min} {max}") };
         out.push_str(&format!(
-            "@font-face {{\n  font-family: \"{}\";\n  font-weight: {};\n  font-style: {};\n  src: url(\"{}\") format(\"woff2\");\n}}\n",
-            link.family, link.weight, link.style, link.url
+            "@font-face {{\n  font-family: \"{family}\";\n  font-weight: {weight_descriptor};\n  font-style: {style};\n  src: url(\"{url}\") format(\"woff2\");\n}}\n"
         ));
     }
     out
@@ -413,9 +436,10 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
 // that shape (variants::synthesize_base_declarations/synthesize_variant_rules) instead of from
 // node_props -- see the module-level doc comment on node_props' continued role for everything
 // else. A Kit's rule is emitted only once, on the first node instance encountered for that
-// kit_id (`emitted_kits`); later instances of the same Kit still open an (empty) wrapper block so
-// any NEW nested child Kit encountered under a later instance still nests at the correct depth,
-// they just don't repeat the already-emitted declarations/variant rules.
+// kit_id (`emitted_kits`); later instances print no wrapper at all (see render_scss_node's own
+// `!props.is_empty()` guard) -- a NEW nested child Kit encountered under a later instance still
+// gets the correct indentation depth even though nothing was printed for its parent, since
+// `child_depth` increments independently of whether the wrapper text itself was written.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_scss(
     nodes: &[UiNode],
@@ -427,6 +451,7 @@ pub(crate) fn render_scss(
     kit_shapes: &HashMap<String, KitExportShape>,
     asset_links: &HashMap<String, String>,
     project_tokens: &variants::ProjectTokens,
+    kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
 ) -> String {
     let mut out = String::new();
     let mut emitted_kits: HashSet<String> = HashSet::new();
@@ -442,6 +467,7 @@ pub(crate) fn render_scss(
             kit_shapes,
             asset_links,
             project_tokens,
+            kit_variant_rules,
             &mut emitted_kits,
             i,
             0,
@@ -452,6 +478,23 @@ pub(crate) fn render_scss(
     out
 }
 
+// The actual compound-selector text for one VariantRule, given the Kit's own class name. STATIC
+// rules repeat `.{class}` once per condition (`.button.button--plan-elite.button--theme-dark`) --
+// this is what makes CSS's own specificity (one point per class token in a compound selector)
+// naturally rank an N-condition rule above an (N-1)-condition rule with zero extra bookkeeping,
+// mirroring resolve.ts's own condition-count-first specificity order. DYNAMIC rules keep the
+// original direct-concatenation form (`.button:hover`) -- a pseudo-class isn't a class token, and
+// dynamic rules never chain (see variants.rs's module doc comment).
+fn variant_rule_selector(class: &str, rule: &variants::VariantRule) -> String {
+    if rule.dynamic {
+        let suffix = rule.suffixes.first().map(String::as_str).unwrap_or("");
+        format!(".{class}{suffix}")
+    } else {
+        let chained: String = rule.suffixes.iter().map(|s| format!(".{class}{s}")).collect();
+        format!(".{class}{chained}")
+    }
+}
+
 // Img nodes never go through the Kit-basis variants.rs path, even when composed via a Kit
 // (node_kit_ids[i] non-empty) -- that machinery synthesizes CSS from literal PAINT/LAYOUT
 // properties (background, flex-direction, ...), and has no concept of `src`/`fit`/
@@ -459,6 +502,7 @@ pub(crate) fn render_scss(
 // properties or flag them as "unsupported compiled" (neither is right -- they're perfectly
 // literal, just outside that module's vocabulary). Img still gets its class name from
 // resolve_class_name's normal 3-tier scheme (Kit name / "img" / positional), independent of this.
+#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn render_scss_node(
     nodes: &[UiNode],
@@ -469,6 +513,7 @@ fn render_scss_node(
     kit_shapes: &HashMap<String, KitExportShape>,
     asset_links: &HashMap<String, String>,
     project_tokens: &variants::ProjectTokens,
+    kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
     emitted_kits: &mut HashSet<String>,
     i: usize,
     depth: usize,
@@ -482,9 +527,10 @@ fn render_scss_node(
         node_kit_ids.get(i).filter(|id| !id.is_empty() && kit_shapes.contains_key(id.as_str()))
     };
 
-    let (props, variant_rules): (Option<Vec<String>>, Vec<variants::VariantRule>) = if is_img {
+    let empty_rules: Vec<variants::VariantRule> = Vec::new();
+    let (props, variant_rules): (Option<Vec<String>>, &[variants::VariantRule]) = if is_img {
         let has_resolved_img_src = tree::resolved_img_src(&nodes[i], asset_links).is_some();
-        (node_props(&nodes[i], has_resolved_img_src), Vec::new())
+        (node_props(&nodes[i], has_resolved_img_src), &empty_rules)
     } else {
         match kit_id {
             Some(kid) => {
@@ -497,15 +543,15 @@ fn render_scss_node(
                             is_box,
                             project_tokens,
                         )),
-                        variants::synthesize_variant_rules_with_tokens(shape, is_box, project_tokens),
+                        kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&empty_rules),
                     )
                 } else {
                     // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
                     // child this instance introduces) but no duplicate content.
-                    (Some(Vec::new()), Vec::new())
+                    (Some(Vec::new()), &empty_rules)
                 }
             }
-            None => (node_props(&nodes[i], false), Vec::new()),
+            None => (node_props(&nodes[i], false), &empty_rules),
         }
     };
 
@@ -536,7 +582,15 @@ fn render_scss_node(
         out.push_str(&format!("{indent}}}\n"));
     }
 
-    if has_rule {
+    // A Kit-identified node revisited after its first occurrence has nothing left to say here --
+    // its declarations/variants were already emitted at that first occurrence (`props` is empty).
+    // Printing another `.class {\n}\n` block for every later instance was pure visual noise: this
+    // "nesting" is cosmetic indentation only (every rule closes its own braces, right above,
+    // BEFORE any child is ever recursed into -- there is no real CSS/SCSS nesting relying on the
+    // block staying open). `child_depth` below still increments as if this block were printed, so
+    // a child's own indentation stays identical to what a first-occurrence sibling's child gets --
+    // only the empty, contentless wrapper text itself is skipped.
+    if has_rule && !props.is_empty() {
         out.push_str(&format!("{indent}.{class} {{\n"));
         let inner_indent = "  ".repeat(depth + 1);
         for p in &props {
@@ -550,8 +604,9 @@ fn render_scss_node(
         // point, is what makes a nested child Kit's OWN modifier compile to the correct full
         // path (e.g. `.button .card--variant`) via plain SCSS/CSS nesting -- see the plan doc's
         // nesting-vs-modifier decision.
-        for rule in &variant_rules {
-            out.push_str(&format!("{indent}.{class}{} {{\n", rule.selector_suffix));
+        for rule in variant_rules {
+            let selector = variant_rule_selector(&class, rule);
+            out.push_str(&format!("{indent}{selector} {{\n"));
             for d in &rule.declarations {
                 out.push_str(&format!("{inner_indent}{d}\n"));
             }
@@ -571,6 +626,7 @@ fn render_scss_node(
                     kit_shapes,
                     asset_links,
                     project_tokens,
+                    kit_variant_rules,
                     emitted_kits,
                     k,
                     child_depth,

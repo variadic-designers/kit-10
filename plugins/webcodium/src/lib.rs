@@ -33,6 +33,13 @@ mod variants;
 // property block (variants::render_root_variables) and `var(--alias)` substitution at usage
 // sites. Kit/view-scoped tokens are out of scope for this first cut (see variants::ProjectTokens'
 // doc comment).
+//
+// kit10_get_view_axis_args resolves, per requested view id, which axis value(s) that view
+// actually set for each composed kit -- a different question from kit10_get_kit_export_shape's
+// per-Kit CSS rules. Needed so a given exported node instance's class="" attribute can carry the
+// modifier class(es) matching what its own view resolved to (see compute_instance_modifier_classes
+// and variants::rule_matches_args); without this, every static/`.is-` variant rule is unreachable
+// dead CSS, since nothing else ever puts a modifier class on any element.
 #[host_fn]
 extern "ExtismHost" {
     fn kit10_get_interpreter_output(_unused: String) -> String;
@@ -40,6 +47,7 @@ extern "ExtismHost" {
     fn kit10_get_asset_links(input: String) -> String;
     fn kit10_get_font_links(input: String) -> String;
     fn kit10_get_project_tokens(input: String) -> String;
+    fn kit10_get_view_axis_args(input: String) -> String;
 }
 
 // Mirrors interpreter-output.ts's discriminated union, but flattened -- serde's tagged-enum
@@ -135,6 +143,12 @@ pub fn export_html_css(input: String) -> FnResult<String> {
     let asset_links = fetch_asset_links(&output.viewport_data);
     let font_links = fetch_font_links(&output.viewport_data);
     let project_tokens = fetch_project_tokens(&req.project_id);
+    let kit_variant_rules = synthesize_all_variant_rules(
+        &output.viewport_data,
+        &output.node_kit_ids,
+        &kit_shapes,
+        &project_tokens,
+    );
 
     let scss = css::render_scss(
         &output.viewport_data,
@@ -146,6 +160,7 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &kit_shapes,
         &asset_links,
         &project_tokens,
+        &kit_variant_rules,
     );
     // :root variables lead the stylesheet (order is irrelevant to CSS custom-property lookup,
     // which is resolved at compute time, not declaration order -- but reads more naturally before
@@ -157,6 +172,17 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         css::render_font_faces(&font_links),
         css::with_reset(&scss)
     );
+
+    let view_axis_args = fetch_view_axis_args(&output.node_view_ids);
+    let instance_modifier_classes = compute_instance_modifier_classes(
+        &output.viewport_data,
+        &output.node_view_ids,
+        &output.node_kit_ids,
+        &kit_names,
+        &kit_variant_rules,
+        &view_axis_args,
+    );
+
     let html = html::render_html(
         &output.viewport_data,
         &children,
@@ -166,6 +192,7 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &kit_names,
         &asset_links,
         &css,
+        &instance_modifier_classes,
     );
 
     Ok(html)
@@ -327,6 +354,129 @@ fn fetch_kit_export_shapes(
     (kit_names, kit_shapes)
 }
 
+// Variant rules are computed ONCE per distinct Kit, up front, rather than inline the first time
+// css::render_scss_node happens to visit a node using that Kit (the pre-multi-condition-variants
+// shape of this code) -- css.rs needs each Kit's rules to emit selectors, and
+// compute_instance_modifier_classes below ALSO needs them to decide which of those selectors a
+// given node instance's own class="" attribute should carry. Computing them twice would work but
+// wastes the resolve_properties_with_tokens work every rule involves; hoisting once mirrors how
+// kit_names/kit_shapes themselves are already computed once and consulted from both css.rs and
+// html.rs. `is_box` is taken from this Kit's FIRST node occurrence in the flat array (same
+// first-occurrence-wins posture render_scss_node's own `emitted_kits` gate already has for base
+// declarations) -- a Kit consistently composed as only Box or only Text in practice, so this can't
+// actually disagree with what render_scss_node itself would have picked.
+fn synthesize_all_variant_rules(
+    nodes: &[UiNode],
+    node_kit_ids: &[String],
+    kit_shapes: &HashMap<String, variants::KitExportShape>,
+    project_tokens: &variants::ProjectTokens,
+) -> HashMap<String, Vec<variants::VariantRule>> {
+    let mut rules: HashMap<String, Vec<variants::VariantRule>> = HashMap::new();
+    for (i, kid) in node_kit_ids.iter().enumerate() {
+        if kid.is_empty() || rules.contains_key(kid) {
+            continue;
+        }
+        // Img nodes never route through the Kit-basis variants.rs path even when composed via a
+        // Kit -- see css::render_scss_node's own note.
+        if matches!(nodes[i], UiNode::Img(_)) {
+            continue;
+        }
+        let Some(shape) = kit_shapes.get(kid) else { continue };
+        let is_box = matches!(nodes[i], UiNode::Box(_));
+        rules.insert(
+            kid.clone(),
+            variants::synthesize_variant_rules_with_tokens(shape, is_box, project_tokens),
+        );
+    }
+    rules
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ViewAxisArgRow {
+    view_id: String,
+    kit_id: String,
+    axis_id: String,
+    value: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ViewAxisArgsResponse {
+    #[serde(default)]
+    success: bool,
+    #[serde(default)]
+    rows: Vec<ViewAxisArgRow>,
+}
+
+// Best-effort fetch of every distinct exported view's own resolved axis args, per composed kit --
+// (view_id, kit_id) -> {axis_id: value}. Never fails the whole export -- any error (host-fn call,
+// JSON parse, `success: false`) just leaves the map empty, which compute_instance_modifier_classes
+// already treats as "no known axis args for this instance", falling through to no extra classes
+// (today's behavior, unchanged) for every node.
+fn fetch_view_axis_args(
+    node_view_ids: &[String],
+) -> HashMap<(String, String), HashMap<String, String>> {
+    let mut out: HashMap<(String, String), HashMap<String, String>> = HashMap::new();
+    let view_ids = tree::distinct_view_ids(node_view_ids);
+    if view_ids.is_empty() {
+        return out;
+    }
+
+    let request = serde_json::json!({ "view_ids": view_ids }).to_string();
+    let Ok(raw) = (unsafe { kit10_get_view_axis_args(request) }) else { return out };
+    let Ok(resp) = serde_json::from_str::<ViewAxisArgsResponse>(&raw) else { return out };
+    if !resp.success {
+        return out;
+    }
+
+    for row in resp.rows {
+        out.entry((row.view_id, row.kit_id)).or_default().insert(row.axis_id, row.value);
+    }
+    out
+}
+
+// For every node instance whose Kit has at least one STATIC variant rule matching that instance's
+// own resolved axis args, the extra class name(s) (already `{class}{suffix}` -- the exact literal
+// token(s) the matching compound selector in css.rs names) its class="" attribute needs for that
+// rule to actually apply. Dynamic rules (real pseudo-classes like `:hover`, or the `.is-{value}`
+// JS-toggle fallback) are deliberately never baked in here -- a real pseudo-class needs no class
+// at all (the browser applies it from actual user interaction), and a JS-toggle-style class is
+// meant to be flipped by future runtime logic, not permanently set from a design-time axis pick;
+// both stay entirely out of scope for this static-variant-application feature, matching
+// variants.rs's own "assume everything is static for now" scoping.
+fn compute_instance_modifier_classes(
+    nodes: &[UiNode],
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
+    view_axis_args: &HashMap<(String, String), HashMap<String, String>>,
+) -> HashMap<usize, Vec<String>> {
+    let mut out: HashMap<usize, Vec<String>> = HashMap::new();
+    for i in 0..nodes.len() {
+        let kit_id = &node_kit_ids[i];
+        if kit_id.is_empty() {
+            continue;
+        }
+        let Some(rules) = kit_variant_rules.get(kit_id) else { continue };
+        if rules.is_empty() {
+            continue;
+        }
+        let view_id = &node_view_ids[i];
+        let Some(args) = view_axis_args.get(&(view_id.clone(), kit_id.clone())) else { continue };
+
+        let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+        for rule in rules {
+            if rule.dynamic || !variants::rule_matches_args(rule, args) {
+                continue;
+            }
+            for suffix in &rule.suffixes {
+                out.entry(i).or_default().push(format!("{class}{suffix}"));
+            }
+        }
+    }
+    out
+}
+
 #[derive(Debug, Clone, Deserialize, Default)]
 struct ProjectTokensResponse {
     #[serde(default)]
@@ -380,6 +530,8 @@ mod tests {
         // No way to call the real host fn in a plain unit test -- tests that need a resolved Img
         // link build this map directly instead (see the dedicated Img tests below).
         let asset_links = HashMap::new();
+        let kit_variant_rules = HashMap::new();
+        let instance_modifier_classes = HashMap::new();
         let css = css::render_scss(
             nodes,
             &children,
@@ -390,6 +542,7 @@ mod tests {
             &kit_shapes,
             &asset_links,
             &variants::ProjectTokens::new(),
+            &kit_variant_rules,
         );
         let html = html::render_html(
             nodes,
@@ -400,6 +553,7 @@ mod tests {
             &kit_names,
             &asset_links,
             &css,
+            &instance_modifier_classes,
         );
         (html, css)
     }
@@ -470,6 +624,8 @@ mod tests {
 
         let children = tree::build_children_map(&nodes);
         let roots: Vec<usize> = vec![0];
+        let kit_variant_rules = HashMap::new();
+        let instance_modifier_classes = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -480,6 +636,7 @@ mod tests {
             &kit_shapes,
             &asset_links,
             &variants::ProjectTokens::new(),
+            &kit_variant_rules,
         );
         let html = html::render_html(
             &nodes,
@@ -490,6 +647,7 @@ mod tests {
             &kit_names,
             &asset_links,
             &css,
+            &instance_modifier_classes,
         );
 
         assert!(html.contains("<img class=\"k10-1\" src=\"/1x/favicon.png\" alt=\"\">"), "html was: {html}");
@@ -519,6 +677,8 @@ mod tests {
         let roots = tree::resolve_export_roots(&nodes, &node_view_ids, &["view-a".to_string()]);
         assert_eq!(roots, vec![1], "sanity: the child, not the wrapper, must be the resolved root");
 
+        let kit_variant_rules = HashMap::new();
+        let instance_modifier_classes = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -529,6 +689,7 @@ mod tests {
             &kit_shapes,
             &asset_links,
             &variants::ProjectTokens::new(),
+            &kit_variant_rules,
         );
         let html = html::render_html(
             &nodes,
@@ -539,6 +700,7 @@ mod tests {
             &kit_names,
             &asset_links,
             &css,
+            &instance_modifier_classes,
         );
 
         // A single pinned root normalizes to (0, 0) -- its own raw canvas coordinate (120, 40) IS
@@ -585,6 +747,7 @@ mod tests {
         let roots = tree::resolve_export_roots(&nodes, &node_view_ids, &selected);
         assert_eq!(roots, vec![1, 3]);
 
+        let kit_variant_rules = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -595,6 +758,7 @@ mod tests {
             &kit_shapes,
             &asset_links,
             &variants::ProjectTokens::new(),
+            &kit_variant_rules,
         );
 
         assert!(
@@ -709,6 +873,50 @@ mod tests {
         assert_eq!(css::render_font_faces(&[]), "");
     }
 
+    // A variable font: several distinct weight requests resolving to the SAME url must collapse
+    // into ONE @font-face with a font-weight RANGE, not one block per request repeating the
+    // identical src -- this was a real, reported bug (4 near-identical blocks for Inter
+    // 400/500/600/700, all the same file).
+    #[test]
+    fn render_font_faces_collapses_same_url_requests_into_one_range_block() {
+        let same_url = "https://fonts.gstatic.com/s/inter/v20/inter-variable.woff2".to_string();
+        let links = vec![
+            ResolvedFontLink { family: "Inter".to_string(), weight: 700, style: "normal".to_string(), url: same_url.clone() },
+            ResolvedFontLink { family: "Inter".to_string(), weight: 600, style: "normal".to_string(), url: same_url.clone() },
+            ResolvedFontLink { family: "Inter".to_string(), weight: 400, style: "normal".to_string(), url: same_url.clone() },
+            ResolvedFontLink { family: "Inter".to_string(), weight: 500, style: "normal".to_string(), url: same_url },
+        ];
+        let css = css::render_font_faces(&links);
+        assert_eq!(css.matches("@font-face").count(), 1, "css was: {css}");
+        assert!(css.contains("font-weight: 400 700;"), "css was: {css}");
+    }
+
+    // Two DIFFERENT static files (distinct urls) for the same family/style must stay two separate
+    // blocks -- grouping is by url, never by (family, style) alone, so this can never falsely
+    // merge unrelated files into a bogus range.
+    #[test]
+    fn render_font_faces_keeps_distinct_urls_as_separate_single_weight_blocks() {
+        let links = vec![
+            ResolvedFontLink {
+                family: "Lato".to_string(),
+                weight: 400,
+                style: "normal".to_string(),
+                url: "https://fonts.gstatic.com/lato-400.woff2".to_string(),
+            },
+            ResolvedFontLink {
+                family: "Lato".to_string(),
+                weight: 700,
+                style: "normal".to_string(),
+                url: "https://fonts.gstatic.com/lato-700.woff2".to_string(),
+            },
+        ];
+        let css = css::render_font_faces(&links);
+        assert_eq!(css.matches("@font-face").count(), 2, "css was: {css}");
+        assert!(css.contains("font-weight: 400;"), "css was: {css}");
+        assert!(css.contains("font-weight: 700;"), "css was: {css}");
+        assert!(!css.contains("font-weight: 400 700;"), "css was: {css}");
+    }
+
     #[test]
     fn export_input_tolerates_missing_fields() {
         let input: ExportInput = serde_json::from_str("{}").unwrap();
@@ -727,6 +935,8 @@ mod tests {
 
         let children = tree::build_children_map(&nodes);
         let roots = tree::resolve_export_roots(&nodes, &node_view_ids, &selected);
+        let kit_variant_rules = HashMap::new();
+        let instance_modifier_classes = HashMap::new();
         let filtered_css = css::render_scss(
             &nodes,
             &children,
@@ -737,6 +947,7 @@ mod tests {
             &kit_shapes,
             &asset_links,
             &variants::ProjectTokens::new(),
+            &kit_variant_rules,
         );
         let filtered_html = html::render_html(
             &nodes,
@@ -747,6 +958,7 @@ mod tests {
             &kit_names,
             &asset_links,
             &filtered_css,
+            &instance_modifier_classes,
         );
 
         let (unfiltered_html, unfiltered_css) = render_all(&nodes, &node_view_ids);
@@ -853,6 +1065,9 @@ mod tests {
         let asset_links = HashMap::new();
         let children = tree::build_children_map(&nodes);
         let roots: Vec<usize> = vec![0];
+        let project_tokens = variants::ProjectTokens::new();
+        let kit_variant_rules =
+            synthesize_all_variant_rules(&nodes, &node_kit_ids, &kit_shapes, &project_tokens);
         let css = css::render_scss(
             &nodes,
             &children,
@@ -862,7 +1077,24 @@ mod tests {
             &kit_names,
             &kit_shapes,
             &asset_links,
-            &variants::ProjectTokens::new(),
+            &project_tokens,
+            &kit_variant_rules,
+        );
+
+        // This instance's view resolved theme: secondary -- its own class="" attribute must carry
+        // the matching static modifier class for css.rs's compound selector to ever apply to it.
+        let mut view_axis_args = HashMap::new();
+        view_axis_args.insert(
+            ("view-button".to_string(), "button-kit".to_string()),
+            HashMap::from([("theme".to_string(), "secondary".to_string())]),
+        );
+        let instance_modifier_classes = compute_instance_modifier_classes(
+            &nodes,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &kit_variant_rules,
+            &view_axis_args,
         );
         let html = html::render_html(
             &nodes,
@@ -873,19 +1105,182 @@ mod tests {
             &kit_names,
             &asset_links,
             &css,
+            &instance_modifier_classes,
         );
-
-        assert!(html.contains("<div class=\"button\">"), "html was: {html}");
 
         assert!(css.contains(".button {"), "css was: {css}");
         assert!(css.contains("background: oklab(60% 0.1 0.02 / 1);"));
-        assert!(css.contains(".button--secondary {"));
+        assert!(css.contains(".button.button--theme-secondary {"), "css was: {css}");
         assert!(css.contains("background: oklab(40% 0.05 -0.01 / 1);"));
         assert!(css.contains(".button:hover {"));
         assert!(css.contains("background: oklab(65% 0.1 0.02 / 1);"));
 
+        // The theme:secondary modifier class must actually be applied to the element -- this is
+        // what makes the compound selector above reachable at all, not dead CSS.
+        assert!(
+            html.contains("<div class=\"button button--theme-secondary\">"),
+            "html was: {html}"
+        );
+        // No class for the dynamic :hover rule -- real pseudo-classes need no class, the browser
+        // applies them from actual interaction.
+        assert!(!html.contains("is-hover"));
+
         // The old positional class scheme must not leak through for a Kit-identified node.
         assert!(!css.contains("k10-0"));
         assert!(!html.contains("k10-0"));
+    }
+
+    // A layer conditioned on two axes together must produce ONE combined rule -- a compound
+    // selector chaining both fragments -- and a node instance whose view resolved BOTH conditions
+    // must carry both classes. A sibling instance resolving only ONE of the two conditions must
+    // get neither class (the rule doesn't match a partial args set) -- this is what proves the
+    // matching is a real per-instance decision, not "every instance of this Kit gets every class".
+    #[test]
+    fn multi_condition_layer_produces_a_chained_selector_and_applies_to_a_fully_matching_instance_only(
+    ) {
+        use crate::variants::{
+            AxisExportMeta, AxisValueWire, ExportAxisValue, ExportLayer, ExportLayerCondition,
+            ExportLayerEntry, KitExportShape,
+        };
+
+        let nodes = vec![UiNode::Box(test_box(None)), UiNode::Box(test_box(None))];
+        let node_view_ids = vec!["view-full-match".to_string(), "view-partial-match".to_string()];
+        let node_kit_ids = vec!["plan-kit".to_string(); nodes.len()];
+
+        let literal = |v: &str| AxisValueWire { kind: "literal".to_string(), value: v.to_string() };
+        let entry = |property: &str, value: &str| ExportLayerEntry {
+            property: property.to_string(),
+            literal_value: Some(value.to_string()),
+            token_value: None,
+            token_id: None,
+        };
+        let condition = |axis_id: &str, value: &str| ExportLayerCondition {
+            axis_id: axis_id.to_string(),
+            axis_value_id: String::new(),
+            value: literal(value),
+        };
+
+        let shape = KitExportShape {
+            kit_id: "plan-kit".to_string(),
+            kit_name: "Plan Card".to_string(),
+            axes: vec![
+                AxisExportMeta {
+                    axis_id: "plan".to_string(),
+                    axis_name: Some("plan".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "static".to_string(),
+                    excluded_from_export: false,
+                    default_value: Some(literal("basic")),
+                    priority_index: 0,
+                    values: vec![
+                        ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("basic"), priority_index: 0 },
+                        ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("elite"), priority_index: 1000 },
+                    ],
+                },
+                AxisExportMeta {
+                    axis_id: "theme".to_string(),
+                    axis_name: Some("theme".to_string()),
+                    kind: Some("categorical".to_string()),
+                    variant_kind: "static".to_string(),
+                    excluded_from_export: false,
+                    default_value: Some(literal("light")),
+                    priority_index: 1000,
+                    values: vec![
+                        ExportAxisValue { axis_value_id: "v3".to_string(), value: literal("light"), priority_index: 0 },
+                        ExportAxisValue { axis_value_id: "v4".to_string(), value: literal("dark"), priority_index: 1000 },
+                    ],
+                },
+            ],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![entry("background", "oklab(90% 0.02 0.02 / 1)")],
+                },
+                ExportLayer {
+                    layer_id: "elite-dark".to_string(),
+                    conditions: vec![condition("plan", "elite"), condition("theme", "dark")],
+                    entries: vec![entry("background", "oklab(10% 0.02 0.02 / 1)")],
+                },
+            ],
+        };
+
+        let mut kit_names = HashMap::new();
+        kit_names.insert("plan-kit".to_string(), "Plan Card".to_string());
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert("plan-kit".to_string(), shape);
+
+        let asset_links = HashMap::new();
+        let children = tree::build_children_map(&nodes);
+        let roots: Vec<usize> = vec![0, 1];
+        let project_tokens = variants::ProjectTokens::new();
+        let kit_variant_rules =
+            synthesize_all_variant_rules(&nodes, &node_kit_ids, &kit_shapes, &project_tokens);
+        let css = css::render_scss(
+            &nodes,
+            &children,
+            &roots,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &kit_shapes,
+            &asset_links,
+            &project_tokens,
+            &kit_variant_rules,
+        );
+
+        // Sorted by axis_id ("plan" < "theme") -- deterministic regardless of DB condition order.
+        assert!(
+            css.contains(".plan-card.plan-card--plan-elite.plan-card--theme-dark {"),
+            "css was: {css}"
+        );
+        assert!(css.contains("background: oklab(10% 0.02 0.02 / 1);"));
+        // The second node instance reuses the same Kit -- its declarations/variants were already
+        // emitted for the first, so it must print no empty ".plan-card {\n}\n" wrapper at all
+        // (a real, reported repetition bug: an empty rule per repeated instance).
+        assert_eq!(css.matches(".plan-card {").count(), 1, "css was: {css}");
+
+        let mut view_axis_args = HashMap::new();
+        view_axis_args.insert(
+            ("view-full-match".to_string(), "plan-kit".to_string()),
+            HashMap::from([
+                ("plan".to_string(), "elite".to_string()),
+                ("theme".to_string(), "dark".to_string()),
+            ]),
+        );
+        view_axis_args.insert(
+            ("view-partial-match".to_string(), "plan-kit".to_string()),
+            HashMap::from([("plan".to_string(), "elite".to_string())]),
+        );
+        let instance_modifier_classes = compute_instance_modifier_classes(
+            &nodes,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &kit_variant_rules,
+            &view_axis_args,
+        );
+        let html = html::render_html(
+            &nodes,
+            &children,
+            &roots,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &asset_links,
+            &css,
+            &instance_modifier_classes,
+        );
+
+        assert!(
+            html.contains(
+                "<div class=\"plan-card plan-card--plan-elite plan-card--theme-dark\">"
+            ),
+            "html was: {html}"
+        );
+        // The partial-match instance resolved plan:elite but never set theme -- the rule's
+        // conditions aren't ALL satisfied, so it must get neither modifier class, just the base.
+        assert!(html.contains("<div class=\"plan-card\">\n"), "html was: {html}");
+        assert!(!html.contains("plan-card plan-card--plan-elite\">"));
     }
 }

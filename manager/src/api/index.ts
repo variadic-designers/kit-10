@@ -9,7 +9,12 @@ import {
 	type AxisValueType
 } from '../schema.js';
 import { sql, type SelectQueryBuilder } from 'kysely';
-import { fetchKitExportShapes, type KitExportShape } from '../resolve/export-shape.js';
+import {
+	fetchKitExportShapes,
+	fetchViewAxisArgs,
+	type KitExportShape,
+	type ViewAxisArgRow
+} from '../resolve/export-shape.js';
 
 // TokenValue's view_id/view_ids (type: 'view' / 'view-list') are references to view rows, but they
 // live inside a jsonb blob rather than a real FK column -- the schema has no way to enforce or
@@ -612,6 +617,11 @@ export interface QueryAction {
 	// resolveManyViews() are. See resolve/export-shape.ts's own doc comment for why this is a
 	// separate function rather than a resolve() variant.
 	getKitExportShapes: (kitIds: string[]) => Promise<Map<string, KitExportShape>>;
+	// One row per (view, kit, axis) a designer actually set an arg for, scoped to the requested
+	// view ids -- see resolve/export-shape.ts's ViewAxisArgRow doc comment for why WebCodium needs
+	// this ALONGSIDE getKitExportShapes (one's per-Kit CSS rules, this is per-instance which of
+	// those rules a given exported element should carry as classes).
+	getViewAxisArgs: (viewIds: string[]) => Promise<ViewAxisArgRow[]>;
 	// Inverse of exportProject -- `data` is expected to be shaped exactly like exportProject's
 	// return value (validated up front; throws a specific error for anything that doesn't look
 	// like a real export rather than failing deep inside the transaction). Creates a brand-new
@@ -1271,6 +1281,10 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	getKitExportShapes: async (kitIds: string[]) => {
 		return await fetchKitExportShapes(db, kitIds);
+	},
+
+	getViewAxisArgs: async (viewIds: string[]) => {
+		return await fetchViewAxisArgs(db, viewIds);
 	},
 
 	exportProject: async (projectId: string) => {
