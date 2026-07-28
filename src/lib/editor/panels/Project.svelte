@@ -25,7 +25,8 @@
 		editorActivity = $bindable(),
 		api,
 		callUtilityPlugin,
-		pluginRegistryVersion = 0
+		pluginRegistryVersion = 0,
+		resolvingProjectId
 	}: {
 		editorReady: EditorState;
 		editorActivity: EditorActivity;
@@ -34,6 +35,9 @@
 		// Bumped by Editor.svelte after PluginsPanel registers a new plugin -- read below purely to
 		// re-trigger the fetch, since there's no live query on the plugin catalogue table yet.
 		pluginRegistryVersion?: number;
+		// Editor-owned: the project id currently mid-switch (resolve not yet landed), or null.
+		// Read-only here -- disables the other rows and throbbers the loading one.
+		resolvingProjectId: string | null;
 	} = $props();
 
 	const projectsQuery = liveQuery((api, activity) => {
@@ -275,15 +279,19 @@
 <Panel name="Projects" tooltip="Project Settings" contextMenuContent={projectPanelContextMenu}>
 	{#snippet content()}
 		{#each projectsQuery.rows as p (p.projectId)}
+			{@const isLoadingRow = p.projectId === resolvingProjectId}
+			{@const isBlocked = resolvingProjectId !== null && !isLoadingRow}
 			<li class="project-listing">
 				<button
 					onclick={() => selectProject(p.projectId, p.projectName)}
 					class:selected={p.projectId === editorActivity.activeProjectId}
+					disabled={isBlocked}
 					use:contextMenu={projectListingContextMenu(p.projectId, p.projectName, p.hints)}
 					title={`by ${p.author} - ${p.license}`}
 				>
 					<span class="project-listing__name"
-						><i class="fa-solid fa-diagram-project"></i>
+						><i class="fa-solid {isLoadingRow ? 'fa-spinner fa-spin' : 'fa-diagram-project'}"
+						></i>
 						<Renameable
 							editing={projectEditing[p.projectId] === true}
 							value={p.projectName}
@@ -347,6 +355,15 @@
 
 			&:hover .project-listing__name {
 				color: var(--color-primary-hover);
+			}
+		}
+
+		&:disabled {
+			opacity: 0.5;
+			cursor: not-allowed;
+
+			&:hover .project-listing__name {
+				color: currentColor;
 			}
 		}
 

@@ -114,6 +114,11 @@
 	let hoveredViewId: string | null = $state(null);
 
 	let resolvedViews = $state<ResolvedView[]>([]);
+	// Set to the project id the moment a switch begins (including the very first auto-select),
+	// cleared the moment that project's first fetchResolutionRows lands -- lets the Projects panel
+	// disable other rows + show a throbber while a switch is in flight. See the resolve $effect
+	// below for where each transition happens.
+	let resolvingProjectId: string | null = $state(null);
 	const resolvedKits = $derived(
 		resolvedViews.find((v) => v.viewId === editorActivity.activeViewId)?.resolvedKits ?? null
 	);
@@ -140,8 +145,10 @@
 		const editor = editorLoading;
 		if (!projectId || !editor) {
 			resolvedViews = [];
+			resolvingProjectId = null;
 			return;
 		}
+		resolvingProjectId = projectId;
 
 		let cancelled = false;
 		let reResolveVersion = 0;
@@ -164,6 +171,10 @@
 			// where stale results were discarded only after all 4 RTs had run.
 			const rows = await fetchResolutionRows(editor.dialect, projectId);
 			if (cancelled || version !== reResolveVersion) return;
+			// This project's freshest fetch has landed -- loading is done regardless of whether
+			// the rows-unchanged dedup skip below fires next. Gated on the same cancelled/version
+			// check above, so a superseded switch can never clear a newer project's loading flag.
+			resolvingProjectId = null;
 
 			mark('resolve:dedup:start');
 			const key = rowsKey(rows);
@@ -841,6 +852,7 @@
 			bind:editorActivity
 			callUtilityPlugin={pluginManager?.callUtilityPlugin}
 			{pluginRegistryVersion}
+			{resolvingProjectId}
 		/>
 
 		<ViewsPanel
