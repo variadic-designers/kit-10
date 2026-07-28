@@ -38,6 +38,7 @@ export type KeybindAction =
 	| 'view.drag'
 	| 'canvas.toggleBoxModel'
 	| 'canvas.pixelSnap'
+	| 'canvas.focusView'
 	| 'layer.delete'
 	| 'property.remove'
 	| 'edit.cancel'
@@ -95,6 +96,10 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 		default: key('KeyB', { shift: true })
 	},
 	{ id: 'canvas.pixelSnap', label: 'Toggle pixel snap', group: CANVAS, allow: ['key'], default: key('KeyP', { shift: true }) },
+	// Imperative version of Viewport.svelte's own selection-change pan effect (ensure_index_visible)
+	// -- same no-op-if-already-visible, zoom-out-only-if-needed behavior, just triggerable directly
+	// instead of only as a side effect of a selection actually changing.
+	{ id: 'canvas.focusView', label: 'Focus View', group: CANVAS, allow: ['key'], default: key('Period') },
 	{ id: 'layer.delete', label: 'Delete layer', group: AUTHORING, allow: ['mouse'], default: mouse('Mouse0', { alt: true }) },
 	{
 		id: 'property.remove',

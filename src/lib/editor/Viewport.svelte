@@ -288,6 +288,19 @@
 	// a Space keydown need to arm `spaceHeld` (and swallow page scroll).
 	const panUsesSpace = $derived($keybinds['canvas.pan'].source === 'mouse' && $keybinds['canvas.pan'].space);
 
+	// Imperative twin of the selection-change pan effect below (ensure_index_visible) -- same
+	// no-op-if-already-visible, zoom-out-only-if-needed behavior, just callable directly on the
+	// current selection instead of only firing as a side effect of selectedViewPrimary changing.
+	// Deliberately doesn't touch lastPanSelection -- that guard belongs solely to the effect's own
+	// re-run logic (skipping non-selection-change re-runs), not to a shared "have we panned here" flag.
+	function focusSelectedView() {
+		const viewId = selection.selectedViewPrimary;
+		if (!initialized || !vellum || !hasData || !viewId) return;
+		const index = nodeViewIds.indexOf(viewId);
+		if (index === -1) return;
+		if (vellum.ensure_index_visible(index)) requestRender();
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		if (isTextEntryTarget(e.target)) return;
 		if (matchKey(e, $keybinds['canvas.pixelSnap'])) {
@@ -298,6 +311,11 @@
 		}
 		if (matchKey(e, $keybinds['canvas.toggleBoxModel'])) {
 			updateViewportInput({ showBoxModel: !$viewportInput.showBoxModel });
+			e.preventDefault();
+			return;
+		}
+		if (matchKey(e, $keybinds['canvas.focusView'])) {
+			focusSelectedView();
 			e.preventDefault();
 			return;
 		}
