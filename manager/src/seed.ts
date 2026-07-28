@@ -554,14 +554,19 @@ export async function seedDemoProject(
 		'align-items': 'center',
 		padding: '20px',
 		gap: '16px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
+		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
+		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		width: 'fill'
 	});
 	const heroKit = await boxKit('Hero', {
 		'flex-direction': 'row',
 		'align-items': 'center',
 		gap: '18px',
 		padding: '64px',
-		background: 'oklch(98.4% 0.0034 247.9)'
+		background: 'oklch(98.4% 0.0034 247.9)',
+		width: 'fill'
 	});
 	const featuresKit = await boxKit('Features', {
 		'flex-direction': 'row',
@@ -573,7 +578,8 @@ export async function seedDemoProject(
 		'align-items': 'stretch',
 		gap: '24px',
 		padding: '48px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
 	});
 	const cardKit = await boxKit('Card', {
 		'flex-direction': 'column',
@@ -592,7 +598,8 @@ export async function seedDemoProject(
 		// kit from silently depending on Charter's Stack default if it ever gains a sibling.
 		'align-items': 'stretch',
 		padding: '28px',
-		background: 'oklch(20.8% 0.0398 265.8)'
+		background: 'oklch(20.8% 0.0398 265.8)',
+		width: 'fill'
 	});
 	const ctaKit = await boxKit('CTA', {
 		'flex-direction': 'row',
@@ -957,7 +964,11 @@ export async function seedJuiceLandingPage(
 	const navKit = await boxKit('Nav', {
 		arrange: 'split',
 		padding: '20px 40px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
+		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
+		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
 	const ctaKit = await boxKit('CTA', {
@@ -973,7 +984,8 @@ export async function seedJuiceLandingPage(
 		'align-items': 'center',
 		gap: '32px',
 		padding: '56px 64px',
-		background: 'oklch(96% 0.02 95)'
+		background: 'oklch(96% 0.02 95)',
+		width: 'fill'
 	});
 	const heroContentKit = await boxKit('Hero Content', {
 		arrange: 'stack',
@@ -984,7 +996,8 @@ export async function seedJuiceLandingPage(
 		arrange: 'stack',
 		'align-items': 'stretch',
 		padding: '48px 120px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
 	});
 	const flavorRowKit = await boxKit('Flavor Row', {
 		arrange: 'stack',
@@ -992,13 +1005,15 @@ export async function seedJuiceLandingPage(
 		'align-items': 'stretch',
 		gap: '20px',
 		padding: '48px 64px 56px 64px',
-		background: 'oklch(98.3% 0.0106 90)'
+		background: 'oklch(98.3% 0.0106 90)',
+		width: 'fill'
 	});
 	const nutritionGridKit = await boxKit('Nutrition Grid', {
 		arrange: 'grid',
 		'grid-cell-min': '140px',
 		gap: '16px',
-		padding: '48px'
+		padding: '48px',
+		width: 'fill'
 	});
 	const nutritionTileKit = await boxKit('Nutrition Tile', {
 		arrange: 'center',
@@ -1010,12 +1025,14 @@ export async function seedJuiceLandingPage(
 	const chipClusterKit = await boxKit('Chip Cluster', {
 		arrange: 'cluster',
 		gap: '10px',
-		padding: '0px 64px 48px'
+		padding: '0px 64px 48px',
+		width: 'fill'
 	});
 	const subscribeKit = await boxKit('Subscribe Row', {
 		arrange: 'split',
 		padding: '32px 64px',
-		background: 'oklch(94% 0.02 90)'
+		background: 'oklch(94% 0.02 90)',
+		width: 'fill'
 	});
 	const priceStackKit = await boxKit('Price Stack', {
 		arrange: 'stack',
@@ -1026,7 +1043,8 @@ export async function seedJuiceLandingPage(
 	const footerKit = await boxKit('Footer', {
 		arrange: 'center',
 		padding: '28px 64px',
-		background: 'oklch(20% 0.02 264)'
+		background: 'oklch(20% 0.02 264)',
+		width: 'fill'
 	});
 
 	// Explicit width/height placeholder (see imageKit's own doc comment on why this is required).
@@ -1422,7 +1440,11 @@ export async function seedGymLandingPage(
 	const navKit = await boxKit('Nav', {
 		arrange: 'split',
 		padding: '20px 40px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
+		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
+		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
 	const ctaKit = await boxKit('CTA', {
@@ -1438,7 +1460,8 @@ export async function seedGymLandingPage(
 		'align-items': 'center',
 		gap: '32px',
 		padding: '56px 64px',
-		background: 'oklch(97% 0.01 260)'
+		background: 'oklch(97% 0.01 260)',
+		width: 'fill'
 	});
 	const heroContentKit = await boxKit('Hero Content', {
 		arrange: 'stack',
@@ -1449,13 +1472,15 @@ export async function seedGymLandingPage(
 		arrange: 'stack',
 		'align-items': 'stretch',
 		padding: '48px 120px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
 	});
 	const bannerKit = await boxKit('Trial Banner', {
 		arrange: 'center',
 		gap: '20px',
 		padding: '40px',
-		background: 'oklch(95% 0.03 35)'
+		background: 'oklch(95% 0.03 35)',
+		width: 'fill'
 	});
 	const plansRowKit = await boxKit('Plans Row', {
 		arrange: 'stack',
@@ -1463,14 +1488,16 @@ export async function seedGymLandingPage(
 		'align-items': 'stretch',
 		gap: '20px',
 		padding: '48px 64px 56px 64px',
-		background: 'oklch(99% 0 0)'
+		background: 'oklch(99% 0 0)',
+		width: 'fill'
 	});
 	const featuresClusterKit = await boxKit('Features Cluster', { arrange: 'cluster', gap: '8px' });
 	const classGridKit = await boxKit('Class Grid', {
 		arrange: 'grid',
 		'grid-cell-min': '130px',
 		gap: '14px',
-		padding: '48px'
+		padding: '48px',
+		width: 'fill'
 	});
 	const classTileKit = await boxKit('Class Tile', {
 		arrange: 'stack',
@@ -1489,12 +1516,14 @@ export async function seedGymLandingPage(
 	const communityClusterKit = await boxKit('Community Cluster', {
 		arrange: 'cluster',
 		gap: '10px',
-		padding: '0px 64px 48px'
+		padding: '0px 64px 48px',
+		width: 'fill'
 	});
 	const footerKit = await boxKit('Footer', {
 		arrange: 'split',
 		padding: '28px 64px',
-		background: 'oklch(97% 0.01 260)'
+		background: 'oklch(97% 0.01 260)',
+		width: 'fill'
 	});
 	const footerLinksKit = await boxKit('Footer Links', { arrange: 'cluster', gap: '16px' });
 
@@ -1807,7 +1836,11 @@ export async function seedMerchLandingPage(
 	const navKit = await boxKit('Nav', {
 		arrange: 'split',
 		padding: '24px 48px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
+		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
+		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '24px' });
 	const ctaKit = await boxKit('CTA', {
@@ -1820,7 +1853,8 @@ export async function seedMerchLandingPage(
 	const heroKit = await boxKit('Hero', {
 		arrange: 'center',
 		gap: '20px',
-		padding: '96px 64px 80px'
+		padding: '96px 64px 80px',
+		width: 'fill'
 	});
 	const shippingRowKit = await boxKit('Shipping Row', {
 		arrange: 'stack',
@@ -1828,7 +1862,8 @@ export async function seedMerchLandingPage(
 		'align-items': 'stretch',
 		gap: '1px',
 		padding: '0px',
-		background: 'oklch(90% 0 0)'
+		background: 'oklch(90% 0 0)',
+		width: 'fill'
 	});
 	const shippingBoxKit = await boxKit('Shipping Box', {
 		arrange: 'center',
@@ -1840,13 +1875,15 @@ export async function seedMerchLandingPage(
 		arrange: 'stack',
 		'align-items': 'stretch',
 		padding: '48px 140px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
 	});
 	const productGridKit = await boxKit('Product Grid', {
 		arrange: 'grid',
 		'grid-cell-min': '190px',
 		gap: '20px',
-		padding: '0px 64px 56px'
+		padding: '0px 64px 56px',
+		width: 'fill'
 	});
 	const priceRowKit = await boxKit('Price Row', {
 		arrange: 'stack',
@@ -1858,12 +1895,14 @@ export async function seedMerchLandingPage(
 		arrange: 'cluster',
 		gap: '10px',
 		padding: '40px 64px',
-		background: 'oklch(10% 0 0)'
+		background: 'oklch(10% 0 0)',
+		width: 'fill'
 	});
 	const footerKit = await boxKit('Footer', {
 		arrange: 'split',
 		padding: '28px 64px',
-		background: 'oklch(100% 0 0)'
+		background: 'oklch(100% 0 0)',
+		width: 'fill'
 	});
 	const footerLinksKit = await boxKit('Footer Links', { arrange: 'cluster', gap: '18px' });
 

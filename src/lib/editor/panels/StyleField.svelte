@@ -544,7 +544,7 @@
 					<i class="fa-solid fa-arrows-left-right-to-line"></i>
 				</button>
 			</div>
-			{#if resizeMode === 'fixed'}
+			{#if resizeMode === 'fixed' || editValue.now}
 				{#if editValue.now}
 					<input
 						type="text"

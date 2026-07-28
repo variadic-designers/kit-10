@@ -125,7 +125,7 @@ are axis-free.
 
 | Tab (follow-ons)           | Compiles to (BoxExtra)                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------- |
-| **Stack** (direction, gap) | `flex_direction: Column/Row`, `gap`; row variant defaults `align_items: Center`       |
+| **Stack** (direction, gap) | `flex_direction: Column/Row`, `gap`; row variant defaults `align_items: Center`, column variant defaults `align_items: FlexStart` |
 | **Cluster** (gap)          | `flex_direction: Row`, `flex_wrap: Wrap`, `gap`, `align_items: FlexStart`             |
 | **Split** (axis)           | `flex_direction: Row/Column`, `justify_content: SpaceBetween`, `align_items: Center`  |
 | **Center**                 | `justify_content: Center`, `align_items: Center`                                      |

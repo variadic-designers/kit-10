@@ -1009,6 +1009,10 @@ fn compile_resize(
     base_min_width: Extent,
     base_min_height: Extent,
     parent_main_horizontal: Option<bool>,
+    // The flex parent's own resolved cross-axis align-items (BoxExtra.align_items after
+    // compile_arrange + raw override) -- None means taffy's own default, which IS stretch (see
+    // BoxExtra's align_items doc comment), so None is treated identically to Some(Stretch) below.
+    parent_align_items: Option<AlignValue>,
 ) -> ResizeCompile {
     let mut out = ResizeCompile {
         // A keyword axis becomes content-sized (auto); a non-keyword axis keeps its parsed extent.
@@ -1059,10 +1063,32 @@ fn compile_resize(
         None => {}
     }
 
+    // An unset cross-axis property must NOT default to a fixed align-self -- align-self on an
+    // item always wins over the container's own align-items, so forcing one here would silently
+    // defeat Split/Center's align-items:Center and Cluster's align-items:FlexStart
+    // (compile_arrange) for every child that hasn't explicitly picked fill/hug. (Regressed once:
+    // see unset_cross_axis_leaves_align_self_unset below and the Stack-Column default in
+    // compile_arrange, which is the correct place for that default.)
+    //
+    // An EXPLICIT hug is different: Hug's whole point is a per-item override of the container's
+    // own alignment default, exactly like Figma's Hug/Fill sizing is orthogonal to alignment. But
+    // "override" only makes sense relative to what the container would otherwise do:
+    //   - Parent's cross-axis align-items is stretch (explicit, or None == taffy's default) ->
+    //     forcing flex-start is the correction (this is what fixed the original "Hug still fills
+    //     the row" bug: a Column Stack/an untouched container has no other opinion, so its
+    //     children default to stretch and Hug must override that back to content-sized).
+    //   - Parent's cross-axis align-items is a DELIBERATE non-stretch value (Center/FlexEnd/etc,
+    //     e.g. a Center or Split arrangement) -> that deliberate value has nothing to do with
+    //     Hug's sizing decision, so align-self must stay None and let the child inherit it. Once
+    //     forced to flex-start unconditionally, a Hug'd child inside a Center container always sat
+    //     flush at the start edge instead of centering, even though its WIDTH was already
+    //     correctly hugging -- alignment and sizing got conflated.
+    let parent_cross_defaults_to_stretch =
+        matches!(parent_align_items, None | Some(AlignValue::Stretch));
     out.align_self = match cross_kw {
         Some(ResizeKw::Fill) => Some(AlignValue::Stretch),
-        Some(ResizeKw::Hug) => Some(AlignValue::FlexStart),
-        None => None,
+        Some(ResizeKw::Hug) if parent_cross_defaults_to_stretch => Some(AlignValue::FlexStart),
+        Some(ResizeKw::Hug) | None => None,
     };
 
     out
@@ -1136,10 +1162,18 @@ fn compile_arrange(
 
     match kind {
         ArrangeKind::Stack => {
-            // Direction is a free choice with no Justify/Wrap opinion; only the Row cross-axis
-            // gets a sensible default (vertically centering a horizontal stack's items).
-            if raw_align_items.is_none() && out.flex_direction == "Row" {
-                out.align_items = Some(AlignValue::Center);
+            // Direction is a free choice with no Justify/Wrap opinion, but the cross axis always
+            // gets a sensible default either way: Row centers cross-axis (vertically centering a
+            // horizontal stack's items); Column defaults cross-axis (width) to flex-start so an
+            // untouched child -- which StyleField.svelte's resize control already shows as "Hug"
+            // selected -- actually sizes to content instead of silently inheriting taffy's
+            // implicit align-items:normal (== stretch) and filling the Stack's width.
+            if raw_align_items.is_none() {
+                out.align_items = Some(if out.flex_direction == "Row" {
+                    AlignValue::Center
+                } else {
+                    AlignValue::FlexStart
+                });
             }
         }
         ArrangeKind::Cluster => {
@@ -1184,6 +1218,8 @@ fn build_box_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
     parent_main_horizontal: Option<bool>,
+    // The flex parent's own resolved cross-axis align-items -- see compile_resize's doc comment.
+    parent_align_items: Option<AlignValue>,
 ) -> UiNode {
     let paint = extract_paint_props(props, OklabColor::default());
     let width_str = get_prop(props, "width");
@@ -1226,6 +1262,8 @@ fn build_box_node(
         cell_min,
     );
 
+    let raw_align_self = parse_align(get_prop(props, "align-self").as_deref());
+
     let mut extra = BoxExtra {
         gap: parse_px(get_prop(props, "gap").as_deref()),
         align_items: raw_align_items.or(ac.align_items),
@@ -1235,7 +1273,7 @@ fn build_box_node(
             .map(|s| parse_px(Some(&s)))
             .unwrap_or(0.0),
         flex_shrink: get_prop(props, "flex-shrink").map(|s| parse_px(Some(&s))),
-        align_self: parse_align(get_prop(props, "align-self").as_deref()),
+        align_self: raw_align_self,
         flex_basis: None,
         // Charter deliberately does not expose margin — spacing between siblings is a container
         // concern (gap / justify-content), not a per-child opinion. The field stays in the wire
@@ -1271,6 +1309,7 @@ fn build_box_node(
         base_min_width,
         base_min_height,
         parent_main_horizontal,
+        parent_align_items,
     );
     if let Some(g) = rc.flex_grow {
         extra.flex_grow = g;
@@ -1281,8 +1320,13 @@ fn build_box_node(
     if let Some(b) = rc.flex_basis {
         extra.flex_basis = Some(b);
     }
-    if let Some(a) = rc.align_self {
-        extra.align_self = Some(a);
+    // An explicit raw align-self always wins, same "explicit set wins" convention as every other
+    // property here -- compile_resize's Hug-forces-flex-start default must not silently clobber a
+    // user's own align-self choice via the Advanced escape hatch.
+    if raw_align_self.is_none() {
+        if let Some(a) = rc.align_self {
+            extra.align_self = Some(a);
+        }
     }
 
     UiNode::Box(BoxData {
@@ -1774,6 +1818,8 @@ fn render_view_nodes(
     // Whether this view's flex PARENT lays out in a row (Some(true)) or column (Some(false)); None
     // at a top level (no flex parent). Drives direction-aware fill/hug -- see compile_resize.
     parent_main_horizontal: Option<bool>,
+    // The flex parent's own resolved cross-axis align-items -- see compile_resize's doc comment.
+    parent_align_items: Option<AlignValue>,
     viewport: &mut Vec<UiNode>,
     node_view_ids: &mut Vec<String>,
     node_kit_ids: &mut Vec<String>,
@@ -1834,6 +1880,7 @@ fn render_view_nodes(
                     content_parent,
                     // Nested text shares this text's own container, so its flex parent is the same.
                     parent_main_horizontal,
+                    parent_align_items,
                     viewport,
                     node_view_ids,
                     node_kit_ids,
@@ -1856,23 +1903,31 @@ fn render_view_nodes(
         // Any child views assigned to an image view are silently ignored.
     } else {
         let box_idx = viewport.len();
-        let mut node = build_box_node(&merged, content_parent, parent_main_horizontal);
+        let mut node = build_box_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
 
         if let UiNode::Box(box_data) = &mut node {
             box_data.selected = selection;
             box_data.hovered = hovered;
         }
 
+        // This box is the flex parent of its children; their fill/hug resolves against THIS box's
+        // main axis (row -> width is main, column -> height is main), and their cross-axis
+        // align-self default (compile_resize) resolves against THIS box's own resolved
+        // align-items -- both captured before the node moves into viewport below. Read from the
+        // box's own already-resolved `flex_direction`/`align_items` (post compile_arrange), never
+        // by re-parsing the raw `flex-direction` prop directly -- Cluster/Split default to Row
+        // without the raw prop ever being set, so a raw-prop check silently reported Column here.
+        let (child_main_horizontal, child_align_items) = match &node {
+            UiNode::Box(box_data) => (
+                Some(matches!(box_data.flex_direction, FlexDir::Row | FlexDir::RowReverse)),
+                box_data.extra.align_items,
+            ),
+            _ => (None, None),
+        };
+
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
         node_kit_ids.push(kit_id_for(kits));
-
-        // This box is the flex parent of its children; their fill/hug resolves against THIS box's
-        // main axis (row -> width is main, column -> height is main). Default direction is Column.
-        let child_main_horizontal = Some(matches!(
-            get_prop(&merged, "flex-direction").as_deref(),
-            Some("row") | Some("row-reverse")
-        ));
 
         // A Box is a pure container -- it never renders its own inline text. If a design wants
         // text inside a box, it nests a Text primitive as one of the box's children. So there is
@@ -1888,6 +1943,7 @@ fn render_view_nodes(
                     ctx,
                     Some(box_idx),
                     child_main_horizontal,
+                    child_align_items,
                     viewport,
                     node_view_ids,
                     node_kit_ids,
@@ -2080,6 +2136,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
             // Top-level cell is auto-sized scaffolding, not a meaningful flex container -> None,
             // so a view's own fill/hug degrades to auto rather than stretching to nothing.
             None,
+            None,
             &mut viewport_data,
             &mut node_view_ids,
             &mut node_kit_ids,
@@ -2125,6 +2182,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
                     &ctx,
                     Some(cell_idx),
                     // Auto-sized grid cell -> no meaningful flex parent (see positioned branch).
+                    None,
                     None,
                     &mut viewport_data,
                     &mut node_view_ids,
@@ -3562,7 +3620,7 @@ mod text_paint_properties_tests {
         // No `background` prop -> transparent, matching CSS (a <div> with no background is
         // transparent). Boxes used to fall back to opaque neutral-gray; that's gone.
         let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
-        let node = build_box_node(&props, None, None);
+        let node = build_box_node(&props, None, None, None);
         let UiNode::Box(box_data) = node else {
             panic!("expected a Box node");
         };
@@ -3853,7 +3911,7 @@ mod extent_parse_tests {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("width".into(), prop("width", "50%"));
         props.insert("min-width".into(), prop("min-width", "80px"));
-        let node = build_box_node(&props, None, None);
+        let node = build_box_node(&props, None, None, None);
         let UiNode::Box(b) = node else {
             panic!("expected Box")
         };
@@ -3883,11 +3941,19 @@ mod resize_tests {
     }
 
     fn box_with(props: &[(&str, &str)], parent_main_horizontal: Option<bool>) -> BoxData {
+        box_with_parent_align(props, parent_main_horizontal, None)
+    }
+
+    fn box_with_parent_align(
+        props: &[(&str, &str)],
+        parent_main_horizontal: Option<bool>,
+        parent_align_items: Option<AlignValue>,
+    ) -> BoxData {
         let mut map: HashMap<String, ResolvedProperty> = HashMap::new();
         for (k, v) in props {
             map.insert((*k).to_string(), prop(k, v));
         }
-        match build_box_node(&map, None, parent_main_horizontal) {
+        match build_box_node(&map, None, parent_main_horizontal, parent_align_items) {
             UiNode::Box(b) => b,
             _ => panic!("expected Box"),
         }
@@ -3924,6 +3990,17 @@ mod resize_tests {
     }
 
     #[test]
+    fn unset_cross_axis_leaves_align_self_unset() {
+        // Must NOT default to a fixed align-self here -- align-self on the item always wins over
+        // the container's own align-items, so a default here would silently defeat Split/Center's
+        // align-items:Center and Cluster's align-items:FlexStart for every untouched child. The
+        // "unset width reads as Hug" default belongs on the Stack container instead (see
+        // compile_arrange's stack_column_defaults_align_items_to_flex_start_when_unset).
+        let d = box_with(&[], Some(false));
+        assert!(d.extra.align_self.is_none());
+    }
+
+    #[test]
     fn fill_with_no_flex_parent_degrades_to_plain_auto() {
         let d = box_with(&[("width", "fill")], None);
         assert_eq!(d.width, Extent::Auto);
@@ -3946,6 +4023,46 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
         assert_eq!(d.min_width, Extent::Px(0.0));
+    }
+
+    #[test]
+    fn hug_on_cross_axis_forces_flex_start_when_parent_defaults_to_stretch() {
+        // The original bug: an untouched Column Stack has no other opinion (None == taffy's own
+        // stretch default), so an explicit Hug must override that back to content-sized.
+        let d = box_with_parent_align(&[("width", "hug")], Some(false), None);
+        assert_eq!(d.extra.align_self, Some(AlignValue::FlexStart));
+    }
+
+    #[test]
+    fn hug_on_cross_axis_does_not_override_a_deliberate_center_parent() {
+        // The regression this fixes: a Hug'd child inside a Center/Split container (a DELIBERATE
+        // non-stretch align-items) must leave align-self unset so it inherits the parent's real
+        // alignment intent -- forcing flex-start here made it sit flush at the start edge instead
+        // of centering, even though its width was already correctly hugging.
+        let d = box_with_parent_align(&[("width", "hug")], Some(false), Some(AlignValue::Center));
+        assert!(
+            d.extra.align_self.is_none(),
+            "hug must not clobber a deliberate Center parent's alignment"
+        );
+    }
+
+    #[test]
+    fn hug_on_cross_axis_still_overrides_an_explicit_raw_stretch_parent() {
+        // Hug's whole point is a per-item override of the container's default -- an explicit
+        // `align-items: stretch` on the parent is exactly the case Hug must still win against,
+        // same as the implicit (None) stretch default.
+        let d = box_with_parent_align(&[("width", "hug")], Some(false), Some(AlignValue::Stretch));
+        assert_eq!(d.extra.align_self, Some(AlignValue::FlexStart));
+    }
+
+    #[test]
+    fn explicit_raw_align_self_is_never_overridden_by_the_hug_default() {
+        let d = box_with(&[("width", "hug"), ("align-self", "center")], Some(false));
+        assert_eq!(
+            d.extra.align_self,
+            Some(AlignValue::Center),
+            "an explicit align-self (e.g. via the Advanced escape hatch) always wins"
+        );
     }
 }
 
@@ -4113,7 +4230,7 @@ mod arrange_tests {
         for (k, v) in props {
             map.insert((*k).to_string(), prop(k, v));
         }
-        match build_box_node(&map, None, None) {
+        match build_box_node(&map, None, None, None) {
             UiNode::Box(b) => b,
             _ => panic!("expected Box"),
         }
@@ -4286,7 +4403,7 @@ mod arrange_tests {
     fn fresh_box_defaults_to_stack_column_zero_touches() {
         let d = box_with(&[]);
         assert_eq!(d.flex_direction, FlexDir::Column);
-        assert_eq!(d.extra.align_items, None);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexStart));
         assert_eq!(d.extra.justify_content, None);
     }
 
@@ -4294,6 +4411,26 @@ mod arrange_tests {
     fn stack_row_defaults_align_items_center_when_unset() {
         let d = box_with(&[("arrange", "stack"), ("flex-direction", "row")]);
         assert_eq!(d.flex_direction, FlexDir::Row);
+        assert_eq!(d.extra.align_items, Some(AlignValue::Center));
+    }
+
+    #[test]
+    fn stack_column_defaults_align_items_to_flex_start_when_unset() {
+        // The reported bug: a fresh Column Stack (the default) must not leave align-items unset,
+        // since taffy/CSS's own implicit default (align-items: normal) behaves as stretch --
+        // silently filling an untouched child's width despite the resize control showing it as
+        // "Hug" selected. flex-start (not stretch) matches that "Hug" default.
+        let d = box_with(&[("arrange", "stack")]);
+        assert_eq!(d.flex_direction, FlexDir::Column);
+        assert_eq!(d.extra.align_items, Some(AlignValue::FlexStart));
+    }
+
+    #[test]
+    fn stack_column_respects_explicit_align_items_override() {
+        let d = box_with(&[
+            ("arrange", "stack"),
+            ("align-items", "center"),
+        ]);
         assert_eq!(d.extra.align_items, Some(AlignValue::Center));
     }
 
