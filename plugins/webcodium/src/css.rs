@@ -440,6 +440,10 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
 // `!props.is_empty()` guard) -- a NEW nested child Kit encountered under a later instance still
 // gets the correct indentation depth even though nothing was printed for its parent, since
 // `child_depth` increments independently of whether the wrapper text itself was written.
+// This dedup is keyed on the Kit NAME resolving, not on the shape being fetched -- a Kit whose
+// shape never resolved still shares tree::resolve_class_name's class with every other instance,
+// so it must still only ever be emitted once, just falling back to node_props for that one
+// occurrence instead of a shape-synthesized rule; see render_scss_node's `named_kit_id`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_scss(
     nodes: &[UiNode],
@@ -521,10 +525,19 @@ fn render_scss_node(
     out: &mut String,
 ) {
     let is_img = matches!(nodes[i], UiNode::Img(_));
-    let kit_id: Option<&String> = if is_img {
+    // The Kit id whose NAME resolves (tree::resolve_class_name's tier 1) -- this is what
+    // determines whether this node's selector is a SHARED Kit-identity class (deduped, one
+    // rule for every instance) versus a per-instance fallback (`.box`/`.text`/`.k10-N`, never
+    // deduped). Deliberately independent of whether a SHAPE was fetched for it:
+    // tree::resolve_class_name picks the shared name off kit_names alone, with no kit_shapes
+    // check, so a Kit with a resolved name but a missing/unfetched shape still renders under
+    // that same shared class -- gating dedup on kit_shapes as well used to let every instance
+    // fall through to the `None` branch below and each print its own full, undeduped rule
+    // under one shared selector.
+    let named_kit_id: Option<&String> = if is_img {
         None
     } else {
-        node_kit_ids.get(i).filter(|id| !id.is_empty() && kit_shapes.contains_key(id.as_str()))
+        node_kit_ids.get(i).filter(|id| !id.is_empty() && kit_names.contains_key(id.as_str()))
     };
 
     let empty_rules: Vec<variants::VariantRule> = Vec::new();
@@ -532,19 +545,27 @@ fn render_scss_node(
         let has_resolved_img_src = tree::resolved_img_src(&nodes[i], asset_links).is_some();
         (node_props(&nodes[i], has_resolved_img_src), &empty_rules)
     } else {
-        match kit_id {
+        match named_kit_id {
             Some(kid) => {
                 if emitted_kits.insert(kid.clone()) {
-                    let shape = &kit_shapes[kid];
-                    let is_box = matches!(nodes[i], UiNode::Box(_));
-                    (
-                        Some(variants::synthesize_base_declarations_with_tokens(
-                            shape,
-                            is_box,
-                            project_tokens,
-                        )),
-                        kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&empty_rules),
-                    )
+                    match kit_shapes.get(kid) {
+                        Some(shape) => {
+                            let is_box = matches!(nodes[i], UiNode::Box(_));
+                            (
+                                Some(variants::synthesize_base_declarations_with_tokens(
+                                    shape,
+                                    is_box,
+                                    project_tokens,
+                                )),
+                                kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&empty_rules),
+                            )
+                        }
+                        // Shape never fetched/resolved for this Kit -- fall back to this first
+                        // instance's own literal properties (same source the no-Kit-name path
+                        // below uses), but still claimed in emitted_kits above so later
+                        // instances of the same shared class don't repeat it.
+                        None => (node_props(&nodes[i], false), &empty_rules),
+                    }
                 } else {
                     // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
                     // child this instance introduces) but no duplicate content.
@@ -560,7 +581,7 @@ fn render_scss_node(
     // never empty in practice -- checked anyway so a future property-list change can't silently
     // emit a dangling empty rule wrapper. A Kit-identified node always opens its wrapper
     // regardless (see the doc comment above -- nesting-depth stability for later instances).
-    let has_rule = kit_id.is_some() || !props.is_empty();
+    let has_rule = named_kit_id.is_some() || !props.is_empty();
     let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
     let indent = "  ".repeat(depth);
 
@@ -755,6 +776,46 @@ mod tests {
         };
         let parent_props = node_props(&UiNode::Box(split_parent), false).unwrap();
         assert!(parent_props.contains(&"align-items: center;".to_string()));
+    }
+
+    // Regression test: a Kit whose NAME resolved but whose SHAPE was never fetched (kit_names
+    // has an entry, kit_shapes doesn't) must still only be emitted once across every instance
+    // that shares its class -- previously the dedup check required BOTH kit_names and kit_shapes
+    // to have an entry, so a shape-fetch miss made every instance independently fall through to
+    // node_props and print its own full, undeduped rule under the one shared selector.
+    #[test]
+    fn a_kit_with_a_name_but_no_fetched_shape_is_still_only_emitted_once() {
+        let nodes = vec![
+            UiNode::Box(test_box(None)),
+            UiNode::Box(test_box(None)),
+            UiNode::Box(test_box(None)),
+        ];
+        let node_view_ids =
+            vec!["view-a".to_string(), "view-b".to_string(), "view-c".to_string()];
+        let node_kit_ids =
+            vec!["photo-kit".to_string(), "photo-kit".to_string(), "photo-kit".to_string()];
+        let mut kit_names = HashMap::new();
+        kit_names.insert("photo-kit".to_string(), "Product Photo".to_string());
+        let kit_shapes = HashMap::new(); // deliberately empty -- simulates a fetch miss
+
+        let children = tree::build_children_map(&nodes);
+        let roots: Vec<usize> = vec![0, 1, 2];
+        let asset_links = HashMap::new();
+        let kit_variant_rules = HashMap::new();
+        let css = render_scss(
+            &nodes,
+            &children,
+            &roots,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &kit_shapes,
+            &asset_links,
+            &variants::ProjectTokens::new(),
+            &kit_variant_rules,
+        );
+
+        assert_eq!(css.matches(".product-photo {").count(), 1);
     }
 
     #[test]
