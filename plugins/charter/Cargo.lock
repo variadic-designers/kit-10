@@ -162,8 +162,8 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "kit10-scene"
-version = "0.1.0"
-source = "git+ssh://git@github.com/Variadic-Designs/kit10-scene.git?tag=v0.1.0#f08faed4788f33ea693601db59064afa743cdc5f"
+version = "0.2.0"
+source = "git+ssh://git@github.com/Variadic-Designs/kit10-scene.git?tag=v0.2.0#e854bf5e96bcdc7640f242163728b2cb94d81f17"
 dependencies = [
  "schemars",
  "serde",

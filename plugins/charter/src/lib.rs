@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 // Vellum both conform to), not in Charter. Charter builds and serializes these; it no longer owns
 // their definition.
 use kit10_scene::{
-    AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridLine, ImageSource,
-    ImgData, JustifyValue, NodePosition, OklabColor, TextAlign, TextData, TextDecorationKind,
-    TrackSize, UiNode,
+    AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridAutoFlow,
+    GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition, OklabColor,
+    TextAlign, TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize, UiNode,
 };
 
 /// Map Charter's internal flex-direction string (as `resolve_flex_direction` produces it, always
@@ -65,8 +65,9 @@ struct FieldDef {
     #[serde(rename = "displayText")]
     display_text: Option<String>,
     // "color" | "text" | "number" | "select" | "slider" | "font" | "arrange" | "spacing" |
-    // "weight" | "align" | "decoration" -- how the editor should render this field's input.
-    // None means the editor's default (plain text).
+    // "weight" | "align" | "decoration" | "grid-tracks" | "grid-area-painter" | "grid-auto-flow" |
+    // "align-picker" -- how the editor should render this field's input. None means the editor's
+    // default (plain text).
     #[serde(rename = "inputType", default)]
     input_type: Option<String>,
     // Names which utility plugin + functions serve suggestions for this field -- the editor
@@ -155,8 +156,22 @@ struct ArrangeKeys {
     // Stack/Cluster/Split/Center's "Advanced flex" disclosure: raw flex-direction/align-items/
     // justify-content/flex-wrap/display fields, still real panel controls, one click away.
     advanced: Vec<FieldDef>,
-    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row.
+    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row/
+    // grid-template-areas/justify-self text fields -- the CSS-Grid sublanguage the friendly
+    // controls below replace as the *default* surface, not as a capability. Stays available
+    // underneath them, same "advanced, not first contact" stance as `advanced` above.
     grid_advanced: Vec<FieldDef>,
+    // Grid's own friendly controls -- full FieldDefs (same `inputType`-tagged shape `gap`/
+    // `cell_min` already are) for the track-list builder, area painter, and alignment/flow
+    // pickers, so those new editor widgets read/write the SAME underlying properties as
+    // `grid_advanced`'s raw text fields (two views onto one property, never a shadow copy) without
+    // ever hardcoding a property key themselves.
+    grid_columns: FieldDef,
+    grid_rows: FieldDef,
+    grid_areas: FieldDef,
+    grid_auto_flow: FieldDef,
+    grid_justify_items: FieldDef,
+    grid_align_content: FieldDef,
 }
 
 // Declared only on the two "resize" FieldDefs (width/height in box_categories). Phase 4 of
@@ -867,6 +882,63 @@ fn parse_extent(s: Option<&str>) -> Extent {
     }
 }
 
+// Extracts the `<n>px` from a `minmax(<n>px, 1fr)` fragment inside a `repeat(auto-fit/auto-fill,
+// ...)` call -- the one responsive-grid shape AutoFit/AutoFill represent, never a general repeat().
+fn extract_repeat_minmax_px(s: &str) -> Option<f32> {
+    let inner = s.trim().strip_prefix("minmax(")?.strip_suffix(')')?;
+    let min = inner.splitn(2, ',').next()?.trim();
+    min.strip_suffix("px")?.trim().parse::<f32>().ok()
+}
+
+fn parse_track_min(s: &str) -> TrackMin {
+    let s = s.trim();
+    match s {
+        "auto" => TrackMin::Auto,
+        "min-content" => TrackMin::MinContent,
+        "max-content" => TrackMin::MaxContent,
+        _ => {
+            if let Some(n) = s.strip_suffix('%') {
+                if let Ok(v) = n.trim().parse::<f32>() {
+                    return TrackMin::Percent(v);
+                }
+            }
+            if let Some(n) = s.strip_suffix("px") {
+                return TrackMin::Px(n.trim().parse().unwrap_or(0.0));
+            }
+            match s.parse::<f32>() {
+                Ok(n) => TrackMin::Px(n),
+                Err(_) => TrackMin::Auto,
+            }
+        }
+    }
+}
+
+fn parse_track_max(s: &str) -> TrackMax {
+    let s = s.trim();
+    match s {
+        "auto" => TrackMax::Auto,
+        "min-content" => TrackMax::MinContent,
+        "max-content" => TrackMax::MaxContent,
+        _ => {
+            if let Some(n) = s.strip_suffix("fr") {
+                return TrackMax::Fr(n.trim().parse().unwrap_or(1.0));
+            }
+            if let Some(n) = s.strip_suffix('%') {
+                if let Ok(v) = n.trim().parse::<f32>() {
+                    return TrackMax::Percent(v);
+                }
+            }
+            if let Some(n) = s.strip_suffix("px") {
+                return TrackMax::Px(n.trim().parse().unwrap_or(0.0));
+            }
+            match s.parse::<f32>() {
+                Ok(n) => TrackMax::Px(n),
+                Err(_) => TrackMax::Auto,
+            }
+        }
+    }
+}
+
 fn parse_track(s: &str) -> TrackSize {
     let s = s.trim();
     if s == "auto" {
@@ -878,8 +950,37 @@ fn parse_track(s: &str) -> TrackSize {
     if s == "max-content" {
         return TrackSize::MaxContent;
     }
+    if let Some(inner) = s.strip_prefix("repeat(").and_then(|r| r.strip_suffix(')')) {
+        let mut parts = inner.splitn(2, ',');
+        let kind = parts.next().unwrap_or("").trim();
+        let track = parts.next().unwrap_or("").trim();
+        if let Some(px) = extract_repeat_minmax_px(track) {
+            if kind == "auto-fit" {
+                return TrackSize::AutoFit(px);
+            }
+            if kind == "auto-fill" {
+                return TrackSize::AutoFill(px);
+            }
+        }
+        return TrackSize::Auto;
+    }
+    if let Some(inner) = s.strip_prefix("fit-content(").and_then(|r| r.strip_suffix(')')) {
+        return TrackSize::FitContent(parse_px(Some(inner)));
+    }
+    if let Some(inner) = s.strip_prefix("minmax(").and_then(|r| r.strip_suffix(')')) {
+        let mut parts = inner.splitn(2, ',');
+        let min = parse_track_min(parts.next().unwrap_or("auto"));
+        let max = parse_track_max(parts.next().unwrap_or("auto"));
+        return TrackSize::MinMax(min, max);
+    }
     if let Some(n) = s.strip_suffix("fr") {
         return TrackSize::Fr(n.trim().parse().unwrap_or(1.0));
+    }
+    if let Some(n) = s.strip_suffix('%') {
+        return match n.trim().parse::<f32>() {
+            Ok(v) => TrackSize::Percent(v),
+            Err(_) => TrackSize::Auto,
+        };
     }
     if let Some(n) = s.strip_suffix("px") {
         return TrackSize::Px(n.trim().parse().unwrap_or(0.0));
@@ -891,7 +992,35 @@ fn parse_track(s: &str) -> TrackSize {
 }
 
 fn parse_track_list(s: &str) -> Vec<TrackSize> {
-    s.split_whitespace().map(parse_track).collect()
+    split_respecting_parens(s).iter().map(|t| parse_track(t)).collect()
+}
+
+// Splits a space-separated track list on whitespace OUTSIDE parentheses. A single track
+// descriptor like `repeat(auto-fit, minmax(160px, 1fr))` or `minmax(10%, 1fr)` contains internal
+// spaces (CSS's comma-separator convention) that must never be treated as track boundaries --
+// naive `split_whitespace` used to shred exactly these shapes into several unparseable fragments.
+fn split_respecting_parens(s: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut depth = 0i32;
+    let mut start: Option<usize> = None;
+    for (i, c) in s.char_indices() {
+        if c == '(' {
+            depth += 1;
+        } else if c == ')' {
+            depth -= 1;
+        }
+        if depth == 0 && c.is_whitespace() {
+            if let Some(st) = start.take() {
+                tokens.push(&s[st..i]);
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(st) = start {
+        tokens.push(&s[st..]);
+    }
+    tokens
 }
 
 fn parse_grid_line(s: &str) -> GridLine {
@@ -900,12 +1029,31 @@ fn parse_grid_line(s: &str) -> GridLine {
         return GridLine::Auto;
     }
     if let Some(rest) = s.strip_prefix("span") {
-        return GridLine::Span(rest.trim().parse().unwrap_or(1));
+        let rest = rest.trim();
+        if let Ok(n) = rest.parse::<u16>() {
+            return GridLine::Span(n);
+        }
+        if !rest.is_empty() {
+            // `span <name>` or `span <n> <name>` -- a named span, count defaults to 1.
+            let mut parts = rest.split_whitespace();
+            let first = parts.next().unwrap_or("");
+            return match first.parse::<u16>() {
+                Ok(n) => GridLine::NamedSpan(parts.next().unwrap_or(first).to_string(), n),
+                Err(_) => GridLine::NamedSpan(first.to_string(), 1),
+            };
+        }
+        return GridLine::Span(1);
     }
     if let Ok(n) = s.parse::<i16>() {
         return GridLine::Line(n);
     }
-    GridLine::Auto
+    // `<name>` or `<name> <n>` -- a named line reference, nth occurrence defaults to 1.
+    let mut parts = s.split_whitespace();
+    let first = parts.next().unwrap_or(s);
+    match parts.next().and_then(|n| n.parse::<i16>().ok()) {
+        Some(n) => GridLine::NamedLine(first.to_string(), n),
+        None => GridLine::NamedLine(first.to_string(), 1),
+    }
 }
 
 fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
@@ -913,6 +1061,67 @@ fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
     let start = parse_grid_line(parts.next().unwrap_or("auto"));
     let end = parse_grid_line(parts.next().unwrap_or("auto"));
     (start, end)
+}
+
+fn parse_auto_flow(s: &str) -> GridAutoFlow {
+    match s.trim() {
+        "column" => GridAutoFlow::Column,
+        "row dense" => GridAutoFlow::RowDense,
+        "column dense" => GridAutoFlow::ColumnDense,
+        _ => GridAutoFlow::Row,
+    }
+}
+
+// Parses CSS's real `grid-template-areas` quoted-row syntax (`"a a b" "c c b"`) into resolved
+// named regions with numeric line coordinates -- the inverse of the editor's visual area painter,
+// which serializes its own painted cells back into this exact same string shape, so the stored
+// value always round-trips as genuine, spec-correct CSS (never a bespoke internal format). `.` is
+// CSS's null-cell token (never a real area). Computes each name's bounding box across every cell
+// it appears in rather than validating strict rectangularity -- forgiving of hand-typed input in
+// the raw "Custom tracks" escape hatch, same fallback-not-error philosophy as `parse_track`/
+// `parse_grid_line` elsewhere in this file; the painter itself can only ever produce valid
+// rectangles by construction.
+fn parse_grid_template_areas(s: &str) -> Vec<GridTemplateArea> {
+    let rows: Vec<Vec<&str>> = s
+        .split('"')
+        .enumerate()
+        .filter(|(i, _)| i % 2 == 1)
+        .map(|(_, row)| row.split_whitespace().collect())
+        .collect();
+
+    let mut areas: std::collections::HashMap<&str, (u16, u16, u16, u16)> =
+        std::collections::HashMap::new();
+    for (row_idx, row) in rows.iter().enumerate() {
+        for (col_idx, &name) in row.iter().enumerate() {
+            if name == "." {
+                continue;
+            }
+            let row_line = row_idx as u16 + 1;
+            let col_line = col_idx as u16 + 1;
+            areas
+                .entry(name)
+                .and_modify(|(rs, re, cs, ce)| {
+                    *rs = (*rs).min(row_line);
+                    *re = (*re).max(row_line + 1);
+                    *cs = (*cs).min(col_line);
+                    *ce = (*ce).max(col_line + 1);
+                })
+                .or_insert((row_line, row_line + 1, col_line, col_line + 1));
+        }
+    }
+
+    let mut result: Vec<GridTemplateArea> = areas
+        .into_iter()
+        .map(|(name, (row_start, row_end, column_start, column_end))| GridTemplateArea {
+            name: name.to_string(),
+            row_start,
+            row_end,
+            column_start,
+            column_end,
+        })
+        .collect();
+    result.sort_by(|a, b| a.name.cmp(&b.name));
+    result
 }
 
 fn parse_align(s: Option<&str>) -> Option<AlignValue> {
@@ -1363,6 +1572,15 @@ fn build_box_node(
         grid_row: get_prop(props, "grid-row")
             .map(|s| parse_grid_line_pair(&s))
             .unwrap_or_default(),
+        grid_template_areas: get_prop(props, "grid-template-areas")
+            .map(|s| parse_grid_template_areas(&s))
+            .unwrap_or_default(),
+        grid_auto_flow: get_prop(props, "grid-auto-flow")
+            .map(|s| parse_auto_flow(&s))
+            .unwrap_or_default(),
+        justify_items: parse_align(get_prop(props, "justify-items").as_deref()),
+        align_content: parse_justify(get_prop(props, "align-content").as_deref()),
+        justify_self: parse_align(get_prop(props, "justify-self").as_deref()),
     };
 
     // Compile fill/hug intent and let it override the raw flex fields for keyword axes only.
@@ -1589,7 +1807,12 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("gap")
         || props.contains_key("grid-template-columns")
         || props.contains_key("grid-template-rows")
-        || props.contains_key("grid-cell-min");
+        || props.contains_key("grid-cell-min")
+        || props.contains_key("grid-auto-columns")
+        || props.contains_key("grid-auto-rows")
+        || props.contains_key("grid-column")
+        || props.contains_key("grid-row")
+        || props.contains_key("grid-template-areas");
 
     if has_text_props && !has_box_props {
         "text"
@@ -1630,7 +1853,21 @@ fn arrange_field() -> FieldDef {
                 FieldDef::new("grid-auto-rows", Some("Auto Rows")),
                 FieldDef::new("grid-column", Some("Col Span")),
                 FieldDef::new("grid-row", Some("Row Span")),
+                FieldDef::new("grid-template-areas", Some("Areas")),
+                FieldDef::new("justify-self", Some("Justify Self")),
             ],
+            grid_columns: FieldDef::new("grid-template-columns", Some("Columns"))
+                .with_input_type("grid-tracks"),
+            grid_rows: FieldDef::new("grid-template-rows", Some("Rows"))
+                .with_input_type("grid-tracks"),
+            grid_areas: FieldDef::new("grid-template-areas", Some("Areas"))
+                .with_input_type("grid-area-painter"),
+            grid_auto_flow: FieldDef::new("grid-auto-flow", Some("Auto Flow"))
+                .with_input_type("grid-auto-flow"),
+            grid_justify_items: FieldDef::new("justify-items", Some("Justify Items"))
+                .with_input_type("align-picker"),
+            grid_align_content: FieldDef::new("align-content", Some("Align Content"))
+                .with_input_type("align-picker"),
         })
 }
 
@@ -4819,6 +5056,165 @@ mod arrange_tests {
         props.insert("color".to_string(), prop("color", "#111111"));
         props.insert("grid-cell-min".to_string(), prop("grid-cell-min", "160"));
         assert_eq!(detect_primitive(&props), "box");
+    }
+
+    #[test]
+    fn grid_auto_columns_and_grid_column_also_force_box_detection() {
+        // Pre-existing gap: only grid-template-*/grid-cell-min counted as box-forcing, so a node
+        // with ONLY grid-auto-columns/grid-column/etc set (and no other box signal) was
+        // misdetected as text. Now closed for every grid-advanced key.
+        for key in ["grid-auto-columns", "grid-auto-rows", "grid-column", "grid-row", "grid-template-areas"] {
+            let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+            props.insert("color".to_string(), prop("color", "#111111"));
+            props.insert(key.to_string(), prop(key, "1"));
+            assert_eq!(detect_primitive(&props), "box", "{key} should force box detection");
+        }
+    }
+
+    // --- parse_track: new track shapes ---
+
+    #[test]
+    fn parse_track_handles_percent_fit_content_and_minmax() {
+        assert_eq!(parse_track("50%"), TrackSize::Percent(50.0));
+        assert_eq!(parse_track("fit-content(220px)"), TrackSize::FitContent(220.0));
+        assert_eq!(
+            parse_track("minmax(100px, 1fr)"),
+            TrackSize::MinMax(TrackMin::Px(100.0), TrackMax::Fr(1.0))
+        );
+        assert_eq!(
+            parse_track("minmax(10%, max-content)"),
+            TrackSize::MinMax(TrackMin::Percent(10.0), TrackMax::MaxContent)
+        );
+    }
+
+    #[test]
+    fn parse_track_handles_repeat_auto_fit_and_auto_fill() {
+        assert_eq!(
+            parse_track("repeat(auto-fit, minmax(160px, 1fr))"),
+            TrackSize::AutoFit(160.0)
+        );
+        assert_eq!(
+            parse_track("repeat(auto-fill, minmax(120px, 1fr))"),
+            TrackSize::AutoFill(120.0)
+        );
+    }
+
+    #[test]
+    fn parse_track_list_does_not_split_inside_a_tracks_own_parentheses() {
+        // A naive whitespace split shreds `repeat(auto-fit, minmax(160px, 1fr))` into
+        // "repeat(auto-fit,"/"minmax(160px,"/"1fr))" -- three unparseable fragments, all falling
+        // back to Auto. Real regression coverage for split_respecting_parens.
+        assert_eq!(
+            parse_track_list("repeat(auto-fit, minmax(160px, 1fr))"),
+            vec![TrackSize::AutoFit(160.0)]
+        );
+        assert_eq!(
+            parse_track_list("minmax(10%, 1fr) minmax(100px, max-content)"),
+            vec![
+                TrackSize::MinMax(TrackMin::Percent(10.0), TrackMax::Fr(1.0)),
+                TrackSize::MinMax(TrackMin::Px(100.0), TrackMax::MaxContent),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_track_list_round_trips_a_mixed_custom_tracks_string() {
+        let tracks = parse_track_list("100px 1fr repeat(auto-fit, minmax(160px, 1fr)) 50% fit-content(200px)");
+        assert_eq!(
+            tracks,
+            vec![
+                TrackSize::Px(100.0),
+                TrackSize::Fr(1.0),
+                TrackSize::AutoFit(160.0),
+                TrackSize::Percent(50.0),
+                TrackSize::FitContent(200.0),
+            ]
+        );
+    }
+
+    // --- parse_grid_line: named lines ---
+
+    #[test]
+    fn parse_grid_line_handles_named_lines_and_named_spans() {
+        assert_eq!(parse_grid_line("sidebar-start"), GridLine::NamedLine("sidebar-start".to_string(), 1));
+        assert_eq!(parse_grid_line("sidebar 2"), GridLine::NamedLine("sidebar".to_string(), 2));
+        assert_eq!(parse_grid_line("span content"), GridLine::NamedSpan("content".to_string(), 1));
+        assert_eq!(parse_grid_line("span 2 content"), GridLine::NamedSpan("content".to_string(), 2));
+        // Numeric forms still resolve exactly as before.
+        assert_eq!(parse_grid_line("3"), GridLine::Line(3));
+        assert_eq!(parse_grid_line("span 2"), GridLine::Span(2));
+    }
+
+    // --- parse_grid_template_areas ---
+
+    #[test]
+    fn parse_grid_template_areas_resolves_named_regions_to_line_coordinates() {
+        let areas = parse_grid_template_areas(r#""header header" "sidebar main" "footer footer""#);
+        let header = areas.iter().find(|a| a.name == "header").unwrap();
+        assert_eq!((header.row_start, header.row_end, header.column_start, header.column_end), (1, 2, 1, 3));
+        let sidebar = areas.iter().find(|a| a.name == "sidebar").unwrap();
+        assert_eq!((sidebar.row_start, sidebar.row_end, sidebar.column_start, sidebar.column_end), (2, 3, 1, 2));
+        let main = areas.iter().find(|a| a.name == "main").unwrap();
+        assert_eq!((main.row_start, main.row_end, main.column_start, main.column_end), (2, 3, 2, 3));
+        let footer = areas.iter().find(|a| a.name == "footer").unwrap();
+        assert_eq!((footer.row_start, footer.row_end, footer.column_start, footer.column_end), (3, 4, 1, 3));
+    }
+
+    #[test]
+    fn parse_grid_template_areas_skips_the_null_cell_token() {
+        let areas = parse_grid_template_areas(r#""a . b""#);
+        assert_eq!(areas.len(), 2);
+        assert!(areas.iter().all(|a| a.name != "."));
+    }
+
+    // --- build_box_node: new BoxExtra fields wired from raw props ---
+
+    #[test]
+    fn build_box_node_wires_the_five_new_grid_fields() {
+        let d = box_with(&[
+            ("grid-template-areas", r#""a a" "b b""#),
+            ("grid-auto-flow", "column dense"),
+            ("justify-items", "center"),
+            ("align-content", "space-between"),
+            ("justify-self", "end"),
+        ]);
+        assert_eq!(d.extra.grid_template_areas.len(), 2);
+        assert_eq!(d.extra.grid_auto_flow, GridAutoFlow::ColumnDense);
+        assert_eq!(d.extra.justify_items, Some(AlignValue::Center));
+        assert_eq!(d.extra.align_content, Some(JustifyValue::SpaceBetween));
+        assert_eq!(d.extra.justify_self, Some(AlignValue::End));
+    }
+
+    #[test]
+    fn build_box_node_defaults_the_five_new_grid_fields_when_unset() {
+        let d = box_with(&[]);
+        assert!(d.extra.grid_template_areas.is_empty());
+        assert_eq!(d.extra.grid_auto_flow, GridAutoFlow::Row);
+        assert_eq!(d.extra.justify_items, None);
+        assert_eq!(d.extra.align_content, None);
+        assert_eq!(d.extra.justify_self, None);
+    }
+
+    // --- arrange_field()'s new grid FieldDefs ---
+
+    #[test]
+    fn arrange_keys_declares_the_new_friendly_grid_fields_with_the_right_input_types() {
+        let keys = arrange_field()
+            .arrange_keys
+            .expect("arrange field should carry arrangeKeys");
+        assert_eq!(keys.grid_columns.key, "grid-template-columns");
+        assert_eq!(keys.grid_columns.input_type.as_deref(), Some("grid-tracks"));
+        assert_eq!(keys.grid_rows.key, "grid-template-rows");
+        assert_eq!(keys.grid_rows.input_type.as_deref(), Some("grid-tracks"));
+        assert_eq!(keys.grid_areas.key, "grid-template-areas");
+        assert_eq!(keys.grid_areas.input_type.as_deref(), Some("grid-area-painter"));
+        assert_eq!(keys.grid_auto_flow.key, "grid-auto-flow");
+        assert_eq!(keys.grid_auto_flow.input_type.as_deref(), Some("grid-auto-flow"));
+        assert_eq!(keys.grid_justify_items.input_type.as_deref(), Some("align-picker"));
+        assert_eq!(keys.grid_align_content.input_type.as_deref(), Some("align-picker"));
+        // The raw escape hatch grows to cover the two new raw-text fields too.
+        assert!(keys.grid_advanced.iter().any(|f| f.key == "grid-template-areas"));
+        assert!(keys.grid_advanced.iter().any(|f| f.key == "justify-self"));
     }
 }
 
