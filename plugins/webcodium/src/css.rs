@@ -5,8 +5,8 @@
 use crate::tree;
 use crate::variants::{self, KitExportShape};
 use kit10_scene::{
-    AlignValue, Extent, FlexDir, FlexWrapValue, FontStyle, GridLine, JustifyValue, OklabColor,
-    TextAlign, TextDecorationKind, TrackSize, UiNode,
+    AlignValue, Extent, FlexDir, FlexWrapValue, FontStyle, GridAutoFlow, GridLine, GridTemplateArea,
+    JustifyValue, OklabColor, TextAlign, TextDecorationKind, TrackMax, TrackMin, TrackSize, UiNode,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -108,8 +108,29 @@ fn flex_basis_css(e: &Extent) -> String {
     }
 }
 
-// grid-template-columns/rows: a track list can `repeat(auto-fit, ...)` (see kit10-scene's
-// TrackSize::AutoFit doc comment). Mirrors taf_can_do's track_to_template exactly.
+fn track_min_css(m: &TrackMin) -> String {
+    match m {
+        TrackMin::Px(n) => format!("{n}px"),
+        TrackMin::Percent(n) => format!("{n}%"),
+        TrackMin::Auto => "auto".to_string(),
+        TrackMin::MinContent => "min-content".to_string(),
+        TrackMin::MaxContent => "max-content".to_string(),
+    }
+}
+
+fn track_max_css(m: &TrackMax) -> String {
+    match m {
+        TrackMax::Px(n) => format!("{n}px"),
+        TrackMax::Percent(n) => format!("{n}%"),
+        TrackMax::Fr(n) => format!("{n}fr"),
+        TrackMax::Auto => "auto".to_string(),
+        TrackMax::MinContent => "min-content".to_string(),
+        TrackMax::MaxContent => "max-content".to_string(),
+    }
+}
+
+// grid-template-columns/rows: a track list can `repeat(auto-fit/auto-fill, ...)` (see
+// kit10-scene's TrackSize doc comments). Mirrors taf_can_do's track_to_template exactly.
 fn track_size_css(t: &TrackSize) -> String {
     match t {
         TrackSize::Px(n) => format!("{n}px"),
@@ -118,14 +139,18 @@ fn track_size_css(t: &TrackSize) -> String {
         TrackSize::MinContent => "min-content".to_string(),
         TrackSize::MaxContent => "max-content".to_string(),
         TrackSize::AutoFit(n) => format!("repeat(auto-fit, minmax({n}px, 1fr))"),
+        TrackSize::Percent(n) => format!("{n}%"),
+        TrackSize::FitContent(n) => format!("fit-content({n}px)"),
+        TrackSize::AutoFill(n) => format!("repeat(auto-fill, minmax({n}px, 1fr))"),
+        TrackSize::MinMax(min, max) => format!("minmax({}, {})", track_min_css(min), track_max_css(max)),
     }
 }
 
-// grid-auto-rows/columns: tracks here can't repeat, so AutoFit degenerates to a plain minmax()
-// with no repeat() wrapper -- mirrors taf_can_do's track_to_non_repeated exactly.
+// grid-auto-rows/columns: tracks here can't repeat, so AutoFit/AutoFill degenerate to a plain
+// minmax() with no repeat() wrapper -- mirrors taf_can_do's track_to_non_repeated exactly.
 fn track_size_non_repeated_css(t: &TrackSize) -> String {
     match t {
-        TrackSize::AutoFit(n) => format!("minmax({n}px, 1fr)"),
+        TrackSize::AutoFit(n) | TrackSize::AutoFill(n) => format!("minmax({n}px, 1fr)"),
         other => track_size_css(other),
     }
 }
@@ -146,7 +171,46 @@ fn grid_line_css(g: &GridLine) -> String {
         GridLine::Auto => "auto".to_string(),
         GridLine::Line(n) => n.to_string(),
         GridLine::Span(n) => format!("span {n}"),
+        GridLine::NamedLine(name, n) if *n == 1 => name.clone(),
+        GridLine::NamedLine(name, n) => format!("{name} {n}"),
+        GridLine::NamedSpan(name, n) if *n == 1 => format!("span {name}"),
+        GridLine::NamedSpan(name, n) => format!("span {n} {name}"),
     }
+}
+
+fn grid_auto_flow_css(f: &GridAutoFlow) -> &'static str {
+    match f {
+        GridAutoFlow::Row => "row",
+        GridAutoFlow::Column => "column",
+        GridAutoFlow::RowDense => "row dense",
+        GridAutoFlow::ColumnDense => "column dense",
+    }
+}
+
+// grid-template-areas' real CSS quoted-row syntax -- the inverse of Charter's
+// parse_grid_template_areas, so a round-tripped area always exports as genuine, spec-correct CSS.
+// Reconstructs one quoted row per resolved row line, filling any cell not covered by a named area
+// with CSS's own null-cell token (".").
+fn grid_template_areas_css(areas: &[GridTemplateArea]) -> String {
+    if areas.is_empty() {
+        return String::new();
+    }
+    let row_count = areas.iter().map(|a| a.row_end - 1).max().unwrap_or(0);
+    let col_count = areas.iter().map(|a| a.column_end - 1).max().unwrap_or(0);
+    let mut rows = Vec::with_capacity(row_count as usize);
+    for row in 1..=row_count {
+        let mut cells = Vec::with_capacity(col_count as usize);
+        for col in 1..=col_count {
+            let name = areas
+                .iter()
+                .find(|a| row >= a.row_start && row < a.row_end && col >= a.column_start && col < a.column_end)
+                .map(|a| a.name.as_str())
+                .unwrap_or(".");
+            cells.push(name.to_string());
+        }
+        rows.push(format!("\"{}\"", cells.join(" ")));
+    }
+    rows.join(" ")
 }
 
 // WebCodium's baseline -- removes the two browser UA-stylesheet defaults that would otherwise
@@ -308,6 +372,21 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
                         track_list_non_repeated_css(&d.extra.grid_auto_columns)
                     ));
                 }
+                if !d.extra.grid_template_areas.is_empty() {
+                    props.push(format!(
+                        "grid-template-areas: {};",
+                        grid_template_areas_css(&d.extra.grid_template_areas)
+                    ));
+                }
+                if d.extra.grid_auto_flow != GridAutoFlow::default() {
+                    props.push(format!("grid-auto-flow: {};", grid_auto_flow_css(&d.extra.grid_auto_flow)));
+                }
+                if let Some(j) = &d.extra.justify_items {
+                    props.push(format!("justify-items: {};", align_css(j)));
+                }
+                if let Some(a) = &d.extra.align_content {
+                    props.push(format!("align-content: {};", justify_css(a)));
+                }
             } else {
                 props.push("display: flex;".to_string());
                 // Irrelevant to a grid container -- only meaningful (and only emitted) for flex.
@@ -353,6 +432,11 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
             }
             if let Some(a) = &d.extra.align_self {
                 props.push(format!("align-self: {};", align_css(a)));
+            }
+            // justify-self is grid-only in real CSS (ignored under flex), same
+            // harmless-to-always-emit reasoning as align-self above.
+            if let Some(j) = &d.extra.justify_self {
+                props.push(format!("justify-self: {};", align_css(j)));
             }
             if let Some(b) = &d.extra.flex_basis {
                 props.push(format!("flex-basis: {};", flex_basis_css(b)));
@@ -786,6 +870,89 @@ mod tests {
         assert_eq!(grid_line_css(&GridLine::Auto), "auto");
         assert_eq!(grid_line_css(&GridLine::Line(2)), "2");
         assert_eq!(grid_line_css(&GridLine::Span(3)), "span 3");
+        assert_eq!(grid_line_css(&GridLine::NamedLine("sidebar".to_string(), 1)), "sidebar");
+        assert_eq!(grid_line_css(&GridLine::NamedLine("sidebar".to_string(), 2)), "sidebar 2");
+        assert_eq!(grid_line_css(&GridLine::NamedSpan("content".to_string(), 1)), "span content");
+        assert_eq!(grid_line_css(&GridLine::NamedSpan("content".to_string(), 2)), "span 2 content");
+    }
+
+    #[test]
+    fn track_size_css_covers_the_new_grid_mastery_variants() {
+        assert_eq!(track_size_css(&TrackSize::Percent(50.0)), "50%");
+        assert_eq!(track_size_css(&TrackSize::FitContent(220.0)), "fit-content(220px)");
+        assert_eq!(
+            track_size_css(&TrackSize::AutoFill(120.0)),
+            "repeat(auto-fill, minmax(120px, 1fr))"
+        );
+        assert_eq!(
+            track_size_css(&TrackSize::MinMax(TrackMin::Px(50.0), TrackMax::Fr(2.0))),
+            "minmax(50px, 2fr)"
+        );
+        assert_eq!(
+            track_size_non_repeated_css(&TrackSize::AutoFill(120.0)),
+            "minmax(120px, 1fr)"
+        );
+    }
+
+    #[test]
+    fn grid_auto_flow_css_variants() {
+        assert_eq!(grid_auto_flow_css(&GridAutoFlow::Row), "row");
+        assert_eq!(grid_auto_flow_css(&GridAutoFlow::Column), "column");
+        assert_eq!(grid_auto_flow_css(&GridAutoFlow::RowDense), "row dense");
+        assert_eq!(grid_auto_flow_css(&GridAutoFlow::ColumnDense), "column dense");
+    }
+
+    #[test]
+    fn grid_template_areas_css_reconstructs_the_quoted_row_syntax() {
+        let areas = vec![
+            GridTemplateArea { name: "header".to_string(), row_start: 1, row_end: 2, column_start: 1, column_end: 3 },
+            GridTemplateArea { name: "sidebar".to_string(), row_start: 2, row_end: 3, column_start: 1, column_end: 2 },
+            GridTemplateArea { name: "main".to_string(), row_start: 2, row_end: 3, column_start: 2, column_end: 3 },
+        ];
+        assert_eq!(
+            grid_template_areas_css(&areas),
+            r#""header header" "sidebar main""#
+        );
+    }
+
+    #[test]
+    fn grid_template_areas_css_fills_uncovered_cells_with_the_null_token() {
+        let areas = vec![GridTemplateArea {
+            name: "a".to_string(),
+            row_start: 1,
+            row_end: 2,
+            column_start: 1,
+            column_end: 2,
+        }];
+        assert_eq!(grid_template_areas_css(&areas), r#""a""#);
+    }
+
+    #[test]
+    fn node_props_emits_the_five_new_grid_mastery_fields() {
+        let d = kit10_scene::BoxData {
+            extra: BoxExtra {
+                grid_template_columns: vec![TrackSize::Fr(1.0)],
+                grid_template_areas: vec![GridTemplateArea {
+                    name: "a".to_string(),
+                    row_start: 1,
+                    row_end: 2,
+                    column_start: 1,
+                    column_end: 2,
+                }],
+                grid_auto_flow: GridAutoFlow::ColumnDense,
+                justify_items: Some(AlignValue::Center),
+                align_content: Some(JustifyValue::SpaceBetween),
+                justify_self: Some(AlignValue::End),
+                ..Default::default()
+            },
+            ..test_box(None)
+        };
+        let props = node_props(&UiNode::Box(d), false).unwrap();
+        assert!(props.contains(&r#"grid-template-areas: "a";"#.to_string()));
+        assert!(props.contains(&"grid-auto-flow: column dense;".to_string()));
+        assert!(props.contains(&"justify-items: center;".to_string()));
+        assert!(props.contains(&"align-content: space-between;".to_string()));
+        assert!(props.contains(&"justify-self: end;".to_string()));
     }
 
     // Regression test for the reported bug: a Box with arrange: split (Charter's compile_arrange

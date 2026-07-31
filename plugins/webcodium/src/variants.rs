@@ -710,6 +710,15 @@ const DIFFABLE_PROPERTIES: &[&str] = &[
     "flex-grow",
     "flex-shrink",
     "align-self",
+    // Same "raw stored value is already valid CSS syntax as-is" reasoning as the grid-* keys
+    // above, extended to the Grid-mastery expansion's 5 new BoxExtra fields: their raw property
+    // strings (e.g. "\"a a\" \"b b\"", "column dense", "center", "space-between") are exactly what
+    // real CSS expects verbatim, so the default format_value passthrough is correct here too.
+    "grid-template-areas",
+    "grid-auto-flow",
+    "justify-items",
+    "align-content",
+    "justify-self",
 ];
 
 // Charter's own raw-property parsers (parse_px et al.) treat a bare number as an implicit px
@@ -1697,6 +1706,39 @@ mod tests {
         assert!(base.contains(&"grid-auto-columns: minmax(100px, 1fr);".to_string()), "{:?}", base);
         assert!(base.contains(&"grid-column: span 2;".to_string()), "{:?}", base);
         assert!(base.contains(&"grid-row: 1 / 3;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn the_five_new_grid_mastery_properties_pass_through_as_real_declarations() {
+        // Same diffable-passthrough treatment as the grid-auto/line-placement test above --
+        // closes the same class of gap (a Kit-basis property missing from DIFFABLE_PROPERTIES)
+        // for grid-template-areas/grid-auto-flow/justify-items/align-content/justify-self.
+        let shape = KitExportShape {
+            kit_id: "dashboard".to_string(),
+            kit_name: "Dashboard".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("grid-template-areas", "\"header header\" \"sidebar main\""),
+                    literal_entry("grid-auto-flow", "column dense"),
+                    literal_entry("justify-items", "center"),
+                    literal_entry("align-content", "space-between"),
+                    literal_entry("justify-self", "end"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(
+            base.contains(&"grid-template-areas: \"header header\" \"sidebar main\";".to_string()),
+            "{:?}",
+            base
+        );
+        assert!(base.contains(&"grid-auto-flow: column dense;".to_string()), "{:?}", base);
+        assert!(base.contains(&"justify-items: center;".to_string()), "{:?}", base);
+        assert!(base.contains(&"align-content: space-between;".to_string()), "{:?}", base);
+        assert!(base.contains(&"justify-self: end;".to_string()), "{:?}", base);
     }
 
     #[test]
