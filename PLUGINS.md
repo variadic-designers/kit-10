@@ -446,22 +446,26 @@ union's `@doc:` comments, not this table.
 
 <!-- BEGIN GENERATED: input-types (source: src/lib/plugins/types.ts) — do not edit by hand -->
 
-| `inputType`  | Widget                                                                                            |
-| ------------ | ------------------------------------------------------------------------------------------------- |
-| `color`      | OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.        |
-| `text`       | Plain text input. The default when `inputType` is omitted.                                        |
-| `number`     | Numeric input.                                                                                    |
-| `select`     | Dropdown over the field's `options` list.                                                         |
-| `slider`     | Range slider.                                                                                     |
-| `font`       | Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts. |
-| `children`   | View-composition field — the child view list.                                                     |
-| `asset`      | Asset picker.                                                                                     |
-| `resize`     | Fixed / Hug / Fill segmented control, plus contextual min/max limits via `resizeKeys`.            |
-| `arrange`    | Stack / Cluster / Split / Center / Grid tab row, with follow-on fields via `arrangeKeys`.         |
-| `spacing`    | Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.                  |
-| `weight`     | Named-weight segmented control, filtered to the resolved family's real weights.                   |
-| `align`      | Left / Center / Right / Justify segmented control.                                                |
-| `decoration` | None / Underline / Line-through segmented control.                                                |
+| `inputType`         | Widget                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `color`             | OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.               |
+| `text`              | Plain text input. The default when `inputType` is omitted.                                               |
+| `number`            | Numeric input.                                                                                           |
+| `select`            | Dropdown over the field's `options` list.                                                                |
+| `slider`            | Range slider.                                                                                            |
+| `font`              | Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts.        |
+| `children`          | View-composition field — the child view list.                                                            |
+| `asset`             | Asset picker.                                                                                            |
+| `resize`            | Fixed / Hug / Fill segmented control, plus contextual min/max limits via `resizeKeys`.                   |
+| `arrange`           | Stack / Cluster / Split / Center / Grid tab row, with follow-on fields via `arrangeKeys`.                |
+| `spacing`           | Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.                         |
+| `weight`            | Named-weight segmented control, filtered to the resolved family's real weights.                          |
+| `align`             | Left / Center / Right / Justify segmented control.                                                       |
+| `decoration`        | None / Underline / Line-through segmented control.                                                       |
+| `grid-tracks`       | Grid track-list builder — add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind. |
+| `grid-area-painter` | Visual grid-template-areas painter — click-drag to name/merge cells into regions.                        |
+| `grid-auto-flow`    | Row / Column segmented control with a Dense toggle, for grid-auto-flow.                                  |
+| `align-picker`      | Icon-based alignment/distribution picker, for justify-items and align-content.                           |
 
 <!-- END GENERATED: input-types -->
 

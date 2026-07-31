@@ -48,7 +48,24 @@ export type InputType =
 	// this single-choice, matching the wire's TextDecorationKind enum, not independent toggles),
 	// writing the keyword values Charter's parse_text_decoration understands.
 	// @doc: None / Underline / Line-through segmented control.
-	| 'decoration';
+	| 'decoration'
+	// Ordered track-list builder for grid-template-columns/rows -- add/remove/reorder tracks, each
+	// picking a kind (Fixed/Fraction/Auto/Min/Max/Percent/Fit-content/Responsive) via a segmented
+	// control instead of typing raw CSS. See GridTracksField.
+	// @doc: Grid track-list builder — add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind.
+	| 'grid-tracks'
+	// Visual grid-template-areas editor -- a mini-grid matching the box's own track count, painted
+	// by click-drag into named regions, serialized to real CSS quoted-row text. See GridAreaPainter.
+	// @doc: Visual grid-template-areas painter — click-drag to name/merge cells into regions.
+	| 'grid-area-painter'
+	// Row/Column segmented control + a Dense toggle, writing the keyword values Charter's
+	// parse_auto_flow understands.
+	// @doc: Row / Column segmented control with a Dense toggle, for grid-auto-flow.
+	| 'grid-auto-flow'
+	// Shared icon-based alignment picker (Start/End/FlexStart/FlexEnd/Center/Stretch/Space* as
+	// relevant), reused for justify-items/align-content.
+	// @doc: Icon-based alignment/distribution picker, for justify-items and align-content.
+	| 'align-picker';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -68,6 +85,12 @@ export interface ArrangeKeys {
 	cellMin: FieldDef;
 	advanced: FieldDef[];
 	gridAdvanced: FieldDef[];
+	gridColumns: FieldDef;
+	gridRows: FieldDef;
+	gridAreas: FieldDef;
+	gridAutoFlow: FieldDef;
+	gridJustifyItems: FieldDef;
+	gridAlignContent: FieldDef;
 }
 
 // Declared only on "resize" FieldDefs (width/height) -- the dimension's own min/max limit fields,

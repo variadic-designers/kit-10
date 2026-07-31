@@ -1,8 +1,11 @@
 <script lang="ts">
 	import StyleField from './StyleField.svelte';
+	import GridTracksField from './GridTracksField.svelte';
+	import GridAreaPainter from './GridAreaPainter.svelte';
 	import { layerDotColor } from './layer-color.ts';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { commitFieldValue } from './field-commit.ts';
+	import { parseTrackList } from './grid-tracks.ts';
 	import type { Api, ResolvedProperty } from 'manager';
 	import type { ArrangeKeys, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 
@@ -137,6 +140,29 @@
 			? arrangeKeys.advanced.filter((fd) => fd.key !== arrangeKeys.directionKey)
 			: arrangeKeys.advanced
 	);
+
+	// Grid's own track counts, for the area painter's grid to always match what's actually defined.
+	const columnCount = $derived(
+		parseTrackList(resolvedMap.get(arrangeKeys.gridColumns.key)?.value ?? '').length
+	);
+	const rowCount = $derived(
+		parseTrackList(resolvedMap.get(arrangeKeys.gridRows.key)?.value ?? '').length
+	);
+
+	const rawAutoFlow = $derived(resolvedMap.get(arrangeKeys.gridAutoFlow.key)?.value);
+	const autoFlowIsColumn = $derived(rawAutoFlow?.startsWith('column') ?? false);
+	const autoFlowIsDense = $derived(rawAutoFlow?.endsWith('dense') ?? false);
+
+	function writeAutoFlow(column: boolean, dense: boolean) {
+		const v = `${column ? 'column' : 'row'}${dense ? ' dense' : ''}`;
+		commitFieldValue(track(arrangeKeys.gridAutoFlow.key), arrangeKeys.gridAutoFlow.key, v, {
+			onFieldUpdate,
+			api
+		});
+	}
+
+	const ALIGN_OPTIONS = ['start', 'end', 'flex-start', 'flex-end', 'center', 'stretch'];
+	const JUSTIFY_OPTIONS = [...ALIGN_OPTIONS, 'space-between', 'space-evenly', 'space-around'];
 </script>
 
 {#snippet fieldRow(fd: FieldDef, tooltip?: string)}
@@ -253,9 +279,115 @@
 		{:else if activeKind === 'grid'}
 			{@render fieldRow(
 				arrangeKeys.cellMin,
-				'The smallest a column is allowed to get before wrapping to the next row'
+				'The smallest a column is allowed to get before wrapping to the next row (used only when no explicit columns are defined below)'
 			)}
 			{@render fieldRow(arrangeKeys.gap, 'Space between cells')}
+
+			<GridTracksField field={arrangeKeys.gridColumns} label="Columns" {track} {resolvedMap} {api} {onFieldUpdate} />
+			<GridTracksField field={arrangeKeys.gridRows} label="Rows" {track} {resolvedMap} {api} {onFieldUpdate} />
+
+			<div class="arrange-field__row">
+				<span class="arrange-field__row-label" title="How auto-placed children fill the grid"
+					>Auto flow</span
+				>
+				<div class="arrange-seg" role="group" aria-label="Auto flow">
+					<button
+						type="button"
+						class="arrange-seg__btn"
+						class:arrange-seg__btn--sel={!autoFlowIsColumn}
+						title="Fill rows first"
+						onclick={() => writeAutoFlow(false, autoFlowIsDense)}
+					>
+						<i class="fa-solid fa-arrow-right"></i>
+					</button>
+					<button
+						type="button"
+						class="arrange-seg__btn"
+						class:arrange-seg__btn--sel={autoFlowIsColumn}
+						title="Fill columns first"
+						onclick={() => writeAutoFlow(true, autoFlowIsDense)}
+					>
+						<i class="fa-solid fa-arrow-down"></i>
+					</button>
+					<button
+						type="button"
+						class="arrange-seg__btn"
+						class:arrange-seg__btn--sel={autoFlowIsDense}
+						title="Dense — backfill earlier gaps left by larger items"
+						onclick={() => writeAutoFlow(autoFlowIsColumn, !autoFlowIsDense)}
+					>
+						<i class="fa-solid fa-layer-group"></i>
+					</button>
+				</div>
+			</div>
+
+			<div class="arrange-field__row">
+				<span class="arrange-field__row-label" title="Default inline-axis alignment for items">
+					Justify items
+				</span>
+				<select
+					class="arrange-field__select"
+					value={resolvedMap.get(arrangeKeys.gridJustifyItems.key)?.value ?? ''}
+					onchange={(e) =>
+						commitFieldValue(
+							track(arrangeKeys.gridJustifyItems.key),
+							arrangeKeys.gridJustifyItems.key,
+							(e.currentTarget as HTMLSelectElement).value,
+							{ onFieldUpdate, api }
+						)}
+				>
+					<option value="">(default)</option>
+					{#each ALIGN_OPTIONS as opt (opt)}
+						<option value={opt}>{opt}</option>
+					{/each}
+				</select>
+			</div>
+
+			<div class="arrange-field__row">
+				<span class="arrange-field__row-label" title="Distribution of extra space among tracks">
+					Align content
+				</span>
+				<select
+					class="arrange-field__select"
+					value={resolvedMap.get(arrangeKeys.gridAlignContent.key)?.value ?? ''}
+					onchange={(e) =>
+						commitFieldValue(
+							track(arrangeKeys.gridAlignContent.key),
+							arrangeKeys.gridAlignContent.key,
+							(e.currentTarget as HTMLSelectElement).value,
+							{ onFieldUpdate, api }
+						)}
+				>
+					<option value="">(default)</option>
+					{#each JUSTIFY_OPTIONS as opt (opt)}
+						<option value={opt}>{opt}</option>
+					{/each}
+				</select>
+			</div>
+
+			<details class="arrange-disclosure" title="Paint named regions to place children by area instead of by line number">
+				<summary class="arrange-disclosure__summary">
+					<span>Areas</span>
+					{#if resolvedMap.get(arrangeKeys.gridAreas.key)?.value}
+						<i
+							class="fa-solid fa-circle arrange-disclosure__badge"
+							title="Areas are defined"
+						></i>
+					{/if}
+					<i class="fa-solid fa-angle-down arrange-disclosure__caret"></i>
+				</summary>
+				<div class="arrange-disclosure__content">
+					<GridAreaPainter
+						field={arrangeKeys.gridAreas}
+						colCount={columnCount}
+						{rowCount}
+						{track}
+						{resolvedMap}
+						{api}
+						{onFieldUpdate}
+					/>
+				</div>
+			</details>
 		{/if}
 
 		{#if activeKind !== 'grid'}
@@ -421,6 +553,16 @@
 
 		&__row-label {
 			opacity: 0.75;
+		}
+
+		&__select {
+			background: var(--color-panel-header-fill);
+			border: none;
+			border-radius: 2px;
+			color: var(--color-text);
+			font-size: $x-font-size-xs;
+			padding: calc($x-space-xs / 2) $x-space-xs;
+			cursor: pointer;
 		}
 	}
 
