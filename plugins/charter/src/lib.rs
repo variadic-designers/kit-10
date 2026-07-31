@@ -21,6 +21,19 @@ fn flex_dir_from_str(s: &str) -> FlexDir {
     }
 }
 
+// One view reference: the target view plus the id of the specific `view`-typed token row that
+// names it. `token_id` is this reference's OCCURRENCE KEY when Charter renders it as a nested
+// child -- distinct references to the same `view_id` (two different tokens) are two independent
+// occurrences, each potentially resolving differently if `token_id` carries an axis override (see
+// `OverriddenOccurrence`). A root view (referenced by nobody) uses its own `view_id` as its
+// occurrence key instead -- see `render_view_nodes`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewRef {
+    view_id: String,
+    token_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ResolvedProperty {
@@ -31,11 +44,11 @@ struct ResolvedProperty {
     is_token: bool,
     token_alias: Option<String>,
     condition_count: u32,
-    // View ids this property's value references (set by the resolver for any `view-list` value,
-    // name-neutrally). Charter treats its OWN `children` field's view_refs as nested children --
-    // that opinion lives here, in the plugin, not in the resolver.
+    // Views this property's value references (set by the resolver for any alias with one or more
+    // `view`-typed token rows, name-neutrally). Charter treats its OWN `children` field's
+    // view_refs as nested children -- that opinion lives here, in the plugin, not in the resolver.
     #[serde(default)]
-    view_refs: Option<Vec<String>>,
+    view_refs: Option<Vec<ViewRef>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +208,14 @@ struct OnResolveResult {
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
+    // Parallel to viewport_data (same length/order) — this node's OCCURRENCE key: the referencing
+    // `view`-typed token's own id for a nested child, or the view's own id (same as node_view_ids'
+    // entry) for a root. "" for structural scaffolding, matching node_view_ids. Lets the editor
+    // disambiguate a click/hover/selection to the SPECIFIC rendered instance rather than the first
+    // node sharing that view id, when the same view is rendered more than once (see
+    // OverriddenOccurrence / SelectionCtx).
+    #[serde(default)]
+    node_occurrence_ids: Vec<String>,
     // Parallel to viewport_data (same length/order) — the highest-priority composed Kit's id for
     // each node, "" for structural scaffolding or a kit-less view. Lets WebCodium's Kit-basis
     // export (Phase 3) name which Kit a node came from -- a Kit has no subtree of its own in the
@@ -306,6 +327,8 @@ struct OnSelectionChangeResult {
     node_view_ids: Vec<String>,
     #[serde(default)]
     node_kit_ids: Vec<String>,
+    #[serde(default)]
+    node_occurrence_ids: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     viewport_data_binary: Option<String>,
 }
@@ -413,6 +436,21 @@ struct ViewMeta {
     resolved_kits: Vec<ResolvedKit>,
 }
 
+// One occurrence whose reference (a `view`-typed token, `occurrence_key` == that token's own id)
+// carries an axis override that changed its own resolution independently of its target view's
+// plain `ViewMeta` entry in `project_views`. `render_view_nodes` consults this (keyed by
+// `occurrence_key`) FIRST when recursing into a child reference, falling back to `view_map` when
+// no entry exists -- the common, non-overridden case. See manager's `resolveViewsFromRows`'s
+// `OverriddenOccurrence`, which this mirrors field-for-field.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct OverriddenOccurrence {
+    occurrence_key: String,
+    view_id: String,
+    #[serde(default)]
+    resolved_kits: Vec<ResolvedKit>,
+}
+
 // One weight-range + style a font family actually has. Host-assembled from Fontavious's
 // catalogue (`family_facts`) today; a future uploaded-font path would contribute entries from
 // Vellum's loaded bytes instead — same shape either way (see resources/text-affordances.md's
@@ -440,15 +478,22 @@ struct OnResolveInput {
     view_hints: std::collections::HashMap<String, serde_json::Value>,
     #[serde(default)]
     project_views: Vec<ViewMeta>,
+    // Additive: one entry per `view`-typed token reference whose axis override changed its own
+    // resolution. Empty for the common (no overrides anywhere) case. See `OverriddenOccurrence`.
     #[serde(default)]
-    selected_view_primary: Option<String>,
+    overridden_occurrences: Vec<OverriddenOccurrence>,
+    // Occurrence keys, not view ids -- "active" (below) stays view-level (editing target, shared
+    // by every occurrence of a view), but click-selection/hover are properties of ONE specific
+    // rendered instance. See `SelectionCtx`.
     #[serde(default)]
-    selected_view_secondary: Vec<String>,
+    selected_occurrence_primary: Option<String>,
+    #[serde(default)]
+    selected_occurrence_secondary: Vec<String>,
     // Patched in by on_selection_change alongside the selection fields above — persisted here
     // (rather than only in OnSelectionChangeInput) so it survives being stashed into
     // last_resolve_input and re-read on the next selection-only patch.
     #[serde(default)]
-    hovered_view_id: Option<String>,
+    hovered_occurrence_id: Option<String>,
     // Keyed by family name as the kit property spells it (matched case-insensitively). Absent
     // families pass their requested weight through untouched — no facts, no opinion. Riding
     // last_resolve_input like everything else, so the selection fast path snaps identically.
@@ -492,11 +537,12 @@ struct FieldUpdate {
 // (activeViewId/hoveredViewId). This struct was previously missing it entirely; that went
 // unnoticed for active_view_id because a mismatched key just silently deserializes to None
 // (#[serde(default)]), and active_view_id happened to get re-synced via the next full
-// on_resolve call anyway (OnResolveInput does have rename_all). hovered_view_id has no such
+// on_resolve call anyway (OnResolveInput does have rename_all). hovered_occurrence_id has no such
 // fallback -- without this attribute it was always silently None, so hover never worked at all.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct OnSelectionChangeInput {
+    // Occurrence keys (not view ids) -- see OnResolveInput's selected_occurrence_primary/secondary.
     primary: Option<String>,
     #[serde(default)]
     secondary: Vec<String>,
@@ -505,9 +551,10 @@ struct OnSelectionChangeInput {
     active_view_id: Option<String>,
     // Unlike active_view_id, always overwritten unconditionally (including with null) — the
     // host sends null exactly when the mouse leaves a hoverable area, and that must actually
-    // clear the hover border, not leave the last-hovered view highlighted.
+    // clear the hover border, not leave the last-hovered occurrence highlighted. An occurrence
+    // key (not a view id) -- see OnResolveInput's hovered_occurrence_id.
     #[serde(default)]
-    hovered_view_id: Option<String>,
+    hovered_occurrence_id: Option<String>,
 }
 
 #[host_fn]
@@ -525,38 +572,56 @@ extern "ExtismHost" {
     pub fn kit10_panel_publish(input: PanelPublishInput) -> bool;
 }
 
+// Cross-kit merge: for each property key, the kit with the SINGLE MOST SPECIFIC matching layer
+// wins outright, regardless of kit composition order -- kit order only breaks a tie between two
+// equally-specific candidates (later/higher-priority kit wins, preserving plain-overwrite
+// behavior for the common case). Mirrors manager's flattenKitResults (resolve.ts) exactly -- the
+// two must never disagree, since this is what actually renders/exports while flattenKitResults
+// only ever feeds the editor's Render-panel inspector. See that function's doc comment for the
+// full rationale (a lower-priority kit's real, correctly-conditioned layer used to be invisible
+// forever once any higher-priority kit defined that property at all, even unconditionally).
 fn merge_kits(kits: &[ResolvedKit]) -> std::collections::HashMap<String, ResolvedProperty> {
-    let mut merged = std::collections::HashMap::new();
+    let mut merged: std::collections::HashMap<String, ResolvedProperty> =
+        std::collections::HashMap::new();
     for kit in kits {
         for (k, v) in &kit.properties {
+            if let Some(existing) = merged.get(k) {
+                if existing.condition_count > v.condition_count {
+                    continue;
+                }
+            }
             merged.insert(k.clone(), v.clone());
         }
     }
     merged
 }
 
-// Charter's composition opinion: its own `children` field, when it resolved to a `view-list`
-// value, names the views to nest. The resolver stays name-neutral (it only knows the property
-// carries view_refs); "children means nest these" is decided here, in the plugin.
+// Charter's composition opinion: its own `children` field, when it resolves to one or more
+// `view`-typed token rows, names the views to nest. The resolver stays name-neutral (it only knows
+// the property carries view_refs); "children means nest these" is decided here, in the plugin.
 const CHILDREN_FIELD: &str = "children";
 
-fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<String> {
+// Every child reference, deduped by TOKEN id (not view id) -- two different tokens referencing the
+// same view are two real, independent children/occurrences, never collapsed together. (A view id
+// appearing twice here is legitimate; only an exact duplicate token_id, which shouldn't normally
+// occur, is deduped as a defensive measure.)
+fn collect_child_view_ids(kits: &[ResolvedKit]) -> Vec<ViewRef> {
     let mut seen = std::collections::HashSet::new();
-    let mut ids = Vec::new();
+    let mut refs_out = Vec::new();
     for kit in kits {
         if let Some(refs) = kit
             .properties
             .get(CHILDREN_FIELD)
             .and_then(|p| p.view_refs.as_ref())
         {
-            for id in refs {
-                if seen.insert(id.clone()) {
-                    ids.push(id.clone());
+            for r in refs {
+                if seen.insert(r.token_id.clone()) {
+                    refs_out.push(r.clone());
                 }
             }
         }
     }
-    ids
+    refs_out
 }
 
 // Oklab is the internal + wire color representation -- see kit10's resources/oklch.md. `parse_color`
@@ -1743,22 +1808,31 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
     })
 }
 
-// Bundles the interaction-state fields needed to answer "is view X selected/hovered right
-// now" — passed down through render_view_nodes' recursion so both a top-level view and any
-// view reached via child_view_ids resolve their own selection/hover against the same source
-// of truth, instead of the caller precomputing it only for the top level.
+// Bundles the interaction-state fields needed to answer "is this node selected/hovered right
+// now" — passed down through render_view_nodes' recursion so both a top-level view and any view
+// reached via child_view_ids resolve their own selection/hover against the same source of truth,
+// instead of the caller precomputing it only for the top level.
+//
+// `active_view_id` stays VIEW-level: it's the Render/Axes/Tokens panel's current editing target,
+// a property of the view itself, so every rendered occurrence of that view highlights as active
+// simultaneously. `selected_occurrence_*`/`hovered_occurrence_id`, by contrast, are OCCURRENCE-
+// level: they identify one specific rendered instance (see `ViewRef`/`OverriddenOccurrence`), so
+// clicking/hovering one occurrence of a doubly-referenced view never also highlights its sibling.
 struct SelectionCtx<'a> {
     active_view_id: Option<&'a str>,
-    selected_view_primary: Option<&'a str>,
-    selected_view_secondary: &'a [String],
-    hovered_view_id: Option<&'a str>,
+    selected_occurrence_primary: Option<&'a str>,
+    selected_occurrence_secondary: &'a [String],
+    hovered_occurrence_id: Option<&'a str>,
 }
 
 // 0 = none, 1 = secondary selection, 2 = primary / active.
-fn compute_selection(view_id: &str, ctx: &SelectionCtx) -> u8 {
+fn compute_selection(view_id: &str, occurrence_id: &str, ctx: &SelectionCtx) -> u8 {
     let is_active = ctx.active_view_id == Some(view_id);
-    let is_primary = ctx.selected_view_primary == Some(view_id);
-    let is_secondary = ctx.selected_view_secondary.iter().any(|id| id == view_id);
+    let is_primary = ctx.selected_occurrence_primary == Some(occurrence_id);
+    let is_secondary = ctx
+        .selected_occurrence_secondary
+        .iter()
+        .any(|id| id == occurrence_id);
     if is_active || is_primary {
         2
     } else if is_secondary {
@@ -1768,8 +1842,8 @@ fn compute_selection(view_id: &str, ctx: &SelectionCtx) -> u8 {
     }
 }
 
-fn compute_hovered(view_id: &str, ctx: &SelectionCtx) -> bool {
-    ctx.hovered_view_id == Some(view_id)
+fn compute_hovered(occurrence_id: &str, ctx: &SelectionCtx) -> bool {
+    ctx.hovered_occurrence_id == Some(occurrence_id)
 }
 
 // Shared by render_view_nodes' own primitive computation and by a parent view deciding whether
@@ -1778,10 +1852,12 @@ fn compute_hovered(view_id: &str, ctx: &SelectionCtx) -> bool {
 // way, just returning an owned String so it can be computed for a view this function isn't
 // already "inside" of (detect_primitive's &'static str can't be returned when the hint-override
 // path needs to hand back a String owned by a local CharterHints instead).
-fn primitive_for_view(view: &ViewMeta) -> String {
-    let merged = merge_kits(&view.resolved_kits);
-    let charter_hints: CharterHints = view
-        .hints
+fn primitive_for_kits(
+    kits: &[ResolvedKit],
+    hints: &std::collections::HashMap<String, serde_json::Value>,
+) -> String {
+    let merged = merge_kits(kits);
+    let charter_hints: CharterHints = hints
         .get("charter")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
         .unwrap_or_default();
@@ -1800,9 +1876,16 @@ fn kit_id_for(kits: &[ResolvedKit]) -> String {
 // Render a view's nodes into the flat viewport buffer.
 // parent_id: the parent box index (grid cell for top-level, box idx for children).
 // depth guard prevents runaway recursion from circular view references.
+// view_id/occurrence_id: `view_id` is this node's underlying view; `occurrence_id` is the
+// specific rendered INSTANCE's identity (the referencing `view`-typed token's own id for a
+// nested child, or `view_id` itself for a root/top-level view -- see `ViewRef`). Two different
+// occurrences of the same view_id get two independent nodes with the SAME view_id but DIFFERENT
+// occurrence_id, each resolving/selecting/hovering independently.
 // node_view_ids: parallel accumulator to viewport — every push here is paired with a push
 // there recording which view (view_id) that node belongs to, for the editor's viewport
 // click-to-select hit-test lookup.
+// node_occurrence_ids: a third parallel accumulator, recording each node's occurrence_id -- lets
+// the editor disambiguate a click/hover/selection to the specific instance, not just the view.
 // node_kit_ids: a second parallel accumulator (same length/order as viewport/node_view_ids),
 // recording the highest-priority composed Kit's id for that node -- "" for structural grid
 // scaffolding or a kit-less view. Lets WebCodium's Kit-basis export (Phase 3, see
@@ -1813,6 +1896,7 @@ fn render_view_nodes(
     kits: &[ResolvedKit],
     hints: &std::collections::HashMap<String, serde_json::Value>,
     view_id: &str,
+    occurrence_id: &str,
     ctx: &SelectionCtx,
     parent_id: Option<usize>,
     // Whether this view's flex PARENT lays out in a row (Some(true)) or column (Some(false)); None
@@ -1823,8 +1907,10 @@ fn render_view_nodes(
     viewport: &mut Vec<UiNode>,
     node_view_ids: &mut Vec<String>,
     node_kit_ids: &mut Vec<String>,
+    node_occurrence_ids: &mut Vec<String>,
     depth: u8,
     view_map: &std::collections::HashMap<String, &ViewMeta>,
+    occurrence_map: &std::collections::HashMap<String, &OverriddenOccurrence>,
 ) {
     if depth > 4 {
         return;
@@ -1846,8 +1932,19 @@ fn render_view_nodes(
         .unwrap_or_else(|| detect_primitive(&merged));
 
     let content_parent = parent_id;
-    let selection = compute_selection(view_id, ctx);
-    let hovered = compute_hovered(view_id, ctx);
+    let selection = compute_selection(view_id, occurrence_id, ctx);
+    let hovered = compute_hovered(occurrence_id, ctx);
+
+    // Resolve a child ref's EFFECTIVE kits: an overriding occurrence's own resolved_kits (which
+    // may differ from the plain view's, e.g. a different Layer winning `children` under the
+    // override's axis args) if one exists for this reference's token_id, else the target view's
+    // own plain resolution -- mirrors `view-tree.ts`'s `childrenOf` fallback exactly.
+    let effective_child_kits = |child_view: &ViewMeta, token_id: &str| -> Vec<ResolvedKit> {
+        occurrence_map
+            .get(token_id)
+            .map(|o| o.resolved_kits.clone())
+            .unwrap_or_else(|| child_view.resolved_kits.clone())
+    };
 
     if primitive == "text" {
         let mut node = build_text_node(&merged, content_parent.unwrap_or(0));
@@ -1858,6 +1955,7 @@ fn render_view_nodes(
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
         node_kit_ids.push(kit_id_for(kits));
+        node_occurrence_ids.push(occurrence_id.to_string());
 
         // Containment rule (Charter's own opinion, not enforced anywhere upstream): a Text
         // view may contain other Text views (e.g. multiple inline runs), never a Box -- a
@@ -1867,15 +1965,17 @@ fn render_view_nodes(
         // layout tree expects a Box as a layout parent, and content_parent already traces back
         // to one (or None at a genuine root), so this reuses a proven relationship instead of
         // introducing an unverified "Text as layout parent" case.
-        for child_view_id in &collect_child_view_ids(kits) {
-            if let Some(child_view) = view_map.get(child_view_id) {
-                if primitive_for_view(child_view) != "text" {
+        for child_ref in &collect_child_view_ids(kits) {
+            if let Some(child_view) = view_map.get(&child_ref.view_id) {
+                let child_kits = effective_child_kits(child_view, &child_ref.token_id);
+                if primitive_for_kits(&child_kits, &child_view.hints) != "text" {
                     continue;
                 }
                 render_view_nodes(
-                    &child_view.resolved_kits,
+                    &child_kits,
                     &child_view.hints,
-                    child_view_id,
+                    &child_ref.view_id,
+                    &child_ref.token_id,
                     ctx,
                     content_parent,
                     // Nested text shares this text's own container, so its flex parent is the same.
@@ -1884,8 +1984,10 @@ fn render_view_nodes(
                     viewport,
                     node_view_ids,
                     node_kit_ids,
+                    node_occurrence_ids,
                     depth + 1,
                     view_map,
+                    occurrence_map,
                 );
             }
         }
@@ -1898,6 +2000,7 @@ fn render_view_nodes(
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
         node_kit_ids.push(kit_id_for(kits));
+        node_occurrence_ids.push(occurrence_id.to_string());
 
         // An image is a leaf — it has no children (no content tab, no children field).
         // Any child views assigned to an image view are silently ignored.
@@ -1928,18 +2031,21 @@ fn render_view_nodes(
         viewport.push(node);
         node_view_ids.push(view_id.to_string());
         node_kit_ids.push(kit_id_for(kits));
+        node_occurrence_ids.push(occurrence_id.to_string());
 
         // A Box is a pure container -- it never renders its own inline text. If a design wants
         // text inside a box, it nests a Text primitive as one of the box's children. So there is
         // no `content` fallback here (and no `content` field in box_categories): the box's only
         // "contents" are its child views, recursed into below. A childless box just renders empty.
-        let child_ids = collect_child_view_ids(kits);
-        for child_view_id in &child_ids {
-            if let Some(child_view) = view_map.get(child_view_id) {
+        let child_refs = collect_child_view_ids(kits);
+        for child_ref in &child_refs {
+            if let Some(child_view) = view_map.get(&child_ref.view_id) {
+                let child_kits = effective_child_kits(child_view, &child_ref.token_id);
                 render_view_nodes(
-                    &child_view.resolved_kits,
+                    &child_kits,
                     &child_view.hints,
-                    child_view_id,
+                    &child_ref.view_id,
+                    &child_ref.token_id,
                     ctx,
                     Some(box_idx),
                     child_main_horizontal,
@@ -1947,8 +2053,10 @@ fn render_view_nodes(
                     viewport,
                     node_view_ids,
                     node_kit_ids,
+                    node_occurrence_ids,
                     depth + 1,
                     view_map,
+                    occurrence_map,
                 );
             }
         }
@@ -2067,16 +2175,17 @@ fn collect_font_requests(nodes: &[UiNode]) -> Vec<FontRequest> {
     set.into_iter().collect()
 }
 
-fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<String>) {
+fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<String>, Vec<String>) {
     let mut viewport_data: Vec<UiNode> = Vec::new();
     let mut node_view_ids: Vec<String> = Vec::new();
     let mut node_kit_ids: Vec<String> = Vec::new();
+    let mut node_occurrence_ids: Vec<String> = Vec::new();
 
     let ctx = SelectionCtx {
         active_view_id: parsed.active_view_id.as_deref(),
-        selected_view_primary: parsed.selected_view_primary.as_deref(),
-        selected_view_secondary: &parsed.selected_view_secondary,
-        hovered_view_id: parsed.hovered_view_id.as_deref(),
+        selected_occurrence_primary: parsed.selected_occurrence_primary.as_deref(),
+        selected_occurrence_secondary: &parsed.selected_occurrence_secondary,
+        hovered_occurrence_id: parsed.hovered_occurrence_id.as_deref(),
     };
 
     let view_map: std::collections::HashMap<String, &ViewMeta> = parsed
@@ -2085,16 +2194,30 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
         .map(|v| (v.view_id.clone(), v))
         .collect();
 
+    // Keyed by occurrence_key (== the referencing token's own id) -- consulted FIRST when
+    // recursing into a child reference, falling back to `view_map` in the common (no override)
+    // case. See `OverriddenOccurrence`/`render_view_nodes`'s `effective_child_kits`.
+    let occurrence_map: std::collections::HashMap<String, &OverriddenOccurrence> = parsed
+        .overridden_occurrences
+        .iter()
+        .map(|o| (o.occurrence_key.clone(), o))
+        .collect();
+
     // A view is never "top-level" or "child" by its own declaration -- that's derived from
     // whether some other view's box currently lists it in `children`. Union every view's own
     // child references (collect_child_view_ids is already used per-view for recursion below;
     // here it's run across the whole project) into one set, so a referenced view is
     // automatically excluded from the top-level grid no matter which view claims it, with no
-    // separate flag to keep in sync by hand.
+    // separate flag to keep in sync by hand. View-id granularity here is correct: a view is
+    // "referenced" (non-root) if ANY occurrence references it, regardless of which one.
     let referenced: std::collections::HashSet<String> = parsed
         .project_views
         .iter()
-        .flat_map(|v| collect_child_view_ids(&v.resolved_kits))
+        .flat_map(|v| {
+            collect_child_view_ids(&v.resolved_kits)
+                .into_iter()
+                .map(|r| r.view_id)
+        })
         .collect();
 
     let top_views: Vec<(&ViewMeta, &Vec<ResolvedKit>, Option<[f32; 2]>)> = parsed
@@ -2127,9 +2250,12 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
         viewport_data.push(absolute_box("Column", pos.unwrap()));
         node_view_ids.push(String::new());
         node_kit_ids.push(String::new());
+        node_occurrence_ids.push(String::new());
         render_view_nodes(
             kits,
             &view.hints,
+            &view.view_id,
+            // A root view is unreferenced by definition, so it has exactly one occurrence: itself.
             &view.view_id,
             &ctx,
             Some(cell_idx),
@@ -2140,8 +2266,10 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
             &mut viewport_data,
             &mut node_view_ids,
             &mut node_kit_ids,
+            &mut node_occurrence_ids,
             0,
             &view_map,
+            &occurrence_map,
         );
     }
 
@@ -2158,12 +2286,14 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
         viewport_data.push(transparent_box(None, "Column", [PAD; 4]));
         node_view_ids.push(String::new());
         node_kit_ids.push(String::new());
+        node_occurrence_ids.push(String::new());
 
         for row in flowing.chunks(COLS) {
             let row_idx = viewport_data.len();
             viewport_data.push(transparent_box(Some(root_idx), "Row", [0.0, 0.0, GAP, 0.0]));
             node_view_ids.push(String::new());
             node_kit_ids.push(String::new());
+            node_occurrence_ids.push(String::new());
 
             for (view, kits, _) in row {
                 let cell_idx = viewport_data.len();
@@ -2174,10 +2304,12 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
                 ));
                 node_view_ids.push(String::new());
                 node_kit_ids.push(String::new());
+                node_occurrence_ids.push(String::new());
 
                 render_view_nodes(
                     kits,
                     &view.hints,
+                    &view.view_id,
                     &view.view_id,
                     &ctx,
                     Some(cell_idx),
@@ -2187,8 +2319,10 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
                     &mut viewport_data,
                     &mut node_view_ids,
                     &mut node_kit_ids,
+                    &mut node_occurrence_ids,
                     0,
                     &view_map,
+                    &occurrence_map,
                 );
             }
         }
@@ -2196,7 +2330,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
 
     snap_text_weights(&mut viewport_data, &parsed.font_facts);
 
-    (viewport_data, node_view_ids, node_kit_ids)
+    (viewport_data, node_view_ids, node_kit_ids, node_occurrence_ids)
 }
 
 fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
@@ -2336,7 +2470,7 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
             // A Text/Image primitive gets the common ops only — no add-child sub-menu, since it
             // has nowhere to attach them.
             let mut ops = common_item_ops();
-            if primitive_for_view(view) == "box" {
+            if primitive_for_kits(&view.resolved_kits, &view.hints) == "box" {
                 // Prepend container ops so "Add Box/Text/Image" groups appear above the generic
                 // rename/clone/lock/... — visual grouping the original hardcoded menu had.
                 let mut container = container_item_ops();
@@ -2373,7 +2507,7 @@ pub fn on_resolve(input: String) -> FnResult<String> {
 
     let _ = extism_pdk::var::set("last_resolve_input", input.as_str());
 
-    let (viewport_data, node_view_ids, node_kit_ids) = build_viewport(&parsed);
+    let (viewport_data, node_view_ids, node_kit_ids, node_occurrence_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
     let font_requests = collect_font_requests(&viewport_data);
     let result = OnResolveResult {
@@ -2381,6 +2515,7 @@ pub fn on_resolve(input: String) -> FnResult<String> {
         viewport_data,
         node_view_ids,
         node_kit_ids,
+        node_occurrence_ids,
         font_requests,
         viewport_data_binary,
     };
@@ -2418,25 +2553,27 @@ pub fn on_selection_change(input: String) -> FnResult<String> {
             viewport_data: vec![],
             node_view_ids: vec![],
             node_kit_ids: vec![],
+            node_occurrence_ids: vec![],
             viewport_data_binary: None,
         })?);
     }
 
     let mut parsed: OnResolveInput = serde_json::from_slice(&last_bytes).unwrap_or_default();
-    parsed.selected_view_primary = selection.primary;
-    parsed.selected_view_secondary = selection.secondary;
+    parsed.selected_occurrence_primary = selection.primary;
+    parsed.selected_occurrence_secondary = selection.secondary;
     // Keep active_view_id in sync so the correct view gets its selection highlight.
     if selection.active_view_id.is_some() {
         parsed.active_view_id = selection.active_view_id;
     }
-    parsed.hovered_view_id = selection.hovered_view_id;
+    parsed.hovered_occurrence_id = selection.hovered_occurrence_id;
 
-    let (viewport_data, node_view_ids, node_kit_ids) = build_viewport(&parsed);
+    let (viewport_data, node_view_ids, node_kit_ids, node_occurrence_ids) = build_viewport(&parsed);
     let viewport_data_binary = encode_viewport_data_binary(&viewport_data);
     Ok(serde_json::to_string(&OnSelectionChangeResult {
         viewport_data,
         node_view_ids,
         node_kit_ids,
+        node_occurrence_ids,
         viewport_data_binary,
     })?)
 }
@@ -2484,7 +2621,7 @@ mod selection_change_input_wire_tests {
     // from real camelCase JSON -- exactly what manager.svelte.ts's payload looks like.
     #[test]
     fn deserializes_camel_case_from_js() {
-        let json = r##"{"primary":"v1","secondary":[],"activeViewId":"v1","hoveredViewId":"v2"}"##;
+        let json = r##"{"primary":"v1","secondary":[],"activeViewId":"v1","hoveredOccurrenceId":"v2"}"##;
         let input: OnSelectionChangeInput = serde_json::from_str(json)
             .expect("should deserialize camelCase JSON sent by manager.svelte.ts");
         assert_eq!(input.primary.as_deref(), Some("v1"));
@@ -2494,17 +2631,17 @@ mod selection_change_input_wire_tests {
             "activeViewId must not silently become None"
         );
         assert_eq!(
-            input.hovered_view_id.as_deref(),
+            input.hovered_occurrence_id.as_deref(),
             Some("v2"),
-            "hoveredViewId must not silently become None"
+            "hoveredOccurrenceId must not silently become None"
         );
     }
 
     #[test]
-    fn hovered_view_id_null_deserializes_to_none() {
-        let json = r##"{"primary":null,"secondary":[],"activeViewId":null,"hoveredViewId":null}"##;
+    fn hovered_occurrence_id_null_deserializes_to_none() {
+        let json = r##"{"primary":null,"secondary":[],"activeViewId":null,"hoveredOccurrenceId":null}"##;
         let input: OnSelectionChangeInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.hovered_view_id, None);
+        assert_eq!(input.hovered_occurrence_id, None);
     }
 }
 
@@ -2567,13 +2704,14 @@ mod position_wire_tests {
             resolved_kits: vec![],
             view_hints: std::collections::HashMap::new(),
             project_views: vec![view],
-            selected_view_primary: None,
-            selected_view_secondary: vec![],
-            hovered_view_id: None,
+            overridden_occurrences: vec![],
+            selected_occurrence_primary: None,
+            selected_occurrence_secondary: vec![],
+            hovered_occurrence_id: None,
             font_facts: Default::default(),
         };
 
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
         println!(
             "viewport JSON: {}",
             serde_json::to_string_pretty(&viewport).unwrap()
@@ -2621,7 +2759,14 @@ mod selection_and_hover_tests {
     // produces; Charter reads its own `children` field's view_refs to nest).
     fn children_prop(ids: Vec<String>) -> ResolvedProperty {
         let mut p = box_prop("children", "");
-        p.view_refs = Some(ids);
+        p.view_refs = Some(
+            ids.into_iter()
+                .map(|id| ViewRef {
+                    token_id: format!("{id}-token"),
+                    view_id: id,
+                })
+                .collect(),
+        );
         p
     }
 
@@ -2673,9 +2818,10 @@ mod selection_and_hover_tests {
             resolved_kits: vec![],
             view_hints: std::collections::HashMap::new(),
             project_views,
-            selected_view_primary: primary.map(str::to_string),
-            selected_view_secondary: vec![],
-            hovered_view_id: hovered.map(str::to_string),
+            overridden_occurrences: vec![],
+            selected_occurrence_primary: primary.map(str::to_string),
+            selected_occurrence_secondary: vec![],
+            hovered_occurrence_id: hovered.map(str::to_string),
             font_facts: Default::default(),
         }
     }
@@ -2683,7 +2829,7 @@ mod selection_and_hover_tests {
     #[test]
     fn text_primitive_view_gets_selected_marking() {
         let input = input(vec![text_view("t1")], Some("t1"), None);
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         let text_idx = node_view_ids
             .iter()
@@ -2702,8 +2848,8 @@ mod selection_and_hover_tests {
     fn referenced_child_view_gets_own_selection_when_it_is_the_active_selection() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let input = input(vec![parent, child], Some("child"), None);
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let input = input(vec![parent, child], Some("child-token"), None);
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         let parent_idx = node_view_ids
             .iter()
@@ -2730,8 +2876,8 @@ mod selection_and_hover_tests {
     fn hover_is_independent_from_selection() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let input = input(vec![parent, child], Some("parent"), Some("child"));
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let input = input(vec![parent, child], Some("parent"), Some("child-token"));
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         let parent_idx = node_view_ids.iter().position(|id| id == "parent").unwrap();
         let child_idx = node_view_ids.iter().position(|id| id == "child").unwrap();
@@ -2754,11 +2900,129 @@ mod selection_and_hover_tests {
     }
 
     #[test]
+    fn overridden_occurrence_changes_only_its_own_rendering_and_selection() {
+        // The same view ("target") is referenced twice, by two different parents, via two
+        // different token ids -- one plain (parent_a, auto-generated token_id "target-token" via
+        // children_prop), one carrying an axis override that changes its own rendered width
+        // (parent_b, token_id "target-token-override"). Both occurrences must render
+        // independently: the plain one uses target's own resolution untouched, the overridden
+        // one uses OverriddenOccurrence's resolved_kits -- mirroring resolve.ts's
+        // resolveViewsFromRows exactly (the shared `views` entry for `target` is never mutated by
+        // an override; only the specific occurrence that names it is).
+        let target = box_view("target", vec![]);
+        let parent_a = box_view("parent-a", vec!["target".to_string()]);
+
+        let parent_b = ViewMeta {
+            view_id: "parent-b".to_string(),
+            view_name: "parent-b".to_string(),
+            hints: std::collections::HashMap::new(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("width".to_string(), box_prop("width", "100px"));
+                    let mut children = box_prop("children", "");
+                    children.view_refs = Some(vec![ViewRef {
+                        view_id: "target".to_string(),
+                        token_id: "target-token-override".to_string(),
+                    }]);
+                    m.insert("children".to_string(), children);
+                    m
+                },
+            }],
+        };
+
+        let overridden = OverriddenOccurrence {
+            occurrence_key: "target-token-override".to_string(),
+            view_id: "target".to_string(),
+            resolved_kits: vec![ResolvedKit {
+                kit_id: "kit".to_string(),
+                kit_name: "Kit".to_string(),
+                properties: {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("width".to_string(), box_prop("width", "250px"));
+                    m
+                },
+            }],
+        };
+
+        let mut resolve_input = input(vec![parent_a, parent_b, target], None, None);
+        resolve_input.overridden_occurrences = vec![overridden];
+
+        let (viewport, node_view_ids, _node_kit_ids, node_occurrence_ids) =
+            build_viewport(&resolve_input);
+
+        let target_indices: Vec<usize> = node_view_ids
+            .iter()
+            .enumerate()
+            .filter(|(_, id)| *id == "target")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(
+            target_indices.len(),
+            2,
+            "target should render once per occurrence, not deduped by view_id"
+        );
+
+        let occ_ids: Vec<String> = target_indices
+            .iter()
+            .map(|&i| node_occurrence_ids[i].clone())
+            .collect();
+        assert_ne!(
+            occ_ids[0], occ_ids[1],
+            "the two occurrences must have distinct occurrence ids"
+        );
+        assert!(occ_ids.contains(&"target-token".to_string()));
+        assert!(occ_ids.contains(&"target-token-override".to_string()));
+
+        for &i in &target_indices {
+            let UiNode::Box(box_data) = &viewport[i] else {
+                panic!("expected Box")
+            };
+            if node_occurrence_ids[i] == "target-token-override" {
+                assert_eq!(
+                    box_data.width,
+                    Extent::Px(250.0),
+                    "the overridden occurrence renders its OWN resolved_kits"
+                );
+            } else {
+                assert_eq!(
+                    box_data.width,
+                    Extent::Px(100.0),
+                    "the plain occurrence renders target's own resolution, untouched by its sibling's override"
+                );
+            }
+        }
+
+        // Selecting the overridden occurrence's key marks only that one node -- its sibling
+        // occurrence of the same view_id stays unselected.
+        resolve_input.selected_occurrence_primary = Some("target-token-override".to_string());
+        let (viewport2, node_view_ids2, _k2, occ2) = build_viewport(&resolve_input);
+        for (i, id) in node_view_ids2.iter().enumerate() {
+            if id != "target" {
+                continue;
+            }
+            let UiNode::Box(box_data) = &viewport2[i] else {
+                panic!("expected Box")
+            };
+            if occ2[i] == "target-token-override" {
+                assert_eq!(box_data.selected, 2, "the overridden occurrence is selected");
+            } else {
+                assert_eq!(
+                    box_data.selected, 0,
+                    "the plain occurrence of the SAME view_id must not also show selected"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn node_view_ids_tags_nested_child_with_its_own_view_id_not_parents() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let input = input(vec![parent, child], None, None);
-        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         assert!(node_view_ids.contains(&"parent".to_string()));
         assert!(node_view_ids.contains(&"child".to_string()));
@@ -2767,7 +3031,7 @@ mod selection_and_hover_tests {
     #[test]
     fn structural_grid_scaffolding_has_empty_view_id() {
         let input = input(vec![box_view("v1", vec![])], None, None);
-        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
         assert!(
             node_view_ids.contains(&String::new()),
             "root/row/cell wrapper boxes should be tagged as belonging to no view"
@@ -2777,7 +3041,7 @@ mod selection_and_hover_tests {
     #[test]
     fn node_kit_ids_is_parallel_to_node_view_ids_and_empty_for_structural_nodes() {
         let input = input(vec![box_view("v1", vec![])], None, None);
-        let (_viewport, node_view_ids, node_kit_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         assert_eq!(
             node_view_ids.len(),
@@ -2809,7 +3073,7 @@ mod selection_and_hover_tests {
             properties: std::collections::HashMap::new(),
         });
         let input = input(vec![view], None, None);
-        let (_viewport, node_view_ids, node_kit_ids) = build_viewport(&input);
+        let (_viewport, node_view_ids, node_kit_ids, _node_occurrence_ids) = build_viewport(&input);
 
         let v1_idx = node_view_ids.iter().position(|id| id == "v1").unwrap();
         assert_eq!(node_kit_ids[v1_idx], "kit-2");
@@ -2835,6 +3099,7 @@ mod selection_and_hover_tests {
             viewport_data: vec![],
             node_view_ids: vec![],
             node_kit_ids: vec![],
+            node_occurrence_ids: vec![],
             font_requests: vec![],
             viewport_data_binary: None,
         };
@@ -3129,6 +3394,7 @@ mod selection_and_hover_tests {
             viewport_data: vec![],
             node_view_ids: vec![],
             node_kit_ids: vec![],
+            node_occurrence_ids: vec![],
             viewport_data_binary: None,
         };
         let json = serde_json::to_string(&result).unwrap();
@@ -3162,7 +3428,14 @@ mod children_containment_tests {
     // being true only ever means recursion actually worked.
     fn children_prop(ids: Vec<String>) -> ResolvedProperty {
         let mut p = prop("children", "");
-        p.view_refs = Some(ids);
+        p.view_refs = Some(
+            ids.into_iter()
+                .map(|id| ViewRef {
+                    token_id: format!("{id}-token"),
+                    view_id: id,
+                })
+                .collect(),
+        );
         p
     }
 
@@ -3213,9 +3486,10 @@ mod children_containment_tests {
             resolved_kits: vec![],
             view_hints: std::collections::HashMap::new(),
             project_views,
-            selected_view_primary: None,
-            selected_view_secondary: vec![],
-            hovered_view_id: None,
+            overridden_occurrences: vec![],
+            selected_occurrence_primary: None,
+            selected_occurrence_secondary: vec![],
+            hovered_occurrence_id: None,
             font_facts: Default::default(),
         }
     }
@@ -3270,7 +3544,7 @@ mod children_containment_tests {
     fn box_parent_recurses_into_a_text_child() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = text_view("child", vec![]);
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3284,7 +3558,7 @@ mod children_containment_tests {
     fn text_parent_recurses_into_a_text_child() {
         let parent = text_view("parent", vec!["child".to_string()]);
         let child = text_view("child", vec![]);
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3298,7 +3572,7 @@ mod children_containment_tests {
     fn text_parent_skips_a_box_child() {
         let parent = text_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
+        let (_viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input(vec![parent, child]));
 
         assert!(
             !node_view_ids.contains(&"child".to_string()),
@@ -3310,7 +3584,7 @@ mod children_containment_tests {
     fn box_parent_still_recurses_into_a_box_child() {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
-        let (viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child]));
+        let (viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input(vec![parent, child]));
 
         let child_idx = node_view_ids.iter().position(|id| id == "child");
         assert!(
@@ -3328,7 +3602,7 @@ mod children_containment_tests {
         let parent = box_view("parent", vec!["child".to_string()]);
         let child = box_view("child", vec![]);
         let orphan = box_view("orphan", vec![]);
-        let (_viewport, node_view_ids, _node_kit_ids) = build_viewport(&input(vec![parent, child, orphan]));
+        let (_viewport, node_view_ids, _node_kit_ids, _node_occurrence_ids) = build_viewport(&input(vec![parent, child, orphan]));
 
         let child_occurrences = node_view_ids.iter().filter(|id| **id == "child").count();
         assert_eq!(
@@ -3705,6 +3979,7 @@ mod text_paint_properties_tests {
             viewport_data: vec![],
             node_view_ids: vec![],
             node_kit_ids: vec![],
+            node_occurrence_ids: vec![],
             font_requests: vec![],
             viewport_data_binary: Some("AAAA".to_string()),
         };
@@ -4193,6 +4468,7 @@ mod font_facts_tests {
             viewport_data: vec![],
             node_view_ids: vec![],
             node_kit_ids: vec![],
+            node_occurrence_ids: vec![],
             font_requests: vec![FontRequest {
                 family: "Lato".to_string(),
                 weight: 700,
