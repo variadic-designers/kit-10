@@ -71,12 +71,23 @@ export const initEditorDB: (dialect: SchemaDialect) => Promise<void> = async (di
 	await down(dialect as any);
 	await up(dialect as any);
 
-	await dialect.insertInto('workspaces').values({ name: 'Default' }).execute();
-	const builtinPlugins = await registerBuiltinPlugins(dialect);
-	await seedDemoProject(dialect, builtinPlugins);
-	await seedJuiceLandingPage(dialect, builtinPlugins);
-	await seedGymLandingPage(dialect, builtinPlugins);
-	await seedMerchLandingPage(dialect, builtinPlugins);
+	// One transaction for the whole seed, not the implicit per-statement autocommit every
+	// un-transacted insert used to pay -- four demo projects' worth of kits/views/tokens/render
+	// entries is thousands of individual statements, each separately durable-committed to
+	// PGlite's IndexedDB backing store, which is what made first load take ~50s. Same fix, same
+	// rationale, as cloneViewSubtree/instantiateKitDefaults (api/index.ts): neither
+	// registerBuiltinPlugins nor any seed function opens its own transaction, they just use
+	// whatever `dialect`/`trx` handle they're given (a `Transaction<Schema>` satisfies a
+	// `dialect: SchemaDialect` parameter fine). Migrations stay outside the transaction --
+	// they're DDL, run once, and aren't the actual bottleneck here.
+	await dialect.transaction().execute(async (trx) => {
+		await trx.insertInto('workspaces').values({ name: 'Default' }).execute();
+		const builtinPlugins = await registerBuiltinPlugins(trx);
+		await seedDemoProject(trx, builtinPlugins);
+		await seedJuiceLandingPage(trx, builtinPlugins);
+		await seedGymLandingPage(trx, builtinPlugins);
+		await seedMerchLandingPage(trx, builtinPlugins);
+	});
 
 	console.log('-------- Projects --------');
 	const projects = await dialect.selectFrom('projects').selectAll().execute();

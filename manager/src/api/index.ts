@@ -1404,6 +1404,23 @@ async function findOrCreateLayer(
 	return { layerId, created, snippetId: snippet.id };
 }
 
+// Every self-transacting API method below opens its own transaction via this instead of a bare
+// `withTransaction(db, ...)` -- Kysely's `Transaction` throws ("calling the transaction
+// method for a Transaction is not supported") if you call `.transaction()` on a handle that's
+// already one, so a caller that wraps a whole batch of API calls in its own outer transaction
+// (initEditorDB's seeding, see index.ts) would crash the instant any individual call reached one
+// of these methods. `db.isTransaction` (a real Kysely/Transaction getter) lets this degrade to
+// just running `fn` against the existing transaction instead of nesting -- correct either way: a
+// standalone call still gets its own real transaction exactly as before, one already inside a
+// larger transaction just joins it instead of double-transacting.
+async function withTransaction<T>(
+	db: SchemaDialect,
+	fn: (trx: SchemaDialect) => Promise<T>
+): Promise<T> {
+	if (db.isTransaction) return fn(db);
+	return db.transaction().execute(fn);
+}
+
 // A conditioned layer (>=1 condition) left with zero render entries across its snippet is dead
 // weight -- delete it (cascade drops its snippet + conditions). The null/base layer (0 conditions)
 // is never GC'd -- it's the fallback write target and may legitimately be empty. Shared by
@@ -1460,7 +1477,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	exportProject: async (projectId: string) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const project = await trx
 				.selectFrom('projects')
 				.selectAll()
@@ -1615,7 +1632,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			);
 		}
 
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const newId = () => crypto.randomUUID();
 			const idMap = (rows: { id: string }[]) =>
 				new Map<string, string>(rows.map((row) => [row.id, newId()]));
@@ -1887,7 +1904,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	deleteView: async (viewId: string) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			const view = await trx
 				.selectFrom('views')
 				.where('views.id', '=', viewId)
@@ -1900,7 +1917,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	deleteViews: async (viewIds: string[]) => {
 		if (!viewIds.length) return;
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			const projectIds = await trx
 				.selectFrom('views')
 				.where('views.id', 'in', viewIds)
@@ -1951,7 +1968,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	attachKitToComposition: async (kitId: string, viewId: string) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const last = await trx
 				.selectFrom('compositions')
 				.select('priority_index')
@@ -1979,7 +1996,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	setKitCompositionOrder: async (viewId: string, orderedKitIds: string[]) => {
 		if (orderedKitIds.length === 0) return;
 		const n = orderedKitIds.length;
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			const park = sql.join(
 				orderedKitIds.map((kitId, i) => sql`when ${kitId} then ${-(i + 1)}`),
 				sql` `
@@ -2040,7 +2057,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		const compositionAlias = value.type === 'view' ? alias : null;
 		// find-then-write in one transaction so two rapid upserts can't each miss and insert a
 		// duplicate view token for the same alias.
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const existing = await trx
 				.selectFrom('tokens')
 				.where('tokens.view_id', '=', viewId)
@@ -2082,7 +2099,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	reorderViewRefs: async (orderedTokenIds: string[]) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			for (let i = 0; i < orderedTokenIds.length; i++) {
 				await trx
 					.updateTable('tokens')
@@ -2110,7 +2127,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	// it's building a fresh view's OWN children list from a Kit's default template, not a
 	// user-initiated "Clone this view" action with a sibling relationship to preserve.
 	cloneViewSubtree: async (viewId: string, compositionKey: string) =>
-		db.transaction().execute(async (trx) => {
+		withTransaction(db, async (trx) => {
 			const cloned = await cloneViewSubtreeImpl(trx, viewId, compositionKey);
 			if (!cloned) return null;
 			await attachCloneAsSibling(trx, cloned.projectId, viewId, cloned.cloneId, compositionKey);
@@ -2118,7 +2135,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		}),
 
 	instantiateKitDefaults: async (viewId: string) =>
-		db.transaction().execute((trx) => instantiateKitDefaultsImpl(trx, viewId)),
+		withTransaction(db, (trx) => instantiateKitDefaultsImpl(trx, viewId)),
 
 	updateTokenAlias: async (tokenId: string, alias: string) => {
 		await db.updateTable('tokens').set({ alias }).where('tokens.id', '=', tokenId).execute();
@@ -2135,7 +2152,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		const kitId = 'kitId' in newScope ? newScope.kitId : null;
 		const viewId = 'viewId' in newScope ? newScope.viewId : null;
 
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const token = await trx
 				.selectFrom('tokens')
 				.where('tokens.id', '=', tokenId)
@@ -2221,7 +2238,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		hint?: string[],
 		defaultValue?: any
 	) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const axis = await trx
 				.insertInto('axes')
 				.values({
@@ -2269,7 +2286,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	deleteAxisCascade: async (axisId: string) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			// axis_args -> axes is ON DELETE restrict: clear the axis's args first.
 			await trx.deleteFrom('axis_args').where('axis_args.axis_id', '=', axisId).execute();
 			// layer_axis_values -> axis_values is ON DELETE restrict, and axis_values -> axes is
@@ -2295,7 +2312,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	createAxisValue: async (axisId: string, value: any) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const last = await trx
 				.selectFrom('axis_values')
 				.select('priority_index')
@@ -2312,7 +2329,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	updateAxisValue: async (axisValueId: string, value: AxisValueType) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			const prev = await trx
 				.selectFrom('axis_values')
 				.select(['axis_id', 'value'])
@@ -2367,7 +2384,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	deleteAxisValueSafe: async (axisValueId: string) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			await trx
 				.deleteFrom('layer_axis_values')
 				.where('layer_axis_values.axis_value_id', '=', axisValueId)
@@ -2397,7 +2414,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	consumeAxis: async (kitId: string, axisId: string) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const last = await trx
 				.selectFrom('axes_consumed')
 				.select('priority_index')
@@ -2452,7 +2469,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	setConsumedAxesOrder: async (kitId: string, orderedAxisIds: string[]) => {
 		if (orderedAxisIds.length === 0) return;
 		const n = orderedAxisIds.length;
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			const park = sql.join(
 				orderedAxisIds.map((axisId, i) => sql`when ${axisId} then ${-(i + 1)}`),
 				sql` `
@@ -2598,7 +2615,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	removePropertyFromLayer: async (layerId: string, property: string) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			// Drop the entry(ies) for this property on the layer's snippet(s).
 			const entries = await trx
 				.selectFrom('render_entries')
@@ -2624,7 +2641,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	createLayerWithConditions: async (kitId: string, axisValueIds: string[]) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const result = await findOrCreateLayer(trx, kitId, axisValueIds);
 			if (!result) return undefined;
 			return { layerId: result.layerId, created: result.created };
@@ -2646,7 +2663,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		targetKitId: string,
 		targetAxisValueIds: string[]
 	) => {
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const sourceLayer = await trx
 				.selectFrom('layers')
 				.where('id', '=', sourceLayerId)
@@ -2702,7 +2719,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	setLayerChildren: async (layerId: string, viewIds: string[]) => {
-		await db.transaction().execute(async (trx) => {
+		await withTransaction(db, async (trx) => {
 			let snippet = await trx
 				.selectFrom('render_snippets')
 				.where('render_snippets.layer_id', '=', layerId)
@@ -2783,7 +2800,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	updateLayerAxisValues: async (layerId: string, axisValueIds: string[]) => {
 		const target = new Set(axisValueIds);
-		return await db.transaction().execute(async (trx) => {
+		return await withTransaction(db, async (trx) => {
 			const layer = await trx
 				.selectFrom('layers')
 				.where('id', '=', layerId)
