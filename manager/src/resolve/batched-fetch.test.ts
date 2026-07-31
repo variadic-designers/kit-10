@@ -100,7 +100,7 @@ describe('fetchResolutionRows + resolveViewsFromRows (batched fetch parity)', ()
 		const { projectId, viewId } = await seedProject();
 
 		const rows = await fetchResolutionRows(ctx.db, projectId);
-		const batchedViews = resolveViewsFromRows(rows);
+		const { views: batchedViews } = resolveViewsFromRows(rows);
 		const batchedView = batchedViews.find((v) => v.viewId === viewId);
 		expect(batchedView).toBeDefined();
 
@@ -115,7 +115,7 @@ describe('fetchResolutionRows + resolveViewsFromRows (batched fetch parity)', ()
 
 		const rows = await fetchResolutionRows(ctx.db, proj.id);
 		expect(rows.viewRows).toEqual([]);
-		expect(resolveViewsFromRows(rows)).toEqual([]);
+		expect(resolveViewsFromRows(rows)).toEqual({ views: [], overriddenOccurrences: [] });
 	});
 
 	it('handles a view with no composed kits', async () => {
@@ -124,7 +124,7 @@ describe('fetchResolutionRows + resolveViewsFromRows (batched fetch parity)', ()
 		const view = (await ctx.api.createViewInProject(proj.id, 'Empty View'))!;
 
 		const rows = await fetchResolutionRows(ctx.db, proj.id);
-		const views = resolveViewsFromRows(rows);
+		const { views } = resolveViewsFromRows(rows);
 		expect(views).toHaveLength(1);
 		expect(views[0]!.viewId).toBe(view.id);
 		expect(views[0]!.resolvedKits).toEqual([]);

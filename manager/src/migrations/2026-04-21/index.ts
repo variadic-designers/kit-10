@@ -18,12 +18,7 @@ interface TokenValueView {
 	view_id: string;
 }
 
-interface TokenValueViewList {
-	type: 'view-list';
-	view_ids: string[];
-}
-
-type TokenValue = TokenValueScalar | TokenValueView | TokenValueViewList;
+type TokenValue = TokenValueScalar | TokenValueView;
 
 // --- Axis value types (condition side) ---
 
@@ -91,6 +86,7 @@ export interface DB2026_04_21 {
 	render_entries: RenderEntriesTable;
 
 	tokens: TokensTable;
+	token_axis_overrides: TokenAxisOverridesTable;
 
 	plugins: PluginsTable;
 
@@ -217,10 +213,20 @@ export interface TokensTable {
 	id: Generated<string>;
 	project_id: string;
 	alias: string | null;
+	composition_alias: string | null;
 	value: JSONColumnType<TokenValue> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	kit_id: string | null;
 	view_id: string | null;
+	priority_index: Generated<number>;
+}
+
+// ------------------------------
+
+export interface TokenAxisOverridesTable {
+	token_id: string;
+	axis_id: string;
+	value: JSONColumnType<ArgValue> | null;
 }
 
 // ------------------------------
@@ -376,22 +382,28 @@ export async function up(dialect: DAny) {
 			col.notNull().references('projects.id').onDelete('restrict')
 		)
 		.addColumn('alias', 'varchar(255)')
+		.addColumn('composition_alias', 'varchar(255)')
 		.addColumn('value', 'jsonb')
 		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
 		.addColumn('kit_id', 'uuid', (col) => col.references('kits.id').onDelete('cascade'))
 		.addColumn('view_id', 'uuid', (col) => col.references('views.id').onDelete('cascade'))
+		.addColumn('priority_index', 'integer', (col) => col.notNull().defaultTo(0))
 		.addCheckConstraint(
 			'token_scope_check',
 			sql`(kit_id IS NOT NULL AND view_id IS NULL) OR (view_id IS NOT NULL AND kit_id IS NULL) OR (kit_id IS NULL AND view_id IS NULL)`
 		)
 		.execute();
 
+	// `view`-typed rows are exempt from per-scope alias uniqueness -- multiple `view` tokens can
+	// share one alias (e.g. `children`), and even the same target view_id (a view referenced by
+	// more than one simultaneously-active `view` token). Scalar/null-valued tokens keep hard
+	// alias-uniqueness per scope, unchanged.
 	await dialect.schema
 		.createIndex('tokens_project_alias_unique')
 		.ifNotExists()
 		.on('tokens')
 		.columns(['project_id', 'alias'])
-		.where(sql<SqlBool>`kit_id IS NULL AND view_id IS NULL`)
+		.where(sql<SqlBool>`kit_id IS NULL AND view_id IS NULL AND (value IS NULL OR value ->> 'type' <> 'view')`)
 		.execute();
 
 	await dialect.schema
@@ -399,7 +411,7 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.on('tokens')
 		.columns(['kit_id', 'alias'])
-		.where(sql<SqlBool>`kit_id IS NOT NULL`)
+		.where(sql<SqlBool>`kit_id IS NOT NULL AND (value IS NULL OR value ->> 'type' <> 'view')`)
 		.execute();
 
 	await dialect.schema
@@ -407,7 +419,16 @@ export async function up(dialect: DAny) {
 		.ifNotExists()
 		.on('tokens')
 		.columns(['view_id', 'alias'])
-		.where(sql<SqlBool>`view_id IS NOT NULL`)
+		.where(sql<SqlBool>`view_id IS NOT NULL AND (value IS NULL OR value ->> 'type' <> 'view')`)
+		.execute();
+
+	await dialect.schema
+		.createTable('token_axis_overrides')
+		.ifNotExists()
+		.addColumn('token_id', 'uuid', (col) => col.notNull().references('tokens.id').onDelete('cascade'))
+		.addColumn('axis_id', 'uuid', (col) => col.notNull().references('axes.id').onDelete('cascade'))
+		.addColumn('value', 'jsonb')
+		.addPrimaryKeyConstraint('token_axis_overrides_pk', ['token_id', 'axis_id'])
 		.execute();
 
 	await dialect.schema
@@ -510,6 +531,7 @@ export async function down(dialect: DAny) {
 	await dialect.schema.dropTable('axes_consumed').ifExists().cascade().execute();
 	await dialect.schema.dropTable('axis_values').ifExists().cascade().execute();
 	await dialect.schema.dropTable('compositions').ifExists().cascade().execute();
+	await dialect.schema.dropTable('token_axis_overrides').ifExists().cascade().execute();
 	await dialect.schema.dropTable('tokens').ifExists().cascade().execute();
 	await dialect.schema.dropTable('kits').ifExists().cascade().execute();
 	await dialect.schema.dropTable('views').ifExists().cascade().execute();

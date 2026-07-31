@@ -11,6 +11,7 @@ function emptyRows(): ResolutionRows {
 		projectTokens: [],
 		viewTokenRows: [],
 		kitTokenRows: [],
+		tokenAxisOverrides: [],
 		layers: [],
 		conditions: [],
 		entries: []
@@ -25,6 +26,7 @@ function clone(rows: ResolutionRows): ResolutionRows {
 		projectTokens: [...rows.projectTokens],
 		viewTokenRows: [...rows.viewTokenRows],
 		kitTokenRows: [...rows.kitTokenRows],
+		tokenAxisOverrides: [...rows.tokenAxisOverrides],
 		layers: [...rows.layers],
 		conditions: [...rows.conditions],
 		entries: [...rows.entries]
@@ -54,9 +56,45 @@ describe('rowsKey (input-level dedup)', () => {
 				'axisArgsRows',
 				(r) => r.axisArgsRows.push({ view_id: 'v1', kit_id: 'k1', axis_id: 'a1', value: null })
 			],
-			['projectTokens', (r) => r.projectTokens.push({ alias: 'p', value: null })],
-			['viewTokenRows', (r) => r.viewTokenRows.push({ view_id: 'v1', alias: 'p', value: null })],
-			['kitTokenRows', (r) => r.kitTokenRows.push({ alias: 'p', value: null, kit_id: 'k1' })],
+			[
+				'projectTokens',
+				(r) =>
+					r.projectTokens.push({
+						id: 't1',
+						alias: 'p',
+						composition_alias: null,
+						value: null,
+						priority_index: 0
+					})
+			],
+			[
+				'viewTokenRows',
+				(r) =>
+					r.viewTokenRows.push({
+						id: 't1',
+						view_id: 'v1',
+						alias: 'p',
+						composition_alias: null,
+						value: null,
+						priority_index: 0
+					})
+			],
+			[
+				'kitTokenRows',
+				(r) =>
+					r.kitTokenRows.push({
+						id: 't1',
+						alias: 'p',
+						composition_alias: null,
+						value: null,
+						kit_id: 'k1',
+						priority_index: 0
+					})
+			],
+			[
+				'tokenAxisOverrides',
+				(r) => r.tokenAxisOverrides.push({ token_id: 't1', axis_id: 'a1', value: null })
+			],
 			['layers', (r) => r.layers.push({ id: 'l1', kit_id: 'k1' })],
 			[
 				'conditions',
@@ -104,6 +142,6 @@ describe('resolveViewsFromRows (purity)', () => {
 	});
 
 	it('empty rows produce empty output', () => {
-		expect(resolveViewsFromRows(emptyRows())).toEqual([]);
+		expect(resolveViewsFromRows(emptyRows())).toEqual({ views: [], overriddenOccurrences: [] });
 	});
 });

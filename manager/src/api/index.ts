@@ -12,25 +12,24 @@ import { sql, type SelectQueryBuilder } from 'kysely';
 import {
 	fetchKitExportShapes,
 	fetchViewAxisArgs,
+	fetchViewCompositions,
 	type KitExportShape,
-	type ViewAxisArgRow
+	type ViewAxisArgRow,
+	type ViewCompositionRow
 } from '../resolve/export-shape.js';
 
-// TokenValue's view_id/view_ids (type: 'view' / 'view-list') are references to view rows, but they
-// live inside a jsonb blob rather than a real FK column -- the schema has no way to enforce or
-// cascade them. Importing a project must remap both variants, or an imported view/view-list token
-// would point at the *source* project's views (or nothing, if that project no longer exists) --
-// view-list is the mechanism the live UI actually uses for composition/children, so missing this
-// variant silently corrupts every imported project's view nesting, not just an edge case.
+// TokenValue's view_id (type: 'view') is a reference to a view row, but it lives inside a jsonb
+// blob rather than a real FK column -- the schema has no way to enforce or cascade it. Importing a
+// project must remap it, or an imported `view` token would point at the *source* project's views
+// (or nothing, if that project no longer exists) -- `view` tokens are the mechanism the live UI
+// actually uses for composition/children (N sharing one alias), so missing this would silently
+// corrupt every imported project's view nesting, not just an edge case.
 function remapTokenValue(
 	value: TokenValue | null,
 	viewIdMap: Map<string, string>
 ): TokenValue | null {
 	if (value && value.type === 'view') {
 		return { ...value, view_id: viewIdMap.get(value.view_id) ?? value.view_id };
-	}
-	if (value && value.type === 'view-list') {
-		return { ...value, view_ids: value.view_ids.map((id) => viewIdMap.get(id) ?? id) };
 	}
 	return value;
 }
@@ -134,10 +133,15 @@ export interface QueryToken {
 	/**
 	 * Set the value of the View-scoped token named `alias`, creating it if this view has none yet.
 	 * A View token overrides a same-named Kit/Project token during resolution (CONCEPTS.md §Tokens),
-	 * so this is the canonical write path for a per-view override (e.g. a view's `children` list) --
-	 * never write through the resolved property's `tokenId`, which is the *declaring* entry's token
-	 * (often a shared Kit-scoped base) rather than this view's own override. `created` is true when a
-	 * new token was inserted, so the caller can attach a render entry iff nothing declares `alias`.
+	 * so this is the canonical write path for a per-view override -- never write through the
+	 * resolved property's `tokenId`, which is the *declaring* entry's token (often a shared
+	 * Kit-scoped base) rather than this view's own override. `created` is true when a new token was
+	 * inserted, so the caller can attach a render entry iff nothing declares `alias`.
+	 *
+	 * NOT for a multi-ref alias like `children`, where more than one `view`-typed token can share
+	 * the alias -- this function's own find-then-write assumes exactly one row per (view, alias),
+	 * so calling it there would arbitrarily overwrite whichever existing row it happens to find.
+	 * Use `addViewRef`/`removeViewRef`/`reorderViewRefs` for that case instead.
 	 */
 	upsertViewToken: (
 		projectId: string,
@@ -146,20 +150,44 @@ export interface QueryToken {
 		value: TokenValue
 	) => Promise<{ id: string; created: boolean }>;
 	/**
+	 * Append one new `view`-typed token row at (viewId, alias), auto-incrementing `priority_index`
+	 * past whatever else is already there. The canonical write path for a multi-ref alias like
+	 * `children` -- never appends onto an existing row, even if `targetViewId` duplicates an
+	 * existing row's target (a view referenced twice under one alias is legal).
+	 */
+	addViewRef: (
+		projectId: string,
+		viewId: string,
+		alias: string,
+		targetViewId: string
+	) => Promise<{ id: string }>;
+	/**
+	 * Delete one specific `view`-typed token row by its own id -- not by (alias, targetViewId),
+	 * since two rows can share the same target. The caller must know which occurrence/row it means
+	 * (its `tokenId`, from `ResolvedProperty.viewRefs`'s `{viewId, tokenId}` entries).
+	 */
+	removeViewRef: (tokenId: string) => Promise<void>;
+	/**
+	 * Bulk-set `priority_index = index-in-array` for each token id, in one transaction. Used to
+	 * persist a drag-reorder of a multi-ref alias's rows (e.g. the Views panel reordering `children`).
+	 */
+	reorderViewRefs: (orderedTokenIds: string[]) => Promise<void>;
+	/**
 	 * Deep-clone a view's subtree: the view + its compositions, axis args, and view-scoped tokens,
-	 * recursively cloning the views referenced by its `view-list` token aliased `compositionKey` so
-	 * every clone owns unique child views (never a shared reference). Returns the new root view's id.
-	 * Pure DB op -- the clone is materialized as rows; resolution then renders it normally (never
-	 * runs inside resolve.ts).
+	 * recursively cloning the views referenced by its `view`-typed tokens aliased `compositionKey`
+	 * (one row per child, not one array-valued token) so every clone owns unique child views (never
+	 * a shared reference). Returns the new root view's id. Pure DB op -- the clone is materialized
+	 * as rows; resolution then renders it normally (never runs inside resolve.ts).
 	 */
 	cloneViewSubtree: (viewId: string, compositionKey: string) => Promise<string | null>;
 	/**
 	 * Eager clone-per-view: instantiate a view's kit-default composition. For every kit-scope
-	 * `view-list` token on a kit the view composes (a composition default, keyed by its own alias),
-	 * deep-clone the referenced template subtree into fresh per-instance views and write them as
-	 * this view's OWN same-aliased view-scope token -- so the instance owns unique children rather
-	 * than sharing the kit's template refs. Name-neutral (no hardcoded field). Idempotent: skips any
-	 * alias the view already overrides; highest-priority composed kit wins per alias.
+	 * `view`-typed token on a kit the view composes (a composition default, one row per default
+	 * child, keyed by its own alias), deep-clone the referenced template subtree into fresh
+	 * per-instance views and write them as this view's OWN same-aliased view-scope tokens -- so the
+	 * instance owns unique children rather than sharing the kit's template refs. Name-neutral (no
+	 * hardcoded field). Idempotent: skips any alias the view already overrides; highest-priority
+	 * composed kit wins per alias.
 	 */
 	instantiateKitDefaults: (viewId: string) => Promise<void>;
 	updateTokenAlias: (tokenId: string, alias: string) => Promise<void>;
@@ -416,6 +444,54 @@ export interface QueryAxisArgs {
 	>;
 }
 
+// One row per axis a specific `view`-typed token reference overrides -- keyed by the referencing
+// token, not the referenced view (whose own axis pick stays in axis_args, unaffected). Mirrors
+// setAxisArg/clearAxisArg/getAllAxisArgs's shape 1:1, just keyed by token_id instead of
+// (view_id, kit_id). See resolve.ts's OverriddenOccurrence/mergeAxisOverrides for how these
+// actually change Layer matching for that one reference's occurrence.
+export interface QueryTokenAxisOverrides {
+	setTokenAxisOverride: (
+		tokenId: string,
+		axisId: string,
+		value: any
+	) => Promise<{ token_id: string; axis_id: string; value: any } | undefined>;
+	clearTokenAxisOverride: (tokenId: string, axisId: string) => Promise<void>;
+	getTokenAxisOverrides: (
+		tokenId: string
+	) => SelectQueryBuilder<Schema, 'token_axis_overrides', { axisId: string; value: any }>;
+	// Candidate axes for the Tokens panel's right-click "Add Axis" submenu on a `view`-typed
+	// token, PROJECT-WIDE (every axis consumed by any kit any view in the project composes,
+	// tagged with which view/kit) rather than scoped to one target view id. This is what lets the
+	// Tokens panel use `liveQuery` on it (a real PGlite live query re-fires whenever
+	// compositions/axes_consumed/axes/kits change) instead of the one-shot Promise-based fetch a
+	// per-view-id version would need -- a lazily-populated one-shot cache never learns about a kit
+	// gaining a newly-consumed axis or a view composing a new kit after the cache was first filled,
+	// which is exactly the "Add Axis stays disabled forever after adding layers to the child" bug
+	// this replaced. The caller groups by viewId, then by kitId, client-side.
+	getAxesConsumedByProjectId: (
+		projectId: string | null
+	) => SelectQueryBuilder<
+		Schema,
+		'compositions' | 'kits' | 'axes_consumed' | 'axes',
+		{ viewId: string; kitId: string; kitName: string | null; axisId: string; axisName: string | null }
+	>;
+	// Every literal/discrete-or-not axis value for every axis in the project, PROJECT-WIDE for the
+	// same live-query reason as getAxesConsumedByProjectId above -- feeds the "Add Axis" cascade's
+	// Value level. Unfiltered by type (mirrors getAxisValuesByAxisId); the caller filters to
+	// literal/discrete client-side, same as cycleAxisOverrideValue already does.
+	getAxisValuesByProjectId: (
+		projectId: string | null
+	) => SelectQueryBuilder<Schema, 'axis_values' | 'axes', { axisId: string; axisValueId: string; value: any }>;
+	// Every axis pick any view in the project currently has, PROJECT-WIDE and live for the same
+	// reason as getAxesConsumedByProjectId/getAxisValuesByProjectId above -- backs a `linked`
+	// override chip's display, whose source (view, kit) may be a DIFFERENT view/kit than whatever's
+	// active right now, so a per-(view,kit) fetch like getAllAxisArgs can't answer it. The caller
+	// keys results by `${viewId}::${kitId}::${axisId}`, mirroring resolve.ts's argsByViewKit key.
+	getAxisArgsByProjectId: (
+		projectId: string | null
+	) => SelectQueryBuilder<Schema, 'axis_args' | 'kits', { viewId: string; kitId: string; axisId: string; value: any }>;
+}
+
 export interface QueryLayer {
 	createLayer: (
 		kitId: string
@@ -480,6 +556,22 @@ export interface QueryLayer {
 	getLayersByKitId: (
 		kitId: string
 	) => SelectQueryBuilder<Schema, 'layers', { layerId: string; kitId: string; lastModified: Date }>;
+	// Every layer's condition set for one kit, LIVE (a real PGlite live query, not the one-shot
+	// fetch this replaced) -- backs the Axes panel's combo-dot indicators. The one-shot version
+	// (a plain async fetch inside an $effect keyed on kit/view id + a manual refreshTrigger) only
+	// ever refreshed on a kit/view switch or its own explicit bump -- a layer created from
+	// elsewhere (the Render panel's pipette, in particular) never triggered either, so a freshly
+	// painted layer's dot silently never appeared until something else happened to force a
+	// refetch. A real live query, joined through layers -> layer_axis_values -> axis_values,
+	// fixes this the same way axesConsumedQuery/axisValuesQuery already fixed the equivalent
+	// staleness class in Variables.svelte's "Add Axis" cascade.
+	getLayerConditionsByKitId: (
+		kitId: string | null
+	) => SelectQueryBuilder<
+		Schema,
+		'layers' | 'layer_axis_values' | 'axis_values',
+		{ layerId: string; axisValueId: string; axisId: string; value: any }
+	>;
 	// The layer with zero attached axis_values -- applies unconditionally, always wins lowest
 	// specificity. Not a distinct flag in the schema, just a layer nobody's attached a condition
 	// to (see seed.ts's `*Null` layers) -- this is the fallback write target for a property that
@@ -622,6 +714,12 @@ export interface QueryAction {
 	// this ALONGSIDE getKitExportShapes (one's per-Kit CSS rules, this is per-instance which of
 	// those rules a given exported element should carry as classes).
 	getViewAxisArgs: (viewIds: string[]) => Promise<ViewAxisArgRow[]>;
+	// One row per (view, kit) actually composed, in composition-priority order -- see
+	// resolve/export-shape.ts's ViewCompositionRow doc comment. WebCodium needs this to know a
+	// view composes more than one kit at all (Charter's own node_kit_ids collapses to a single
+	// "winning" kit per node), and in what order, to emit one class per composed kit and detect/
+	// disambiguate a property two or more of those kits both declare.
+	getViewCompositions: (viewIds: string[]) => Promise<ViewCompositionRow[]>;
 	// Inverse of exportProject -- `data` is expected to be shaped exactly like exportProject's
 	// return value (validated up front; throws a specific error for anything that doesn't look
 	// like a real export rather than failing deep inside the transaction). Creates a brand-new
@@ -793,6 +891,7 @@ export interface Api
 		QueryAxisValue,
 		QueryAxisConsumed,
 		QueryAxisArgs,
+		QueryTokenAxisOverrides,
 		QueryLayer,
 		QueryRenderSnippet,
 		QueryRenderEntry,
@@ -852,14 +951,16 @@ type CloneSite = { oldId: string; newId: string; ancestors: ReadonlySet<string> 
 // depth) for the discovery reads, plus a small constant for the phase-2 reads/writes -- not
 // O(nodes) like the row-at-a-time version.
 //
-// Preserves the original recursive semantics exactly: a view-list token aliased `compositionKey`
-// is the one Charter-opinionated "this defines my children" edge (cloned recursively, each
-// occurrence getting its own independent copy -- see CloneSite's doc comment above for the
-// diamond/cycle distinction); every OTHER token (a different alias, or a `view`-type token) is
-// copied through untouched, still pointing at the original id -- it's a reference, not owned
-// structure. A dangling child id (the referenced view row doesn't actually exist) contributes
-// nothing, exactly like the old `if (!src) return null` bail, except now it just drops out of its
-// parent's cloned children list rather than aborting anything.
+// Preserves the original recursive semantics exactly: a `view`-typed token aliased
+// `compositionKey` is the one Charter-opinionated "this defines my children" edge (cloned
+// recursively, each occurrence getting its own independent copy -- see CloneSite's doc comment
+// above for the diamond/cycle distinction); every OTHER token (a different alias) is copied
+// through untouched, still pointing at the original id -- it's a reference, not owned structure.
+// More than one `view`-typed row can share the `compositionKey` alias at one site (N tokens, not
+// one array-valued token) -- each such row is its own independent CloneSite discovery, one row =
+// one potential child. A dangling child id (the referenced view row doesn't actually exist)
+// contributes nothing: that one row is simply dropped from phase 2's insert, exactly like the old
+// `if (!src) return null` bail, except now it just drops that one row rather than aborting.
 async function cloneViewSubtreeImpl(
 	db: SchemaDialect,
 	viewId: string,
@@ -874,13 +975,20 @@ async function cloneViewSubtreeImpl(
 	// building the eventual token-clone rows (phase 2), so it's never fetched twice for the same id.
 	const tokensByOldId = new Map<
 		string,
-		{ view_id: string | null; alias: string | null; value: unknown; hints: unknown }[]
+		{
+			view_id: string | null;
+			alias: string | null;
+			composition_alias: string | null;
+			value: unknown;
+			hints: unknown;
+			priority_index: number;
+		}[]
 	>();
-	// Per site, per composition-key token index (a site could in principle carry more than one --
-	// the original recursive code never assumed uniqueness either), the ordered child sites created
-	// from that token's `view_ids` -- needed at phase-2 write time to rebuild that exact token's
-	// cloned value once dangling children (if any) are known and filtered out.
-	const compositionChildrenBySite = new Map<CloneSite, Map<number, CloneSite[]>>();
+	// Per site, per composition-key token INDEX (one row = one potential child now that
+	// composition is N `view`-typed rows sharing an alias, not one array-valued token), the child
+	// site that row's own view_id resolved to, or null if dropped (cycle guard, see below) --
+	// needed at phase-2 write time to rebuild that exact row's cloned value.
+	const compositionChildrenBySite = new Map<CloneSite, Map<number, CloneSite | null>>();
 
 	let frontier: CloneSite[] = [rootSite];
 	while (frontier.length > 0) {
@@ -889,7 +997,7 @@ async function cloneViewSubtreeImpl(
 			const rows = await db
 				.selectFrom('tokens')
 				.where('view_id', 'in', toFetch)
-				.select(['view_id', 'alias', 'value', 'hints'])
+				.select(['view_id', 'alias', 'composition_alias', 'value', 'hints', 'priority_index'])
 				.execute();
 			for (const id of toFetch) tokensByOldId.set(id, []);
 			for (const row of rows) tokensByOldId.get(row.view_id!)?.push(row);
@@ -900,24 +1008,23 @@ async function cloneViewSubtreeImpl(
 			const myTokens = tokensByOldId.get(site.oldId) ?? [];
 			myTokens.forEach((t, tokenIndex) => {
 				const value = t.value as TokenValue | null;
-				if (t.alias !== compositionKey || value?.type !== 'view-list') return;
-				const childSites: CloneSite[] = [];
-				for (const childOldId of value.view_ids) {
-					// Cycle guard: the child is either this site itself or already an ancestor of
-					// it -- matches the original `seen.has(viewId)` check (seen = the current DFS
-					// path, which is exactly `ancestors ∪ {this site}`).
-					if (childOldId === site.oldId || site.ancestors.has(childOldId)) continue;
-					const childSite: CloneSite = {
+				if (t.composition_alias !== compositionKey || value?.type !== 'view') return;
+				const childOldId = value.view_id;
+				// Cycle guard: the child is either this site itself or already an ancestor of
+				// it -- matches the original `seen.has(viewId)` check (seen = the current DFS
+				// path, which is exactly `ancestors ∪ {this site}`).
+				let childSite: CloneSite | null = null;
+				if (childOldId !== site.oldId && !site.ancestors.has(childOldId)) {
+					childSite = {
 						oldId: childOldId,
 						newId: genId(),
 						ancestors: new Set([...site.ancestors, site.oldId])
 					};
 					allSites.push(childSite);
 					nextFrontier.push(childSite);
-					childSites.push(childSite);
 				}
 				if (!compositionChildrenBySite.has(site)) compositionChildrenBySite.set(site, new Map());
-				compositionChildrenBySite.get(site)!.set(tokenIndex, childSites);
+				compositionChildrenBySite.get(site)!.set(tokenIndex, childSite);
 			});
 		}
 		frontier = nextFrontier;
@@ -999,26 +1106,39 @@ async function cloneViewSubtreeImpl(
 	const tokensToInsert = validSites.flatMap((s) => {
 		const myTokens = tokensByOldId.get(s.oldId) ?? [];
 		const childrenByTokenIndex = compositionChildrenBySite.get(s);
-		return myTokens.map((t, tokenIndex) => {
-			const value = t.value as TokenValue | null;
-			const isCompositionToken = t.alias === compositionKey && value?.type === 'view-list';
-			const clonedValue = isCompositionToken
-				? {
-						type: 'view-list' as const,
-						view_ids: (childrenByTokenIndex?.get(tokenIndex) ?? [])
-							.filter((child) => validOldIds.has(child.oldId))
-							.map((child) => child.newId)
-					}
-				: value;
-			return {
-				project_id: rootView.project_id,
-				alias: t.alias,
-				value: clonedValue as any,
-				hints: (t.hints ?? null) as any,
-				kit_id: null,
-				view_id: s.newId
-			};
-		});
+		return myTokens
+			.map((t, tokenIndex) => {
+				const value = t.value as TokenValue | null;
+				const isCompositionToken = t.composition_alias === compositionKey && value?.type === 'view';
+				if (isCompositionToken) {
+					const child = childrenByTokenIndex?.get(tokenIndex);
+					// Drop this row entirely if its child was never a valid site (dangling id) or
+					// got cycle-guarded out -- an empty/absent view reference is not a meaningful
+					// row to keep, unlike the old view-list's "keep the array, possibly empty."
+					if (!child || !validOldIds.has(child.oldId)) return null;
+					return {
+						project_id: rootView.project_id,
+						alias: t.alias,
+						composition_alias: t.composition_alias,
+						value: { type: 'view', view_id: child.newId } as any,
+						hints: (t.hints ?? null) as any,
+						kit_id: null,
+						view_id: s.newId,
+						priority_index: t.priority_index
+					};
+				}
+				return {
+					project_id: rootView.project_id,
+					alias: t.alias,
+					composition_alias: t.composition_alias,
+					value: value as any,
+					hints: (t.hints ?? null) as any,
+					kit_id: null,
+					view_id: s.newId,
+					priority_index: t.priority_index
+				};
+			})
+			.filter((row): row is NonNullable<typeof row> => row !== null);
 	});
 	if (tokensToInsert.length > 0) {
 		await db.insertInto('tokens').values(tokensToInsert).execute();
@@ -1027,14 +1147,17 @@ async function cloneViewSubtreeImpl(
 	return { cloneId: rootSite.newId, projectId: rootView.project_id };
 }
 
-// A clone's position relative to its own source view -- if `sourceViewId` is itself listed as a
-// child in some OTHER view's `compositionKey` token (project-wide, VIEW-scoped tokens only -- a
-// kit-scope DEFAULT template listing the same id is a different concept, see
+// A clone's position relative to its own source view -- if `sourceViewId` is itself referenced by
+// a `view`-typed token aliased `compositionKey` at some OTHER view (project-wide, VIEW-scoped
+// tokens only -- a kit-scope DEFAULT template referencing the same id is a different concept, see
 // instantiateKitDefaultsImpl, and must never be mutated by a one-off Clone action), the new clone
-// is inserted immediately after it in that same array, as a sibling -- not left as a free-floating
-// unattached top-level view the way every clone used to be. A view has at most one live parent at
-// a time (feedback_view_uniqueness), so the first match wins; a root/unattached source view has no
-// match at all, and its clone stays free-floating too, same as before this feature existed.
+// is inserted immediately after it as a sibling ROW (its own new `view`-typed token, priority_index
+// one past the source's, with every later sibling at that site renumbered up by one) -- not left
+// as a free-floating unattached top-level view the way every clone used to be. A view can now be
+// referenced by more than one simultaneously-active `view` token (feedback_view_uniqueness has been
+// relaxed at the data layer, see resolve.ts's OverriddenOccurrence), so the FIRST such reference
+// found wins for sibling placement -- a root/unattached source view has no match at all, and its
+// clone stays free-floating too, same as before this feature existed.
 async function attachCloneAsSibling(
 	db: SchemaDialect,
 	projectId: string,
@@ -1045,25 +1168,78 @@ async function attachCloneAsSibling(
 	const tokens = await db
 		.selectFrom('tokens')
 		.where('project_id', '=', projectId)
-		.where('alias', '=', compositionKey)
+		.where('composition_alias', '=', compositionKey)
 		.where('view_id', 'is not', null)
-		.select(['id', 'value'])
+		.select(['id', 'value', 'view_id', 'priority_index'])
 		.execute();
 
-	for (const t of tokens) {
+	const source = tokens.find((t) => {
 		const value = t.value as TokenValue | null;
-		if (value?.type !== 'view-list') continue;
-		const idx = value.view_ids.indexOf(sourceViewId);
-		if (idx === -1) continue;
-		const nextViewIds = [...value.view_ids];
-		nextViewIds.splice(idx + 1, 0, cloneId);
-		await db
-			.updateTable('tokens')
-			.set({ value: { ...value, view_ids: nextViewIds } as any })
-			.where('id', '=', t.id)
-			.execute();
-		return;
+		return value?.type === 'view' && value.view_id === sourceViewId;
+	});
+	if (!source) return;
+
+	// No nested db.transaction() here -- this function is always called from within
+	// cloneViewSubtree's own transaction (`db` here is already that Transaction), and Kysely
+	// doesn't support opening a transaction on top of a transaction.
+	const siblings = tokens.filter((t) => t.view_id === source.view_id);
+	for (const s of siblings) {
+		if (s.priority_index > source.priority_index) {
+			await db
+				.updateTable('tokens')
+				.set({ priority_index: s.priority_index + 1 })
+				.where('id', '=', s.id)
+				.execute();
+		}
 	}
+	await db
+		.insertInto('tokens')
+		.values({
+			project_id: projectId,
+			alias: null,
+			composition_alias: compositionKey,
+			kit_id: null,
+			view_id: source.view_id,
+			value: { type: 'view', view_id: cloneId } as any,
+			priority_index: source.priority_index + 1
+		})
+		.execute();
+}
+
+// Appends one new `view`-typed token row at (viewId, alias), priority_index = current max+1 (or 0
+// if none exist yet at this site). Never updates an existing row -- always a new occurrence, even
+// if targetViewId duplicates an existing row's target (a view referenced twice under one alias is
+// legal, see resolve.ts's OverriddenOccurrence). Shared by the exposed `addViewRef` API and
+// `instantiateKitDefaultsImpl`'s default-cloning writes, so both append the same way.
+async function addViewRefImpl(
+	db: SchemaDialect,
+	projectId: string,
+	viewId: string,
+	alias: string,
+	targetViewId: string
+): Promise<{ id: string }> {
+	const existing = await db
+		.selectFrom('tokens')
+		.where('view_id', '=', viewId)
+		.where('composition_alias', '=', alias)
+		.select('priority_index')
+		.orderBy('priority_index', 'desc')
+		.executeTakeFirst();
+	const nextIndex = existing ? existing.priority_index + 1 : 0;
+	const inserted = await db
+		.insertInto('tokens')
+		.values({
+			project_id: projectId,
+			alias: null,
+			composition_alias: alias,
+			kit_id: null,
+			view_id: viewId,
+			value: { type: 'view', view_id: targetViewId } as any,
+			priority_index: nextIndex
+		})
+		.returning('id')
+		.executeTakeFirstOrThrow();
+	return { id: inserted.id };
 }
 
 async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Promise<void> {
@@ -1074,10 +1250,11 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 		.executeTakeFirst();
 	if (!view) return;
 
-	// Every kit-scope `view-list` token is a composition default (a view-list value is a
-	// composition edge). Collect them by alias across the view's kits, highest-priority kit winning
-	// per alias -- name-neutral: whatever the kit aliases its default, we clone it into a same-named
-	// view token. (Which of these actually renders nested is the plugin's render-time call.)
+	// Every kit-scope `view`-typed token is a composition default (one row = one default child).
+	// Collect them by alias across the view's kits, highest-priority kit winning per alias --
+	// name-neutral: whatever the kit aliases its default, we clone it into same-named view tokens.
+	// (Which of these actually renders nested is the plugin's render-time call.) Ordered by
+	// priority_index within each kit's own rowset so clone order matches authoring order.
 	const comps = await db
 		.selectFrom('compositions')
 		.where('view_id', '=', viewId)
@@ -1089,13 +1266,22 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 		const toks = await db
 			.selectFrom('tokens')
 			.where('kit_id', '=', c.kit_id)
-			.select(['alias', 'value'])
+			.where('composition_alias', 'is not', null)
+			.orderBy('priority_index', 'asc')
+			.orderBy('id', 'asc')
+			.select(['composition_alias', 'value'])
 			.execute();
+		const byAlias = new Map<string, string[]>();
 		for (const t of toks) {
 			const v = t.value as TokenValue | null;
-			if (t.alias && v?.type === 'view-list' && !defaultsByAlias.has(t.alias)) {
-				defaultsByAlias.set(t.alias, v.view_ids);
+			if (t.composition_alias && v?.type === 'view') {
+				const arr = byAlias.get(t.composition_alias) ?? [];
+				arr.push(v.view_id);
+				byAlias.set(t.composition_alias, arr);
 			}
+		}
+		for (const [alias, ids] of byAlias) {
+			if (!defaultsByAlias.has(alias)) defaultsByAlias.set(alias, ids);
 		}
 	}
 
@@ -1105,41 +1291,30 @@ async function instantiateKitDefaultsImpl(db: SchemaDialect, viewId: string): Pr
 		const own = await db
 			.selectFrom('tokens')
 			.where('view_id', '=', viewId)
-			.where('alias', '=', alias)
+			.where('composition_alias', '=', alias)
 			.select('id')
 			.executeTakeFirst();
 		if (own) continue;
 
-		const clonedIds: string[] = [];
 		for (const tid of template) {
 			const cloned = await cloneViewSubtreeImpl(db, tid, alias);
-			if (cloned) clonedIds.push(cloned.cloneId);
+			if (cloned) await addViewRefImpl(db, view.project_id, viewId, alias, cloned.cloneId);
 		}
-		await db
-			.insertInto('tokens')
-			.values({
-				project_id: view.project_id,
-				alias,
-				value: { type: 'view-list', view_ids: clonedIds } as any,
-				hints: null,
-				kit_id: null,
-				view_id: viewId
-			} as any)
-			.execute();
 	}
 }
 
 // Deleting a view's OWN rows is a real FK cascade (views.id -> tokens.view_id/compositions.view_id/
 // axis_args.view_id all ON DELETE CASCADE). But a view can also be REFERENCED by another token
-// anywhere in the project -- a sibling view's `children` view-list, a kit-scope default, a
-// project-scope token -- and those references live inside opaque `tokens.value` jsonb with no FK,
-// so cascade never touches them. Left alone, deleting a view leaves every such reference dangling
-// (a view-list still lists the deleted id; a single `view`-type token still points at nothing).
-// Scrubs every token in the project: a `view-list` token has the deleted id(s) filtered out of
-// `view_ids` (kept, possibly now empty -- an empty list is a meaningful "no children" state); a
-// `view` token whose sole `view_id` was deleted is removed entirely (its one reference is gone, so
-// there is no meaningful remaining value to keep -- any render entry pointing at it via token_id
-// falls back to `null` per the FK's ON DELETE SET NULL, same as any other token deletion).
+// anywhere in the project -- a sibling view's `children` (one or more `view`-typed rows sharing
+// that alias), a kit-scope default, a project-scope token -- and those references live inside
+// opaque `tokens.value` jsonb with no FK, so cascade never touches them. Left alone, deleting a
+// view leaves every such reference dangling (a `view` token still points at nothing). Scrubs every
+// token in the project: any `view`-typed row whose `view_id` was deleted is removed entirely --
+// its one reference is gone, so there is no meaningful remaining value to keep (any render entry
+// pointing at it via token_id falls back to `null` per the FK's ON DELETE SET NULL, same as any
+// other token deletion). Since composition/children is now N independent rows rather than one
+// array-valued token, this is simpler than before: every dangling reference is a full-row delete,
+// never a "filter the array and keep, possibly empty" update.
 async function scrubDanglingViewRefs(
 	trx: SchemaDialect,
 	projectId: string,
@@ -1157,13 +1332,6 @@ async function scrubDanglingViewRefs(
 		if (!value) continue;
 		if (value.type === 'view' && deleted.has(value.view_id)) {
 			await trx.deleteFrom('tokens').where('id', '=', t.id).execute();
-		} else if (value.type === 'view-list' && value.view_ids.some((id) => deleted.has(id))) {
-			const remaining = value.view_ids.filter((id) => !deleted.has(id));
-			await trx
-				.updateTable('tokens')
-				.set({ value: { ...value, view_ids: remaining } as any })
-				.where('id', '=', t.id)
-				.execute();
 		}
 	}
 }
@@ -1285,6 +1453,10 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 
 	getViewAxisArgs: async (viewIds: string[]) => {
 		return await fetchViewAxisArgs(db, viewIds);
+	},
+
+	getViewCompositions: async (viewIds: string[]) => {
+		return await fetchViewCompositions(db, viewIds);
 	},
 
 	exportProject: async (projectId: string) => {
@@ -1646,6 +1818,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							id: tokenIdMap.get(t.id)!,
 							project_id: projectId,
 							alias: t.alias,
+							composition_alias: t.composition_alias ?? null,
 							value: remapTokenValue(t.value, viewIdMap) as any,
 							hints: (t.hints ?? {}) as any,
 							kit_id: t.kit_id ? (kitIdMap.get(t.kit_id) ?? null) : null,
@@ -1833,11 +2006,16 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 		value?: TokenValue,
 		scope?: { kitId?: string; viewId?: string }
 	) => {
+		// This is the generic Tokens-panel "add token" path -- its single alias field doubles as
+		// the composition key for a `view`-typed token (there's no separate UI field for it), so
+		// a kit/view-scope default created here is discoverable by instantiateKitDefaultsImpl and
+		// the resolver's viewRefMap grouping, same as one created via addViewRef.
 		return await db
 			.insertInto('tokens')
 			.values({
 				project_id: projectId,
 				alias: alias ?? null,
+				composition_alias: value?.type === 'view' ? (alias ?? null) : null,
 				value: (value ?? null) as any,
 				kit_id: scope?.kitId ?? null,
 				view_id: scope?.viewId ?? null
@@ -1855,6 +2033,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 	},
 
 	upsertViewToken: async (projectId: string, viewId: string, alias: string, value: TokenValue) => {
+		// This is the genuine 1:1-alias path (a lone view token, or a scalar) -- its single alias
+		// argument doubles as the composition key for a `view`-typed value, same reasoning as
+		// createToken, so the resolver's viewRefMap grouping (keyed by composition_alias for
+		// view-typed rows) still finds it.
+		const compositionAlias = value.type === 'view' ? alias : null;
 		// find-then-write in one transaction so two rapid upserts can't each miss and insert a
 		// duplicate view token for the same alias.
 		return await db.transaction().execute(async (trx) => {
@@ -1867,7 +2050,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			if (existing) {
 				await trx
 					.updateTable('tokens')
-					.set({ value } as any)
+					.set({ value, composition_alias: compositionAlias } as any)
 					.where('tokens.id', '=', existing.id)
 					.execute();
 				return { id: existing.id, created: false };
@@ -1877,6 +2060,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				.values({
 					project_id: projectId,
 					alias,
+					composition_alias: compositionAlias,
 					value: value as any,
 					kit_id: null,
 					view_id: viewId
@@ -1884,6 +2068,28 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				.returning('id')
 				.executeTakeFirstOrThrow();
 			return { id: inserted.id, created: true };
+		});
+	},
+
+	addViewRef: async (projectId: string, viewId: string, alias: string, targetViewId: string) =>
+		addViewRefImpl(db, projectId, viewId, alias, targetViewId),
+
+	// Detaches, never deletes -- the token row, its scope, and its token_axis_overrides all
+	// survive, exactly mirroring unbinding a scalar/color token from a property. A real hard
+	// delete stays available via the Tokens panel's own `deleteToken`.
+	removeViewRef: async (tokenId: string) => {
+		await db.updateTable('tokens').set({ composition_alias: null }).where('id', '=', tokenId).execute();
+	},
+
+	reorderViewRefs: async (orderedTokenIds: string[]) => {
+		await db.transaction().execute(async (trx) => {
+			for (let i = 0; i < orderedTokenIds.length; i++) {
+				await trx
+					.updateTable('tokens')
+					.set({ priority_index: i })
+					.where('id', '=', orderedTokenIds[i]!)
+					.execute();
+			}
 		});
 	},
 
@@ -1933,11 +2139,12 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			const token = await trx
 				.selectFrom('tokens')
 				.where('tokens.id', '=', tokenId)
-				.select(['tokens.alias', 'tokens.project_id'])
+				.select(['tokens.alias', 'tokens.project_id', 'tokens.value'])
 				.executeTakeFirst();
 			if (!token) return { ok: true as const };
 
 			if (token.alias !== null) {
+				const movingValue = token.value as TokenValue | null;
 				let collisionQuery = trx
 					.selectFrom('tokens')
 					.where('tokens.alias', '=', token.alias)
@@ -1952,6 +2159,17 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 									.where('tokens.project_id', '=', token.project_id)
 									.where('tokens.kit_id', 'is', null)
 									.where('tokens.view_id', 'is', null);
+
+				// A `view`-typed token moving into a scope that already has OTHER `view` tokens
+				// under the same alias is not a collision -- multiple `view` rows can legally share
+				// an alias (see TokenValue's doc comment). It still collides against a `scalar`/
+				// null-valued token holding that alias, since a property's value-kind must stay
+				// consistent within one scope.
+				if (movingValue?.type === 'view') {
+					collisionQuery = collisionQuery.where((eb) =>
+						eb.or([eb('tokens.value', 'is', null), sql<boolean>`tokens.value ->> 'type' <> 'view'`])
+					);
+				}
 
 				const colliding = await collisionQuery.executeTakeFirst();
 				if (colliding) {
@@ -2271,6 +2489,100 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			.where('kit_id', '=', kitId)
 			.where('axis_id', '=', axisId)
 			.execute();
+	},
+
+	setTokenAxisOverride: async (tokenId: string, axisId: string, value: any) => {
+		return await db
+			.insertInto('token_axis_overrides')
+			.values({ token_id: tokenId, axis_id: axisId, value })
+			.onConflict((oc) => oc.columns(['token_id', 'axis_id']).doUpdateSet({ value }))
+			.returningAll()
+			.executeTakeFirst();
+	},
+
+	clearTokenAxisOverride: async (tokenId: string, axisId: string) => {
+		await db
+			.deleteFrom('token_axis_overrides')
+			.where('token_id', '=', tokenId)
+			.where('axis_id', '=', axisId)
+			.execute();
+	},
+
+	getTokenAxisOverrides: (tokenId: string) => {
+		return db
+			.selectFrom('token_axis_overrides')
+			.where('token_axis_overrides.token_id', '=', tokenId)
+			.select(['token_axis_overrides.axis_id as axisId', 'token_axis_overrides.value']);
+	},
+
+	getAxesConsumedByProjectId: (projectId: string | null) => {
+		if (!projectId)
+			return db
+				.selectFrom('compositions')
+				.innerJoin('kits', 'kits.id', 'compositions.kit_id')
+				.innerJoin('axes_consumed', 'axes_consumed.kit_id', 'compositions.kit_id')
+				.innerJoin('axes', 'axes.id', 'axes_consumed.axis_id')
+				.where('kits.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'compositions.view_id as viewId',
+					'kits.id as kitId',
+					'kits.name as kitName',
+					'axes.id as axisId',
+					'axes.name as axisName'
+				]);
+		return db
+			.selectFrom('compositions')
+			.innerJoin('kits', 'kits.id', 'compositions.kit_id')
+			.innerJoin('axes_consumed', 'axes_consumed.kit_id', 'compositions.kit_id')
+			.innerJoin('axes', 'axes.id', 'axes_consumed.axis_id')
+			.where('kits.project_id', '=', projectId)
+			.select([
+				'compositions.view_id as viewId',
+				'kits.id as kitId',
+				'kits.name as kitName',
+				'axes.id as axisId',
+				'axes.name as axisName'
+			])
+			.distinct();
+	},
+
+	getAxisValuesByProjectId: (projectId: string | null) => {
+		if (!projectId)
+			return db
+				.selectFrom('axis_values')
+				.innerJoin('axes', 'axes.id', 'axis_values.axis_id')
+				.where('axes.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select(['axes.id as axisId', 'axis_values.id as axisValueId', 'axis_values.value']);
+		return db
+			.selectFrom('axis_values')
+			.innerJoin('axes', 'axes.id', 'axis_values.axis_id')
+			.where('axes.project_id', '=', projectId)
+			.orderBy('axis_values.priority_index', 'asc')
+			.select(['axes.id as axisId', 'axis_values.id as axisValueId', 'axis_values.value']);
+	},
+
+	getAxisArgsByProjectId: (projectId: string | null) => {
+		if (!projectId)
+			return db
+				.selectFrom('axis_args')
+				.innerJoin('kits', 'kits.id', 'axis_args.kit_id')
+				.where('kits.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'axis_args.view_id as viewId',
+					'axis_args.kit_id as kitId',
+					'axis_args.axis_id as axisId',
+					'axis_args.value'
+				]);
+		return db
+			.selectFrom('axis_args')
+			.innerJoin('kits', 'kits.id', 'axis_args.kit_id')
+			.where('kits.project_id', '=', projectId)
+			.select([
+				'axis_args.view_id as viewId',
+				'axis_args.kit_id as kitId',
+				'axis_args.axis_id as axisId',
+				'axis_args.value'
+			]);
 	},
 
 	createLayer: async (kitId: string) => {
@@ -2987,6 +3299,32 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				'layers.id as layerId',
 				'layers.kit_id as kitId',
 				'layers.last_modified as lastModified'
+			]);
+	},
+
+	getLayerConditionsByKitId: (kitId: string | null) => {
+		if (!kitId)
+			return db
+				.selectFrom('layers')
+				.innerJoin('layer_axis_values', 'layer_axis_values.layer_id', 'layers.id')
+				.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+				.where('layers.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'layers.id as layerId',
+					'axis_values.id as axisValueId',
+					'axis_values.axis_id as axisId',
+					'axis_values.value'
+				]);
+		return db
+			.selectFrom('layers')
+			.innerJoin('layer_axis_values', 'layer_axis_values.layer_id', 'layers.id')
+			.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+			.where('layers.kit_id', '=', kitId)
+			.select([
+				'layers.id as layerId',
+				'axis_values.id as axisValueId',
+				'axis_values.axis_id as axisId',
+				'axis_values.value'
 			]);
 	},
 

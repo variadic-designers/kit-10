@@ -29,7 +29,73 @@ describe('migration 2026-04-21', () => {
 		expect(tableNames).toContain('layers');
 		expect(tableNames).toContain('layer_axis_values');
 		expect(tableNames).toContain('tokens');
+		expect(tableNames).toContain('token_axis_overrides');
 		expect(tableNames).toContain('plugins');
+	});
+
+	it('tokens table has a priority_index column', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const tokens = cols.find((t) => t.name === 'tokens');
+		expect(tokens).toBeDefined();
+		const colNames = tokens!.columns.map((c) => c.name);
+		expect(colNames).toContain('priority_index');
+	});
+
+	it('token_axis_overrides table has the correct columns and composite PK', async () => {
+		const cols = await ctx.db.introspection.getTables();
+		const overrides = cols.find((t) => t.name === 'token_axis_overrides');
+		expect(overrides).toBeDefined();
+		const colNames = overrides!.columns.map((c) => c.name).sort();
+		expect(colNames).toEqual(['axis_id', 'token_id', 'value'].sort());
+
+		const proj = (await ctx.api.createProjectInWorkspace(
+			(await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId,
+			'test-token-axis-overrides'
+		))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const target = (await ctx.api.createViewInProject(proj.id, 'target'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'parent'))!;
+		const token = (await ctx.api.createToken(
+			proj.id,
+			'hero',
+			{ type: 'view', view_id: target.id },
+			{ viewId: parent.id }
+		))!;
+
+		await ctx.db
+			.insertInto('token_axis_overrides')
+			.values({ token_id: token.id, axis_id: axis.id, value: { type: 'literal', value: 'dark' } } as any)
+			.execute();
+
+		await expect(
+			ctx.db
+				.insertInto('token_axis_overrides')
+				.values({ token_id: token.id, axis_id: axis.id, value: { type: 'literal', value: 'light' } } as any)
+				.execute()
+		).rejects.toThrow();
+	});
+
+	it('multiple `view`-typed tokens can share one alias and scope', async () => {
+		const proj = (await ctx.api.createProjectInWorkspace(
+			(await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId,
+			'test-multi-view-tokens'
+		))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'childA'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'childB'))!;
+
+		await ctx.api.createToken(proj.id, 'children', { type: 'view', view_id: childA.id }, { viewId: parent.id });
+		await expect(
+			ctx.api.createToken(proj.id, 'children', { type: 'view', view_id: childB.id }, { viewId: parent.id })
+		).resolves.toBeDefined();
+
+		const rows = await ctx.db
+			.selectFrom('tokens')
+			.where('view_id', '=', parent.id)
+			.where('alias', '=', 'children')
+			.selectAll()
+			.execute();
+		expect(rows).toHaveLength(2);
 	});
 
 	it('projects table has an interpreter_plugin_id column', async () => {

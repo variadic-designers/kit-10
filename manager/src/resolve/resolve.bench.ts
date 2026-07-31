@@ -26,6 +26,7 @@
 // BOUND on the browser win, where each of the 8 eliminated crossings also drops a worker hop.
 
 import { bench, describe } from 'vitest';
+import { sql } from 'kysely';
 import { createTestDb, type TestContext } from '../test-helpers.js';
 import {
 	fetchResolutionRows,
@@ -54,6 +55,7 @@ async function fetchResolutionRowsLegacy(
 		projectTokens: [],
 		viewTokenRows: [],
 		kitTokenRows: [],
+		tokenAxisOverrides: [],
 		layers: [],
 		conditions: [],
 		entries: []
@@ -92,14 +94,21 @@ async function fetchResolutionRowsLegacy(
 			.where('tokens.project_id', '=', projectId)
 			.where('tokens.kit_id', 'is', null)
 			.where('tokens.view_id', 'is', null)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value'])
+			.where((eb) => eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)]))
+			.select(['tokens.id', 'tokens.alias', 'tokens.composition_alias', 'tokens.value', 'tokens.priority_index'])
 			.execute(),
 		db
 			.selectFrom('tokens')
 			.where('tokens.view_id', 'in', viewIds)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.view_id', 'tokens.alias', 'tokens.value'])
+			.where((eb) => eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)]))
+			.select([
+				'tokens.id',
+				'tokens.view_id',
+				'tokens.alias',
+				'tokens.composition_alias',
+				'tokens.value',
+				'tokens.priority_index'
+			])
 			.execute()
 	]);
 
@@ -115,18 +124,35 @@ async function fetchResolutionRowsLegacy(
 		};
 	}
 
-	// RT3: kit tokens + layers (parallel group)
-	const [kitTokenRows, layers] = await Promise.all([
+	// RT3: kit tokens + layers + token axis overrides (parallel group)
+	const [kitTokenRows, layers, tokenAxisOverrides] = await Promise.all([
 		db
 			.selectFrom('tokens')
 			.where('tokens.kit_id', 'in', allKitIds)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
+			.where((eb) => eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)]))
+			.select([
+				'tokens.id',
+				'tokens.alias',
+				'tokens.composition_alias',
+				'tokens.value',
+				'tokens.kit_id',
+				'tokens.priority_index'
+			])
 			.execute(),
 		db
 			.selectFrom('layers')
 			.where('layers.kit_id', 'in', allKitIds)
 			.select(['layers.id', 'layers.kit_id'])
+			.execute(),
+		db
+			.selectFrom('token_axis_overrides')
+			.innerJoin('tokens', 'tokens.id', 'token_axis_overrides.token_id')
+			.where('tokens.project_id', '=', projectId)
+			.select([
+				'token_axis_overrides.token_id',
+				'token_axis_overrides.axis_id',
+				'token_axis_overrides.value'
+			])
 			.execute()
 	]);
 
@@ -163,7 +189,9 @@ async function fetchResolutionRowsLegacy(
 							'render_entries.property',
 							'render_entries.value as literal_value',
 							'render_entries.token_id',
-							'tokens.alias as token_alias',
+							sql<string | null>`CASE WHEN tokens.value ->> 'type' = 'view' THEN tokens.composition_alias ELSE tokens.alias END`.as(
+								'token_alias'
+							),
 							'tokens.value as token_value'
 						])
 						.execute()
@@ -177,6 +205,7 @@ async function fetchResolutionRowsLegacy(
 		projectTokens: projectTokens as ResolutionRows['projectTokens'],
 		viewTokenRows: viewTokenRows as ResolutionRows['viewTokenRows'],
 		kitTokenRows: kitTokenRows as ResolutionRows['kitTokenRows'],
+		tokenAxisOverrides: tokenAxisOverrides as ResolutionRows['tokenAxisOverrides'],
 		layers,
 		conditions: conditions as ResolutionRows['conditions'],
 		entries: entries as ResolutionRows['entries']
@@ -297,7 +326,9 @@ function comparable(views: ResolvedViewData[]): string {
 				kits: v.resolvedKits.map((k) => ({
 					kitId: k.kitId,
 					kitName: k.kitName,
-					viewRefs: [...(k.properties.get('children')?.viewRefs ?? [])].sort(),
+					viewRefs: [...(k.properties.get('children')?.viewRefs ?? [])]
+						.map((r) => r.viewId)
+						.sort(),
 					properties: Object.fromEntries(
 						[...k.properties.entries()]
 							.sort(([a], [b]) => a.localeCompare(b))
@@ -359,7 +390,10 @@ const batchedRows = await fetchResolutionRows(ctx.db, projectId);
 const seededRows: ResolutionRows = batchedRows; // reused for pure-compute + dedup benches
 const seededKey: string = rowsKey(batchedRows);
 
-if (comparable(resolveViewsFromRows(legacyRows)) !== comparable(resolveViewsFromRows(batchedRows))) {
+if (
+	comparable(resolveViewsFromRows(legacyRows).views) !==
+	comparable(resolveViewsFromRows(batchedRows).views)
+) {
 	throw new Error('PARITY FAILURE: batched fetch resolves differently than the legacy 4-RT fetch');
 }
 

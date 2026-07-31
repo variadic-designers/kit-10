@@ -9,22 +9,19 @@ export interface TokenValueScalar {
 	format?: 'color' | 'size' | 'font-size' | 'font-weight' | 'text' | 'number';
 }
 
+// A property whose resolved value is a LIST of views (e.g. `children`) is not a distinct
+// TokenValue variant -- it's composed of multiple `view`-typed token rows sharing one alias
+// (and scope), aggregated into ResolvedProperty.viewRefs at resolve time. `tokens.priority_index`
+// orders same-alias rows; unlike scalar tokens, `view` tokens are exempt from the per-scope
+// alias-uniqueness indexes (see the migration) so more than one can share an alias, and the same
+// view_id can appear under more than one row (a view referenced by two simultaneously-active
+// `view` tokens, e.g. with different axis overrides via token_axis_overrides).
 export interface TokenValueView {
 	type: 'view';
 	view_id: string;
 }
 
-// The list-valued counterpart to TokenValueView -- for properties whose resolved value is
-// inherently a list of view references (currently just `children`), not a single one. Kept as
-// its own variant rather than widening TokenValueView.view_id to string | string[], so the two
-// concepts (a token that IS a view vs. a token that IS a list of views) stay unambiguous at the
-// type level rather than needing runtime array-vs-string discrimination.
-export interface TokenValueViewList {
-	type: 'view-list';
-	view_ids: string[];
-}
-
-export type TokenValue = TokenValueScalar | TokenValueView | TokenValueViewList;
+export type TokenValue = TokenValueScalar | TokenValueView;
 
 // --- Axis value types ---
 
@@ -60,7 +57,19 @@ interface ArgRange {
 	max: number | null;
 }
 
-export type ArgValue = ArgLiteral | ArgRange;
+// A per-occurrence axis override (token_axis_overrides only -- never a plain view's own axis_args,
+// which is only ever written as literal/range by the Axes panel) that tracks another (view, kit)'s
+// OWN current axis pick live, re-read fresh every resolve via resolve.ts's mergeAxisOverrides +
+// argsByViewKit -- never a snapshot. If the source has no axis_args entry for this axis (unset),
+// the override resolves as if it didn't exist (the null/unconditioned layer wins), matching how
+// matchLayers already treats "no arg for this axis" everywhere else.
+interface ArgLinked {
+	type: 'linked';
+	view_id: string;
+	kit_id: string;
+}
+
+export type ArgValue = ArgLiteral | ArgRange | ArgLinked;
 
 // --- Plugin registry types ---
 
@@ -142,13 +151,13 @@ export interface PluginManifest {
 }
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
-// the DB2026_07_27 interface below is renamed for an actual schema change (not for every minor
+// the DB2026_07_30 interface below is renamed for an actual schema change (not for every minor
 // edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
-export const CURRENT_SCHEMA_VERSION = '2026-07-27';
+export const CURRENT_SCHEMA_VERSION = '2026-07-30';
 
 // --- Schema tables ---
 
-export interface DB2026_07_27 {
+export interface DB2026_07_30 {
 	workspaces: WorkspacesTable;
 	projects: ProjectsTable;
 
@@ -167,6 +176,7 @@ export interface DB2026_07_27 {
 	render_entries: RenderEntriesTable;
 
 	tokens: TokensTable;
+	token_axis_overrides: TokenAxisOverridesTable;
 
 	plugins: PluginsTable;
 
@@ -304,10 +314,36 @@ export interface TokensTable {
 	id: Generated<string>;
 	project_id: string;
 	alias: string | null;
+	// Drives composition membership for `type: 'view'` rows only (e.g. is this token one of view
+	// A's `children`) -- `alias` itself is a pure display name for view-typed rows, effectively
+	// vestigial since the Tokens panel shows icon+viewName. Detaching a child from a composition
+	// (removeViewRef) clears this to null without touching the row, its scope, or its
+	// token_axis_overrides, mirroring how unbinding a scalar/color token from a property never
+	// deletes the token. Unused (stays null) for `scalar` tokens.
+	composition_alias: string | null;
 	value: JSONColumnType<TokenValue> | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	kit_id: string | null;
 	view_id: string | null;
+	// Orders same-scope `view`-typed rows sharing one alias (see TokenValue's doc comment above).
+	// Meaningless (stays 0) for `scalar` tokens and for a `view` token that is the only row at its
+	// alias -- ties are broken by `id`, not enforced as a uniqueness invariant, since reordering N
+	// rows one at a time can transiently produce them.
+	priority_index: Generated<number>;
+}
+
+// ------------------------------
+
+// One row per axis a specific `view`-typed token reference overrides. Keyed by the REFERENCING
+// token, not the referenced view -- a view's own axis pick stays in axis_args, keyed by
+// (view_id, kit_id, axis_id). This table instead answers "this specific reference additionally
+// forces axis X to value Y for the occurrence it creates," letting the same view_id resolve
+// differently depending on which `view` token reached it. See resolve.ts's
+// `OverriddenOccurrence`/`mergeAxisOverrides`.
+export interface TokenAxisOverridesTable {
+	token_id: string;
+	axis_id: string;
+	value: JSONColumnType<ArgValue> | null;
 }
 
 // ------------------------------
@@ -337,8 +373,8 @@ export interface AssetsTable {
 }
 
 // Current version of db
-export type SchemaTS = Kysely<DB2026_07_27>;
-export type Schema = DB2026_07_27;
+export type SchemaTS = Kysely<DB2026_07_30>;
+export type Schema = DB2026_07_30;
 export type SchemaDialect = Kysely<Schema>;
 
 export type SchemaQueryBuilder<O, Tb extends keyof Schema = keyof Schema> = SelectQueryBuilder<

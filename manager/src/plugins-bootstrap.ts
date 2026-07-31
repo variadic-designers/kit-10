@@ -69,6 +69,9 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 	// kit10_get_view_axis_args backs per-instance variant modifier classes -- which of a Kit's
 	// variant rules a given exported element's class="" attribute should actually carry, decided
 	// from that element's own view's resolved axis args (see rule_matches_args on the Rust side).
+	// kit10_get_view_compositions backs multi-kit class emission and cross-kit contested-property
+	// disambiguation -- the full ordered list of kits a view composes, which Charter's own
+	// node_kit_ids (a single collapsed "winning" kit per node) can't answer.
 	capabilities: {
 		hostFns: [
 			'kit10_get_interpreter_output',
@@ -76,7 +79,8 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 			'kit10_get_asset_links',
 			'kit10_get_font_links',
 			'kit10_get_project_tokens',
-			'kit10_get_view_axis_args'
+			'kit10_get_view_axis_args',
+			'kit10_get_view_compositions'
 		]
 	}
 };

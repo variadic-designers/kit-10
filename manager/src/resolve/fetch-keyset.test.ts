@@ -8,6 +8,7 @@ import {
 	type ProjectTokenRow,
 	type ViewTokenRow,
 	type KitTokenRow,
+	type TokenAxisOverrideRow,
 	type LayerRow,
 	type ConditionRow,
 	type EntryRow
@@ -43,9 +44,34 @@ const axisArgKeys: Record<keyof AxisArgRow, true> = {
 	axis_id: true,
 	value: true
 };
-const projectTokenKeys: Record<keyof ProjectTokenRow, true> = { alias: true, value: true };
-const viewTokenKeys: Record<keyof ViewTokenRow, true> = { view_id: true, alias: true, value: true };
-const kitTokenKeys: Record<keyof KitTokenRow, true> = { alias: true, value: true, kit_id: true };
+const projectTokenKeys: Record<keyof ProjectTokenRow, true> = {
+	id: true,
+	alias: true,
+	composition_alias: true,
+	value: true,
+	priority_index: true
+};
+const viewTokenKeys: Record<keyof ViewTokenRow, true> = {
+	id: true,
+	view_id: true,
+	alias: true,
+	composition_alias: true,
+	value: true,
+	priority_index: true
+};
+const kitTokenKeys: Record<keyof KitTokenRow, true> = {
+	id: true,
+	alias: true,
+	composition_alias: true,
+	value: true,
+	kit_id: true,
+	priority_index: true
+};
+const tokenAxisOverrideKeys: Record<keyof TokenAxisOverrideRow, true> = {
+	token_id: true,
+	axis_id: true,
+	value: true
+};
 const layerKeys: Record<keyof LayerRow, true> = { id: true, kit_id: true };
 const conditionKeys: Record<keyof ConditionRow, true> = {
 	layer_id: true,
@@ -118,6 +144,11 @@ describe('batched fetch key-set matches row interfaces', () => {
 		await api.setAxisArg(view.id, kit.id, axis.id, { type: 'literal', value: 'dark' });
 		await api.createToken(proj.id, 'colors.view', s('#222222'), { viewId: view.id });
 
+		// a `view`-typed token with an axis override, to populate token_axis_overrides
+		const otherView = (await api.createViewInProject(proj.id, 'Referenced'))!;
+		const viewTok = (await api.addViewRef(proj.id, view.id, 'children', otherView.id))!;
+		await api.setTokenAxisOverride(viewTok.id, axis.id, { type: 'literal', value: 'dark' });
+
 		return proj.id;
 	}
 
@@ -134,6 +165,7 @@ describe('batched fetch key-set matches row interfaces', () => {
 		assertExact(rows.projectTokens[0], projectTokenKeys, 'ProjectToken');
 		assertExact(rows.viewTokenRows[0], viewTokenKeys, 'ViewToken');
 		assertExact(rows.kitTokenRows[0], kitTokenKeys, 'KitToken');
+		assertExact(rows.tokenAxisOverrides[0], tokenAxisOverrideKeys, 'TokenAxisOverride');
 		assertExact(rows.conditions[0], conditionKeys, 'Condition');
 		assertExact(rows.entries[0], entryKeys, 'Entry');
 	});

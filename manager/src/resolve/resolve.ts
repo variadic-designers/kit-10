@@ -15,6 +15,7 @@ export const RESOLUTION_RELEVANT_TABLES = [
 	'kits',
 	'axis_args',
 	'tokens',
+	'token_axis_overrides',
 	'layers',
 	'layer_axis_values',
 	'axis_values',
@@ -57,12 +58,16 @@ export interface ResolvedProperty {
 	// Same conditions as `keys`, but with the actual matched value per axis (e.g. theme: "dark"),
 	// for display — "Theme + Density" tells you which axes combine, this tells you which value.
 	conditionValues: { axisId: string; value: string }[];
-	// View ids this property's value references, when the value is a `view-list` -- otherwise null.
-	// Purely a function of the value TYPE (a native token-value kind), NOT the property name: the
-	// resolver assigns no meaning to any particular name like "children". A consumer that wants to
-	// treat some property as nested composition (Charter's `children`, the editor's Views tree)
-	// identifies it by its own field-kind convention, not here.
-	viewRefs: string[] | null;
+	// Views this property's value references, when its declaring alias has one or more `view`-typed
+	// token rows -- otherwise null. Each entry carries the referencing token's own id (`tokenId`,
+	// distinct from the ResolvedProperty's own top-level `tokenId` above, which is the winning
+	// render entry's token) so a caller can target a SPECIFIC reference for remove/reorder even when
+	// two entries share a `viewId` (the same view referenced twice). Purely a function of the value
+	// TYPE (a native token-value kind), NOT the property name: the resolver assigns no meaning to
+	// any particular name like "children". A consumer that wants to treat some property as nested
+	// composition (Charter's `children`, the editor's Views tree) identifies it by its own
+	// field-kind convention, not here.
+	viewRefs: { viewId: string; tokenId: string }[] | null;
 }
 
 // --- Cascade (resolution inspector) types ---------------------------------------------------
@@ -159,12 +164,19 @@ export function matchesArg(condition: AxisValueType, arg: ArgValue): boolean {
 				if (isNaN(num)) return false;
 				argLo = num;
 				argHi = num;
-			} else {
+			} else if (arg.type === 'range') {
 				if (arg.min === null && arg.max === null) return true;
 				argLo = arg.min ?? -Infinity;
 				argHi = arg.max ?? Infinity;
 				argOpenLo = arg.min === null;
 				argOpenHi = arg.max === null;
+			} else {
+				// A 'linked' ArgValue must never reach here -- resolveAllLinkedArgs resolves every raw
+				// axis_args/override entry to its concrete literal/range value (or omits the key
+				// entirely) at every call site that builds an args map, before matchLayers ever runs.
+				// If one slips through anyway, treat it as no match rather than crashing on the
+				// missing min/max.
+				return false;
 			}
 
 			const lo = Math.max(argLo, condLo);
@@ -230,13 +242,7 @@ function matchLayers(
 		const conds = [...data.conditions].sort((a, b) => a.axisId.localeCompare(b.axisId));
 		for (const entry of data.entries) {
 			const tv = entry.tokenId ? entry.tokenValue : null;
-			const resolvedValue = tv
-				? tv.type === 'scalar'
-					? tv.value
-					: tv.type === 'view'
-						? tv.view_id
-						: ''
-				: (entry.literalValue ?? '');
+			const resolvedValue = tv ? (tv.type === 'scalar' ? tv.value : tv.view_id) : (entry.literalValue ?? '');
 			result.set(entry.property, {
 				property: entry.property,
 				value: resolvedValue,
@@ -251,9 +257,10 @@ function matchLayers(
 					axisId: c.axisId,
 					value: formatAxisValue(c.axisValue)
 				})),
-				// Type-driven, not name-driven: a `view-list` token value carries view refs. (A
-				// later view-scope token of the same alias overrides these in substituteTokens.)
-				viewRefs: tv?.type === 'view-list' ? tv.view_ids : null
+				// A render-entry-anchored `view` token is a single reference. Multi-ref aggregation
+				// (N `view` tokens sharing one alias) happens in gatherScopedTokens/resolveViewsFromRows,
+				// consulted post-hoc by substituteTokens -- this stays null here regardless.
+				viewRefs: null
 			});
 		}
 	}
@@ -293,13 +300,24 @@ async function fetchLayerData(db: SchemaDialect, layerIds: string[]) {
 				'render_entries.property',
 				'render_entries.value as literal_value',
 				'render_entries.token_id',
-				'tokens.alias as token_alias',
+				// The alias a property should substitute BY -- for a `view`-typed token that's its
+				// composition_alias (see TokensTable's doc comment in schema.ts), for anything else
+				// (scalar, or no token at all) it's the plain alias. Must match exactly what
+				// applyScopeTokenRows groups viewRefMap/scalarMap by, or substituteTokens can never
+				// find the entry it just read.
+				sql<string | null>`CASE WHEN tokens.value ->> 'type' = 'view' THEN tokens.composition_alias ELSE tokens.alias END`.as(
+					'token_alias'
+				),
 				'tokens.value as token_value'
 			])
 			.execute()
 	]);
 }
 
+// No caller anywhere in the app today (only resolve.test.ts's own fixtures, always plain literal/
+// range values) -- it takes a bare axisArgs record with no view/project context, so it structurally
+// cannot walk a 'linked' chain itself. This is a documented invariant, not an active gap: a future
+// real caller must pre-resolve any 'linked' entries (e.g. via resolveAllLinkedArgs) before calling.
 export async function resolve(
 	db: SchemaDialect,
 	kitId: string,
@@ -447,10 +465,52 @@ async function resolveAll(
 export interface ScopedTokenMaps {
 	// alias -> scalar string value, narrowest scope (project -> kit -> view) wins.
 	scalarMap: Map<string, string>;
-	// alias -> list of view ids, same scope-precedence rule. Separate map rather than widening
-	// scalarMap's value type -- keeps the existing scalar substitution path completely untouched,
-	// and a property only ever wants one or the other (a view-list vs a scalar), never both.
-	viewListMap: Map<string, string[]>;
+	// alias -> ordered list of view refs, same scope-precedence rule: a narrower scope's `view`
+	// rows for an alias fully replace a wider scope's (not merge with it). Separate map rather than
+	// widening scalarMap's value type -- keeps the existing scalar substitution path untouched, and
+	// a property only ever wants one kind or the other, never both.
+	viewRefMap: Map<string, { viewId: string; tokenId: string }[]>;
+}
+
+// A token row shape shared by the project/kit/view token queries below -- enough to accumulate
+// same-scope `view` rows (in `priority_index` order) into one alias's viewRefMap entry, or set a
+// `scalar` row into scalarMap. Called once per SCOPE UNIT (the whole project rowset, one kit's
+// rowset, or the whole view rowset) so a narrower scope's commit replaces rather than merges with
+// a wider scope's, exactly mirroring the scalar map's existing last-writer-wins semantics.
+interface ScopableTokenRow {
+	id: string;
+	alias: string | null;
+	// Drives viewRefMap grouping for `type: 'view'` rows -- `alias` is unused for those rows (see
+	// TokensTable's doc comment in schema.ts). Scalar rows still key off `alias`.
+	composition_alias: string | null;
+	value: TokenValue | null;
+	priority_index: number;
+}
+
+function applyScopeTokenRows(
+	rows: ScopableTokenRow[],
+	scalarMap: Map<string, string>,
+	viewRefMap: Map<string, { viewId: string; tokenId: string }[]>
+): void {
+	const viewAcc = new Map<string, ScopableTokenRow[]>();
+	for (const t of rows) {
+		if (!t.value) continue;
+		if (t.value.type === 'scalar') {
+			if (t.alias) scalarMap.set(t.alias, t.value.value);
+		} else if (t.value.type === 'view') {
+			if (!t.composition_alias) continue;
+			const arr = viewAcc.get(t.composition_alias) ?? [];
+			arr.push(t);
+			viewAcc.set(t.composition_alias, arr);
+		}
+	}
+	for (const [compositionAlias, rowsForAlias] of viewAcc) {
+		rowsForAlias.sort((a, b) => a.priority_index - b.priority_index || a.id.localeCompare(b.id));
+		viewRefMap.set(
+			compositionAlias,
+			rowsForAlias.map((r) => ({ viewId: (r.value as { view_id: string }).view_id, tokenId: r.id }))
+		);
+	}
 }
 
 async function gatherScopedTokens(
@@ -459,11 +519,11 @@ async function gatherScopedTokens(
 	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
 	kitIds: string[],
 	viewId: string
-): Promise<ScopedTokenMaps & { viewTokens: { alias: string | null; value: TokenValue | null }[] }> {
+): Promise<ScopedTokenMaps & { viewTokens: ScopableTokenRow[] }> {
 	const scalarMap = new Map<string, string>();
-	const viewListMap = new Map<string, string[]>();
+	const viewRefMap = new Map<string, { viewId: string; tokenId: string }[]>();
 
-	if (!projectId) return { scalarMap, viewListMap, viewTokens: [] };
+	if (!projectId) return { scalarMap, viewRefMap, viewTokens: [] };
 
 	const [projectTokens, kitTokenRows, viewTokens] = await Promise.all([
 		db
@@ -471,38 +531,47 @@ async function gatherScopedTokens(
 			.where('tokens.project_id', '=', projectId)
 			.where('tokens.kit_id', 'is', null)
 			.where('tokens.view_id', 'is', null)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value'])
+			.where((eb) => eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)]))
+			.orderBy('tokens.priority_index', 'asc')
+			.orderBy('tokens.id', 'asc')
+			.select(['tokens.id', 'tokens.alias', 'tokens.composition_alias', 'tokens.value', 'tokens.priority_index'])
 			.execute(),
 
 		kitIds.length > 0
 			? db
 					.selectFrom('tokens')
 					.where('tokens.kit_id', 'in', kitIds)
-					.where('tokens.alias', 'is not', null)
-					.select(['tokens.alias', 'tokens.value', 'tokens.kit_id'])
+					.where((eb) =>
+						eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)])
+					)
+					.orderBy('tokens.priority_index', 'asc')
+					.orderBy('tokens.id', 'asc')
+					.select([
+						'tokens.id',
+						'tokens.alias',
+						'tokens.composition_alias',
+						'tokens.value',
+						'tokens.kit_id',
+						'tokens.priority_index'
+					])
 					.execute()
 			: Promise.resolve(
-					[] as { alias: string | null; value: TokenValue | null; kit_id: string | null }[]
+					[] as (ScopableTokenRow & { kit_id: string | null })[]
 				),
 
 		db
 			.selectFrom('tokens')
 			.where('tokens.view_id', '=', viewId)
-			.where('tokens.alias', 'is not', null)
-			.select(['tokens.alias', 'tokens.value'])
+			.where((eb) => eb.or([eb('tokens.alias', 'is not', null), eb('tokens.composition_alias', 'is not', null)]))
+			.orderBy('tokens.priority_index', 'asc')
+			.orderBy('tokens.id', 'asc')
+			.select(['tokens.id', 'tokens.alias', 'tokens.composition_alias', 'tokens.value', 'tokens.priority_index'])
 			.execute()
 	]);
 
-	const apply = (alias: string | null, value: TokenValue | null) => {
-		if (!alias || !value) return;
-		if (value.type === 'scalar') scalarMap.set(alias, value.value);
-		else if (value.type === 'view-list') viewListMap.set(alias, value.view_ids);
-	};
+	applyScopeTokenRows(projectTokens, scalarMap, viewRefMap);
 
-	for (const t of projectTokens) apply(t.alias, t.value);
-
-	// Group kit tokens by kit_id, then apply in kitIds order so priority is preserved.
+	// Group kit tokens by kit_id, then commit in kitIds order so priority is preserved.
 	const tokensByKit = new Map<string, typeof kitTokenRows>();
 	for (const t of kitTokenRows) {
 		if (!t.kit_id) continue;
@@ -510,12 +579,12 @@ async function gatherScopedTokens(
 		tokensByKit.get(t.kit_id)!.push(t);
 	}
 	for (const kitId of kitIds) {
-		for (const t of tokensByKit.get(kitId) ?? []) apply(t.alias, t.value);
+		applyScopeTokenRows(tokensByKit.get(kitId) ?? [], scalarMap, viewRefMap);
 	}
 
-	for (const t of viewTokens) apply(t.alias, t.value);
+	applyScopeTokenRows(viewTokens, scalarMap, viewRefMap);
 
-	return { scalarMap, viewListMap, viewTokens };
+	return { scalarMap, viewRefMap, viewTokens };
 }
 
 function substituteTokens(
@@ -526,11 +595,11 @@ function substituteTokens(
 		if (!resolved.isToken || !resolved.tokenAlias) continue;
 
 		// Which kind of value a given alias holds is decided by the token's own value type (i.e.
-		// which map it landed in), not by the property's name. A view-list alias sets viewRefs; a
-		// scalar alias sets the string value. No property name is special.
-		const viewIds = tokenMaps.viewListMap.get(resolved.tokenAlias);
-		if (viewIds !== undefined) {
-			resolved.viewRefs = viewIds;
+		// which map it landed in), not by the property's name. An alias with one or more `view`
+		// rows sets viewRefs; a scalar alias sets the string value. No property name is special.
+		const viewRefs = tokenMaps.viewRefMap.get(resolved.tokenAlias);
+		if (viewRefs !== undefined) {
+			resolved.viewRefs = viewRefs;
 			continue;
 		}
 
@@ -540,35 +609,45 @@ function substituteTokens(
 }
 
 /**
- * Self-declaring view-scope references: a view's OWN view-list token materializes a property of
- * the same name (= its alias) carrying its view refs, even when no kit layer declares that
- * property. This lets a per-view composition override (e.g. a view's `children`) exist with no
- * render entry anchored on a shared kit layer -- which would otherwise force the property onto
- * every view composing the kit. Only the view's own tokens self-declare; kit/project-scope tokens
- * do not. Name-neutral by construction: whatever the token is aliased, that's the property name;
- * the resolver reads no meaning into it.
+ * Self-declaring view-scope references: a view's OWN `view`-typed token(s) materialize a property
+ * of the same name (= their shared alias) carrying their view refs, even when no kit layer
+ * declares that property. This lets a per-view composition override (e.g. a view's `children`)
+ * exist with no render entry anchored on a shared kit layer -- which would otherwise force the
+ * property onto every view composing the kit. Only the view's own tokens self-declare; kit/
+ * project-scope tokens do not. Name-neutral by construction: whatever the token is aliased, that's
+ * the property name; the resolver reads no meaning into it. Groups same-alias rows (ordered by
+ * priority_index) before declaring, since more than one `view` token can now share an alias.
  */
-function applySelfDeclaredViewRefs(
-	resolvedKits: ResolvedKit[],
-	viewTokens: { alias: string | null; value: TokenValue | null }[]
-): void {
+function applySelfDeclaredViewRefs(resolvedKits: ResolvedKit[], viewTokens: ScopableTokenRow[]): void {
 	const target = resolvedKits[resolvedKits.length - 1];
 	if (!target) return;
+
+	const byAlias = new Map<string, ScopableTokenRow[]>();
 	for (const t of viewTokens) {
-		if (!t.alias || t.value?.type !== 'view-list') continue;
-		if (resolvedKits.some((k) => k.properties.has(t.alias!))) continue; // a layer already declares it
-		target.properties.set(t.alias, {
-			property: t.alias,
+		if (!t.composition_alias || t.value?.type !== 'view') continue;
+		const arr = byAlias.get(t.composition_alias) ?? [];
+		arr.push(t);
+		byAlias.set(t.composition_alias, arr);
+	}
+
+	for (const [alias, rowsForAlias] of byAlias) {
+		if (resolvedKits.some((k) => k.properties.has(alias))) continue; // a layer already declares it
+		rowsForAlias.sort((a, b) => a.priority_index - b.priority_index || a.id.localeCompare(b.id));
+		target.properties.set(alias, {
+			property: alias,
 			value: '',
 			sourceLayerId: '',
 			kitId: target.kitId,
 			isToken: true,
-			tokenAlias: t.alias,
+			tokenAlias: alias,
 			tokenId: null,
 			conditionCount: 0,
 			keys: [],
 			conditionValues: [],
-			viewRefs: t.value.view_ids
+			viewRefs: rowsForAlias.map((r) => ({
+				viewId: (r.value as { view_id: string }).view_id,
+				tokenId: r.id
+			}))
 		});
 	}
 }
@@ -600,21 +679,44 @@ export async function resolveManySlowPath(
 	const allKitIds = compositions.map((c) => c.kit_id);
 	const projectId = compositions[0]?.project_id;
 
-	// axisArgs and token scopes are independent — fetch in parallel.
-	const [axisArgsRows, tokenMap] = await Promise.all([
-		db
-			.selectFrom('axis_args')
-			.where('axis_args.view_id', '=', viewId)
-			.select(['axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
-			.execute(),
+	// axisArgs, project-wide compositions, and token scopes are independent -- fetch in parallel.
+	// axis_args and compositions are fetched PROJECT-WIDE (not scoped to `viewId` alone) since a
+	// 'linked' axis_args value (drag-to-lock) can point at any other view in the project, and
+	// resolveAllLinkedArgs needs the full project-wide compositions set to tell a dangling link
+	// (source kit no longer composed by that view) apart from a genuinely unset one.
+	const [axisArgsRows, projectCompositionsRows, tokenMap] = await Promise.all([
+		projectId
+			? db
+					.selectFrom('axis_args')
+					.innerJoin('views', 'views.id', 'axis_args.view_id')
+					.where('views.project_id', '=', projectId)
+					.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+					.execute()
+			: Promise.resolve([]),
+		projectId
+			? db
+					.selectFrom('compositions')
+					.innerJoin('views', 'views.id', 'compositions.view_id')
+					.where('views.project_id', '=', projectId)
+					.select(['compositions.view_id', 'compositions.kit_id'])
+					.execute()
+			: Promise.resolve([]),
 		gatherScopedTokens(db, projectId, allKitIds, viewId)
 	]);
 
-	const argsByKit = new Map<string, Record<string, ArgValue>>();
+	const argsByViewKit = new Map<string, Record<string, ArgValue>>();
 	for (const arg of axisArgsRows) {
 		if (!arg.value) continue;
-		if (!argsByKit.has(arg.kit_id)) argsByKit.set(arg.kit_id, {});
-		argsByKit.get(arg.kit_id)![arg.axis_id] = arg.value as ArgValue;
+		const key = `${arg.view_id}::${arg.kit_id}`;
+		if (!argsByViewKit.has(key)) argsByViewKit.set(key, {});
+		argsByViewKit.get(key)![arg.axis_id] = arg.value as ArgValue;
+	}
+	const validCompositions = new Set(projectCompositionsRows.map((c) => `${c.view_id}::${c.kit_id}`));
+	const resolvedArgsByViewKit = resolveAllLinkedArgs(argsByViewKit, validCompositions);
+
+	const argsByKit = new Map<string, Record<string, ArgValue>>();
+	for (const kitId of allKitIds) {
+		argsByKit.set(kitId, resolvedArgsByViewKit.get(`${viewId}::${kitId}`) ?? {});
 	}
 
 	const resolvedByKit = await resolveAll(db, allKitIds, argsByKit);
@@ -664,13 +766,7 @@ function matchLayersCascade(
 			conditionValues: conds.map((c) => ({ axisId: c.axisId, value: formatAxisValue(c.axisValue) })),
 			entries: data.entries.map((entry) => {
 				const tv = entry.tokenId ? entry.tokenValue : null;
-				const value = tv
-					? tv.type === 'scalar'
-						? tv.value
-						: tv.type === 'view'
-							? tv.view_id
-							: '' // view-list has no scalar display
-					: (entry.literalValue ?? '');
+				const value = tv ? (tv.type === 'scalar' ? tv.value : tv.view_id) : (entry.literalValue ?? '');
 				return {
 					property: entry.property,
 					value,
@@ -719,23 +815,49 @@ export async function resolveViewCascade(db: SchemaDialect, viewId: string): Pro
 		.innerJoin('kits', 'kits.id', 'compositions.kit_id')
 		.where('compositions.view_id', '=', viewId)
 		.orderBy('compositions.priority_index', 'asc')
-		.select(['compositions.kit_id', 'kits.name as kit_name'])
+		.select(['compositions.kit_id', 'kits.name as kit_name', 'kits.project_id'])
 		.execute();
 
 	const allKitIds = compositions.map((c) => c.kit_id);
 	if (allKitIds.length === 0) return [];
 
-	const axisArgsRows = await db
-		.selectFrom('axis_args')
-		.where('axis_args.view_id', '=', viewId)
-		.select(['axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
-		.execute();
+	const projectId = compositions[0]?.project_id;
 
-	const argsByKit = new Map<string, Record<string, ArgValue>>();
+	// Project-wide for the same reason as resolveManySlowPath -- a 'linked' axis_args value can point
+	// at any other view in the project, and resolveAllLinkedArgs needs the project-wide compositions
+	// set to tell a dangling link apart from a genuinely unset one.
+	const [axisArgsRows, projectCompositionsRows] = await Promise.all([
+		projectId
+			? db
+					.selectFrom('axis_args')
+					.innerJoin('views', 'views.id', 'axis_args.view_id')
+					.where('views.project_id', '=', projectId)
+					.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+					.execute()
+			: Promise.resolve([]),
+		projectId
+			? db
+					.selectFrom('compositions')
+					.innerJoin('views', 'views.id', 'compositions.view_id')
+					.where('views.project_id', '=', projectId)
+					.select(['compositions.view_id', 'compositions.kit_id'])
+					.execute()
+			: Promise.resolve([])
+	]);
+
+	const argsByViewKit = new Map<string, Record<string, ArgValue>>();
 	for (const arg of axisArgsRows) {
 		if (!arg.value) continue;
-		if (!argsByKit.has(arg.kit_id)) argsByKit.set(arg.kit_id, {});
-		argsByKit.get(arg.kit_id)![arg.axis_id] = arg.value as ArgValue;
+		const key = `${arg.view_id}::${arg.kit_id}`;
+		if (!argsByViewKit.has(key)) argsByViewKit.set(key, {});
+		argsByViewKit.get(key)![arg.axis_id] = arg.value as ArgValue;
+	}
+	const validCompositions = new Set(projectCompositionsRows.map((c) => `${c.view_id}::${c.kit_id}`));
+	const resolvedArgsByViewKit = resolveAllLinkedArgs(argsByViewKit, validCompositions);
+
+	const argsByKit = new Map<string, Record<string, ArgValue>>();
+	for (const kitId of allKitIds) {
+		argsByKit.set(kitId, resolvedArgsByViewKit.get(`${viewId}::${kitId}`) ?? {});
 	}
 
 	const cascadeByKit = await resolveAllCascade(db, allKitIds, argsByKit);
@@ -747,10 +869,29 @@ export async function resolveViewCascade(db: SchemaDialect, viewId: string): Pro
 	}));
 }
 
+// Cross-kit merge: for each property key, the kit with the SINGLE MOST SPECIFIC matching layer
+// wins outright, regardless of kit composition order -- kit order only breaks a tie between two
+// equally-specific candidates (in which case the later/higher-priority kit wins, preserving the
+// old plain-overwrite behavior for the by-far-most-common case: an uncontested property, or two
+// null/unconditioned layers). Before this, kit order alone decided every contested property, full
+// stop, so a lower-priority kit's real, correctly-conditioned layer could never show through once
+// ANY higher-priority kit defined that property at all -- even from that kit's own unconditioned
+// null layer (conditionCount 0). A user painting a conditional variant onto a kit that wasn't on
+// top of the composition would see a real DB write (a real layer, a real dot) with zero visible
+// effect: the write was never wrong, only invisible. `conditionCount` alone (not the full
+// [count, ...axisPriorities] specificity `computeSpecificity` uses within one kit) is the
+// cross-kit signal -- two DIFFERENT kits' layers tying on conditionCount but differing by axis
+// priority fall back to kit order, a deliberate, documented scope cut (rare in practice: it only
+// matters when two different kits both condition the SAME property on the same number of axes).
+// Mirrored exactly in Charter's merge_kits (plugins/charter/src/lib.rs) -- the two must never
+// disagree, since this function only ever feeds the editor's Render-panel inspector while
+// merge_kits feeds what actually renders/exports. Keep them in lockstep.
 export function flattenKitResults(kits: ResolvedKit[]): Map<string, ResolvedProperty> {
 	const merged = new Map<string, ResolvedProperty>();
 	for (const kit of kits) {
 		for (const [prop, resolved] of kit.properties) {
+			const existing = merged.get(prop);
+			if (existing && existing.conditionCount > resolved.conditionCount) continue;
 			merged.set(prop, resolved);
 		}
 	}
@@ -785,6 +926,7 @@ export function rowsKey(rows: ResolutionRows): string {
 		rows.projectTokens,
 		rows.viewTokenRows,
 		rows.kitTokenRows,
+		rows.tokenAxisOverrides,
 		rows.layers,
 		rows.conditions,
 		rows.entries
@@ -804,6 +946,7 @@ export interface ResolutionRows {
 	projectTokens: ProjectTokenRow[];
 	viewTokenRows: ViewTokenRow[];
 	kitTokenRows: KitTokenRow[];
+	tokenAxisOverrides: TokenAxisOverrideRow[];
 	layers: LayerRow[];
 	conditions: ConditionRow[];
 	entries: EntryRow[];
@@ -831,18 +974,32 @@ export interface AxisArgRow {
 	value: unknown;
 }
 export interface ProjectTokenRow {
+	id: string;
 	alias: string | null;
+	composition_alias: string | null;
 	value: TokenValue | null;
+	priority_index: number;
 }
 export interface ViewTokenRow {
+	id: string;
 	view_id: string | null;
 	alias: string | null;
+	composition_alias: string | null;
 	value: TokenValue | null;
+	priority_index: number;
 }
 export interface KitTokenRow {
+	id: string;
 	alias: string | null;
+	composition_alias: string | null;
 	value: TokenValue | null;
 	kit_id: string | null;
+	priority_index: number;
+}
+export interface TokenAxisOverrideRow {
+	token_id: string;
+	axis_id: string;
+	value: unknown;
 }
 export interface LayerRow {
 	id: string;
@@ -913,26 +1070,38 @@ export async function fetchResolutionRows(
 		FROM axis_args aa
 		WHERE aa.view_id IN (SELECT id FROM project_view_ids)
 		UNION ALL
-		SELECT 'project_tokens' AS tag, jsonb_build_object('alias', t.alias, 'value', t.value) AS data
+		SELECT 'project_tokens' AS tag, jsonb_build_object(
+			'id', t.id, 'alias', t.alias, 'composition_alias', t.composition_alias, 'value', t.value,
+			'priority_index', t.priority_index
+		) AS data
 		FROM tokens t
 		WHERE t.project_id = ${projectId}
 			AND t.kit_id IS NULL
 			AND t.view_id IS NULL
-			AND t.alias IS NOT NULL
+			AND (t.alias IS NOT NULL OR t.composition_alias IS NOT NULL)
 		UNION ALL
 		SELECT 'view_tokens' AS tag, jsonb_build_object(
-			'view_id', t.view_id, 'alias', t.alias, 'value', t.value
+			'id', t.id, 'view_id', t.view_id, 'alias', t.alias, 'composition_alias', t.composition_alias,
+			'value', t.value, 'priority_index', t.priority_index
 		) AS data
 		FROM tokens t
 		WHERE t.view_id IN (SELECT id FROM project_view_ids)
-			AND t.alias IS NOT NULL
+			AND (t.alias IS NOT NULL OR t.composition_alias IS NOT NULL)
 		UNION ALL
 		SELECT 'kit_tokens' AS tag, jsonb_build_object(
-			'alias', t.alias, 'value', t.value, 'kit_id', t.kit_id
+			'id', t.id, 'alias', t.alias, 'composition_alias', t.composition_alias, 'value', t.value,
+			'kit_id', t.kit_id, 'priority_index', t.priority_index
 		) AS data
 		FROM tokens t
 		WHERE t.kit_id IN (SELECT kit_id FROM project_kit_ids)
-			AND t.alias IS NOT NULL
+			AND (t.alias IS NOT NULL OR t.composition_alias IS NOT NULL)
+		UNION ALL
+		SELECT 'token_axis_overrides' AS tag, jsonb_build_object(
+			'token_id', tao.token_id, 'axis_id', tao.axis_id, 'value', tao.value
+		) AS data
+		FROM token_axis_overrides tao
+		JOIN tokens t ON t.id = tao.token_id
+		WHERE t.project_id = ${projectId}
 		UNION ALL
 		SELECT 'layers' AS tag, to_jsonb(l) AS data
 		FROM layers l
@@ -950,7 +1119,9 @@ export async function fetchResolutionRows(
 		UNION ALL
 		SELECT 'entries' AS tag, jsonb_build_object(
 			'layer_id', l.id, 'property', re.property, 'literal_value', re.value,
-			'token_id', re.token_id, 'token_alias', t.alias, 'token_value', t.value
+			'token_id', re.token_id,
+			'token_alias', CASE WHEN t.value ->> 'type' = 'view' THEN t.composition_alias ELSE t.alias END,
+			'token_value', t.value
 		) AS data
 		FROM render_entries re
 		JOIN render_snippets rs ON rs.id = re.snippet_id
@@ -972,6 +1143,7 @@ export async function fetchResolutionRows(
 		project_tokens: [] as ProjectTokenRow[],
 		view_tokens: [] as ViewTokenRow[],
 		kit_tokens: [] as KitTokenRow[],
+		token_axis_overrides: [] as TokenAxisOverrideRow[],
 		layers: [] as LayerRow[],
 		conditions: [] as ConditionRow[],
 		entries: [] as EntryRow[]
@@ -992,27 +1164,138 @@ export async function fetchResolutionRows(
 		projectTokens: grouped.project_tokens,
 		viewTokenRows: grouped.view_tokens,
 		kitTokenRows: grouped.kit_tokens,
+		tokenAxisOverrides: grouped.token_axis_overrides,
 		layers: grouped.layers,
 		conditions: grouped.conditions,
 		entries: grouped.entries
 	};
 }
 
+// One occurrence whose reference (a specific `view`-typed token row) carries ≥1 row in
+// token_axis_overrides -- i.e. a per-instance variant pick that diverges from the referenced
+// view's own stored axis_args. `occurrenceKey` is the referencing token's own id: stable, unique,
+// and (via one more join) resolvable back to "which alias, which parent, which override rows."
+// This is additive -- computed only for overridden references, alongside (never replacing) each
+// view's single project-wide `ResolvedViewData` entry in `views`, which keeps reflecting that
+// view's own stored axis_args unchanged for every non-overriding use (its own direct display, or
+// any other reference that doesn't override). A project with zero overrides anywhere produces
+// `overriddenOccurrences: []` and costs nothing extra.
+//
+// Consumed by Charter's `occurrence_map` (see plugins/charter/src/lib.rs's OverriddenOccurrence
+// struct) and by the Editor's occurrence-aware selection/drag/navigation (view-tree.ts) -- both
+// keyed by `occurrenceKey`, not just `viewId`, per CLAUDE.md's occurrence-key architecture.
+export interface OverriddenOccurrence {
+	occurrenceKey: string;
+	viewId: string;
+	resolvedKits: ResolvedKit[];
+}
+
+// The one place in this file that walks a 'linked' chain -- a view's own axis_args cell (drag-to-
+// lock, "parent view becomes source of truth for a child's axis") or a token_axis_overrides entry
+// (the separate per-occurrence override mechanism) can both be 'linked', and either can point at a
+// cell that is ITSELF linked, so a single-hop lookup is not enough once a view's own axis_args can
+// hold this shape. Cycle safety mirrors Views.svelte's isDescendant (a flat visited `seen` set), not
+// cloneViewSubtreeImpl's per-position ancestor chain -- a single (view,kit,axis) cell has AT MOST ONE
+// link target (never multiple simultaneous paths the way composition children/diamonds do), so
+// there's no diamond case to distinguish from a genuine cycle, only a linear chain that must
+// terminate on first repeat. `validCompositions` (keys `${viewId}::${kitId}`) makes a link through a
+// kit no longer composed by that view degrade to dangling instead of silently reading through an
+// orphaned axis_args row -- detachKitFromComposition already leaves such rows behind uncleaned
+// (existing, precedented behavior), so without this check a link whose source kit was later detached
+// would keep resolving through the stale row instead of degrading to unset. Server/resolve call
+// sites always pass it; display-only UI call sites may omit it as a stated simplification. Any
+// termination case (cycle, dangling, or the axis simply never set at that cell) returns `undefined`
+// -- matchLayers already treats "no arg for this axis" as "that layer's condition never matches, the
+// null/unconditioned layer wins" (its `axisArgs[c.axisId]` / `!arg` check), which is exactly the
+// correct "unset" behavior here too.
+export function resolveLinkedArg(
+	viewId: string,
+	kitId: string,
+	axisId: string,
+	argsByViewKit: Map<string, Record<string, ArgValue>>,
+	seen: Set<string> = new Set(),
+	validCompositions?: Set<string>
+): ArgValue | undefined {
+	const cellKey = `${viewId}::${kitId}::${axisId}`;
+	if (seen.has(cellKey)) return undefined; // cycle
+	seen.add(cellKey);
+	if (validCompositions && !validCompositions.has(`${viewId}::${kitId}`)) return undefined; // dangling: kit no longer composed here
+	const value = argsByViewKit.get(`${viewId}::${kitId}`)?.[axisId];
+	if (!value) return undefined; // never set at this cell
+	if (value.type !== 'linked') return value;
+	return resolveLinkedArg(value.view_id, value.kit_id, axisId, argsByViewKit, seen, validCompositions);
+}
+
+// Bulk convenience over resolveLinkedArg: resolves every key already present in a raw argsByViewKit
+// map, dropping any axis whose chain terminates unset, so every downstream consumer (the per-view
+// baseline loop below, and mergeAxisOverrides) reads an already-resolved map and never has to know
+// 'linked' exists at all.
+function resolveAllLinkedArgs(
+	argsByViewKit: Map<string, Record<string, ArgValue>>,
+	validCompositions: Set<string>
+): Map<string, Record<string, ArgValue>> {
+	const result = new Map<string, Record<string, ArgValue>>();
+	for (const [key, raw] of argsByViewKit) {
+		const [viewId, kitId] = key.split('::');
+		const resolved: Record<string, ArgValue> = {};
+		for (const axisId of Object.keys(raw)) {
+			const v = resolveLinkedArg(viewId!, kitId!, axisId, argsByViewKit, new Set(), validCompositions);
+			if (v) resolved[axisId] = v;
+		}
+		result.set(key, resolved);
+	}
+	return result;
+}
+
+// Merges a target view+kit's own axis_args (`base`) with one occurrence's per-token overrides
+// (`overrides`), overrides winning key-for-key. A 'literal'/'range' override is a static snapshot.
+// A 'linked' override is NOT a snapshot -- it re-reads its source (view, kit)'s CURRENT axis_args
+// every time this runs, so a later change to the source (including clearAxisArg unsetting it) is
+// picked up automatically on the next resolve, no invalidation logic needed. `argsByViewKit` here is
+// expected to be the ALREADY-RESOLVED map (resolveAllLinkedArgs's output, never raw) -- passing it
+// through resolveLinkedArg still works correctly (a resolved map has no 'linked' entries left, so it
+// resolves in exactly one lookup), and this way there is exactly one resolution pass per view/kit,
+// never a redundant re-walk from inside the override branch. See resolveLinkedArg's own doc comment
+// for the "no entry -> delete the key" unset rule.
+function mergeAxisOverrides(
+	base: Record<string, ArgValue>,
+	overrides: Record<string, ArgValue>,
+	argsByViewKit: Map<string, Record<string, ArgValue>>
+): Record<string, ArgValue> {
+	const result = { ...base };
+	for (const [axisId, value] of Object.entries(overrides)) {
+		if (value.type === 'linked') {
+			const sourceValue = resolveLinkedArg(value.view_id, value.kit_id, axisId, argsByViewKit);
+			if (sourceValue) result[axisId] = sourceValue;
+			else delete result[axisId];
+		} else {
+			result[axisId] = value;
+		}
+	}
+	return result;
+}
+
 // Pure in-memory resolution: a function of the fetched rows only. No db, no await.
 // Split out from the fetch so the editor can dedup on the rows (input) before paying
 // for the resolve + serialize + plugin call (output) when nothing actually changed.
-export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
-	if (rows.viewRows.length === 0) return [];
+export function resolveViewsFromRows(rows: ResolutionRows): {
+	views: ResolvedViewData[];
+	overriddenOccurrences: OverriddenOccurrence[];
+} {
+	if (rows.viewRows.length === 0) return { views: [], overriddenOccurrences: [] };
 
 	const allKitIds = [...new Set(rows.compositions.map((c) => c.kit_id))];
 
 	if (allKitIds.length === 0) {
-		return rows.viewRows.map((v) => ({
-			viewId: v.id,
-			viewName: v.name,
-			hints: (v.hints ?? null) as Record<string, unknown> | null,
-			resolvedKits: []
-		}));
+		return {
+			views: rows.viewRows.map((v) => ({
+				viewId: v.id,
+				viewName: v.name,
+				hints: (v.hints ?? null) as Record<string, unknown> | null,
+				resolvedKits: []
+			})),
+			overriddenOccurrences: []
+		};
 	}
 
 	// Build per-kit LayerData maps
@@ -1053,13 +1336,10 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 	}
 
 	// Build token maps
-	const baseTokenMap = new Map<string, string>();
-	const baseViewListMap = new Map<string, string[]>();
-	for (const t of rows.projectTokens) {
-		if (!t.alias || !t.value) continue;
-		if (t.value.type === 'scalar') baseTokenMap.set(t.alias, t.value.value);
-		else if (t.value.type === 'view-list') baseViewListMap.set(t.alias, t.value.view_ids);
-	}
+	const baseScalarMap = new Map<string, string>();
+	const baseViewRefMap = new Map<string, { viewId: string; tokenId: string }[]>();
+	applyScopeTokenRows(rows.projectTokens, baseScalarMap, baseViewRefMap);
+
 	const tokensByKit = new Map<string, KitTokenRow[]>();
 	for (const t of rows.kitTokenRows) {
 		if (!t.kit_id) continue;
@@ -1086,35 +1366,38 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 		if (!argsByViewKit.has(key)) argsByViewKit.set(key, {});
 		argsByViewKit.get(key)![arg.axis_id] = arg.value as ArgValue;
 	}
+	// rows.compositions is already project-wide (see fetchResolutionRows), so this is exactly the
+	// "which (view,kit) pairs genuinely exist" set resolveLinkedArg needs to treat a link through a
+	// detached/deleted kit as dangling rather than reading through an orphaned axis_args row.
+	const validCompositions = new Set(rows.compositions.map((c) => `${c.view_id}::${c.kit_id}`));
+	const resolvedArgsByViewKit = resolveAllLinkedArgs(argsByViewKit, validCompositions);
+
+	// Keeps each view's own resolved token maps around so an overriding reference INTO that view
+	// can reuse its target's token-substitution scope unchanged (an axis override only changes
+	// Layer matching, never which tokens win by alias).
+	const tokenMapsByView = new Map<string, ScopedTokenMaps>();
 
 	mark('resolve:match:start');
-	const result: ResolvedViewData[] = rows.viewRows.map((v) => {
+	const views: ResolvedViewData[] = rows.viewRows.map((v) => {
 		const comps = compsByView.get(v.id) ?? [];
 
 		// Token resolution order: project → kit (in composition order) → view
-		const tokenMap = new Map(baseTokenMap);
-		const viewListTokenMap = new Map(baseViewListMap);
+		const scalarMap = new Map(baseScalarMap);
+		const viewRefMap = new Map(baseViewRefMap);
 		for (const comp of comps) {
-			for (const t of tokensByKit.get(comp.kit_id) ?? []) {
-				if (!t.alias || !t.value) continue;
-				if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
-				else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
-			}
+			applyScopeTokenRows(tokensByKit.get(comp.kit_id) ?? [], scalarMap, viewRefMap);
 		}
-		for (const t of tokensByView.get(v.id) ?? []) {
-			if (!t.alias || !t.value) continue;
-			if (t.value.type === 'scalar') tokenMap.set(t.alias, t.value.value);
-			else if (t.value.type === 'view-list') viewListTokenMap.set(t.alias, t.value.view_ids);
-		}
+		applyScopeTokenRows(tokensByView.get(v.id) ?? [], scalarMap, viewRefMap);
+		tokenMapsByView.set(v.id, { scalarMap, viewRefMap });
 
 		const resolvedKits: ResolvedKit[] = comps.map((comp) => {
-			const args = argsByViewKit.get(`${v.id}::${comp.kit_id}`) ?? {};
+			const args = resolvedArgsByViewKit.get(`${v.id}::${comp.kit_id}`) ?? {};
 			const properties = matchLayers(
 				comp.kit_id,
 				kitLayerDataMaps.get(comp.kit_id) ?? new Map(),
 				args
 			);
-			substituteTokens(properties, { scalarMap: tokenMap, viewListMap: viewListTokenMap });
+			substituteTokens(properties, { scalarMap, viewRefMap });
 			return {
 				kitId: comp.kit_id,
 				kitName: comp.kit_name,
@@ -1134,17 +1417,62 @@ export function resolveViewsFromRows(rows: ResolutionRows): ResolvedViewData[] {
 	mark('resolve:match:end');
 	measure('resolve:match:start', 'resolve:match:end', 'match+assemble (pure)');
 
-	return result;
+	// Per-occurrence axis overrides: additive, computed only for `view`-typed token rows that have
+	// ≥1 row in token_axis_overrides. Zero-override projects (the common case) skip this entirely.
+	const overriddenOccurrences: OverriddenOccurrence[] = [];
+	if (rows.tokenAxisOverrides.length > 0) {
+		const overridesByToken = new Map<string, Record<string, ArgValue>>();
+		for (const o of rows.tokenAxisOverrides) {
+			if (!o.value) continue;
+			if (!overridesByToken.has(o.token_id)) overridesByToken.set(o.token_id, {});
+			overridesByToken.get(o.token_id)![o.axis_id] = o.value as ArgValue;
+		}
+
+		const allViewTokenRows: { id: string; value: TokenValue | null }[] = [
+			...rows.projectTokens,
+			...rows.kitTokenRows,
+			...rows.viewTokenRows
+		];
+		for (const t of allViewTokenRows) {
+			if (t.value?.type !== 'view') continue;
+			const override = overridesByToken.get(t.id);
+			if (!override) continue;
+
+			const targetViewId = t.value.view_id;
+			const targetComps = compsByView.get(targetViewId) ?? [];
+			const targetTokenMaps = tokenMapsByView.get(targetViewId) ?? {
+				scalarMap: baseScalarMap,
+				viewRefMap: baseViewRefMap
+			};
+			const resolvedKits: ResolvedKit[] = targetComps.map((comp) => {
+				const baseArgs = resolvedArgsByViewKit.get(`${targetViewId}::${comp.kit_id}`) ?? {};
+				const args = mergeAxisOverrides(baseArgs, override, resolvedArgsByViewKit);
+				const properties = matchLayers(
+					comp.kit_id,
+					kitLayerDataMaps.get(comp.kit_id) ?? new Map(),
+					args
+				);
+				substituteTokens(properties, targetTokenMaps);
+				return { kitId: comp.kit_id, kitName: comp.kit_name, properties };
+			});
+			overriddenOccurrences.push({ occurrenceKey: t.id, viewId: targetViewId, resolvedKits });
+		}
+	}
+
+	return { views, overriddenOccurrences };
 }
 
 // Convenience wrapper: fetch + resolve in one call. The editor's live-query loop uses
 // fetchResolutionRows + resolveViewsFromRows separately so it can dedup on the rows
 // before resolving. This wrapper exists for callers that don't need the dedup
-// (tests, single-shot resolve, future export plugins).
+// (tests, single-shot resolve, future export plugins). Deliberately drops
+// `overriddenOccurrences` to keep this convenience wrapper's long-standing `ResolvedViewData[]`
+// contract unchanged -- a caller that wants per-occurrence override data should call
+// fetchResolutionRows + resolveViewsFromRows directly.
 export async function resolveManyViews(
 	db: SchemaDialect,
 	projectId: string
 ): Promise<ResolvedViewData[]> {
 	const rows = await fetchResolutionRows(db, projectId);
-	return resolveViewsFromRows(rows);
+	return resolveViewsFromRows(rows).views;
 }

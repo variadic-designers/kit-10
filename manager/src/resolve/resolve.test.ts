@@ -4,12 +4,41 @@ import {
 	resolve,
 	resolveManySlowPath,
 	resolveManyViews,
+	resolveViewsFromRows,
+	fetchResolutionRows,
 	flattenKitResults
 } from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
-const vl = (viewIds: string[]): TokenValue => ({ type: 'view-list', view_ids: viewIds });
+
+// Inserts one `view`-typed token row directly (bypassing the API's auto-incrementing addViewRef)
+// so tests can control `priority_index` explicitly, to exercise aggregation ORDER -- something a
+// single view-list token's array used to give for free, that N independent rows now need an
+// explicit ordering column for.
+async function insertViewToken(
+	ctx: TestContext,
+	projectId: string,
+	alias: string,
+	viewId: string,
+	priorityIndex: number,
+	scope?: { kitId?: string; viewId?: string }
+): Promise<string> {
+	const row = await ctx.db
+		.insertInto('tokens')
+		.values({
+			project_id: projectId,
+			alias: null,
+			composition_alias: alias,
+			value: { type: 'view', view_id: viewId } as any,
+			kit_id: scope?.kitId ?? null,
+			view_id: scope?.viewId ?? null,
+			priority_index: priorityIndex
+		})
+		.returning('id')
+		.executeTakeFirstOrThrow();
+	return row.id;
+}
 
 describe('resolve', () => {
 	let ctx: TestContext;
@@ -434,6 +463,64 @@ describe('resolveManySlowPath', () => {
 		expect(flat.get('gap')!.value).toBe('4px');
 		expect(flat.get('border-radius')!.value).toBe('8px');
 	});
+
+	it('a lower-priority kit\'s conditioned layer beats a higher-priority kit\'s unconditioned one for the same property', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Specificity Across Kits'))!;
+
+		const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', 'Light or dark'))!;
+		const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		}))!;
+
+		// Base kit (higher priority, composed second) -- sets 'background' unconditionally.
+		const baseKit = (await ctx.api.createKitInProject(proj.id, 'Base'))!;
+		const baseNull = (await ctx.api.createLayer(baseKit.id))!;
+		const baseNullSnip = (await ctx.api.createRenderSnippet(baseNull.id))!;
+		await ctx.api.createRenderEntry(baseNullSnip.id, 'background', '#ffffff');
+
+		// Variant kit (lower priority, composed first) -- sets 'background' only when theme=dark.
+		const variantKit = (await ctx.api.createKitInProject(proj.id, 'Variant'))!;
+		await ctx.api.consumeAxis(variantKit.id, themeAxis.id);
+		const variantDarkLayer = (await ctx.api.createLayer(variantKit.id))!;
+		await ctx.api.addAxisValueToLayer(variantDarkLayer.id, themeDark.id);
+		const variantDarkSnip = (await ctx.api.createRenderSnippet(variantDarkLayer.id))!;
+		await ctx.api.createRenderEntry(variantDarkSnip.id, 'background', '#1a1a2e');
+
+		const view = (await ctx.api.createViewInProject(proj.id, 'Page'))!;
+		await ctx.api.attachKitToComposition(variantKit.id, view.id); // priority 1000 (lower)
+		await ctx.api.attachKitToComposition(baseKit.id, view.id); // priority 2000 (higher/top)
+		await ctx.api.setAxisArg(view.id, variantKit.id, themeAxis.id, {
+			type: 'literal',
+			value: 'dark'
+		});
+
+		const kits = await resolveManySlowPath(ctx.db, view.id);
+		const flat = flattenKitResults(kits);
+
+		// Variant's 1-condition layer (conditionCount 1) outranks Base's 0-condition null layer,
+		// even though Base is the higher-priority (top) kit -- this is the exact bug reported: a
+		// property painted onto a non-top kit used to be permanently invisible whenever the top
+		// kit defined that property at all, regardless of how much more specific the lower kit's
+		// layer was.
+		expect(flat.get('background')!.value).toBe('#1a1a2e');
+		expect(flat.get('background')!.kitId).toBe(variantKit.id);
+
+		// Once Base ALSO conditions on theme=dark (equal specificity, both conditionCount 1), kit
+		// order breaks the tie and the higher-priority kit wins again -- unchanged from before.
+		const baseDarkLayer = (await ctx.api.createLayer(baseKit.id))!;
+		await ctx.api.addAxisValueToLayer(baseDarkLayer.id, themeDark.id);
+		const baseDarkSnip = (await ctx.api.createRenderSnippet(baseDarkLayer.id))!;
+		await ctx.api.createRenderEntry(baseDarkSnip.id, 'background', '#000000');
+		await ctx.api.consumeAxis(baseKit.id, themeAxis.id);
+		await ctx.api.setAxisArg(view.id, baseKit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+
+		const kits2 = await resolveManySlowPath(ctx.db, view.id);
+		const flat2 = flattenKitResults(kits2);
+		expect(flat2.get('background')!.value).toBe('#000000');
+		expect(flat2.get('background')!.kitId).toBe(baseKit.id);
+	});
 });
 
 describe('range overlap matching', () => {
@@ -723,7 +810,7 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.value).toBe('#10b981');
 		});
 
-		it('view-list token on children: view-scoped override wins over kit-scoped token, ignoring specificity', async () => {
+		it('view-scope `view` token on children: wins over kit-scoped token, ignoring specificity', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(
 				ws.workspaceId,
@@ -737,23 +824,23 @@ describe('range overlap matching', () => {
 			const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
 			const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
 
-			const kitToken = (await ctx.api.createToken(proj.id, 'kids', vl([childA.id]), {
+			const kitTokenId = await insertViewToken(ctx, proj.id, 'kids', childA.id, 0, {
 				kitId: kit.id
-			}))!;
-			const viewToken = (await ctx.api.createToken(proj.id, 'kids', vl([childB.id]), {
+			});
+			const viewTokenId = await insertViewToken(ctx, proj.id, 'kids', childB.id, 0, {
 				viewId: view.id
-			}))!;
+			});
 
 			// Kit-scoped layer has 0 conditions (highest possible resolve-pass-1 specificity here);
 			// the view-scoped token must still win in pass 2 regardless.
 			const layer = (await ctx.api.createLayer(kit.id))!;
 			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
-			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitToken.id);
+			await ctx.api.createRenderEntry(snippet.id, 'children', null, kitTokenId);
 
 			const results = await resolveManySlowPath(ctx.db, view.id);
 			const flat = flattenKitResults(results);
-			expect(flat.get('children')!.viewRefs).toEqual([childB.id]);
-			expect(viewToken.id).not.toBe(kitToken.id);
+			expect(flat.get('children')!.viewRefs).toEqual([{ viewId: childB.id, tokenId: viewTokenId }]);
+			expect(viewTokenId).not.toBe(kitTokenId);
 		});
 
 		it('self-declaring view-scope children: a view-scope `children` token defines children with no render entry', async () => {
@@ -765,16 +852,16 @@ describe('range overlap matching', () => {
 			await ctx.api.attachKitToComposition(kit.id, parent.id);
 			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
 
-			// A view-scope view-list token, and NOTHING else -- no render entry declares this
-			// property on any layer. The view token alone must produce a property carrying its refs.
+			// A view-scope `view` token, and NOTHING else -- no render entry declares this property
+			// on any layer. The view token alone must produce a property carrying its refs.
 			// Name-neutral: use an arbitrary alias, not "children", to prove the resolver reads no
 			// meaning into the name (the composition opinion lives in the plugin/editor, not here).
-			await ctx.api.upsertViewToken(proj.id, parent.id, 'slots', vl([child.id]));
+			const { id: tokenId } = await ctx.api.addViewRef(proj.id, parent.id, 'slots', child.id);
 
 			const views = await resolveManyViews(ctx.db, proj.id);
 			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
 			const flat = flattenKitResults(resolvedParent.resolvedKits);
-			expect(flat.get('slots')?.viewRefs).toEqual([child.id]);
+			expect(flat.get('slots')?.viewRefs).toEqual([{ viewId: child.id, tokenId }]);
 		});
 
 		it('a kit-scope `children` token does NOT self-declare (no forcing children onto every view)', async () => {
@@ -786,16 +873,382 @@ describe('range overlap matching', () => {
 			await ctx.api.attachKitToComposition(kit.id, parent.id);
 			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
 
-			// A kit-scope view-list token with no render entry must NOT materialize a property --
-			// only a view's own token self-declares. Otherwise every view composing the kit would be
-			// forced to carry it.
-			await ctx.api.createToken(proj.id, 'slots', vl([child.id]), { kitId: kit.id });
+			// A kit-scope `view` token with no render entry must NOT materialize a property -- only a
+			// view's own token self-declares. Otherwise every view composing the kit would be forced
+			// to carry it.
+			await ctx.api.createToken(proj.id, 'slots', { type: 'view', view_id: child.id }, { kitId: kit.id });
 
 			const views = await resolveManyViews(ctx.db, proj.id);
 			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
 			expect(resolvedParent.resolvedKits.flatMap((k) => [...k.properties.keys()])).not.toContain(
 				'slots'
 			);
+		});
+
+		it('aggregates multiple same-scope `view` tokens sharing an alias, in priority_index order', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Aggregation Order'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+
+			const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
+			const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
+			const childC = (await ctx.api.createViewInProject(proj.id, 'Child C'))!;
+
+			// Inserted out of order (C, A, B) but with priority_index 2, 0, 1 -- resolved order must
+			// follow priority_index, not insertion order.
+			const tokC = await insertViewToken(ctx, proj.id, 'children', childC.id, 2, {
+				viewId: parent.id
+			});
+			const tokA = await insertViewToken(ctx, proj.id, 'children', childA.id, 0, {
+				viewId: parent.id
+			});
+			const tokB = await insertViewToken(ctx, proj.id, 'children', childB.id, 1, {
+				viewId: parent.id
+			});
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
+			const flat = flattenKitResults(resolvedParent.resolvedKits);
+			expect(flat.get('children')?.viewRefs).toEqual([
+				{ viewId: childA.id, tokenId: tokA },
+				{ viewId: childB.id, tokenId: tokB },
+				{ viewId: childC.id, tokenId: tokC }
+			]);
+		});
+
+		it('a view-scope alias with multiple `view` tokens fully replaces a kit-scope alias with multiple tokens (no merge)', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Scope Replace'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+
+			const kitChildA = (await ctx.api.createViewInProject(proj.id, 'Kit Child A'))!;
+			const kitChildB = (await ctx.api.createViewInProject(proj.id, 'Kit Child B'))!;
+			await insertViewToken(ctx, proj.id, 'children', kitChildA.id, 0, { kitId: kit.id });
+			await insertViewToken(ctx, proj.id, 'children', kitChildB.id, 1, { kitId: kit.id });
+
+			const viewChild = (await ctx.api.createViewInProject(proj.id, 'View Child'))!;
+			const viewTok = await insertViewToken(ctx, proj.id, 'children', viewChild.id, 0, {
+				viewId: parent.id
+			});
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
+			const flat = flattenKitResults(resolvedParent.resolvedKits);
+			// The view-scope's single row fully replaces the kit-scope's two rows -- not a 3-item merge.
+			expect(flat.get('children')?.viewRefs).toEqual([{ viewId: viewChild.id, tokenId: viewTok }]);
+		});
+
+		it('the same target view can be referenced twice under one alias (duplicate targets survive)', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Duplicate Targets'))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+
+			const { id: first } = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+			const { id: second } = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+			expect(first).not.toBe(second);
+
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const resolvedParent = views.find((v) => v.viewId === parent.id)!;
+			const flat = flattenKitResults(resolvedParent.resolvedKits);
+			expect(flat.get('children')?.viewRefs).toEqual([
+				{ viewId: child.id, tokenId: first },
+				{ viewId: child.id, tokenId: second }
+			]);
+		});
+	});
+
+	describe('per-occurrence axis overrides (OverriddenOccurrence)', () => {
+		it('a view-scalar token axis override changes which Layer matches for that occurrence, leaving the view\'s own resolution untouched', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Axis Override'))!;
+
+			const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', '', 'categorical', [
+				'light',
+				'dark'
+			]))!;
+			const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+				type: 'literal',
+				value: 'dark'
+			}))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			await ctx.api.consumeAxis(kit.id, themeAxis.id);
+
+			// Null layer: baseline color. {theme: dark} layer: overridden color.
+			const nullLayer = (await ctx.api.createLayer(kit.id))!;
+			const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+			await ctx.api.createRenderEntry(nullSnippet.id, 'color', '#ffffff');
+
+			const darkLayer = (await ctx.api.createLayer(kit.id))!;
+			await ctx.api.addAxisValueToLayer(darkLayer.id, themeDark.id);
+			const darkSnippet = (await ctx.api.createRenderSnippet(darkLayer.id))!;
+			await ctx.api.createRenderEntry(darkSnippet.id, 'color', '#000000');
+
+			// The target view never picks 'dark' itself (no axis_args row) -- its own resolution
+			// should stay on the baseline color.
+			const target = (await ctx.api.createViewInProject(proj.id, 'Target'))!;
+			await ctx.api.attachKitToComposition(kit.id, target.id);
+
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			const { id: tokenId } = await ctx.api.addViewRef(proj.id, parent.id, 'children', target.id);
+			await ctx.api.setTokenAxisOverride(tokenId, themeAxis.id, { type: 'literal', value: 'dark' });
+
+			const rows = await fetchResolutionRows(ctx.db, proj.id);
+			const { views, overriddenOccurrences } = resolveViewsFromRows(rows);
+
+			// The view's own project-wide entry is untouched (still resolves to the baseline, since
+			// it never set theme:dark itself).
+			const targetView = views.find((v) => v.viewId === target.id)!;
+			const targetFlat = flattenKitResults(targetView.resolvedKits);
+			expect(targetFlat.get('color')?.value).toBe('#ffffff');
+
+			// The occurrence reached via the overriding token resolves with theme:dark applied.
+			expect(overriddenOccurrences).toHaveLength(1);
+			const occurrence = overriddenOccurrences[0]!;
+			expect(occurrence.occurrenceKey).toBe(tokenId);
+			expect(occurrence.viewId).toBe(target.id);
+			const occFlat = flattenKitResults(occurrence.resolvedKits);
+			expect(occFlat.get('color')?.value).toBe('#000000');
+		});
+
+		it('a project with zero axis overrides anywhere produces an empty overriddenOccurrences array', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'No Overrides'))!;
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+			const view = (await ctx.api.createViewInProject(proj.id, 'View'))!;
+			await ctx.api.attachKitToComposition(kit.id, view.id);
+
+			const rows = await fetchResolutionRows(ctx.db, proj.id);
+			const { overriddenOccurrences } = resolveViewsFromRows(rows);
+			expect(overriddenOccurrences).toEqual([]);
+		});
+
+		// 'linked' overrides: instead of a static literal snapshot, the override tracks a SOURCE
+		// (view, kit)'s own CURRENT axis_args live -- re-read fresh every resolve, never a copy.
+		// Shared fixture: `source` is the (view, kit) pair the override tracks; `target` is the view
+		// whose Layers get matched (null=baseline, dark, light -- three distinct outcomes so
+		// "reverted to baseline" and "explicitly light" are never confusable); `linker` holds the
+		// referencing token whose override points at `source`.
+		describe("'linked' overrides track their source live", () => {
+			async function setupLinkedOverrideFixture() {
+				const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+				const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Linked Override'))!;
+
+				const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', '', 'categorical', [
+					'light',
+					'dark'
+				]))!;
+				const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+					type: 'literal',
+					value: 'dark'
+				}))!;
+				const themeLight = (await ctx.api.createAxisValue(themeAxis.id, {
+					type: 'literal',
+					value: 'light'
+				}))!;
+
+				const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+				await ctx.api.consumeAxis(kit.id, themeAxis.id);
+
+				const nullLayer = (await ctx.api.createLayer(kit.id))!;
+				const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+				await ctx.api.createRenderEntry(nullSnippet.id, 'color', '#ffffff');
+
+				const darkLayer = (await ctx.api.createLayer(kit.id))!;
+				await ctx.api.addAxisValueToLayer(darkLayer.id, themeDark.id);
+				const darkSnippet = (await ctx.api.createRenderSnippet(darkLayer.id))!;
+				await ctx.api.createRenderEntry(darkSnippet.id, 'color', '#000000');
+
+				const lightLayer = (await ctx.api.createLayer(kit.id))!;
+				await ctx.api.addAxisValueToLayer(lightLayer.id, themeLight.id);
+				const lightSnippet = (await ctx.api.createRenderSnippet(lightLayer.id))!;
+				await ctx.api.createRenderEntry(lightSnippet.id, 'color', '#cccccc');
+
+				const source = (await ctx.api.createViewInProject(proj.id, 'Source'))!;
+				await ctx.api.attachKitToComposition(kit.id, source.id);
+
+				const target = (await ctx.api.createViewInProject(proj.id, 'Target'))!;
+				await ctx.api.attachKitToComposition(kit.id, target.id);
+
+				const linker = (await ctx.api.createViewInProject(proj.id, 'Linker'))!;
+				const { id: tokenId } = await ctx.api.addViewRef(proj.id, linker.id, 'children', target.id);
+				await ctx.api.setTokenAxisOverride(tokenId, themeAxis.id, {
+					type: 'linked',
+					view_id: source.id,
+					kit_id: kit.id
+				});
+
+				return { proj, kit, themeAxis, source, target, linker, tokenId };
+			}
+
+			async function resolveOccurrenceColor(projId: string, tokenId: string) {
+				const rows = await fetchResolutionRows(ctx.db, projId);
+				const { overriddenOccurrences } = resolveViewsFromRows(rows);
+				const occurrence = overriddenOccurrences.find((o) => o.occurrenceKey === tokenId)!;
+				return flattenKitResults(occurrence.resolvedKits).get('color')?.value;
+			}
+
+			it('resolves to the source (view, kit)\'s current axis_args value at resolve time', async () => {
+				const { proj, kit, themeAxis, source, tokenId } = await setupLinkedOverrideFixture();
+				await ctx.api.setAxisArg(source.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#000000');
+			});
+
+			it('picks up a LATER change to the source\'s axis_args with no other action -- the live part', async () => {
+				const { proj, kit, themeAxis, source, tokenId } = await setupLinkedOverrideFixture();
+				await ctx.api.setAxisArg(source.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#000000');
+
+				// Nothing touches the override row itself -- only the SOURCE's own pick changes.
+				await ctx.api.setAxisArg(source.id, kit.id, themeAxis.id, { type: 'literal', value: 'light' });
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#cccccc');
+			});
+
+			it('behaves as unset (baseline wins) once the source\'s axis_args is cleared', async () => {
+				const { proj, kit, themeAxis, source, tokenId } = await setupLinkedOverrideFixture();
+				await ctx.api.setAxisArg(source.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#000000');
+
+				await ctx.api.clearAxisArg(source.id, kit.id, themeAxis.id);
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#ffffff');
+			});
+
+			it('behaves as unset when the source never had an axis_args row for this axis at all', async () => {
+				const { proj, tokenId } = await setupLinkedOverrideFixture();
+				// setAxisArg is never called on `source` in this test.
+				expect(await resolveOccurrenceColor(proj.id, tokenId)).toBe('#ffffff');
+			});
+		});
+	});
+
+	// A VIEW's OWN axis_args (not a token_axis_overrides row) can now itself be `{type:'linked',...}`
+	// -- "drag-to-lock": the child view's own canonical pick, for EVERY occurrence of it anywhere,
+	// tracks a parent (view,kit)'s current axis_args live. Distinct fixture/mechanism from the
+	// per-occurrence override tests above (those write token_axis_overrides on a REFERENCING token;
+	// these write axis_args on the TARGET view's own composed kit directly).
+	describe("a view's own axis_args can be 'linked' (drag-to-lock)", () => {
+		async function setupLockFixture() {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Axis Lock'))!;
+
+			const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', '', 'categorical', [
+				'light',
+				'dark'
+			]))!;
+			const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+				type: 'literal',
+				value: 'dark'
+			}))!;
+			const themeLight = (await ctx.api.createAxisValue(themeAxis.id, {
+				type: 'literal',
+				value: 'light'
+			}))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			await ctx.api.consumeAxis(kit.id, themeAxis.id);
+
+			const nullLayer = (await ctx.api.createLayer(kit.id))!;
+			const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+			await ctx.api.createRenderEntry(nullSnippet.id, 'color', '#ffffff');
+
+			const darkLayer = (await ctx.api.createLayer(kit.id))!;
+			await ctx.api.addAxisValueToLayer(darkLayer.id, themeDark.id);
+			const darkSnippet = (await ctx.api.createRenderSnippet(darkLayer.id))!;
+			await ctx.api.createRenderEntry(darkSnippet.id, 'color', '#000000');
+
+			const lightLayer = (await ctx.api.createLayer(kit.id))!;
+			await ctx.api.addAxisValueToLayer(lightLayer.id, themeLight.id);
+			const lightSnippet = (await ctx.api.createRenderSnippet(lightLayer.id))!;
+			await ctx.api.createRenderEntry(lightSnippet.id, 'color', '#cccccc');
+
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			await ctx.api.attachKitToComposition(kit.id, parent.id);
+
+			const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+			await ctx.api.attachKitToComposition(kit.id, child.id);
+			await ctx.api.setAxisArg(child.id, kit.id, themeAxis.id, {
+				type: 'linked',
+				view_id: parent.id,
+				kit_id: kit.id
+			});
+
+			return { proj, kit, themeAxis, parent, child };
+		}
+
+		async function resolveViewColor(projId: string, viewId: string) {
+			const views = await resolveManyViews(ctx.db, projId);
+			const view = views.find((v) => v.viewId === viewId)!;
+			return flattenKitResults(view.resolvedKits).get('color')?.value;
+		}
+
+		it("resolves to the parent's current axis_args value at resolve time", async () => {
+			const { proj, kit, themeAxis, parent, child } = await setupLockFixture();
+			await ctx.api.setAxisArg(parent.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#000000');
+		});
+
+		it("picks up a LATER change to the parent's axis_args with no other action -- the live part", async () => {
+			const { proj, kit, themeAxis, parent, child } = await setupLockFixture();
+			await ctx.api.setAxisArg(parent.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#000000');
+
+			// Nothing touches the child's own axis_args row -- only the parent's own pick changes.
+			await ctx.api.setAxisArg(parent.id, kit.id, themeAxis.id, { type: 'literal', value: 'light' });
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#cccccc');
+		});
+
+		it('behaves as unset (baseline wins) once the parent\'s axis_args is cleared', async () => {
+			const { proj, kit, themeAxis, parent, child } = await setupLockFixture();
+			await ctx.api.setAxisArg(parent.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#000000');
+
+			await ctx.api.clearAxisArg(parent.id, kit.id, themeAxis.id);
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#ffffff');
+		});
+
+		it('behaves as unset when the parent never had an axis_args row for this axis at all', async () => {
+			const { proj, child } = await setupLockFixture();
+			// setAxisArg is never called on `parent` in this test.
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#ffffff');
+		});
+
+		it('a genuine cycle (A links to B, B links to A) resolves both as unset, not hanging or crashing', async () => {
+			const { proj, kit, themeAxis, parent: viewA, child: viewB } = await setupLockFixture();
+			// viewB already links to viewA (set up by setupLockFixture as parent/child) -- close the
+			// cycle by also linking viewA to viewB.
+			await ctx.api.setAxisArg(viewA.id, kit.id, themeAxis.id, {
+				type: 'linked',
+				view_id: viewB.id,
+				kit_id: kit.id
+			});
+
+			// Completing without a timeout is itself the proof the seen-set terminates the walk.
+			expect(await resolveViewColor(proj.id, viewA.id)).toBe('#ffffff');
+			expect(await resolveViewColor(proj.id, viewB.id)).toBe('#ffffff');
+		});
+
+		it('a dangling source (kit detached from the parent view) resolves as unset', async () => {
+			const { proj, kit, themeAxis, parent, child } = await setupLockFixture();
+			await ctx.api.setAxisArg(parent.id, kit.id, themeAxis.id, { type: 'literal', value: 'dark' });
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#000000');
+
+			// detachKitFromComposition leaves the parent's axis_args row orphaned (existing, unchanged
+			// behavior) -- the link must recognize the (view,kit) pair no longer exists via
+			// validCompositions, not just read straight through the stale row.
+			await ctx.api.detachKitFromComposition(kit.id, parent.id);
+			expect(await resolveViewColor(proj.id, child.id)).toBe('#ffffff');
 		});
 	});
 

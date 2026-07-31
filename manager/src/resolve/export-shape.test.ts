@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createTestDb, type TestContext } from '../test-helpers.js';
-import { fetchKitExportShapes, fetchViewAxisArgs } from './export-shape.js';
+import { fetchKitExportShapes, fetchViewAxisArgs, fetchViewCompositions } from './export-shape.js';
 
 describe('fetchKitExportShapes', () => {
 	let ctx: TestContext;
@@ -200,5 +200,51 @@ describe('fetchViewAxisArgs', () => {
 		await seedViewWithAxisArg();
 		const result = await fetchViewAxisArgs(ctx.db, ['00000000-0000-0000-0000-000000000000']);
 		expect(result).toEqual([]);
+	});
+});
+
+describe('fetchViewCompositions', () => {
+	let ctx: TestContext;
+
+	beforeEach(async () => {
+		ctx = await createTestDb();
+	});
+
+	afterEach(async () => {
+		await ctx.pg.close();
+	});
+
+	it('returns an empty array for an empty viewIds list', async () => {
+		const result = await fetchViewCompositions(ctx.db, []);
+		expect(result).toEqual([]);
+	});
+
+	it('returns every composed kit for a view, ordered by priority_index ascending', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Design System'))!;
+		const density = (await ctx.api.createKitInProject(proj.id, 'Density'))!;
+		const priority = (await ctx.api.createKitInProject(proj.id, 'Priority'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'Page'))!;
+		await ctx.api.attachKitToComposition(density.id, view.id); // priority_index 1000
+		await ctx.api.attachKitToComposition(priority.id, view.id); // priority_index 2000
+
+		const result = await fetchViewCompositions(ctx.db, [view.id]);
+		expect(result).toEqual([
+			{ viewId: view.id, kitId: density.id, priorityIndex: 1000 },
+			{ viewId: view.id, kitId: priority.id, priorityIndex: 2000 }
+		]);
+	});
+
+	it('scopes strictly to the requested view ids', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Design System'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'Included'))!;
+		const otherView = (await ctx.api.createViewInProject(proj.id, 'Excluded'))!;
+		await ctx.api.attachKitToComposition(kit.id, view.id);
+		await ctx.api.attachKitToComposition(kit.id, otherView.id);
+
+		const result = await fetchViewCompositions(ctx.db, [view.id]);
+		expect(result).toEqual([{ viewId: view.id, kitId: kit.id, priorityIndex: 1000 }]);
 	});
 });

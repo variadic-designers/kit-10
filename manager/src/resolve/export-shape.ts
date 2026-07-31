@@ -96,6 +96,37 @@ export async function fetchViewAxisArgs(
 	return result;
 }
 
+// One row per (view, kit) actually composed, in composition-priority order -- the piece of data
+// WebCodium's Kit-basis export needs to know a view composes MORE than one kit at all, and in
+// what order, which neither KitExportShape (per-kit, no view/composition awareness) nor
+// ViewAxisArgRow (per-axis-arg, no ordering) can answer. Backs multi-kit class emission and
+// cross-kit contested-property disambiguation (resources/webcodium-export-plan.md).
+export interface ViewCompositionRow {
+	viewId: string;
+	kitId: string;
+	priorityIndex: number;
+}
+
+export async function fetchViewCompositions(
+	db: SchemaDialect,
+	viewIds: string[]
+): Promise<ViewCompositionRow[]> {
+	if (viewIds.length === 0) return [];
+
+	const rows = await db
+		.selectFrom('compositions')
+		.where('compositions.view_id', 'in', viewIds)
+		.orderBy('compositions.priority_index', 'asc')
+		.select(['compositions.view_id', 'compositions.kit_id', 'compositions.priority_index'])
+		.execute();
+
+	return rows.map((r) => ({
+		viewId: r.view_id,
+		kitId: r.kit_id,
+		priorityIndex: r.priority_index
+	}));
+}
+
 export async function fetchKitExportShapes(
 	db: SchemaDialect,
 	kitIds: string[]

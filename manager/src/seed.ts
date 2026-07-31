@@ -52,13 +52,9 @@ function makeSeedHelpers(api: Api, projectId: string) {
 	): Promise<string> {
 		const v = (await api.createViewInProject(projectId, name, hints))!;
 		await api.attachKitToComposition(kit.id, v.id);
-		if (childIds.length)
-			await api.createToken(
-				projectId,
-				'children',
-				{ type: 'view-list', view_ids: childIds },
-				{ viewId: v.id }
-			);
+		// `children` is composed of N view-scoped `view` tokens sharing the alias (order-preserving
+		// via addViewRef's auto-incrementing priority_index), not one array-valued view-list token.
+		for (const childId of childIds) await api.addViewRef(projectId, v.id, 'children', childId);
 		return v.id;
 	}
 
@@ -506,8 +502,8 @@ export async function seedDemoProject(
 	// ==========================================================================================
 	// Landing page -- a real webpage built entirely from nested Views, showcasing the composition
 	// system end to end: Box containers laid out with flex, Text primitives for content, and
-	// children (view-list) tokens wiring the tree together. Built bottom-up (leaves first) since a
-	// parent's children token must reference views that already exist.
+	// children (`view`-typed) tokens wiring the tree together. Built bottom-up (leaves first) since
+	// a parent's children tokens must reference views that already exist.
 	// ==========================================================================================
 
 	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =

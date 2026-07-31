@@ -4,6 +4,28 @@ import type { TokenValue } from '../schema.js';
 
 const s = (value: string): TokenValue => ({ type: 'scalar', value });
 
+// A view's ordered children under `alias` (default 'children'): every `view`-typed token row at
+// that (viewId, alias) site, sorted by priority_index -- the aggregation replacing what a single
+// view-list token's array used to give directly. Shared across tests that used to redefine this
+// inline as a one-off `childrenOf` closure reading a view-list token's `view_ids`.
+async function childRefIdsOf(
+	ctx: TestContext,
+	viewId: string,
+	alias = 'children'
+): Promise<string[]> {
+	const rows = await ctx.db
+		.selectFrom('tokens')
+		.where('view_id', '=', viewId)
+		.where('composition_alias', '=', alias)
+		.orderBy('priority_index', 'asc')
+		.select(['value'])
+		.execute();
+	return rows
+		.map((r) => r.value as TokenValue | null)
+		.filter((v): v is Extract<TokenValue, { type: 'view' }> => v?.type === 'view')
+		.map((v) => v.view_id);
+}
+
 describe('api', () => {
 	let ctx: TestContext;
 
@@ -114,7 +136,7 @@ describe('api', () => {
 		expect(views[0]!.viewHidden).toBe(true);
 	});
 
-	it('deleteView scrubs the deleted view out of a sibling view-list token elsewhere in the project', async () => {
+	it('deleteView scrubs the deleted view out of sibling `view`-typed tokens elsewhere in the project', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
@@ -123,15 +145,16 @@ describe('api', () => {
 		const childA = (await ctx.api.createViewInProject(proj.id, 'Child A'))!;
 		const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
 
-		// A view-list token, scoped to `parent`, referencing BOTH children -- the live composition
-		// mechanism (ChildViewField/Views.svelte both write through upsertViewToken).
-		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([childA.id, childB.id]));
+		// Two `view`-typed tokens, scoped to `parent`, sharing the `children` alias -- the live
+		// composition mechanism (ChildViewField/Views.svelte both write through addViewRef).
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childA.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childB.id);
 
 		await ctx.api.deleteView(childA.id);
 
-		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
-		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
-		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [childB.id] });
+		// Deleting childA's sole reference removes that ONE row entirely -- childB's row survives
+		// untouched (simpler than the old view-list "filter the array" behavior).
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([childB.id]);
 	});
 
 	it('deleteView removes a `view`-type token elsewhere in the project whose sole reference was deleted', async () => {
@@ -151,7 +174,7 @@ describe('api', () => {
 		expect(projectTokens.map((t) => t.tokenId)).not.toContain(heroTok.id);
 	});
 
-	it('deleteView leaves an unrelated view-list token (referencing a DIFFERENT view) untouched', async () => {
+	it('deleteView leaves an unrelated `view`-typed token (referencing a DIFFERENT view) untouched', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
@@ -160,16 +183,14 @@ describe('api', () => {
 		const untouched = (await ctx.api.createViewInProject(proj.id, 'Untouched'))!;
 		const toDelete = (await ctx.api.createViewInProject(proj.id, 'ToDelete'))!;
 
-		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([untouched.id]));
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', untouched.id);
 
 		await ctx.api.deleteView(toDelete.id);
 
-		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
-		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
-		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [untouched.id] });
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([untouched.id]);
 	});
 
-	it('deleteViews (bulk) scrubs all deleted ids from a surviving view-list token in one pass', async () => {
+	it('deleteViews (bulk) scrubs all deleted ids from surviving `view`-typed tokens in one pass', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
@@ -179,18 +200,13 @@ describe('api', () => {
 		const childB = (await ctx.api.createViewInProject(proj.id, 'Child B'))!;
 		const childC = (await ctx.api.createViewInProject(proj.id, 'Child C'))!;
 
-		await ctx.api.upsertViewToken(
-			proj.id,
-			parent.id,
-			'children',
-			vl([childA.id, childB.id, childC.id])
-		);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childA.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childB.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childC.id);
 
 		await ctx.api.deleteViews([childA.id, childB.id]);
 
-		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
-		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
-		expect(childrenToken!.tokenValue).toEqual({ type: 'view-list', view_ids: [childC.id] });
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([childC.id]);
 	});
 
 	it('updateViewHints shallow-merges into hints, preserving sibling top-level keys', async () => {
@@ -251,13 +267,11 @@ describe('api', () => {
 		const child = (await ctx.api.createViewInProject(proj.id, 'Child', {
 			webcodium: { export: true }
 		}))!;
-		await ctx.api.upsertViewToken(proj.id, parent.id, 'children', vl([child.id]));
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
 
 		const cloneId = (await ctx.api.cloneViewSubtree(parent.id, 'children'))!;
 
-		const clonedTokens = await ctx.api.getTokensByViewId(cloneId).execute();
-		const childrenToken = clonedTokens.find((t) => t.tokenAlias === 'children');
-		const clonedChildId = (childrenToken!.tokenValue as { view_ids: string[] }).view_ids[0]!;
+		const clonedChildId = (await childRefIdsOf(ctx, cloneId))[0]!;
 
 		const clonedChildRow = await ctx.db
 			.selectFrom('views')
@@ -276,24 +290,19 @@ describe('api', () => {
 		const x = (await ctx.api.createViewInProject(proj.id, 'X'))!;
 		const y = (await ctx.api.createViewInProject(proj.id, 'Y'))!;
 		const z = (await ctx.api.createViewInProject(proj.id, 'Z'))!;
-		await ctx.api.upsertViewToken(proj.id, root.id, 'children', vl([x.id, y.id]));
-		await ctx.api.upsertViewToken(proj.id, x.id, 'children', vl([z.id]));
-		await ctx.api.upsertViewToken(proj.id, y.id, 'children', vl([z.id]));
+		await ctx.api.addViewRef(proj.id, root.id, 'children', x.id);
+		await ctx.api.addViewRef(proj.id, root.id, 'children', y.id);
+		await ctx.api.addViewRef(proj.id, x.id, 'children', z.id);
+		await ctx.api.addViewRef(proj.id, y.id, 'children', z.id);
 
 		const cloneRootId = (await ctx.api.cloneViewSubtree(root.id, 'children'))!;
 
-		const childrenOf = async (viewId: string) => {
-			const toks = await ctx.api.getTokensByViewId(viewId).execute();
-			const t = toks.find((tok) => tok.tokenAlias === 'children');
-			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
-		};
-
-		const [cloneXId, cloneYId] = await childrenOf(cloneRootId);
+		const [cloneXId, cloneYId] = await childRefIdsOf(ctx, cloneRootId);
 		expect(cloneXId).toBeTruthy();
 		expect(cloneYId).toBeTruthy();
 
-		const cloneXChildren = await childrenOf(cloneXId!);
-		const cloneYChildren = await childrenOf(cloneYId!);
+		const cloneXChildren = await childRefIdsOf(ctx, cloneXId!);
+		const cloneYChildren = await childRefIdsOf(ctx, cloneYId!);
 		expect(cloneXChildren).toHaveLength(1);
 		expect(cloneYChildren).toHaveLength(1);
 
@@ -310,25 +319,19 @@ describe('api', () => {
 
 		const a = (await ctx.api.createViewInProject(proj.id, 'A'))!;
 		const b = (await ctx.api.createViewInProject(proj.id, 'B'))!;
-		await ctx.api.upsertViewToken(proj.id, a.id, 'children', vl([b.id]));
-		await ctx.api.upsertViewToken(proj.id, b.id, 'children', vl([a.id])); // cycle back to A
+		await ctx.api.addViewRef(proj.id, a.id, 'children', b.id);
+		await ctx.api.addViewRef(proj.id, b.id, 'children', a.id); // cycle back to A
 
 		const cloneAId = (await ctx.api.cloneViewSubtree(a.id, 'children'))!;
 
-		const childrenOf = async (viewId: string) => {
-			const toks = await ctx.api.getTokensByViewId(viewId).execute();
-			const t = toks.find((tok) => tok.tokenAlias === 'children');
-			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
-		};
-
-		const aChildren = await childrenOf(cloneAId);
+		const aChildren = await childRefIdsOf(ctx, cloneAId);
 		expect(aChildren).toHaveLength(1);
 		const cloneBId = aChildren[0]!;
 		expect(cloneBId).not.toBe(b.id);
 
 		// B's own clone excludes A entirely -- A is on B's own ancestor path, a real cycle, not a
 		// diamond -- matching the original recursive `seen`-guard semantics exactly.
-		const bChildren = await childrenOf(cloneBId);
+		const bChildren = await childRefIdsOf(ctx, cloneBId);
 		expect(bChildren).toHaveLength(0);
 	});
 
@@ -341,21 +344,13 @@ describe('api', () => {
 		const before = (await ctx.api.createViewInProject(proj.id, 'Before'))!;
 		const target = (await ctx.api.createViewInProject(proj.id, 'Target'))!;
 		const after = (await ctx.api.createViewInProject(proj.id, 'After'))!;
-		await ctx.api.upsertViewToken(
-			proj.id,
-			parent.id,
-			'children',
-			vl([before.id, target.id, after.id])
-		);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', before.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', target.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', after.id);
 
 		const cloneId = (await ctx.api.cloneViewSubtree(target.id, 'children'))!;
 
-		const parentTokens = await ctx.api.getTokensByViewId(parent.id).execute();
-		const childrenToken = parentTokens.find((t) => t.tokenAlias === 'children');
-		expect(childrenToken!.tokenValue).toEqual({
-			type: 'view-list',
-			view_ids: [before.id, target.id, cloneId, after.id]
-		});
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([before.id, target.id, cloneId, after.id]);
 	});
 
 	it('cloneViewSubtree leaves a root (unattached) view\'s clone free-floating, same as before', async () => {
@@ -615,6 +610,161 @@ describe('api', () => {
 		const args = await ctx.api.getAllAxisArgs(view.id, kit.id).execute();
 		expect(args).toHaveLength(1);
 		expect(args[0]!.value).toMatchObject({ type: 'literal', value: 'dark' });
+	});
+
+	// ---- Token Axis Overrides / getAxesConsumedByProjectId / getAxisValuesByProjectId ----
+
+	it('getAxesConsumedByProjectId returns viewId/kitId/kitName alongside axis id/name for every kit any view in the project composes', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const kitA = (await ctx.api.createKitInProject(proj.id, 'Kit A'))!;
+		const kitB = (await ctx.api.createKitInProject(proj.id, 'Kit B'))!;
+		const axisA = (await ctx.api.createAxis(proj.id, 'Theme'))!;
+		const axisB = (await ctx.api.createAxis(proj.id, 'Size'))!;
+		await ctx.api.attachKitToComposition(kitA.id, view.id);
+		await ctx.api.attachKitToComposition(kitB.id, view.id);
+		await ctx.api.consumeAxis(kitA.id, axisA.id);
+		await ctx.api.consumeAxis(kitB.id, axisB.id);
+
+		const rows = await ctx.api.getAxesConsumedByProjectId(proj.id).execute();
+		expect(rows).toHaveLength(2);
+		expect(rows).toContainEqual({
+			viewId: view.id,
+			axisId: axisA.id,
+			axisName: 'Theme',
+			kitId: kitA.id,
+			kitName: 'Kit A'
+		});
+		expect(rows).toContainEqual({
+			viewId: view.id,
+			axisId: axisB.id,
+			axisName: 'Size',
+			kitId: kitB.id,
+			kitName: 'Kit B'
+		});
+	});
+
+	it('getAxesConsumedByProjectId returns one row per kit when the same axis is consumed by two kits the view composes', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const kitA = (await ctx.api.createKitInProject(proj.id, 'Kit A'))!;
+		const kitB = (await ctx.api.createKitInProject(proj.id, 'Kit B'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'Theme'))!;
+		await ctx.api.attachKitToComposition(kitA.id, view.id);
+		await ctx.api.attachKitToComposition(kitB.id, view.id);
+		await ctx.api.consumeAxis(kitA.id, axis.id);
+		await ctx.api.consumeAxis(kitB.id, axis.id);
+
+		const rows = await ctx.api.getAxesConsumedByProjectId(proj.id).execute();
+		expect(rows).toHaveLength(2);
+		expect(rows.map((r) => r.kitId).sort()).toEqual([kitA.id, kitB.id].sort());
+		expect(rows.every((r) => r.axisId === axis.id)).toBe(true);
+	});
+
+	it('getAxesConsumedByProjectId picks up a kit gaining a newly-consumed axis after an earlier read (no staleness)', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Kit'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'Theme'))!;
+		await ctx.api.attachKitToComposition(kit.id, view.id);
+
+		expect(await ctx.api.getAxesConsumedByProjectId(proj.id).execute()).toHaveLength(0);
+
+		await ctx.api.consumeAxis(kit.id, axis.id);
+
+		// A plain re-query (not a cached snapshot) sees the newly-consumed axis immediately -- this
+		// is the regression guard for the "Add Axis stays disabled after adding layers to a view
+		// whose axes weren't set up yet when a one-shot cache first ran" bug this API replaced.
+		const rows = await ctx.api.getAxesConsumedByProjectId(proj.id).execute();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]).toMatchObject({ viewId: view.id, kitId: kit.id, axisId: axis.id });
+	});
+
+	it('getAxisValuesByProjectId returns every literal/discrete/range value for every axis in the project', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'Theme'))!;
+		await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' });
+		await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' });
+
+		const rows = await ctx.api.getAxisValuesByProjectId(proj.id).execute();
+		expect(rows).toHaveLength(2);
+		expect(rows.every((r) => r.axisId === axis.id)).toBe(true);
+		expect(rows.map((r) => r.value.value).sort()).toEqual(['dark', 'light']);
+	});
+
+	it('getAxisArgsByProjectId returns viewId/kitId/axisId/value for every axis_args row across every view in the project', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const viewA = (await ctx.api.createViewInProject(proj.id, 'A'))!;
+		const viewB = (await ctx.api.createViewInProject(proj.id, 'B'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Kit'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'Theme'))!;
+		await ctx.api.attachKitToComposition(kit.id, viewA.id);
+		await ctx.api.attachKitToComposition(kit.id, viewB.id);
+		await ctx.api.setAxisArg(viewA.id, kit.id, axis.id, { type: 'literal', value: 'dark' });
+		await ctx.api.setAxisArg(viewB.id, kit.id, axis.id, { type: 'literal', value: 'light' });
+
+		const rows = await ctx.api.getAxisArgsByProjectId(proj.id).execute();
+		expect(rows).toHaveLength(2);
+		expect(rows).toContainEqual({
+			viewId: viewA.id,
+			kitId: kit.id,
+			axisId: axis.id,
+			value: { type: 'literal', value: 'dark' }
+		});
+		expect(rows).toContainEqual({
+			viewId: viewB.id,
+			kitId: kit.id,
+			axisId: axis.id,
+			value: { type: 'literal', value: 'light' }
+		});
+	});
+
+	it('getAxisArgsByProjectId does not leak axis_args rows from a different project', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const projA = (await ctx.api.createProjectInWorkspace(wsId, 'A'))!;
+		const projB = (await ctx.api.createProjectInWorkspace(wsId, 'B'))!;
+		const viewA = (await ctx.api.createViewInProject(projA.id, 'v'))!;
+		const kitA = (await ctx.api.createKitInProject(projA.id, 'Kit'))!;
+		const axisA = (await ctx.api.createAxis(projA.id, 'Theme'))!;
+		await ctx.api.attachKitToComposition(kitA.id, viewA.id);
+		await ctx.api.setAxisArg(viewA.id, kitA.id, axisA.id, { type: 'literal', value: 'dark' });
+
+		const rows = await ctx.api.getAxisArgsByProjectId(projB.id).execute();
+		expect(rows).toEqual([]);
+	});
+
+	it('setTokenAxisOverride sets a specific chosen value, not just the axis\'s first one', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
+		const target = (await ctx.api.createViewInProject(proj.id, 'target'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' });
+		await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' });
+		const token = (await ctx.api.createToken(
+			proj.id,
+			'hero',
+			{ type: 'view', view_id: target.id },
+			{ viewId: view.id }
+		))!;
+		const tokenId = token.id;
+
+		await ctx.api.setTokenAxisOverride(tokenId, axis.id, { type: 'literal', value: 'dark' });
+		const overrides = await ctx.api.getTokenAxisOverrides(tokenId).execute();
+		expect(overrides).toHaveLength(1);
+		expect(overrides[0]!.value).toMatchObject({ type: 'literal', value: 'dark' });
 	});
 
 	// ---- Layers ----
@@ -1009,18 +1159,18 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(kitTokens.map((t) => t.tokenId)).toEqual([kitToken.id]);
 	});
 
-	it('upsertViewToken creates then updates one view-scoped token for an alias', async () => {
+	it('upsertViewToken creates then updates one view-scoped token for an alias (lone/scalar use, not multi-ref)', async () => {
 		const allWs = await ctx.api.getAllWorkspaces().execute();
 		const wsId = allWs[0]!.workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
 		const view = (await ctx.api.createViewInProject(proj.id, 'v'))!;
-		const childA = (await ctx.api.createViewInProject(proj.id, 'a'))!;
-		const childB = (await ctx.api.createViewInProject(proj.id, 'b'))!;
+		const heroA = (await ctx.api.createViewInProject(proj.id, 'a'))!;
+		const heroB = (await ctx.api.createViewInProject(proj.id, 'b'))!;
 
 		// First call creates the token, scoped to the view.
-		const first = await ctx.api.upsertViewToken(proj.id, view.id, 'children', {
-			type: 'view-list',
-			view_ids: [childA.id]
+		const first = await ctx.api.upsertViewToken(proj.id, view.id, 'heroView', {
+			type: 'view',
+			view_id: heroA.id
 		});
 		expect(first.created).toBe(true);
 
@@ -1028,25 +1178,98 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(afterCreate).toHaveLength(1);
 		expect(afterCreate[0]!.tokenId).toBe(first.id);
 		expect(afterCreate[0]!.tokenViewId).toBe(view.id);
-		expect(afterCreate[0]!.tokenValue).toEqual({ type: 'view-list', view_ids: [childA.id] });
+		expect(afterCreate[0]!.tokenValue).toEqual({ type: 'view', view_id: heroA.id });
 
 		// Second call updates the same token in place -- no duplicate row for the alias.
-		const second = await ctx.api.upsertViewToken(proj.id, view.id, 'children', {
-			type: 'view-list',
-			view_ids: [childA.id, childB.id]
+		const second = await ctx.api.upsertViewToken(proj.id, view.id, 'heroView', {
+			type: 'view',
+			view_id: heroB.id
 		});
 		expect(second.created).toBe(false);
 		expect(second.id).toBe(first.id);
 
 		const afterUpdate = await ctx.api.getTokensByViewId(view.id).execute();
 		expect(afterUpdate).toHaveLength(1);
-		expect(afterUpdate[0]!.tokenValue).toEqual({
-			type: 'view-list',
-			view_ids: [childA.id, childB.id]
-		});
+		expect(afterUpdate[0]!.tokenValue).toEqual({ type: 'view', view_id: heroB.id });
 	});
 
-	const vl = (view_ids: string[]): TokenValue => ({ type: 'view-list', view_ids });
+	it('addViewRef appends new rows in order, auto-incrementing priority_index', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'a'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'b'))!;
+		const childC = (await ctx.api.createViewInProject(proj.id, 'c'))!;
+
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childA.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childB.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childC.id);
+
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([childA.id, childB.id, childC.id]);
+	});
+
+	it('addViewRef allows the same target view id twice under one alias (duplicate targets are legal)', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+
+		const first = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+		const second = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+		expect(first.id).not.toBe(second.id);
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([child.id, child.id]);
+	});
+
+	it('removeViewRef detaches one specific row by id (composition_alias -> null), leaving a same-target sibling row intact and the detached row itself undeleted', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const child = (await ctx.api.createViewInProject(proj.id, 'Child'))!;
+
+		const first = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+		const second = await ctx.api.addViewRef(proj.id, parent.id, 'children', child.id);
+
+		await ctx.api.removeViewRef(first.id);
+
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([child.id]);
+
+		const remaining = await ctx.db
+			.selectFrom('tokens')
+			.where('view_id', '=', parent.id)
+			.where('composition_alias', '=', 'children')
+			.select('id')
+			.execute();
+		expect(remaining.map((r) => r.id)).toEqual([second.id]);
+
+		// Detach, never delete -- the row survives with composition_alias cleared.
+		const detached = await ctx.db
+			.selectFrom('tokens')
+			.where('id', '=', first.id)
+			.select(['id', 'composition_alias'])
+			.executeTakeFirst();
+		expect(detached).toEqual({ id: first.id, composition_alias: null });
+	});
+
+	it('reorderViewRefs renumbers priority_index to match the given order', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'a'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'b'))!;
+		const childC = (await ctx.api.createViewInProject(proj.id, 'c'))!;
+
+		const a = await ctx.api.addViewRef(proj.id, parent.id, 'children', childA.id);
+		const b = await ctx.api.addViewRef(proj.id, parent.id, 'children', childB.id);
+		const c = await ctx.api.addViewRef(proj.id, parent.id, 'children', childC.id);
+
+		await ctx.api.reorderViewRefs([c.id, a.id, b.id]);
+
+		expect(await childRefIdsOf(ctx, parent.id)).toEqual([childC.id, childA.id, childB.id]);
+	});
 
 	it('instantiateKitDefaults clones the kit template into unique per-view children (recursively)', async () => {
 		const wsId = (await ctx.api.getAllWorkspaces().execute())[0]!.workspaceId;
@@ -1057,10 +1280,10 @@ it('creates, updates, and deletes render entries', async () => {
 		const icon = (await ctx.api.createViewInProject(proj.id, 'Icon'))!;
 		const header = (await ctx.api.createViewInProject(proj.id, 'Header'))!;
 		await ctx.api.attachKitToComposition(card.id, header.id);
-		await ctx.api.upsertViewToken(proj.id, header.id, 'children', vl([icon.id]));
+		await ctx.api.addViewRef(proj.id, header.id, 'children', icon.id);
 
 		// Kit default: Card's kit-scope children token names the template (Header).
-		await ctx.api.createToken(proj.id, 'children', vl([header.id]), { kitId: card.id });
+		await ctx.api.createToken(proj.id, 'children', { type: 'view', view_id: header.id }, { kitId: card.id });
 
 		// Two instances composing Card.
 		const v1 = (await ctx.api.createViewInProject(proj.id, 'V1'))!;
@@ -1071,11 +1294,7 @@ it('creates, updates, and deletes render entries', async () => {
 		await ctx.api.instantiateKitDefaults(v1.id);
 		await ctx.api.instantiateKitDefaults(v2.id);
 
-		const childrenOf = async (viewId: string) => {
-			const toks = await ctx.api.getTokensByViewId(viewId).execute();
-			const t = toks.find((x) => x.tokenAlias === 'children');
-			return t?.tokenValue?.type === 'view-list' ? t.tokenValue.view_ids : [];
-		};
+		const childrenOf = (viewId: string) => childRefIdsOf(ctx, viewId);
 
 		const v1kids = await childrenOf(v1.id);
 		const v2kids = await childrenOf(v2.id);
@@ -1180,9 +1399,10 @@ it('creates, updates, and deletes render entries', async () => {
 		const av = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'light' }))!;
 		const layer = (await ctx.api.createLayer(kit.id))!;
 		const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
-		// Exercises the "soft" FK cases importProjectData has to remap by hand: a view-type token,
-		// a view-LIST-type token (the mechanism the live UI actually uses for composition/children --
-		// see the remapTokenValue comment), and the legacy 'children' JSON-array-of-view-ids literal.
+		// Exercises the "soft" FK cases importProjectData has to remap by hand: a view-type token
+		// (twice, at different scopes/aliases -- the mechanism the live UI actually uses for
+		// composition/children is now N `view`-typed tokens, not one view-list array) and the legacy
+		// 'children' JSON-array-of-view-ids literal.
 		await ctx.api.createRenderEntry(snippet.id, 'children', JSON.stringify([view.id]));
 		await ctx.api.addAxisValueToLayer(layer.id, av.id);
 		await ctx.api.consumeAxis(kit.id, axis.id);
@@ -1192,7 +1412,7 @@ it('creates, updates, and deletes render entries', async () => {
 		await ctx.api.createToken(
 			proj.id,
 			'children',
-			{ type: 'view-list', view_ids: [childView.id] },
+			{ type: 'view', view_id: childView.id },
 			{ viewId: view.id }
 		);
 		await ctx.api.attachKitToComposition(kit.id, view.id);
@@ -1243,13 +1463,13 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(reimportedViewToken.value.view_id).toBe(newViewId);
 		expect(reimportedViewToken.value.view_id).not.toBe(view.id);
 
-		// The view-LIST-type token (the live composition mechanism) must reference the NEW child
-		// view, not the source project's -- this is the case remapTokenValue used to silently skip.
+		// The `children`-aliased view token (the live composition mechanism) must reference the NEW
+		// child view, not the source project's.
 		const reimportedChildrenToken = reimported.tokens.find(
-			(t: any) => t.alias === 'children' && t.value.type === 'view-list'
+			(t: any) => t.alias === 'children' && t.value.type === 'view'
 		);
-		expect(reimportedChildrenToken.value.view_ids).toEqual([newChildViewId]);
-		expect(reimportedChildrenToken.value.view_ids).not.toEqual([childView.id]);
+		expect(reimportedChildrenToken.value.view_id).toBe(newChildViewId);
+		expect(reimportedChildrenToken.value.view_id).not.toBe(childView.id);
 
 		// The 'children' render entry's JSON array must reference the new view id too.
 		const childrenEntry = reimported.renderEntries.find((e: any) => e.property === 'children');
@@ -1262,9 +1482,9 @@ it('creates, updates, and deletes render entries', async () => {
 		const originalViewToken = original.tokens.find((t: any) => t.alias === 'heroView');
 		expect(originalViewToken.value.view_id).toBe(view.id);
 		const originalChildrenToken = original.tokens.find(
-			(t: any) => t.alias === 'children' && t.value.type === 'view-list'
+			(t: any) => t.alias === 'children' && t.value.type === 'view'
 		);
-		expect(originalChildrenToken.value.view_ids).toEqual([childView.id]);
+		expect(originalChildrenToken.value.view_id).toBe(childView.id);
 	});
 
 	it('importProjectData warns instead of failing when the source interpreter is not installed', async () => {

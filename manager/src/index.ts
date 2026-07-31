@@ -103,6 +103,7 @@ export {
 	resolveViewCascade,
 	fetchResolutionRows,
 	resolveViewsFromRows,
+	resolveLinkedArg,
 	rowsKey,
 	flattenKitResults,
 	matchesArg,
@@ -111,16 +112,19 @@ export {
 	type ResolvedKit,
 	type ResolvedViewData,
 	type ResolutionRows,
+	type OverriddenOccurrence,
 	type CascadeEntry,
 	type CascadeLayer,
 	type CascadeKit
 } from './resolve/resolve.js';
 export {
 	fetchKitExportShapes,
+	fetchViewCompositions,
 	type KitExportShape,
 	type AxisExportMeta,
 	type ExportAxisValue,
 	type ExportLayer,
 	type ExportLayerCondition,
-	type ExportLayerEntry
+	type ExportLayerEntry,
+	type ViewCompositionRow
 } from './resolve/export-shape.js';
