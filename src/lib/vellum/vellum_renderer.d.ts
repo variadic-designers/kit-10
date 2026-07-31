@@ -88,11 +88,11 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_9088: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7635: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7635_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7635_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9090: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9129: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7676: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7676_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_7676_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9131: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
