@@ -3,7 +3,7 @@ import createPlugin, {
 	type ManifestLike,
 	type Plugin
 } from '@extism/extism';
-import type { Api, ResolvedKit } from 'manager';
+import type { Api, ResolvedKit, OverriddenOccurrence } from 'manager';
 import type {
 	FamilyFacts,
 	FieldCategory,
@@ -33,9 +33,16 @@ function serializeResolvedKits(kits: ResolvedKit[] | null) {
 	return kits.map((k) => ({
 		kitId: k.kitId,
 		kitName: k.kitName,
-		// Each property carries its own `viewRefs` (view-list values). There's no kit-level child
-		// list anymore -- a consumer that treats some property as nested composition (Charter's
-		// `children`) reads that property's viewRefs itself.
+		// Each property carries its own `viewRefs` (view refs from one or more `view`-typed
+		// tokens). There's no kit-level child list anymore -- a consumer that treats some property
+		// as nested composition (Charter's `children`) reads that property's viewRefs itself.
+		//
+		// Sent as-is: `{viewId, tokenId}[]` per property, matching Charter's Rust `ResolvedProperty
+		// .view_refs: Option<Vec<ViewRef>>` (plugins/charter/src/lib.rs) -- `tokenId` is what makes
+		// Charter's rendering/selection occurrence-aware (two different tokens referencing the
+		// same view are two independent rendered instances). Do not flatten this back down to
+		// plain view-id strings; that was a temporary posture before Charter's struct grew a
+		// `token_id` per ref.
 		properties: Object.fromEntries(k.properties)
 	}));
 }
@@ -47,6 +54,17 @@ function serializeResolvedViews(views: ResolvedView[] | null) {
 		viewName: v.viewName,
 		hints: v.hints ?? {},
 		resolvedKits: serializeResolvedKits(v.resolvedKits) ?? []
+	}));
+}
+
+// One entry per `view`-typed token reference whose axis override changed its own resolution --
+// see resolve.ts's OverriddenOccurrence / Charter's matching Rust struct. Additive: empty for the
+// common (no overrides anywhere) case.
+function serializeOverriddenOccurrences(occurrences: OverriddenOccurrence[]) {
+	return occurrences.map((o) => ({
+		occurrenceKey: o.occurrenceKey,
+		viewId: o.viewId,
+		resolvedKits: serializeResolvedKits(o.resolvedKits) ?? []
 	}));
 }
 
@@ -90,6 +108,11 @@ export function createPluginManager(api: Api) {
 	let nodeViewIds = $state<string[]>([]);
 	// Parallel to viewportData/nodeViewIds (same length/order) -- see OnResolveResult.node_kit_ids.
 	let nodeKitIds = $state<string[]>([]);
+	// Parallel to viewportData/nodeViewIds (same length/order) -- this node's OCCURRENCE key (the
+	// referencing token's own id for a nested child, or the view's own id for a root -- see
+	// view-tree.ts's ViewOccurrence / OnResolveResult.node_occurrence_ids). Lets the editor
+	// disambiguate a click/hover/selection to the specific rendered instance, not just the view.
+	let nodeOccurrenceIds = $state<string[]>([]);
 	// The concrete (family, weight, style) set the current viewport renders, post Charter
 	// weight-snapping. Editor.svelte's font scan fetches exactly these -- never re-deriving
 	// weights from raw kit properties (single decision point: Charter's resolve_font_weight).
@@ -118,9 +141,11 @@ export function createPluginManager(api: Api) {
 	let _hints: Record<string, unknown> | null = null;
 	let _viewId: string | null = null;
 	let _projectViews: ResolvedView[] = [];
+	let _overriddenOccurrences: OverriddenOccurrence[] = [];
+	// Occurrence keys (not view ids) -- see EditorSelection.selectedOccurrencePrimary/Secondary.
 	let _selPrimary: string | null = null;
-	let _selSecondary: string[] = [];
-	let _hoveredViewId: string | null = null;
+	let _selSecondary: (string | null)[] = [];
+	let _hoveredOccurrenceKey: string | null = null;
 	let _fontFacts: Record<string, FamilyFacts> = {};
 
 	// Debounce timers
@@ -270,6 +295,7 @@ export function createPluginManager(api: Api) {
 								viewportData,
 								nodeViewIds,
 								nodeKitIds,
+								nodeOccurrenceIds,
 								fieldCategories,
 								fontRequests
 							)
@@ -314,6 +340,14 @@ export function createPluginManager(api: Api) {
 						const outRows: { view_id: string; kit_id: string; axis_id: string; value: string }[] =
 							[];
 						for (const r of rows) {
+							// Drops 'range' (existing, deliberate) and now also 'linked' (post drag-to-lock
+							// axis feature) the same way -- a LOCKED axis has an effective, currently-
+							// resolved value that this filter silently treats as if it doesn't exist,
+							// exporting the default/unconditioned variant instead. Safe (no panic, same
+							// degrade-gracefully posture already documented for 'range'), but it IS a real
+							// static-export correctness gap specifically for locked axes -- resolving
+							// 'linked' before this filter (host-fn or Rust side) is real, separable
+							// follow-up work, not done here.
 							if (r.value.type !== 'literal') continue;
 							outRows.push({
 								view_id: r.viewId,
@@ -334,6 +368,29 @@ export function createPluginManager(api: Api) {
 				// usable outside the app. Assets with no link (bytes-only, uploaded and never given
 				// one) are simply absent from the response map; the plugin treats a missing entry
 				// the same as "no known URL for this image" and skips it.
+				// Full, ordered composition list per requested view id -- {view_id, kit_id,
+				// priority_index}[], ascending priority_index (lowest first, matching resolve.ts's own
+				// composition-order convention). Charter's node_kit_ids collapses to a single "winning"
+				// kit per node, so this is the only way WebCodium learns a view composes more than one
+				// kit at all, and in what order -- backs multi-kit class emission and cross-kit
+				// contested-property disambiguation.
+				async kit10_get_view_compositions(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { view_ids } = JSON.parse(rawJson) as { view_ids: string[] };
+
+					try {
+						const rows = await api.getViewCompositions(view_ids);
+						const outRows = rows.map((r) => ({
+							view_id: r.viewId,
+							kit_id: r.kitId,
+							priority_index: r.priorityIndex
+						}));
+						return cp.store(JSON.stringify({ success: true, rows: outRows }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
 				async kit10_get_asset_links(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
 					const { asset_ids } = JSON.parse(rawJson) as { asset_ids: string[] };
@@ -392,7 +449,7 @@ export function createPluginManager(api: Api) {
 				// null -- api.getTokensByProjectId already filters to exactly this scope) to their
 				// alias/resolved-value/format, for WebCodium's `:root` CSS custom-property export
 				// (variants::render_root_variables + var(--alias) substitution at usage sites). Only
-				// scalar tokens carry a CSS-representable value -- a view/view-list token has no CSS
+				// scalar tokens carry a CSS-representable value -- a `view`-typed token has no CSS
 				// meaning and is silently excluded, same posture as "no known URL" for an unresolved
 				// asset link. Keyed by token id (not alias) so the Rust side can look an entry's own
 				// tokenId straight up without a second alias-based pass.
@@ -539,8 +596,9 @@ export function createPluginManager(api: Api) {
 			resolvedKits: serializeResolvedKits(_kits) ?? [],
 			viewHints: _hints ?? {},
 			projectViews: serializeResolvedViews(_projectViews) ?? [],
-			selectedViewPrimary: _selPrimary,
-			selectedViewSecondary: _selSecondary,
+			overriddenOccurrences: serializeOverriddenOccurrences(_overriddenOccurrences),
+			selectedOccurrencePrimary: _selPrimary,
+			selectedOccurrenceSecondary: _selSecondary.filter((s): s is string => s !== null),
 			fontFacts: _fontFacts
 		});
 		mark('resolve:serialize:end');
@@ -576,6 +634,7 @@ export function createPluginManager(api: Api) {
 				: null;
 			nodeViewIds = parsed.node_view_ids ?? [];
 			nodeKitIds = parsed.node_kit_ids ?? [];
+			nodeOccurrenceIds = parsed.node_occurrence_ids ?? [];
 			// Panel manifests are NOT read here — they're published via the `kit10_panel_publish`
 			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
 			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
@@ -595,9 +654,9 @@ export function createPluginManager(api: Api) {
 
 			const payload = JSON.stringify({
 				primary: _selPrimary,
-				secondary: _selSecondary,
+				secondary: _selSecondary.filter((s): s is string => s !== null),
 				activeViewId: _viewId,
-				hoveredViewId: _hoveredViewId
+				hoveredOccurrenceId: _hoveredOccurrenceKey
 			});
 
 			const result = await activePlugin.call('on_selection_change', payload);
@@ -615,6 +674,7 @@ export function createPluginManager(api: Api) {
 					viewport_data?: UiNode[];
 					node_view_ids?: string[];
 					node_kit_ids?: string[];
+					node_occurrence_ids?: string[];
 					viewport_data_binary?: string;
 				};
 				// Same fix as runResolve above -- viewport_data and viewport_data_binary aren't
@@ -627,6 +687,7 @@ export function createPluginManager(api: Api) {
 					: null;
 				nodeViewIds = parsed.node_view_ids ?? [];
 				nodeKitIds = parsed.node_kit_ids ?? [];
+				nodeOccurrenceIds = parsed.node_occurrence_ids ?? [];
 			}
 		};
 	}
@@ -771,13 +832,15 @@ export function createPluginManager(api: Api) {
 		hints: Record<string, unknown> | null,
 		viewId: string | null,
 		projectViews: ResolvedView[],
-		fontFacts: Record<string, FamilyFacts> = {}
+		fontFacts: Record<string, FamilyFacts> = {},
+		overriddenOccurrences: OverriddenOccurrence[] = []
 	) {
 		_kits = kits;
 		_hints = hints;
 		_viewId = viewId;
 		_projectViews = projectViews;
 		_fontFacts = fontFacts;
+		_overriddenOccurrences = overriddenOccurrences;
 		context = { resolvedKits: kits };
 
 		// Invalidate any already-queued runSelectionChange — its last_resolve_input is stale.
@@ -822,18 +885,20 @@ export function createPluginManager(api: Api) {
 		}, 0);
 	}
 
-	function setSelection(primary: string | null, secondary: string[]) {
-		_selPrimary = primary;
-		_selSecondary = secondary;
+	// primaryOccurrenceKey/secondaryOccurrenceKeys identify SPECIFIC rendered instances (see
+	// view-tree.ts's ViewOccurrence), not just views -- see EditorSelection.selectedOccurrencePrimary.
+	function setSelection(primaryOccurrenceKey: string | null, secondaryOccurrenceKeys: (string | null)[]) {
+		_selPrimary = primaryOccurrenceKey;
+		_selSecondary = secondaryOccurrenceKeys;
 		scheduleSelectionChange();
 	}
 
-	// Hover is independent from selection -- a view can be hovered while a different view stays
-	// selected -- but shares the same wire call (on_selection_change) and debounce/generation
+	// Hover is independent from selection -- an occurrence can be hovered while a different one
+	// stays selected -- but shares the same wire call (on_selection_change) and debounce/generation
 	// plumbing, since the host always sends the full current interaction state together.
-	function setHover(viewId: string | null) {
-		if (_hoveredViewId === viewId) return;
-		_hoveredViewId = viewId;
+	function setHover(occurrenceKey: string | null) {
+		if (_hoveredOccurrenceKey === occurrenceKey) return;
+		_hoveredOccurrenceKey = occurrenceKey;
 		scheduleSelectionChange();
 	}
 
@@ -857,6 +922,7 @@ export function createPluginManager(api: Api) {
 		viewportDataBinary = null;
 		nodeViewIds = [];
 		nodeKitIds = [];
+		nodeOccurrenceIds = [];
 	}
 
 	return {
@@ -886,6 +952,9 @@ export function createPluginManager(api: Api) {
 		},
 		get nodeKitIds() {
 			return nodeKitIds;
+		},
+		get nodeOccurrenceIds() {
+			return nodeOccurrenceIds;
 		},
 		get fontRequests() {
 			return fontRequests;

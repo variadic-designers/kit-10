@@ -1,7 +1,15 @@
 <script lang="ts" module>
 	export interface EditorSelection {
 		selectedViewPrimary: string | null;
+		// Which specific rendered INSTANCE was clicked -- the referencing token's own id for a
+		// nested view, or the view's own id for a root (see view-tree.ts's ViewOccurrence). null
+		// means "not yet occurrence-qualified" -- callers fall back to the first matching node,
+		// same as before occurrence-awareness existed.
+		selectedOccurrencePrimary: string | null;
 		selectedViewSecondary: string[];
+		// Parallel array to selectedViewSecondary. Secondary (multi-)selection has no real UI
+		// consumer yet -- kept parallel for type consistency, not because anything reads it today.
+		selectedOccurrenceSecondary: (string | null)[];
 
 		selectedKitIndex: number | null;
 	}
@@ -104,7 +112,9 @@
 
 	let selection: EditorSelection = $state({
 		selectedViewPrimary: null,
+		selectedOccurrencePrimary: null,
 		selectedViewSecondary: [],
+		selectedOccurrenceSecondary: [],
 		selectedKitIndex: null
 	});
 
@@ -112,8 +122,15 @@
 	// vellum.get_selection hit-test) -- either source updates the same piece of state, so
 	// hovering one highlights the other for free.
 	let hoveredViewId: string | null = $state(null);
+	// Which specific occurrence is hovered (see EditorSelection.selectedOccurrencePrimary) --
+	// null means "not occurrence-qualified", same fallback posture as selection.
+	let hoveredOccurrenceKey: string | null = $state(null);
 
 	let resolvedViews = $state<ResolvedView[]>([]);
+	// Per-reference axis-override resolutions (see resolve.ts's OverriddenOccurrence) -- additive,
+	// empty for the common (no overrides anywhere) case. Threaded into buildViewTree (occurrence-
+	// aware tree walk) and pluginManager.setData (so Charter can render each occurrence correctly).
+	let overriddenOccurrences = $state<OverriddenOccurrence[]>([]);
 	// Set to the project id the moment a switch begins (including the very first auto-select),
 	// cleared the moment that project's first fetchResolutionRows lands -- lets the Projects panel
 	// disable other rows + show a throbber while a switch is in flight. See the resolve $effect
@@ -197,14 +214,17 @@
 
 			// resolveViewsFromRows is pure and synchronous -- no second async window to guard.
 			// The version check above is sufficient; no re-check needed here.
-			const allResolved = resolveViewsFromRowsManager(rows);
+			const { views: allResolved, overriddenOccurrences: newOverriddenOccurrences } =
+				resolveViewsFromRowsManager(rows);
+			overriddenOccurrences = newOverriddenOccurrences;
 
 			// Svelte 5 reactivity is reference-based on $state: reassigning resolvedViews
 			// with a new array reference fires the downstream $effect (→ setData → on_resolve).
 			// The row-key dedup above is what prevents that reassignment when nothing changed
 			// -- Svelte cannot do content-based dedup on its own.
 			// No cast: ResolvedView is now a re-export of manager's ResolvedViewData (the exact
-			// return type of resolveViewsFromRows), so this is a plain assignment. See types.ts.
+			// element type of resolveViewsFromRows' `views` array), so this is a plain assignment.
+			// See types.ts.
 			resolvedViews = allResolved;
 			measure('resolve:cycle:start', 'resolve:dedup:end', 'reResolve total (fetch + dedup)');
 		};
@@ -267,7 +287,7 @@
 	import { selectView as selectViewShared } from './selection.js';
 	import { keybinds, matchKey, isTextEntryTarget } from './keybinds.js';
 	import { panelVisibility, updatePanelVisibility } from './panel-visibility.js';
-	import { buildViewTree, navigate, type NavDirection } from './view-tree.js';
+	import { buildViewTree, navigate, type NavDirection, type ViewOccurrence } from './view-tree.js';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
 	import AxesPanel from './panels/Axes.svelte';
@@ -285,7 +305,8 @@
 		resolveViewsFromRows as resolveViewsFromRowsManager,
 		resolveViewCascade,
 		rowsKey,
-		type CascadeKit
+		type CascadeKit,
+		type OverriddenOccurrence
 	} from 'manager';
 	import { mark, measure } from './profile.js';
 	import { RESOLVE_LIVE_QUERY_SQL } from './resolve-live-query.js';
@@ -429,14 +450,20 @@
 		else if (matchKey(e, binds['nav.nextSibling'])) dir = 'next';
 		if (!dir) return;
 
-		const tree = buildViewTree(resolvedViews, compositionKeys);
-		const roots = resolvedViews
-			.map((v) => v.viewId)
-			.filter((id) => !tree.referencedViewIds.has(id));
-		const target = navigate(editorActivity.activeViewId, dir, tree, roots);
+		const tree = buildViewTree(resolvedViews, compositionKeys, overriddenOccurrences);
+		const roots: ViewOccurrence[] = resolvedViews
+			.filter((v) => !tree.referencedViewIds.has(v.viewId))
+			.map((v) => ({ viewId: v.viewId, occurrenceKey: v.viewId }));
+		const current: ViewOccurrence | null = editorActivity.activeViewId
+			? {
+					viewId: editorActivity.activeViewId,
+					occurrenceKey: selection.selectedOccurrencePrimary ?? editorActivity.activeViewId
+				}
+			: null;
+		const target = navigate(current, dir, tree, roots);
 		if (!target) return;
 		e.preventDefault();
-		selectViewShared(editorActivity, selection, target);
+		selectViewShared(editorActivity, selection, target.viewId, target.occurrenceKey);
 	}
 
 	onMount(async () => {
@@ -525,18 +552,22 @@
 			viewHints,
 			editorActivity.activeViewId,
 			resolvedViews,
-			fontFacts
+			fontFacts,
+			overriddenOccurrences
 		);
 	});
 
 	$effect(() => {
 		if (!pluginManager) return;
-		pluginManager.setSelection(selection.selectedViewPrimary, selection.selectedViewSecondary);
+		pluginManager.setSelection(
+			selection.selectedOccurrencePrimary,
+			selection.selectedOccurrenceSecondary
+		);
 	});
 
 	$effect(() => {
 		if (!pluginManager) return;
-		pluginManager.setHover(hoveredViewId);
+		pluginManager.setHover(hoveredOccurrenceKey);
 	});
 
 	// Passed to Viewport.svelte so it can flag "a resolve is coming" synchronously, before
@@ -859,11 +890,13 @@
 			{api}
 			{editorReady}
 			{resolvedViews}
+			{overriddenOccurrences}
 			{viewsPanelManifest}
 			{pluginRegistryVersion}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId
+			bind:hoveredOccurrenceKey
 		/>
 
 		<ComposePanel {api} bind:editorActivity {editorReady} bind:selection />
@@ -884,15 +917,18 @@
 			data={pluginManager?.viewportData ?? '[]'}
 			dataBinary={pluginManager?.viewportDataBinary ?? null}
 			nodeViewIds={pluginManager?.nodeViewIds ?? []}
+			nodeOccurrenceIds={pluginManager?.nodeOccurrenceIds ?? []}
 			{api}
 			projectHints={activeProjectRow?.hints ?? null}
 			projectHintsReady={activeProjectRow !== undefined}
 			{resolvedViews}
+			{overriddenOccurrences}
 			{compositionKeys}
 			{beginPendingResolve}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId
+			bind:hoveredOccurrenceKey
 		/>
 	{/snippet}
 
@@ -903,6 +939,7 @@
 			{api}
 			{resolvedKits}
 			{selection}
+			editorActiveKitId={editorActivity.activeKitId}
 			fieldCategories={pluginManager?.fieldCategories}
 			activeProjectId={editorActivity.activeProjectId}
 			{fontFacts}

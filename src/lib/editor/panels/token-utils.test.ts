@@ -10,8 +10,8 @@ import type { TokenValue } from 'manager';
 
 // -- existing TokenValue-typed helpers (Tokens panel) --
 describe('tokenIcon', () => {
-	it('returns fa-square-binary for view-list tokens', () => {
-		const v: TokenValue = { type: 'view-list', view_ids: ['v1', 'v2'] };
+	it('returns fa-square-binary for view tokens', () => {
+		const v: TokenValue = { type: 'view', view_id: 'v1' };
 		expect(tokenIcon(v)).toBe('fa-square-binary');
 	});
 
@@ -75,9 +75,9 @@ describe('tokenStr', () => {
 		expect(tokenStr(v)).toBe('#2563eb');
 	});
 
-	it('returns view count for view-list', () => {
-		const v: TokenValue = { type: 'view-list', view_ids: ['a', 'b'] };
-		expect(tokenStr(v)).toBe('2 views');
+	it('returns null for view tokens (Variables.svelte resolves the name itself)', () => {
+		const v: TokenValue = { type: 'view', view_id: 'a' };
+		expect(tokenStr(v)).toBeNull();
 	});
 
 	it('returns null for null', () => {

@@ -1,15 +1,16 @@
 import type { TokenValue } from 'manager';
 
+// A `view`-typed value has no scalar string of its own -- Variables.svelte resolves and displays
+// the referenced view's NAME directly (it has the view list in scope; this module doesn't), same
+// as it always has. Returns null here so callers that only want a scalar display fall through.
 export function tokenStr(v: TokenValue | null | undefined): string | null {
 	if (!v) return null;
 	if (v.type === 'scalar') return v.value;
-	if (v.type === 'view-list')
-		return `${v.view_ids.length} view${v.view_ids.length === 1 ? '' : 's'}`;
 	return null;
 }
 
 export function tokenIcon(v: TokenValue | null | undefined): string {
-	if (v?.type === 'view-list') return 'fa-square-binary';
+	if (v?.type === 'view') return 'fa-square-binary';
 	const str = tokenStr(v);
 	if (!str) return 'fa-question';
 	if (isColorScalar(str)) return 'fa-square-full';

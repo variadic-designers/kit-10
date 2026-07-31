@@ -6,8 +6,8 @@
 	import { selectView, deselectView } from './selection.js';
 	import { viewportInput, updateViewportInput } from './viewport-input.js';
 	import { keybinds, matchKey, matchMouse, isTextEntryTarget } from './keybinds.js';
-	import { buildViewTree, resolveDragTargetViewId } from './view-tree.js';
-	import type { Api } from 'manager';
+	import { buildViewTree, resolveDragTargetViewId, type ViewOccurrence } from './view-tree.js';
+	import type { Api, OverriddenOccurrence } from 'manager';
 	import type { ResolvedView } from '$lib/plugins/types.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
@@ -16,25 +16,33 @@
 		data = '[]',
 		dataBinary = null,
 		nodeViewIds = [],
+		nodeOccurrenceIds = [],
 		api = null,
 		projectHints = null,
 		projectHintsReady = false,
 		resolvedViews = [],
+		overriddenOccurrences = [],
 		compositionKeys = [],
 		beginPendingResolve = () => {},
 		editorActivity = $bindable(),
 		selection = $bindable(),
-		hoveredViewId = $bindable(null)
+		hoveredViewId = $bindable(null),
+		hoveredOccurrenceKey = $bindable(null)
 	}: {
 		data?: string;
 		dataBinary?: Uint8Array | null;
 		nodeViewIds?: string[];
+		// Parallel to nodeViewIds (same length/order) -- see view-tree.ts's ViewOccurrence /
+		// Charter's node_occurrence_ids. Lets a click/hover disambiguate a SPECIFIC rendered
+		// instance, not just the first node sharing that view id.
+		nodeOccurrenceIds?: string[];
 		// Camera pan memory (project.hints.vellum.panned) -- optional so existing callers/tests
 		// that don't wire project hints through still work; without `api` the feature is just inert.
 		api?: Api | null;
 		projectHints?: Record<string, unknown> | null;
 		projectHintsReady?: boolean;
 		resolvedViews?: ResolvedView[];
+		overriddenOccurrences?: OverriddenOccurrence[];
 		// Charter's composition-field-key list (see view-tree.ts) -- used only to derive
 		// rootViewIds, so a pointerdown on a root view can be routed to a node-drag instead of a
 		// pan. Not otherwise interpreted here.
@@ -48,11 +56,12 @@
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
 		hoveredViewId?: string | null;
+		hoveredOccurrenceKey?: string | null;
 	} = $props();
 
 	// A view is draggable (in this v1 scope) iff it's a root: nobody else's `children` references
 	// it. Same graph math the Views panel / [ ] nav already use -- see view-tree.ts.
-	const viewTree = $derived(buildViewTree(resolvedViews, compositionKeys));
+	const viewTree = $derived(buildViewTree(resolvedViews, compositionKeys, overriddenOccurrences));
 	const rootViewIds = $derived.by(() => {
 		const ids = new Set<string>();
 		for (const view of resolvedViews) {
@@ -61,15 +70,33 @@
 		return ids;
 	});
 
+	// Finds the node index where BOTH nodeViewIds and nodeOccurrenceIds match at the same
+	// position -- falls back to the first view-id-only match when no occurrenceKey is known
+	// (preserves today's exact behavior for the non-occurrence-aware case).
+	function resolveNodeIndex(viewId: string, occurrenceKey: string | null): number {
+		if (occurrenceKey !== null) {
+			const i = nodeViewIds.findIndex(
+				(id, idx) => id === viewId && nodeOccurrenceIds[idx] === occurrenceKey
+			);
+			if (i !== -1) return i;
+		}
+		return nodeViewIds.indexOf(viewId);
+	}
+
 	// Resolves a canvas hit to the view + node index a drag should actually move -- see
 	// resolveDragTargetViewId's doc in view-tree.ts for why this isn't always just `hit` itself.
 	// Always resolves to the target view's own top-level node (nodeViewIds' first occurrence),
 	// not necessarily `hit.index` -- even a direct hit on a root's own nested content (not a
 	// composed child, just its own internal Text/Box) must still drag from the view's true root,
 	// or only that nested subtree would translate instead of the whole view.
-	function resolveDragTarget(hit: { index: number; viewId: string }): { viewId: string; index: number } | null {
+	function resolveDragTarget(hit: {
+		index: number;
+		viewId: string;
+		occurrenceKey: string;
+	}): { viewId: string; index: number } | null {
+		const hitOcc: ViewOccurrence = { viewId: hit.viewId, occurrenceKey: hit.occurrenceKey };
 		const targetViewId = resolveDragTargetViewId(
-			hit.viewId,
+			hitOcc,
 			editorActivity.activeViewId,
 			rootViewIds,
 			viewTree
@@ -157,21 +184,32 @@
 		if (vellum.is_settling()) requestAnimationFrame(driveSettleAnimation);
 	}
 
-	// Resolves a vellum.get_selection(x, y) hit-test index to both the index itself and the view
-	// it belongs to, via Charter's node_view_ids side-map (parallel to the viewport_data array).
-	// "" (structural grid scaffolding, no owning view) and an out-of-range index both mean "no
-	// view". Shared by hover/click resolution (resolveViewIdAt) and node-drag eligibility
-	// (onPointerDown), so there's one hit-test call site for both.
-	function resolveHitAt(x: number, y: number): { index: number; viewId: string } | null {
+	// Resolves a vellum.get_selection(x, y) hit-test index to the index, the view it belongs to,
+	// and the SPECIFIC OCCURRENCE it belongs to, via Charter's node_view_ids/node_occurrence_ids
+	// side-maps (parallel to the viewport_data array). "" (structural grid scaffolding, no owning
+	// view) and an out-of-range index both mean "no view". Shared by hover/click resolution
+	// (resolveOccurrenceAt) and node-drag eligibility (onPointerDown), so there's one hit-test call
+	// site for both.
+	function resolveHitAt(
+		x: number,
+		y: number
+	): { index: number; viewId: string; occurrenceKey: string } | null {
 		if (!vellum) return null;
 		const index: number | undefined = vellum.get_selection(x, y);
 		if (index === undefined) return null;
 		const viewId = nodeViewIds[index];
-		return viewId ? { index, viewId } : null;
+		if (!viewId) return null;
+		// Falls back to the view id itself when node_occurrence_ids hasn't caught up yet (e.g. an
+		// older Charter build, or a transient state before the first occurrence-aware resolve) --
+		// matches a root's own occurrence key convention, so behavior degrades to "first match"
+		// rather than breaking outright.
+		const occurrenceKey = nodeOccurrenceIds[index] || viewId;
+		return { index, viewId, occurrenceKey };
 	}
 
-	function resolveViewIdAt(x: number, y: number): string | null {
-		return resolveHitAt(x, y)?.viewId ?? null;
+	function resolveOccurrenceAt(x: number, y: number): { viewId: string; occurrenceKey: string } | null {
+		const hit = resolveHitAt(x, y);
+		return hit ? { viewId: hit.viewId, occurrenceKey: hit.occurrenceKey } : null;
 	}
 
 	// Writes a root view's dragged-to position on drop. Shallow-merges into the existing
@@ -296,7 +334,7 @@
 	function focusSelectedView() {
 		const viewId = selection.selectedViewPrimary;
 		if (!initialized || !vellum || !hasData || !viewId) return;
-		const index = nodeViewIds.indexOf(viewId);
+		const index = resolveNodeIndex(viewId, selection.selectedOccurrencePrimary);
 		if (index === -1) return;
 		if (vellum.ensure_index_visible(index)) requestRender();
 	}
@@ -393,16 +431,23 @@
 	// with no visual signal it was ever created. Leaving `lastPanSelection` untouched on a failed
 	// attempt lets the effect keep retrying (still gated on `nodeViewIds` actually changing, so it's
 	// not a busy-loop) until the view resolves or the user selects something else.
+	// Keyed by viewId+occurrenceKey together (not just viewId) -- switching between two DIFFERENT
+	// occurrences of the SAME view (e.g. clicking a second instance in the Views tree) must still
+	// re-pan, even though selectedViewPrimary itself doesn't change.
 	let lastPanSelection: string | null = null;
 
 	$effect(() => {
 		const viewId = selection.selectedViewPrimary;
 		if (!initialized || !vellum || !hasData || !viewId) return;
-		if (viewId === lastPanSelection) return;
-		const ids = nodeViewIds;
-		const index = ids.indexOf(viewId);
+		const occurrenceKey = selection.selectedOccurrencePrimary;
+		const panKey = `${viewId}::${occurrenceKey ?? ''}`;
+		if (panKey === lastPanSelection) return;
+		// Read nodeOccurrenceIds too so this effect re-runs (and re-resolves the index) when either
+		// side-map changes, not just nodeViewIds.
+		void nodeOccurrenceIds;
+		const index = resolveNodeIndex(viewId, occurrenceKey);
 		if (index === -1) return;
-		lastPanSelection = viewId;
+		lastPanSelection = panKey;
 		if (vellum.ensure_index_visible(index)) requestRender();
 	});
 
@@ -555,7 +600,9 @@
 		hoverRaf = requestAnimationFrame(() => {
 			hoverRaf = 0;
 			const rect = canvas.getBoundingClientRect();
-			hoveredViewId = resolveViewIdAt(e.clientX - rect.left, e.clientY - rect.top);
+			const occ = resolveOccurrenceAt(e.clientX - rect.left, e.clientY - rect.top);
+			hoveredViewId = occ?.viewId ?? null;
+			hoveredOccurrenceKey = occ?.occurrenceKey ?? null;
 		});
 	}
 
@@ -591,9 +638,9 @@
 		if (movedDistance > CLICK_DRAG_THRESHOLD_PX) return; // was a drag-to-pan, not a click
 
 		const rect = canvas.getBoundingClientRect();
-		const viewId = resolveViewIdAt(e.clientX - rect.left, e.clientY - rect.top);
-		if (viewId) {
-			selectView(editorActivity, selection, viewId);
+		const occ = resolveOccurrenceAt(e.clientX - rect.left, e.clientY - rect.top);
+		if (occ) {
+			selectView(editorActivity, selection, occ.viewId, occ.occurrenceKey);
 		} else {
 			deselectView(editorActivity, selection);
 		}
@@ -605,6 +652,7 @@
 			hoverRaf = 0;
 		}
 		hoveredViewId = null;
+		hoveredOccurrenceKey = null;
 	}
 
 	function onWheel(e: WheelEvent) {

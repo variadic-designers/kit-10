@@ -10,6 +10,14 @@
 		viewName: string;
 	}
 
+	// One entry per underlying `view`-typed token row -- `tokenId` is the specific reference (not
+	// the target view's own id), needed so remove/reorder can target one row even when two rows
+	// share a `viewId` (the same view referenced twice, see resolve.ts's OverriddenOccurrence).
+	export interface ChildViewRef {
+		viewId: string;
+		tokenId: string;
+	}
+
 	type ChildViewFieldProps = {
 		key: string;
 		displayText: string;
@@ -19,7 +27,7 @@
 		keys?: string[];
 		conditionValues?: { axisId: string; value: string }[];
 		tokenId?: string | null;
-		childViewIds?: string[];
+		childRefs?: ChildViewRef[];
 		candidateViews?: ChildViewCandidate[];
 		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
@@ -39,7 +47,7 @@
 		keys = [],
 		conditionValues = [],
 		tokenId,
-		childViewIds = [],
+		childRefs = [],
 		candidateViews = [],
 		position = 'mid',
 		axisNameById = {},
@@ -64,21 +72,28 @@
 
 	// Unlike an ordinary style property, `children` is inherently per-view-instance data -- two
 	// views composing the same kit essentially always want their own distinct child list, which
-	// is exactly what a View-scoped token already models. So the picker never writes a literal
-	// value: it always reads/writes a View-scoped `view-list` token, created transparently on the
-	// first pick rather than requiring a separate manual "Tokenize" step.
+	// is exactly what View-scoped tokens already model. So the picker never writes a literal
+	// value: it always creates/removes View-scoped `view`-typed token rows (one per child),
+	// created transparently on each pick rather than requiring a separate manual "Tokenize" step.
 
-	// The current child views, in order, resolved to { id, name } rows for display. A referenced
-	// id with no matching candidate (e.g. mid-delete) still gets a row, labelled '?'.
+	// The current child views, in order, resolved to { id, tokenId, name } rows for display. A
+	// referenced id with no matching candidate (e.g. mid-delete) still gets a row, labelled '?'.
+	// Not deduped by viewId -- the same view can legitimately be referenced twice (two distinct
+	// token rows), and each is its own row here.
 	const childRows = $derived(
-		[...new Set(childViewIds)].map((id) => ({
-			id,
-			name: candidateViews.find((v) => v.viewId === id)?.viewName ?? '?'
+		childRefs.map((ref) => ({
+			id: ref.viewId,
+			tokenId: ref.tokenId,
+			name: candidateViews.find((v) => v.viewId === ref.viewId)?.viewName ?? '?'
 		}))
 	);
 
-	// Candidate views not already added -- what the `+` picker offers.
-	const addableViews = $derived(candidateViews.filter((v) => !childViewIds.includes(v.viewId)));
+	// Candidate views not already added -- what the `+` picker offers. Filters out any view
+	// already referenced (even though a genuine duplicate reference is legal, this basic picker
+	// only ever adds a not-yet-present view; a deliberate duplicate isn't exposed here).
+	const addableViews = $derived(
+		candidateViews.filter((v) => !childRefs.some((ref) => ref.viewId === v.viewId))
+	);
 
 	let open = $state(false);
 	let triggerRef: HTMLButtonElement | undefined = $state();
@@ -122,25 +137,36 @@
 		if (panelRef && !panelRef.contains(target)) closePicker();
 	}
 
-	async function toggleChild(candidateViewId: string) {
-		const next = childViewIds.includes(candidateViewId)
-			? childViewIds.filter((id) => id !== candidateViewId)
-			: [...childViewIds, candidateViewId];
-
+	async function addChild(candidateViewId: string) {
 		if (!api || !projectId || !viewId) {
 			// No project/view context to scope a token to (e.g. a design-time preview harness) --
 			// fall back to a literal value rather than failing silently.
 			if (onFieldUpdate && sourceLayerId) {
+				const next = [...childRefs.map((r) => r.viewId), candidateViewId];
 				onFieldUpdate({ layerId: sourceLayerId, property: key, value: JSON.stringify(next) });
 			}
 			return;
 		}
 
-		// Write this view's own scoped `children` token (find-or-create). A view-scope children
-		// token is self-declaring in resolution -- it defines this view's children on its own, with
-		// no render entry anchored on a shared kit layer (see resolve.ts). So there's nothing else
-		// to wire: no null-layer fallback, no onFieldUpdate.
-		await api.upsertViewToken(projectId, viewId, key, { type: 'view-list', view_ids: next });
+		// Append one new View-scoped `view`-typed token row. A view-scope children token is
+		// self-declaring in resolution -- it defines this view's children on its own, with no
+		// render entry anchored on a shared kit layer (see resolve.ts). So there's nothing else to
+		// wire: no null-layer fallback, no onFieldUpdate.
+		await api.addViewRef(projectId, viewId, key, candidateViewId);
+	}
+
+	async function removeChild(row: { id: string; tokenId: string }) {
+		if (!api || !projectId || !viewId) {
+			if (onFieldUpdate && sourceLayerId) {
+				const next = childRefs.map((r) => r.viewId).filter((id) => id !== row.id);
+				onFieldUpdate({ layerId: sourceLayerId, property: key, value: JSON.stringify(next) });
+			}
+			return;
+		}
+
+		// Delete this ONE specific token row by its own id -- not by (alias, viewId), since another
+		// row could share the same target view id (a legal duplicate reference).
+		await api.removeViewRef(row.tokenId);
 	}
 </script>
 
@@ -158,7 +184,7 @@
 		<button
 			class="child-field__track"
 			style="--track-color: {trackColor(keys)}"
-			class:child-field__track--empty={childViewIds.length === 0}
+			class:child-field__track--empty={childRefs.length === 0}
 			aria-label="View-scoped token"
 			title={trackTitle(conditionValues)}
 			type="button"
@@ -166,13 +192,13 @@
 			<i class="fa-solid {kitIcon}"></i>
 		</button>
 		<span class="child-field__label">{displayText ?? key}</span>
-		<span class="child-field__count">{childViewIds.length || ''}</span>
+		<span class="child-field__count">{childRefs.length || ''}</span>
 	</div>
 
 	<!-- One row per referenced child view (name + remove), then a `+` add row. Empty state is
 	     just the `+` row under the header. -->
 	<ul class="child-field__list">
-		{#each childRows as row (row.id)}
+		{#each childRows as row (row.tokenId)}
 			<li class="child-field__row">
 				<button
 					type="button"
@@ -192,7 +218,7 @@
 					class="child-field__remove"
 					aria-label="Remove {row.name}"
 					title="Remove"
-					onclick={() => toggleChild(row.id)}
+					onclick={() => removeChild(row)}
 				>
 					<i class="fa-solid fa-xmark"></i>
 				</button>
@@ -225,7 +251,7 @@
 							<button
 								type="button"
 								class="child-view-panel__row"
-								onclick={() => toggleChild(candidate.viewId)}
+								onclick={() => addChild(candidate.viewId)}
 							>
 								<i class="fa-solid fa-plus child-view-panel__add-icon"></i>
 								<span class="child-view-panel__name">{candidate.viewName}</span>

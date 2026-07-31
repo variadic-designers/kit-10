@@ -8,9 +8,9 @@
 	import Panel from '../Panel.svelte';
 	import Axis from './Axis.svelte';
 	import type { Api } from 'manager';
-	import { matchesArg } from 'manager';
+	import { matchesArg, resolveLinkedArg } from 'manager';
 	import type { ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
-	import type { EditorActivity } from '../Editor.svelte';
+	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import type { EditorState } from 'manager';
 	import { shapeIcon, layerDotColor } from './layer-color.ts';
 	import { dropZone } from '../dnd.svelte.ts';
@@ -97,8 +97,78 @@
 	// Fetch consumed axes for the active kit
 	let consumedAxes = $state<any[]>([]);
 	let axisValues = $state<Record<string, any[]>>({});
-	let axisArgs = $state<Record<string, any>>({});
 	let activeKitShape = $state('fa-circle');
+
+	// Project-wide, live -- axisArgs below used to be a one-shot fetch re-run only on the panel's own
+	// writes or a kit/view switch, meaning a lock created elsewhere (e.g. dragged from the Tokens
+	// panel) while this panel was already showing that exact view+kit would sit stale until you
+	// navigated away and back. Project-wide (not scoped to the active view+kit alone) because
+	// resolveLinkedArg needs to walk a 'linked' chain that can pass through any other view in the
+	// project. Mirrors Variables.svelte's identically-purposed allAxisArgsQuery/argsByViewKitAll.
+	const allAxisArgsQuery = liveQuery((api, activity) => api.getAxisArgsByProjectId(activity.activeProjectId));
+
+	const argsByViewKitAll = $derived.by(() => {
+		const map = new Map<string, Record<string, any>>();
+		for (const a of allAxisArgsQuery.rows) {
+			const key = `${a.viewId}::${a.kitId}`;
+			if (!map.has(key)) map.set(key, {});
+			map.get(key)![a.axisId] = a.value;
+		}
+		return map;
+	});
+
+	// The active view+kit's OWN raw axis_args (never resolved) -- only for isLocked/lockedSourceLabel,
+	// which need to know whether a cell IS a pointer, not what it currently resolves to.
+	const rawAxisArgs = $derived.by(() => {
+		const viewId = editorActivity.activeViewId;
+		const kitId = editorActivity.activeKitId;
+		if (!viewId || !kitId) return {};
+		return argsByViewKitAll.get(`${viewId}::${kitId}`) ?? {};
+	});
+
+	// The RESOLVED value for every axis the active kit consumes -- every other read site in this file
+	// (paint-target matching, layer-dot active state, resolveDotLayer, getCurrentArg) reads THIS, so a
+	// locked axis participates in matching/display exactly like a plain literal would, with zero
+	// changes needed at those call sites.
+	const axisArgs = $derived.by(() => {
+		const viewId = editorActivity.activeViewId;
+		const kitId = editorActivity.activeKitId;
+		const result: Record<string, any> = {};
+		if (!viewId || !kitId) return result;
+		for (const axis of consumedAxes) {
+			const resolved = resolveLinkedArg(viewId, kitId, axis.axisId, argsByViewKitAll);
+			if (resolved) result[axis.axisId] = resolved;
+		}
+		return result;
+	});
+
+	function isLocked(axisId: string): boolean {
+		return rawAxisArgs[axisId]?.type === 'linked';
+	}
+
+	// Project-wide, live -- names the source view for a locked axis's tooltip. `activity.activeViewId`
+	// as the query key is arbitrary (the live query itself is what matters); the callback signature
+	// requires an activity param even though this specific query doesn't scope by it.
+	const viewNameQuery = liveQuery((api, activity) => api.getViewsByProjectId(activity.activeProjectId));
+	const viewNameById = $derived.by(() => new Map(viewNameQuery.rows.map((v) => [v.viewId, v.viewName] as const)));
+
+	function lockedSourceLabel(axisId: string): string | undefined {
+		const raw = rawAxisArgs[axisId];
+		if (raw?.type !== 'linked') return undefined;
+		return viewNameById.get(raw.view_id) ?? 'another view';
+	}
+
+	// Unlocking freezes the currently-resolved value as a plain literal snapshot -- nothing visually
+	// changes at the instant of unlock, only its future liveness. Falls back to clearAxisArg only
+	// when there's nothing to freeze (a dangling/cyclic source resolved to unset).
+	async function unlockAxis(axisId: string) {
+		const viewId = editorActivity.activeViewId;
+		const kitId = editorActivity.activeKitId;
+		if (!viewId || !kitId || !isLocked(axisId)) return;
+		const resolved = axisArgs[axisId];
+		if (resolved) await api.setAxisArg(viewId, kitId, axisId, resolved);
+		else await api.clearAxisArg(viewId, kitId, axisId);
+	}
 	// Axes in the project not yet consumed by the active kit -- offered in the add-axis context menu.
 	let unusedAxes = $state<{ axisId: string; axisName: string | null }[]>([]);
 	// Axis ids consumed by some OTHER kit -- those can only be removed from this kit, not hard-deleted.
@@ -166,21 +236,17 @@
 		}
 	}
 
-	// Push the current selection so it reflects a combination, then let axisArgs re-fetch drive the
-	// paint-target recompute. Used when a layer is created or a dot is picked up, so "what you're
+	// Push the current selection so it reflects a combination, then let the live axisArgs query drive
+	// the paint-target recompute. Used when a layer is created or a dot is picked up, so "what you're
 	// painting on" starts aligned with what you just chose (and follows you if you re-pick after).
 	async function applySelection(conds: { axisId: string; value: string | undefined }[]) {
 		const viewId = editorActivity.activeViewId;
 		const kitId = editorActivity.activeKitId;
 		if (!viewId || !kitId) return;
 		for (const c of conds) {
-			if (c.value == null) continue;
+			if (c.value == null || isLocked(c.axisId)) continue;
 			await api.setAxisArg(viewId, kitId, c.axisId, { type: 'literal', value: c.value });
 		}
-		const args = await api.getAllAxisArgs(viewId, kitId).execute();
-		const argsMap: Record<string, any> = {};
-		for (const a of args) argsMap[a.axisId] = a.value;
-		axisArgs = argsMap;
 	}
 
 	async function commitCreateLayer() {
@@ -433,10 +499,21 @@
 		refreshTrigger++;
 	}
 
-	// Raw per-layer conditions, kit-scoped only — refetched on kit/view change, NOT on axis-arg change.
-	let layerConditionsByLayer = $state<
-		{ layerId: string; conds: { axisId: string; axisValueId: string; value: any }[] }[]
-	>([]);
+	// Live (a real PGlite live query), kit-scoped -- backs the combo-dot indicators. Used to be a
+	// one-shot fetch refetched only on kit/view switch or an explicit refreshTrigger bump, so a
+	// layer created from somewhere that doesn't know about this component's own refreshTrigger
+	// (in particular, the Render panel's pipette write path) never showed up here: the dot for a
+	// freshly painted layer silently never appeared. See getLayerConditionsByKitId.
+	const layerConditionsQuery = liveQuery((api, activity) => api.getLayerConditionsByKitId(activity.activeKitId));
+
+	const layerConditionsByLayer = $derived.by(() => {
+		const grouped = new Map<string, { axisId: string; axisValueId: string; value: any }[]>();
+		for (const c of layerConditionsQuery.rows) {
+			if (!grouped.has(c.layerId)) grouped.set(c.layerId, []);
+			grouped.get(c.layerId)!.push({ axisId: c.axisId, axisValueId: c.axisValueId, value: c.value });
+		}
+		return [...grouped.entries()].map(([layerId, conds]) => ({ layerId, conds }));
+	});
 
 	$effect(() => {
 		const currentKitId = editorActivity.activeKitId;
@@ -446,8 +523,6 @@
 		if (!currentKitId || !editorReady) {
 			consumedAxes = [];
 			axisValues = {};
-			axisArgs = {};
-			layerConditionsByLayer = [];
 			unusedAxes = [];
 			return;
 		}
@@ -466,52 +541,6 @@
 				valuesMap[axis.axisId] = await api.getAxisValuesByAxisId(axis.axisId).execute();
 			}
 			axisValues = valuesMap;
-
-			let argsMap: Record<string, any> = {};
-			if (currentViewId) {
-				const args = await api.getAllAxisArgs(currentViewId, currentKitId).execute();
-				for (const arg of args) {
-					argsMap[arg.axisId] = arg.value;
-				}
-			}
-			axisArgs = argsMap;
-
-			const layers = await editorReady.dialect
-				.selectFrom('layers')
-				.where('kit_id', '=', currentKitId)
-				.select(['id'])
-				.execute();
-
-			const layerIds = layers.map((l) => l.id);
-
-			if (layerIds.length === 0) {
-				layerConditionsByLayer = [];
-			} else {
-				const conditions = await editorReady.dialect
-					.selectFrom('layer_axis_values')
-					.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
-					.where('layer_axis_values.layer_id', 'in', layerIds)
-					.select([
-						'layer_axis_values.layer_id',
-						'layer_axis_values.axis_value_id',
-						'axis_values.axis_id',
-						'axis_values.value'
-					])
-					.execute();
-
-				const grouped = new Map<string, { axisId: string; axisValueId: string; value: any }[]>();
-				for (const c of conditions) {
-					if (!grouped.has(c.layer_id)) grouped.set(c.layer_id, []);
-					grouped
-						.get(c.layer_id)!
-						.push({ axisId: c.axis_id, axisValueId: c.axis_value_id, value: c.value });
-				}
-
-				layerConditionsByLayer = layerIds.map((layerId) => ({
-					layerId,
-					conds: grouped.get(layerId) ?? []
-				}));
-			}
 
 			let kitShape = 'fa-circle';
 			if (currentViewId) {
@@ -631,21 +660,15 @@
 	// so the axis reads as unset (re-clicking the active value toggles it off, see Axis.svelte).
 	async function handleArgChange(axisId: string, arg: AxisArgValue | null) {
 		if (!editorActivity.activeViewId || !editorActivity.activeKitId) return;
+		// The Axis component already disables interaction on a locked axis (see the `locked` prop
+		// passed to it below) -- this is a defensive guard against any other future caller.
+		if (isLocked(axisId)) return;
 
 		if (arg === null) {
 			await api.clearAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId);
 		} else {
 			await api.setAxisArg(editorActivity.activeViewId, editorActivity.activeKitId, axisId, arg);
 		}
-
-		const args = await api
-			.getAllAxisArgs(editorActivity.activeViewId, editorActivity.activeKitId)
-			.execute();
-		const argsMap: Record<string, any> = {};
-		for (const a of args) {
-			argsMap[a.axisId] = a.value;
-		}
-		axisArgs = argsMap;
 	}
 </script>
 
@@ -731,6 +754,9 @@
 						{} as Record<string, string>
 					)}
 					onArgChange={(arg) => handleArgChange(axisData.axisId, arg)}
+					locked={isLocked(axisData.axisId)}
+					lockedSourceLabel={lockedSourceLabel(axisData.axisId)}
+					onUnlock={() => unlockAxis(axisData.axisId)}
 				onRemove={() => removeAxisFromKit(axisData.axisId)}
 				deletable={!sharedAxisIds.has(axisData.axisId)}
 				onDelete={() => deleteAxisHard(axisData.axisId)}

@@ -241,6 +241,12 @@ export interface OnResolveResult {
 	// Kit's id for each node, "" for structural scaffolding or a kit-less view. See Charter's
 	// node_kit_ids doc comment and resources/webcodium-export-plan.md.
 	node_kit_ids?: string[];
+	// Parallel to viewport_data/node_view_ids (same length/order) -- this node's OCCURRENCE key:
+	// the referencing `view`-typed token's own id for a nested child, or the view's own id (same
+	// as node_view_ids' entry) for a root. "" for structural scaffolding. Lets the editor
+	// disambiguate a click/hover/selection to the specific rendered instance, not just the view --
+	// see view-tree.ts's ViewOccurrence.
+	node_occurrence_ids?: string[];
 	font_requests?: FontRequest[];
 	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
 	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified

@@ -61,7 +61,7 @@ export const ACHIEVEMENTS: Achievement[] = [
 		id: 'token-smith',
 		label: 'Token Smith',
 		icon: 'fa-solid fa-hammer',
-		description: 'Defined a view-list token and composed a nested view.',
+		description: 'Defined a view token and composed a nested view.',
 		earned: false
 	},
 	{

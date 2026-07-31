@@ -22,6 +22,19 @@ import { keybinds, matchKey } from './keybinds.js';
 export type DragPayload =
 	| { kind: 'axis'; axisId: string; kitId: string; label?: string }
 	| { kind: 'axis-value'; axisValueId: string; axisId: string }
+	// Dragged from the Tokens panel's read-only kit-level axis chip onto a `view`-typed token --
+	// carries the SOURCE (view, kit) pair identity, not just a resolved snapshot, because the drop
+	// writes a LIVE `{type:'linked', view_id, kit_id}` pointer directly into the TARGET VIEW's OWN
+	// axis_args (see resolve.ts's resolveLinkedArg/resolveAllLinkedArgs): every occurrence of the
+	// target view anywhere in the project keeps tracking whatever this (view, kit, axisId) triple
+	// currently resolves to, including tracking it going unset, with no further action after the
+	// drop -- not offering a one-time choice among the axis's other possible values (that's the
+	// right-click "Add Axis" cascade's job, a separate/complementary path writing token_axis_overrides
+	// instead). `value` is purely informational (ghost preview/display), the write path never
+	// branches on it. Distinct from `axis-value` above (which names one specific axis_values row,
+	// used by Axis.svelte's own value-reorder drag) since this carries a resolved string plus a
+	// source pointer, not an axis_values id.
+	| { kind: 'axis-current'; axisId: string; value: string | null; sourceViewId: string; sourceKitId: string }
 	| { kind: 'token'; tokenId: string; alias: string; valueType?: string }
 	| { kind: 'view'; viewId: string; viewName: string; parentViewId: string | null }
 	| { kind: 'composition'; kitId: string; viewId: string };

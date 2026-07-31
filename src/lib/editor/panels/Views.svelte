@@ -6,6 +6,7 @@
 	import { selectView as selectViewShared, deselectView } from '../selection.js';
 	import { draggable, dropZone, type DropPosition } from '../dnd.svelte.ts';
 	import { buildViewTree } from '../view-tree.js';
+	import type { OverriddenOccurrence } from 'manager';
 	import type { PanelManifest, PanelItem, PanelOp, ResolvedView } from '$lib/plugins/types.js';
 	import type { MenuItem } from '$lib/components/contextMenuStore.js';
 	import {
@@ -21,6 +22,9 @@
 		editorActivity: EditorActivity;
 		api: Api;
 		hoveredViewId?: string | null;
+		// Which specific occurrence is hovered (see EditorSelection.selectedOccurrencePrimary) --
+		// null means "not occurrence-qualified".
+		hoveredOccurrenceKey?: string | null;
 		// The full resolve array — the host walks this for composition-field view_refs to build
 		// the Views DAG itself. Generic graph math (root detection, ordering, cycle guard);
 		// routing it through the plugin manifest (Phase 1's `child_ids`/`is_root`) just wrapped a
@@ -28,6 +32,10 @@
 		// the plugin's opinionated facts per view (write_alias + ops) + the composition field key
 		// list (Charter's single nesting opinion: "this field's view_refs nest").
 		resolvedViews?: ResolvedView[];
+		// Per-reference axis-override resolutions (see resolve.ts's OverriddenOccurrence) -- an
+		// override can change which Layer sets a composition property, so its children can
+		// genuinely differ from the plain view's. Threaded into buildViewTree.
+		overriddenOccurrences?: OverriddenOccurrence[];
 		// The Views panel manifest published by the active plugin via `kit10_panel_publish`
 		// (Charter today). Carries composition_field_keys + per-view write_alias + per-view ops +
 		// header_ops — everything the tree needs to render menus and dispatch DnD writes without
@@ -46,7 +54,9 @@
 		editorReady,
 		editorActivity = $bindable(),
 		hoveredViewId = $bindable(null),
+		hoveredOccurrenceKey = $bindable(null),
 		resolvedViews = [],
+		overriddenOccurrences = [],
 		viewsPanelManifest,
 		pluginRegistryVersion = 0
 	}: ViewsPanel = $props();
@@ -81,8 +91,8 @@
 		await api.updateViewHints(viewId, buildExportFlagHints(row?.hints, provider.id, next));
 	}
 
-	export const selectView = (id: string, _name: string) => {
-		selectViewShared(editorActivity, selection, id);
+	export const selectView = (id: string, _name: string, occurrenceKey?: string) => {
+		selectViewShared(editorActivity, selection, id, occurrenceKey);
 	};
 
 	// Scrolls a row into view the moment it becomes the active view -- mirrors Viewport.svelte's
@@ -169,9 +179,7 @@
 					await provisionBoxKit(projectId, created.id, created.name);
 				}
 				if (viewId) {
-					const alias = item?.write_alias ?? 'children';
-					const current = childIds(viewId);
-					await setViewChildren(viewId, [...current, created.id]);
+					await api.addViewRef(projectId, viewId, childrenAlias(viewId), created.id);
 				}
 				selectView(created.id, created.name);
 				return;
@@ -326,7 +334,9 @@
 	// Charter-specific (the plugin's only injection is `compositionKeys`), mirroring build_viewport's
 	// own `referenced` set. A view referenced by more than one parent is a real DAG, rendered once
 	// per parent; a view in NO parent's child list is a root.
-	const viewTree = $derived.by(() => buildViewTree(resolvedViews, compositionKeys));
+	const viewTree = $derived.by(() =>
+		buildViewTree(resolvedViews, compositionKeys, overriddenOccurrences)
+	);
 	const childrenByViewId = $derived(viewTree.childrenByViewId);
 	const referencedViewIds = $derived(viewTree.referencedViewIds);
 
@@ -336,9 +346,22 @@
 		)
 	);
 
-	// A view's ordered children, read off the host-computed DAG.
+	// A view's ordered children, read off the host-computed DAG. Plain view ids -- rendering/cycle-
+	// guard/subtree-collection purposes here stay view-level (see view-tree.ts's ViewTree doc).
 	function childIds(viewId: string): string[] {
-		return childrenByViewId.get(viewId) ?? [];
+		return (childrenByViewId.get(viewId) ?? []).map((occ) => occ.viewId);
+	}
+
+	// view-tree.ts's `childrenByViewId` already carries each ref's own occurrence key (the
+	// underlying token row's id) -- write paths below need that to target one specific row even
+	// when two rows share a viewId (see resolve.ts's OverriddenOccurrence). Kept as `tokenId` here
+	// (rather than renaming every call site to `occurrenceKey`) since this is exactly the same
+	// value under its write-path name.
+	function childRefs(viewId: string): { viewId: string; tokenId: string }[] {
+		return (childrenByViewId.get(viewId) ?? []).map((occ) => ({
+			viewId: occ.viewId,
+			tokenId: occ.occurrenceKey
+		}));
 	}
 
 	// Cycle guard for DnD: is `candidateId` anywhere inside `rootId`'s subtree? Walks the manifest's
@@ -375,30 +398,24 @@
 		return out;
 	}
 
-	// Persist a parent view's ordered child list. The plugin's manifest carries, per item, the
-	// `write_alias` to upsert when that item's children list changes — that's the token alias the
-	// view's own View-scoped `view-list` token lives under (overriding any kit-declared `children`
-	// by alias during resolution; self-declares when no kit declares one — see CLAUDE.md). The
-	// panel never reads resolved kits to find the alias anymore; the plugin owns it.
-	async function setViewChildren(parentViewId: string, viewIds: string[]) {
-		const projectId = editorActivity.activeProjectId;
-		if (!projectId) return;
-
-		const item = manifestById.get(parentViewId);
-		// `write_alias` is null when this view's primitive has no children field (Text/Image) —
-		// drops onto such a view are rejected by `canDrop` before they reach here, but guard
-		// anyway so a stale manifest can't crash a write.
-		const alias = item?.write_alias ?? 'children';
-
-		await api.upsertViewToken(projectId, parentViewId, alias, {
-			type: 'view-list',
-			view_ids: viewIds
-		});
+	// The token alias a parent view's children live under — the plugin's manifest carries, per
+	// item, the `write_alias` to write when that item's children list changes (overriding any
+	// kit-declared `children` by alias during resolution; self-declares when no kit declares one —
+	// see CLAUDE.md). `write_alias` is null when this view's primitive has no children field
+	// (Text/Image) — drops onto such a view are rejected by `canDrop` before they reach here, but
+	// guard anyway so a stale manifest can't crash a write.
+	function childrenAlias(parentViewId: string): string {
+		return manifestById.get(parentViewId)?.write_alias ?? 'children';
 	}
 
 	// Move `dragged` relative to `target`: `into` nests it under target; `before`/`after` make it a
-	// sibling of target (same parent). Single-parent: it's removed from its old parent and added to
-	// the new one in one gesture. Dropping onto the root band (newParent null) just un-nests it.
+	// sibling of target (same parent). Single-parent (in the common, non-overriding-reference
+	// case): it's removed from its old parent and added to the new one in one gesture. Dropping
+	// onto the root band (newParent null) just un-nests it.
+	//
+	// `children` is now N `view`-typed token rows sharing an alias rather than one array-valued
+	// token, so a reorder/attach/detach targets specific token rows (via childRefs, which carries
+	// each ref's own tokenId) instead of rewriting a whole array.
 	async function handleViewDrop(
 		dragged: { viewId: string; parentViewId: string | null },
 		targetViewId: string,
@@ -409,13 +426,19 @@
 		if (draggedId === targetViewId) return;
 		if (isDescendant(draggedId, targetViewId)) return; // can't move into own subtree
 
+		const projectId = editorActivity.activeProjectId;
+		if (!projectId) return;
+
 		const oldParentId = dragged.parentViewId;
 		const newParentId = position === 'into' ? targetViewId : targetParentId;
 		if (newParentId === draggedId) return;
 
 		if (newParentId && newParentId === oldParentId) {
-			const list = childIds(newParentId).filter((id) => id !== draggedId);
-			const ti = list.indexOf(targetViewId);
+			const refs = childRefs(newParentId);
+			const draggedRef = refs.find((r) => r.viewId === draggedId);
+			if (!draggedRef) return;
+			const list = refs.filter((r) => r.tokenId !== draggedRef.tokenId);
+			const ti = list.findIndex((r) => r.viewId === targetViewId);
 			const at =
 				position === 'into'
 					? list.length
@@ -424,26 +447,34 @@
 						: ti < 0
 							? list.length
 							: ti;
-			list.splice(at, 0, draggedId);
-			await setViewChildren(newParentId, list);
+			list.splice(at, 0, draggedRef);
+			await api.reorderViewRefs(list.map((r) => r.tokenId));
 			return;
 		}
 
 		if (oldParentId) {
-			await setViewChildren(
-				oldParentId,
-				childIds(oldParentId).filter((id) => id !== draggedId)
-			);
+			const draggedRef = childRefs(oldParentId).find((r) => r.viewId === draggedId);
+			if (draggedRef) await api.removeViewRef(draggedRef.tokenId);
 		}
 		if (newParentId) {
-			const list = childIds(newParentId).filter((id) => id !== draggedId);
-			if (position === 'into') {
-				list.push(draggedId);
-			} else {
-				const ti = list.indexOf(targetViewId);
-				list.splice(ti < 0 ? list.length : position === 'after' ? ti + 1 : ti, 0, draggedId);
+			const { id: newTokenId } = await api.addViewRef(
+				projectId,
+				newParentId,
+				childrenAlias(newParentId),
+				draggedId
+			);
+			if (position !== 'into') {
+				// Reposition the freshly-appended row to the correct spot among the OTHER current
+				// refs (childRefs here is still the pre-write snapshot -- the resolve loop hasn't
+				// caught up to this write yet, so it can't already include the new row).
+				const list = childRefs(newParentId).filter((r) => r.viewId !== draggedId);
+				const ti = list.findIndex((r) => r.viewId === targetViewId);
+				list.splice(ti < 0 ? list.length : position === 'after' ? ti + 1 : ti, 0, {
+					viewId: draggedId,
+					tokenId: newTokenId
+				});
+				await api.reorderViewRefs(list.map((r) => r.tokenId));
 			}
-			await setViewChildren(newParentId, list);
 		}
 		// newParentId === null: dropped at root -> detach only; it renders as a root automatically
 		// (its `is_root` flag recomputes in Charter's next manifest publish, after the DB write
@@ -495,20 +526,26 @@
 			{#if viewsQuery.rows}
 				{#each rootViews as v (v.viewId)}
 					{@const item = manifestById.get(v.viewId)}
-					{@render kitter(v, item, 0, [])}
+					{@render kitter(v, item, 0, [], v.viewId)}
 				{/each}
 			{/if}
 		</ul>
 	{/snippet}
 </Panel>
 
-{#snippet kitter(v: any, item: PanelItem | undefined, level: number, ancestors: string[])}
+{#snippet kitter(
+	v: any,
+	item: PanelItem | undefined,
+	level: number,
+	ancestors: string[],
+	occurrenceKey: string
+)}
 	{@const viewIcon = v.viewLocked
 		? 'fa-solid fa-lock'
 		: ((v.hints?.view_icon as string | undefined) ?? 'fa-regular fa-window-maximize')}
 	{@const parentId = ancestors[ancestors.length - 1] ?? null}
-	{@const kidIds = childIds(v.viewId).filter(
-		(id) => id !== v.viewId && !ancestors.includes(id) && resolvedViewIdSet.has(id)
+	{@const kidRefs = childRefs(v.viewId).filter(
+		(ref) => ref.viewId !== v.viewId && !ancestors.includes(ref.viewId) && resolvedViewIdSet.has(ref.viewId)
 	)}
 
 	<!-- Node = one view: a fixed-height row (`.view-field`) stacked ABOVE an optional children
@@ -521,7 +558,7 @@
 		<div
 			class="view-field"
 			class:selected={editorActivity.activeViewId === v.viewId}
-			class:hovered={hoveredViewId === v.viewId}
+			class:hovered={hoveredOccurrenceKey === occurrenceKey}
 			use:scrollIntoViewWhenSelected={editorActivity.activeViewId === v.viewId}
 			use:draggable={{
 				disabled: viewEditing[v.viewId] === true,
@@ -547,10 +584,16 @@
 				class="view"
 				use:contextMenu={menuFor(v.viewId)}
 				aria-label={v.viewName}
-				onclick={() => selectView(v.viewId, v.viewName)}
-				onmouseenter={() => (hoveredViewId = v.viewId)}
+				onclick={() => selectView(v.viewId, v.viewName, occurrenceKey)}
+				onmouseenter={() => {
+					hoveredViewId = v.viewId;
+					hoveredOccurrenceKey = occurrenceKey;
+				}}
 				onmouseleave={() => {
-					if (hoveredViewId === v.viewId) hoveredViewId = null;
+					if (hoveredOccurrenceKey === occurrenceKey) {
+						hoveredViewId = null;
+						hoveredOccurrenceKey = null;
+					}
 				}}
 			>
 				<i class="view__icon {viewIcon}"></i>
@@ -574,15 +617,18 @@
 		     to find the "last direct child". Indentation still comes from the button's --level
 		     padding, so rows land exactly where the flat layout put them; the <ul> adds structure,
 		     not offset. Views are reference-based (DAG, not strict tree): a child renders under
-		     every parent referencing it, and `!ancestors.includes(id)` (in kidIds) is a cycle
-		     guard, not a dedupe -- a chain looping back to an ancestor stops instead of recursing. -->
-		{#if kidIds.length}
+		     every parent referencing it, and `!ancestors.includes(ref.viewId)` (in kidRefs) is a
+		     cycle guard, not a dedupe -- a chain looping back to an ancestor stops instead of
+		     recursing. Keyed by each ref's own `tokenId` (not viewId) so two references to the SAME
+		     view (a legal duplicate, see resolve.ts's OverriddenOccurrence) render as two distinct
+		     rows instead of colliding on one Svelte key. -->
+		{#if kidRefs.length}
 			<ul class="view__children">
-				{#each kidIds as childId (childId)}
-					{@const childRow = rowsByViewId.get(childId)}
-					{@const childItem = manifestById.get(childId)}
+				{#each kidRefs as ref (ref.tokenId)}
+					{@const childRow = rowsByViewId.get(ref.viewId)}
+					{@const childItem = manifestById.get(ref.viewId)}
 					{#if childRow}
-						{@render kitter(childRow, childItem, level + 1, [...ancestors, v.viewId])}
+						{@render kitter(childRow, childItem, level + 1, [...ancestors, v.viewId], ref.tokenId)}
 					{/if}
 				{/each}
 			</ul>

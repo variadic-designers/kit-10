@@ -28,6 +28,14 @@
 		>;
 		axisNameById?: Record<string, string>;
 		disabled?: boolean;
+		// This (view, kit, axis) cell's own axis_args is `{type:'linked', view_id, kit_id}` -- another
+		// view is the source of truth for it (drag-to-lock, see resolve.ts's resolveLinkedArg).
+		// `currentArg` still carries the LIVE RESOLVED value while locked (Axes.svelte resolves it
+		// before handing it down) -- only interaction is gated here, never display.
+		locked?: boolean;
+		// Name of the source view, for the lock badge's tooltip and the (future) "who owns this" hint.
+		lockedSourceLabel?: string;
+		onUnlock?: () => void;
 		// Drag-to-reorder: the whole header (<summary>) is the drag source. Payload/preview are
 		// owned by the parent (Axes.svelte) since they need the kit context; Axis just wires the
 		// action onto its own summary. A trailing-click guard in the action keeps a drag from
@@ -111,6 +119,9 @@
 		valueLayerCells = {},
 		axisNameById = {},
 		disabled = false,
+		locked = false,
+		lockedSourceLabel,
+		onUnlock,
 		dragPayload,
 		dragPreview,
 		onArgChange,
@@ -196,7 +207,8 @@
 		return `${scope} · ${conditions}${layer.active ? ' · active' : ''}`;
 	}
 
-	// Generator (not a static array) so the menu reflects the current `deletable` each time it opens.
+	// Generator (not a static array) so the menu reflects the current `deletable`/`locked` each time
+	// it opens.
 	const axisContextMenu: ContextMenuContentGenerator = () => [
 		{
 			name: 'custom axis',
@@ -206,6 +218,22 @@
 			onClick: () => {}
 		},
 		'hr',
+		// Unlocking freezes the currently-resolved value (see Axes.svelte's unlockAxis) -- offered
+		// only when this axis is actually locked (dragged-onto from another view's current pick).
+		...(locked
+			? [
+					{
+						name: 'unlock-axis',
+						description: lockedSourceLabel
+							? `Stop tracking ${lockedSourceLabel} live -- keeps the current value, editable again`
+							: 'Stop tracking the source live -- keeps the current value, editable again',
+						displayText: 'Unlock',
+						icon: 'fa-solid fa-lock-open',
+						onClick: () => onUnlock?.()
+					},
+					'hr' as const
+				]
+			: []),
 		{
 			name: 'toggle-excluded-from-export',
 			description: excludedFromExport
@@ -295,7 +323,7 @@
 	}
 
 	function selectVariant(variantId: string) {
-		if (disabled) return;
+		if (disabled || locked) return;
 		if (currentArg?.type === 'literal' && currentArg.value === variantId) {
 			onArgChange(null);
 		} else {
@@ -314,7 +342,7 @@
 	// toggles membership in that set rather than selecting the current arg, and cycling the arg
 	// out from under that would be confusing.
 	function handleAxisWheel(e: WheelEvent) {
-		if (kind !== 'categorical' || disabled || createMode) return;
+		if (kind !== 'categorical' || disabled || locked || createMode) return;
 		if (!matchWheel(e, $keybinds['axis.cycleValue'])) return;
 		const len = categoricalValues.length;
 		if (len === 0) return;
@@ -333,11 +361,12 @@
 	}
 
 	function handleRangeChange(min: number | null, max: number | null) {
-		if (disabled) return;
+		if (disabled || locked) return;
 		onArgChange({ type: 'range', min, max });
 	}
 
 	function handleDiscreteInput(e: Event) {
+		if (disabled || locked) return;
 		const value = (e.target as HTMLInputElement).value;
 		if (value === '') {
 			onArgChange(null);
@@ -396,6 +425,14 @@
 			>
 				{axisName}
 			</Renameable>
+			{#if locked}
+				<!-- Read-only: this cell's own axis_args is a live pointer at another view's current
+				     pick (drag-to-lock), not a plain literal -- unlock via the axis's context menu. -->
+				<i
+					class="fa-solid fa-link axis__name__lock-badge"
+					title={lockedSourceLabel ? `Linked to ${lockedSourceLabel}` : 'Linked to another view'}
+				></i>
+			{/if}
 		</h3>
 		<div class="axis__name__value" class:axis__name__value--unset={!isSet}>
 			{displayValue}
@@ -454,7 +491,7 @@
 								value={variantId}
 								checked={currentArg?.type === 'literal' && currentArg.value === variantId}
 								onchange={() => selectVariant(variantId)}
-								{disabled}
+								disabled={disabled || locked}
 							/>
 							<span class="axis-field__name">
 								<Renameable
@@ -502,7 +539,7 @@
 					min={rangeMin}
 					max={rangeMax}
 					thresholds={rangeThresholds}
-					{disabled}
+					disabled={disabled || locked}
 					onChange={handleRangeChange}
 				/>
 			</div>
@@ -514,7 +551,7 @@
 					placeholder="Enter value…"
 					value={currentArg?.type === 'literal' ? currentArg.value : ''}
 					oninput={handleDiscreteInput}
-					{disabled}
+					disabled={disabled || locked}
 				/>
 			</div>
 		{/if}
@@ -577,6 +614,15 @@
 				text-transform: uppercase;
 				@include fonts-stack('Satoshi-Bold', sans);
 				padding-block: calc($x-space-xs / 2);
+				display: flex;
+				align-items: center;
+				gap: calc($x-space-xs / 2);
+			}
+
+			&__lock-badge {
+				font-size: $x-font-size-xs;
+				opacity: 0.6;
+				text-transform: none;
 			}
 
 			&__value {

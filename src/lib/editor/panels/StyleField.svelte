@@ -228,13 +228,14 @@
 	}
 
 	// Drop a token (from the Tokens panel) onto this row to point its render entry at that token.
-	// view-list tokens are rejected -- those are the `children` field's concern (ChildViewField),
-	// not a scalar style property. Needs a source layer to write to (the null layer when the
-	// property has never been set), same precondition as an inline edit.
+	// `view`-typed tokens are rejected -- those are the `children` field's concern (ChildViewField),
+	// not a scalar style property (a view token's resolved value is a bare view-id string with no
+	// CSS meaning). Needs a source layer to write to (the null layer when the property has never
+	// been set), same precondition as an inline edit.
 	function canDropToken(payload: { kind: string; valueType?: string }): boolean {
 		return (
 			payload.kind === 'token' &&
-			payload.valueType !== 'view-list' &&
+			payload.valueType !== 'view' &&
 			!!sourceLayerId &&
 			!!onFieldUpdate
 		);

@@ -90,7 +90,7 @@
 	function canDropColorToken(payload: { kind: string; valueType?: string }): boolean {
 		return (
 			payload.kind === 'token' &&
-			payload.valueType !== 'view-list' &&
+			payload.valueType !== 'view' &&
 			!!info.sourceLayerId &&
 			!!onFieldUpdate
 		);

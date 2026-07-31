@@ -26,6 +26,7 @@ export const RESOLVE_LIVE_QUERY_SQL = `
 	LEFT JOIN render_snippets rs ON rs.layer_id = l.id
 	LEFT JOIN render_entries re ON re.snippet_id = rs.id
 	LEFT JOIN tokens t ON t.project_id = v.project_id
+	LEFT JOIN token_axis_overrides tao ON tao.token_id = t.id
 	WHERE v.project_id = $1
 	GROUP BY v.id
 `;

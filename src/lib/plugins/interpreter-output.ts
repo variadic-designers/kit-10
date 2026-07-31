@@ -25,18 +25,24 @@ export interface InterpreterOutputPayload {
 	// Kit's id for each node, "" for structural scaffolding or a kit-less view. See Charter's
 	// node_kit_ids doc comment (plugins/charter/src/lib.rs) and resources/webcodium-export-plan.md.
 	node_kit_ids: string[];
+	// Parallel to viewport_data/node_view_ids (same length/order) -- this node's OCCURRENCE key
+	// (the referencing `view`-typed token's own id for a nested child, or the view's own id for a
+	// root). See Charter's node_occurrence_ids doc comment (plugins/charter/src/lib.rs) and
+	// view-tree.ts's ViewOccurrence.
+	node_occurrence_ids: string[];
 	categories: FieldCategory[];
 	font_requests: FontRequest[];
 }
 
-// viewportData/nodeViewIds/nodeKitIds/categories/fontRequests are exactly the module-level $state
-// PluginManager already maintains in manager.svelte.ts (populated by runResolve /
-// makeSelectionChangeRunner) -- this function just decides what to hand a REQUESTING plugin,
-// never mutates or refetches anything itself.
+// viewportData/nodeViewIds/nodeKitIds/nodeOccurrenceIds/categories/fontRequests are exactly the
+// module-level $state PluginManager already maintains in manager.svelte.ts (populated by
+// runResolve / makeSelectionChangeRunner) -- this function just decides what to hand a REQUESTING
+// plugin, never mutates or refetches anything itself.
 export function buildInterpreterOutputPayload(
 	viewportData: string,
 	nodeViewIds: string[],
 	nodeKitIds: string[],
+	nodeOccurrenceIds: string[],
 	categories: FieldCategory[],
 	fontRequests: FontRequest[]
 ): InterpreterOutputPayload {
@@ -45,6 +51,7 @@ export function buildInterpreterOutputPayload(
 		viewport_data: JSON.parse(viewportData),
 		node_view_ids: nodeViewIds,
 		node_kit_ids: nodeKitIds,
+		node_occurrence_ids: nodeOccurrenceIds,
 		categories,
 		font_requests: fontRequests
 	};

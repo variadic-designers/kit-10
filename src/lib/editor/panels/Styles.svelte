@@ -24,6 +24,10 @@
 		api: Api;
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
+		// The Compose/Axes panels' own live-selected kit (editorActivity.activeKitId) -- the source
+		// of truth for which kit an unset property gets painted onto. See the activeKitId derived
+		// below for why this can't come from selection.selectedKitIndex.
+		editorActiveKitId?: string | null;
 		fieldCategories?: FieldCategory[];
 		activeProjectId?: string | null;
 		fontFacts?: Record<string, FamilyFacts>;
@@ -37,6 +41,7 @@
 		api,
 		selection,
 		resolvedKits,
+		editorActiveKitId,
 		fieldCategories,
 		activeProjectId,
 		fontFacts,
@@ -97,14 +102,21 @@
 		loadAxisNames();
 	});
 
-	// Which kit a brand-new (never-before-set) property should be written to. Matches Compose
-	// panel's kit selection when the user has picked one; otherwise falls back to the
-	// highest-priority kit (last in composition order -- same as flattenKitResults' own
-	// later-kit-wins rule) so a property still lands somewhere sensible by default.
+	// Which kit a brand-new (never-before-set) property should be written to. Must match the
+	// Compose/Axes panels' own live-selected kit (editorActiveKitId, i.e. editorActivity.activeKitId)
+	// -- painting a property is meaningless unless it lands on the exact kit whose axes/layers you
+	// were just working with in the Axes panel. This used to read selection.selectedKitIndex, which
+	// nothing live ever wrote (the only write site was commented-out dead markup in Compose.svelte),
+	// so it silently always fell back to the highest-priority kit -- painting onto any kit that
+	// wasn't already on top of the composition created a layer under the WRONG kit, conditioned on
+	// an axis that kit doesn't even consume, so it could never become active: a silent no-op with
+	// zero error, indistinguishable from "nothing happens." Falls back to the highest-priority kit
+	// only when editorActiveKitId isn't (yet) one of this view's composed kits.
 	const activeKitId = $derived.by(() => {
 		if (!resolvedKits || resolvedKits.length === 0) return null;
-		const idx = selection.selectedKitIndex;
-		if (idx != null && resolvedKits[idx]) return resolvedKits[idx]!.kitId;
+		if (editorActiveKitId && resolvedKits.some((k) => k.kitId === editorActiveKitId)) {
+			return editorActiveKitId;
+		}
 		return resolvedKits[resolvedKits.length - 1]!.kitId;
 	});
 
@@ -214,7 +226,8 @@
 	// (the same track dot the render rows use to show which layer a value comes from) paints it onto
 	// the current target. Delegated + capture-phase so one handler covers every field component's own
 	// track without editing each; a plain click with nothing held falls through to normal editing.
-	const TRACK_SELECTOR = '.option124__track, .weight-field__track, .color-field__track';
+	const TRACK_SELECTOR =
+		'.option124__track, .weight-field__track, .color-field__track, .arrange-field__track';
 	function fieldClick(e: MouseEvent) {
 		const el = e.target as HTMLElement;
 		const slot = el.closest('.field-slot') as HTMLElement | null;
@@ -332,7 +345,7 @@
 										{...track(field.key)}
 										displayText={field.displayText ?? field.key}
 										key={field.key}
-										childViewIds={resolvedMap.get(field.key)?.viewRefs ?? []}
+										childRefs={resolvedMap.get(field.key)?.viewRefs ?? []}
 										{candidateViews}
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
@@ -495,7 +508,8 @@
 		// held layer's color and takes a crosshair, so the same dot that indicates a value's source
 		// layer is what you click to move the value onto the held one. Track classes live inside child
 		// field components, hence :global().
-		&--paintable :global(:is(.option124__track, .weight-field__track, .color-field__track)) {
+		&--paintable
+			:global(:is(.option124__track, .weight-field__track, .color-field__track, .arrange-field__track)) {
 			cursor: crosshair;
 			outline: 2px solid color-mix(in oklch, var(--held) 55%, transparent);
 			outline-offset: 1px;
@@ -503,7 +517,8 @@
 			transition: scale 120ms ease-out;
 		}
 
-		&--paintable :global(:is(.option124__track, .weight-field__track, .color-field__track)):hover {
+		&--paintable
+			:global(:is(.option124__track, .weight-field__track, .color-field__track, .arrange-field__track)):hover {
 			outline-color: var(--held);
 			background: color-mix(in oklch, var(--held) 22%, transparent);
 			scale: 1.2;
