@@ -3,6 +3,7 @@
 
 use kit10_scene::{ImageSource, NodePosition, UiNode};
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 
 // The real URL an Img node's asset id resolves to, if any -- shared by css.rs (gates whether an
 // Img rule is emitted at all) and html.rs (the literal `src` attribute), so the two can never
@@ -109,6 +110,115 @@ pub(crate) fn distinct_kit_ids(node_kit_ids: &[String]) -> Vec<String> {
         }
     }
     result
+}
+
+// Every kit id actually needed to represent a view's FULL composition, not just each node's own
+// single Charter-picked "winning" kit (node_kit_ids) -- the union of distinct_kit_ids(node_kit_ids)
+// and every kit named in view_compositions, first-appearance order. Feeds the
+// kit10_get_kit_export_shape request body so a kit that's never any node's own primary (always
+// outranked by a higher-priority composed kit) still gets its shape fetched and can still emit its
+// own class/base rule (see resolve_class_names / render_scss's secondary-kit loop).
+pub(crate) fn all_composed_kit_ids(
+    node_kit_ids: &[String],
+    view_compositions: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut result = Vec::new();
+    for id in distinct_kit_ids(node_kit_ids) {
+        if seen.insert(id.clone()) {
+            result.push(id);
+        }
+    }
+    for kit_ids in view_compositions.values() {
+        for id in kit_ids {
+            if !id.is_empty() && seen.insert(id.clone()) {
+                result.push(id.clone());
+            }
+        }
+    }
+    result
+}
+
+// view_id -> true (Box) / false (Text), for every real view a node in this export belongs to.
+// Deliberately absent for an Img view -- Img never routes through the Kit-basis variants.rs path
+// (see render_scss_node's own note), so a kit composed ONLY on Img views has no is_box signal to
+// synthesize secondary base/variant rules from and is simply skipped there, same posture as the
+// existing per-node Img exclusion. First-occurrence-wins per view id, mirroring
+// synthesize_all_variant_rules's own "a Kit is consistently composed as only Box or only Text in
+// practice" assumption.
+pub(crate) fn view_primitive_is_box(nodes: &[UiNode], node_view_ids: &[String]) -> HashMap<String, bool> {
+    let mut map = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        let Some(view_id) = node_view_ids.get(i).filter(|v| !v.is_empty()) else { continue };
+        if map.contains_key(view_id) {
+            continue;
+        }
+        match node {
+            UiNode::Box(_) => {
+                map.insert(view_id.clone(), true);
+            }
+            UiNode::Text(_) => {
+                map.insert(view_id.clone(), false);
+            }
+            UiNode::Img(_) => {}
+        }
+    }
+    map
+}
+
+// A short, deterministic, ORDER-SENSITIVE signature class for one view's own composed-kit-id
+// list (priority_index ascending, exactly the order view_compositions already carries) -- backs
+// cross-kit contested-property disambiguation (variants::synthesize_contested_rules). Two views
+// composing the identical two kits in the SAME order hash identically (safe to share one
+// disambiguating rule, same dedup discipline as kit_names/asset_links being computed once per
+// distinct value); two views composing them in OPPOSITE order hash differently, so their rules
+// can never collide or fight over stylesheet position -- they select genuinely different node
+// subsets instead of contesting one shared selector. Not cryptographic -- DefaultHasher is a
+// plain, fast, non-adversarial hash, which is all a same-process disambiguation label needs.
+pub(crate) fn composition_signature_class(kit_ids: &[String]) -> String {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    kit_ids.hash(&mut hasher);
+    format!("comp-{:x}", hasher.finish())
+}
+
+// Every class this node's element should carry from Kit composition -- the existing 3-tier
+// resolve_class_name (unchanged, still first in the list), one additional class per OTHER kit
+// this node's own view composes (from view_compositions), in composition-priority order, skipping
+// the primary (already represented) and any kit whose name doesn't resolve, and finally (only when
+// the view composes 2+ kits) the composition-signature class every disambiguating contested-
+// property rule's selector is scoped to. For a view composing only one kit (the common case, and
+// every case before multi-kit composition export existed) this returns exactly
+// `[resolve_class_name(...)]` -- byte-identical to the old single-class output.
+pub(crate) fn resolve_class_names(
+    i: usize,
+    nodes: &[UiNode],
+    node_view_ids: &[String],
+    node_kit_ids: &[String],
+    kit_names: &HashMap<String, String>,
+    view_compositions: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let primary = resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+    let mut classes = vec![primary];
+
+    let Some(view_id) = node_view_ids.get(i).filter(|v| !v.is_empty()) else { return classes };
+    let Some(kit_ids) = view_compositions.get(view_id) else { return classes };
+    let primary_kit_id = node_kit_ids.get(i).map(String::as_str).unwrap_or("");
+
+    for kid in kit_ids {
+        if kid.as_str() == primary_kit_id {
+            continue;
+        }
+        let Some(name) = kit_names.get(kid) else { continue };
+        let slug = kit_class_name(name);
+        if !slug.is_empty() && !classes.contains(&slug) {
+            classes.push(slug);
+        }
+    }
+
+    if kit_ids.len() >= 2 {
+        classes.push(composition_signature_class(kit_ids));
+    }
+    classes
 }
 
 // Same dedup shape as distinct_kit_ids, applied to node_view_ids instead -- feeds the
@@ -408,6 +518,88 @@ mod tests {
             resolve_class_name(0, &nodes, &node_view_ids, &node_kit_ids, &kit_names),
             "k10-0"
         );
+    }
+
+    #[test]
+    fn all_composed_kit_ids_unions_node_kit_ids_and_view_compositions_first_appearance() {
+        let node_kit_ids = vec!["kit-a".to_string(), "".to_string()];
+        let mut view_compositions = HashMap::new();
+        view_compositions.insert(
+            "view-a".to_string(),
+            vec!["kit-b".to_string(), "kit-a".to_string()],
+        );
+        let ids = all_composed_kit_ids(&node_kit_ids, &view_compositions);
+        assert_eq!(ids, vec!["kit-a".to_string(), "kit-b".to_string()]);
+    }
+
+    #[test]
+    fn view_primitive_is_box_maps_box_and_text_views_excludes_img() {
+        let nodes = vec![
+            UiNode::Box(crate::test_support::test_box(None)),
+            UiNode::Img(kit10_scene::ImgData {
+                parent_id: None,
+                width: kit10_scene::Extent::Px(1.0),
+                height: kit10_scene::Extent::Px(1.0),
+                source: kit10_scene::ImageSource::None,
+                fit: "cover".to_string(),
+                object_position: [0.5, 0.5],
+                selected: 0,
+                hovered: false,
+            }),
+        ];
+        let node_view_ids = vec!["view-box".to_string(), "view-img".to_string()];
+        let map = view_primitive_is_box(&nodes, &node_view_ids);
+        assert_eq!(map.get("view-box"), Some(&true));
+        assert_eq!(map.get("view-img"), None);
+    }
+
+    #[test]
+    fn resolve_class_names_returns_only_the_primary_when_the_view_composes_one_kit() {
+        let (nodes, node_view_ids) = view_fixture();
+        let node_kit_ids = vec!["kit-1".to_string(), "".to_string(), "".to_string()];
+        let mut kit_names = HashMap::new();
+        kit_names.insert("kit-1".to_string(), "Button".to_string());
+        let mut view_compositions = HashMap::new();
+        view_compositions.insert("view-a".to_string(), vec!["kit-1".to_string()]);
+
+        assert_eq!(
+            resolve_class_names(0, &nodes, &node_view_ids, &node_kit_ids, &kit_names, &view_compositions),
+            vec!["button".to_string()]
+        );
+    }
+
+    #[test]
+    fn resolve_class_names_appends_every_other_composed_kit_in_composition_order() {
+        let (nodes, node_view_ids) = view_fixture();
+        // node_kit_ids names Priority as the single Charter-picked "winning" kit for node 0.
+        let node_kit_ids = vec!["kit-priority".to_string(), "".to_string(), "".to_string()];
+        let mut kit_names = HashMap::new();
+        kit_names.insert("kit-priority".to_string(), "Priority".to_string());
+        kit_names.insert("kit-density".to_string(), "Density".to_string());
+        let mut view_compositions = HashMap::new();
+        view_compositions.insert(
+            "view-a".to_string(),
+            vec!["kit-density".to_string(), "kit-priority".to_string()],
+        );
+
+        let classes =
+            resolve_class_names(0, &nodes, &node_view_ids, &node_kit_ids, &kit_names, &view_compositions);
+        // Primary first, then the other composed kit, then a 2+-kit view's composition-signature
+        // class (see composition_signature_class's own doc comment for why it's needed at all).
+        assert_eq!(classes[0], "priority");
+        assert_eq!(classes[1], "density");
+        assert_eq!(classes.len(), 3);
+        assert!(classes[2].starts_with("comp-"));
+    }
+
+    #[test]
+    fn composition_signature_class_is_order_sensitive() {
+        let forward = vec!["kit-density".to_string(), "kit-priority".to_string()];
+        let reversed = vec!["kit-priority".to_string(), "kit-density".to_string()];
+        assert_ne!(composition_signature_class(&forward), composition_signature_class(&reversed));
+        // Same order, same signature -- lets two views with identical composition safely share
+        // one disambiguating rule.
+        assert_eq!(composition_signature_class(&forward), composition_signature_class(&forward.clone()));
     }
 
     #[test]

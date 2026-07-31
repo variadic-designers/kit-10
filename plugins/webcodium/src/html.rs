@@ -30,6 +30,7 @@ pub(crate) fn render_html(
     asset_links: &HashMap<String, String>,
     css: &str,
     instance_modifier_classes: &HashMap<usize, Vec<String>>,
+    view_compositions: &HashMap<String, Vec<String>>,
 ) -> String {
     let mut body = String::new();
     // Only .is_some() is ever read below (whether to append the extra positional class) -- the
@@ -46,6 +47,7 @@ pub(crate) fn render_html(
             kit_names,
             asset_links,
             instance_modifier_classes,
+            view_compositions,
             i,
             position,
             &mut body,
@@ -65,11 +67,17 @@ fn render_html_node(
     kit_names: &HashMap<String, String>,
     asset_links: &HashMap<String, String>,
     instance_modifier_classes: &HashMap<usize, Vec<String>>,
+    view_compositions: &HashMap<String, Vec<String>>,
     i: usize,
     position: Option<(f32, f32)>,
     out: &mut String,
 ) {
-    let mut class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+    // One class per composed Kit on this node's own view (in composition-priority order), plus
+    // the existing 3-tier fallback as the first entry -- see tree::resolve_class_names. For a
+    // single-kit view (the common case) this is exactly the old single class, unchanged.
+    let mut class =
+        tree::resolve_class_names(i, nodes, node_view_ids, node_kit_ids, kit_names, view_compositions)
+            .join(" ");
     // Static variant modifier classes this SPECIFIC node instance's own view resolved to (see
     // lib.rs's compute_instance_modifier_classes) -- without this, css.rs's variant rules
     // (`.button.button--theme-secondary`) are unreachable dead CSS, since nothing else ever puts a
@@ -102,6 +110,7 @@ fn render_html_node(
                         kit_names,
                         asset_links,
                         instance_modifier_classes,
+                        view_compositions,
                         k,
                         None,
                         out,

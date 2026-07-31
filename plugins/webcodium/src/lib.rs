@@ -40,6 +40,14 @@ mod variants;
 // modifier class(es) matching what its own view resolved to (see compute_instance_modifier_classes
 // and variants::rule_matches_args); without this, every static/`.is-` variant rule is unreachable
 // dead CSS, since nothing else ever puts a modifier class on any element.
+//
+// kit10_get_view_compositions resolves, per requested view id, the FULL ordered list of kits that
+// view composes (view_id, kit_id, priority_index) -- Charter's own node_kit_ids collapses a node
+// to a single "winning" kit (the highest-priority composed kit for THAT node's whole property
+// set), so it's the only way this plugin learns a view composes more than one kit at all, and in
+// what order. Backs multi-kit class/base-rule emission (tree::resolve_class_names,
+// css::render_scss's secondary-kit loop) and cross-kit contested-property disambiguation
+// (resources/webcodium-export-plan.md).
 #[host_fn]
 extern "ExtismHost" {
     fn kit10_get_interpreter_output(_unused: String) -> String;
@@ -48,6 +56,7 @@ extern "ExtismHost" {
     fn kit10_get_font_links(input: String) -> String;
     fn kit10_get_project_tokens(input: String) -> String;
     fn kit10_get_view_axis_args(input: String) -> String;
+    fn kit10_get_view_compositions(input: String) -> String;
 }
 
 // Mirrors interpreter-output.ts's discriminated union, but flattened -- serde's tagged-enum
@@ -139,13 +148,17 @@ pub fn export_html_css(input: String) -> FnResult<String> {
     let roots =
         tree::resolve_export_roots(&output.viewport_data, &output.node_view_ids, &req.view_ids);
 
-    let (kit_names, kit_shapes) = fetch_kit_export_shapes(&output.node_kit_ids);
+    let view_compositions = fetch_view_compositions(&output.node_view_ids);
+    let all_kit_ids = tree::all_composed_kit_ids(&output.node_kit_ids, &view_compositions);
+    let (kit_names, kit_shapes) = fetch_kit_export_shapes(&all_kit_ids);
     let asset_links = fetch_asset_links(&output.viewport_data);
     let font_links = fetch_font_links(&output.viewport_data);
     let project_tokens = fetch_project_tokens(&req.project_id);
     let kit_variant_rules = synthesize_all_variant_rules(
         &output.viewport_data,
+        &output.node_view_ids,
         &output.node_kit_ids,
+        &view_compositions,
         &kit_shapes,
         &project_tokens,
     );
@@ -161,19 +174,34 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &asset_links,
         &project_tokens,
         &kit_variant_rules,
-    );
-    // :root variables lead the stylesheet (order is irrelevant to CSS custom-property lookup,
-    // which is resolved at compute time, not declaration order -- but reads more naturally before
-    // everything that might reference it), then @font-face blocks, then the baseline reset and
-    // the rest of the generated rules.
-    let css = format!(
-        "{}{}{}",
-        variants::render_root_variables(&project_tokens),
-        css::render_font_faces(&font_links),
-        css::with_reset(&scss)
+        &view_compositions,
     );
 
     let view_axis_args = fetch_view_axis_args(&output.node_view_ids);
+    let contested_css = render_contested_rules_css(
+        &output.viewport_data,
+        &output.node_view_ids,
+        &view_compositions,
+        &kit_names,
+        &kit_shapes,
+        &view_axis_args,
+        &project_tokens,
+    );
+
+    // :root variables lead the stylesheet (order is irrelevant to CSS custom-property lookup,
+    // which is resolved at compute time, not declaration order -- but reads more naturally before
+    // everything that might reference it), then @font-face blocks, then the baseline reset and
+    // the rest of the generated rules, then every cross-kit contested-property disambiguating
+    // rule (order-irrelevant here too -- each one's own compound selector, not stylesheet
+    // position, is what makes it win; see variants::synthesize_contested_rules).
+    let css = format!(
+        "{}{}{}{}",
+        variants::render_root_variables(&project_tokens),
+        css::render_font_faces(&font_links),
+        css::with_reset(&scss),
+        contested_css
+    );
+
     let instance_modifier_classes = compute_instance_modifier_classes(
         &output.viewport_data,
         &output.node_view_ids,
@@ -181,6 +209,7 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &kit_names,
         &kit_variant_rules,
         &view_axis_args,
+        &view_compositions,
     );
 
     let html = html::render_html(
@@ -193,6 +222,7 @@ pub fn export_html_css(input: String) -> FnResult<String> {
         &asset_links,
         &css,
         &instance_modifier_classes,
+        &view_compositions,
     );
 
     Ok(html)
@@ -324,14 +354,16 @@ fn fetch_font_links(nodes: &[UiNode]) -> Vec<ResolvedFontLink> {
 // Best-effort fetch of every distinct composed Kit's unresolved export shape. Never fails the
 // whole export -- any error (host-fn call, JSON parse, `success: false`) just leaves both maps
 // empty, which tree::resolve_class_name and css::render_scss already treat as "no Kit-basis data
-// available for this node", falling through to their lower tiers.
+// available for this node", falling through to their lower tiers. `kit_ids` is caller-computed
+// (tree::all_composed_kit_ids) rather than derived from node_kit_ids alone here, since a kit that's
+// never any node's own single "winning" kit (always outranked in a multi-kit composition) still
+// needs its shape fetched to emit its own class/base rule.
 fn fetch_kit_export_shapes(
-    node_kit_ids: &[String],
+    kit_ids: &[String],
 ) -> (HashMap<String, String>, HashMap<String, variants::KitExportShape>) {
     let mut kit_names = HashMap::new();
     let mut kit_shapes = HashMap::new();
 
-    let kit_ids = tree::distinct_kit_ids(node_kit_ids);
     if kit_ids.is_empty() {
         return (kit_names, kit_shapes);
     }
@@ -365,9 +397,18 @@ fn fetch_kit_export_shapes(
 // first-occurrence-wins posture render_scss_node's own `emitted_kits` gate already has for base
 // declarations) -- a Kit consistently composed as only Box or only Text in practice, so this can't
 // actually disagree with what render_scss_node itself would have picked.
+//
+// The second pass covers a Kit that's composed on a view but never that view's own single
+// Charter-picked "winning" kit (node_kit_ids collapses to one per node) -- e.g. a lower-priority
+// kit in a multi-kit composition, which would otherwise never get variant rules synthesized for it
+// at all. Its `is_box` comes from tree::view_primitive_is_box (that Kit's composing view's own
+// primitive), same assumption as the first pass; a Kit composed only on Img views is simply
+// skipped (absent from that map), same posture as the first pass's own Img exclusion.
 fn synthesize_all_variant_rules(
     nodes: &[UiNode],
+    node_view_ids: &[String],
     node_kit_ids: &[String],
+    view_compositions: &HashMap<String, Vec<String>>,
     kit_shapes: &HashMap<String, variants::KitExportShape>,
     project_tokens: &variants::ProjectTokens,
 ) -> HashMap<String, Vec<variants::VariantRule>> {
@@ -388,6 +429,22 @@ fn synthesize_all_variant_rules(
             variants::synthesize_variant_rules_with_tokens(shape, is_box, project_tokens),
         );
     }
+
+    let primitives = tree::view_primitive_is_box(nodes, node_view_ids);
+    for (view_id, kit_ids) in view_compositions {
+        let Some(is_box) = primitives.get(view_id).copied() else { continue };
+        for kid in kit_ids {
+            if kid.is_empty() || rules.contains_key(kid) {
+                continue;
+            }
+            let Some(shape) = kit_shapes.get(kid) else { continue };
+            rules.insert(
+                kid.clone(),
+                variants::synthesize_variant_rules_with_tokens(shape, is_box, project_tokens),
+            );
+        }
+    }
+
     rules
 }
 
@@ -434,6 +491,50 @@ fn fetch_view_axis_args(
     out
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct ViewCompositionRow {
+    view_id: String,
+    kit_id: String,
+    #[allow(dead_code)]
+    priority_index: i64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct ViewCompositionsResponse {
+    #[serde(default)]
+    success: bool,
+    #[serde(default)]
+    rows: Vec<ViewCompositionRow>,
+}
+
+// Best-effort fetch of every distinct exported view's own full composition -- view_id -> kit ids
+// in composition-priority order (the host query already orders by priority_index ascending, same
+// convention resolve.ts uses; this just groups by view, preserving that order). Never fails the
+// whole export -- any error (host-fn call, JSON parse, `success: false`) just leaves the map
+// empty, which every consumer (tree::resolve_class_names, css::render_scss,
+// synthesize_all_variant_rules, compute_instance_modifier_classes) already treats as "no known
+// composition data for this view", falling through to today's single-kit-per-node behavior,
+// unchanged.
+fn fetch_view_compositions(node_view_ids: &[String]) -> HashMap<String, Vec<String>> {
+    let mut out: HashMap<String, Vec<String>> = HashMap::new();
+    let view_ids = tree::distinct_view_ids(node_view_ids);
+    if view_ids.is_empty() {
+        return out;
+    }
+
+    let request = serde_json::json!({ "view_ids": view_ids }).to_string();
+    let Ok(raw) = (unsafe { kit10_get_view_compositions(request) }) else { return out };
+    let Ok(resp) = serde_json::from_str::<ViewCompositionsResponse>(&raw) else { return out };
+    if !resp.success {
+        return out;
+    }
+
+    for row in resp.rows {
+        out.entry(row.view_id).or_default().push(row.kit_id);
+    }
+    out
+}
+
 // For every node instance whose Kit has at least one STATIC variant rule matching that instance's
 // own resolved axis args, the extra class name(s) (already `{class}{suffix}` -- the exact literal
 // token(s) the matching compound selector in css.rs names) its class="" attribute needs for that
@@ -443,6 +544,34 @@ fn fetch_view_axis_args(
 // meant to be flipped by future runtime logic, not permanently set from a design-time axis pick;
 // both stay entirely out of scope for this static-variant-application feature, matching
 // variants.rs's own "assume everything is static for now" scoping.
+// Appends every matching STATIC modifier class for one (node, kit) pair -- shared by the primary
+// kit and every secondary composed kit below, so the two can never disagree on the matching rule.
+fn push_matching_modifier_classes(
+    out: &mut HashMap<usize, Vec<String>>,
+    i: usize,
+    class: &str,
+    kit_id: &str,
+    kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
+    view_id: &str,
+    view_axis_args: &HashMap<(String, String), HashMap<String, String>>,
+) {
+    let Some(rules) = kit_variant_rules.get(kit_id) else { return };
+    if rules.is_empty() {
+        return;
+    }
+    let Some(args) = view_axis_args.get(&(view_id.to_string(), kit_id.to_string())) else {
+        return;
+    };
+    for rule in rules {
+        if rule.dynamic || !variants::rule_matches_args(rule, args) {
+            continue;
+        }
+        for suffix in &rule.suffixes {
+            out.entry(i).or_default().push(format!("{class}{suffix}"));
+        }
+    }
+}
+
 fn compute_instance_modifier_classes(
     nodes: &[UiNode],
     node_view_ids: &[String],
@@ -450,28 +579,104 @@ fn compute_instance_modifier_classes(
     kit_names: &HashMap<String, String>,
     kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
     view_axis_args: &HashMap<(String, String), HashMap<String, String>>,
+    view_compositions: &HashMap<String, Vec<String>>,
 ) -> HashMap<usize, Vec<String>> {
     let mut out: HashMap<usize, Vec<String>> = HashMap::new();
     for i in 0..nodes.len() {
-        let kit_id = &node_kit_ids[i];
-        if kit_id.is_empty() {
-            continue;
-        }
-        let Some(rules) = kit_variant_rules.get(kit_id) else { continue };
-        if rules.is_empty() {
-            continue;
-        }
         let view_id = &node_view_ids[i];
-        let Some(args) = view_axis_args.get(&(view_id.clone(), kit_id.clone())) else { continue };
+        let primary_kit_id = &node_kit_ids[i];
 
-        let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+        if !primary_kit_id.is_empty() {
+            let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
+            push_matching_modifier_classes(
+                &mut out,
+                i,
+                &class,
+                primary_kit_id,
+                kit_variant_rules,
+                view_id,
+                view_axis_args,
+            );
+        }
+
+        // Every OTHER kit this node's own view composes, beyond the single primary kit above --
+        // mirrors css::render_scss_node's secondary-kit loop exactly, so a static variant rule
+        // synthesized there always has a matching modifier class available here to actually
+        // reach the element (otherwise it would be unreachable dead CSS, same class of bug the
+        // primary kit's own kit10_get_view_axis_args wiring already fixed once).
+        if let Some(kit_ids) = view_compositions.get(view_id) {
+            for kid in kit_ids {
+                if kid == primary_kit_id {
+                    continue;
+                }
+                let Some(name) = kit_names.get(kid) else { continue };
+                let slug = tree::kit_class_name(name);
+                if slug.is_empty() {
+                    continue;
+                }
+                push_matching_modifier_classes(
+                    &mut out,
+                    i,
+                    &slug,
+                    kid,
+                    kit_variant_rules,
+                    view_id,
+                    view_axis_args,
+                );
+            }
+        }
+    }
+    out
+}
+
+// Every cross-kit contested-property disambiguating rule for every view in this export that
+// composes 2+ kits, formatted as flat top-level CSS text -- one call per view to
+// variants::synthesize_contested_rules (see its own doc comment for the winner-selection rule).
+// A view whose own primitive can't be determined (an Img view, or one with no node in this
+// export at all) is simply skipped, same best-effort posture as every other host-fn-backed
+// lookup in this plugin.
+#[allow(clippy::too_many_arguments)]
+fn render_contested_rules_css(
+    nodes: &[UiNode],
+    node_view_ids: &[String],
+    view_compositions: &HashMap<String, Vec<String>>,
+    kit_names: &HashMap<String, String>,
+    kit_shapes: &HashMap<String, variants::KitExportShape>,
+    view_axis_args: &HashMap<(String, String), HashMap<String, String>>,
+    project_tokens: &variants::ProjectTokens,
+) -> String {
+    let primitives = tree::view_primitive_is_box(nodes, node_view_ids);
+    let kit_classes: HashMap<String, String> = kit_names
+        .iter()
+        .map(|(id, name)| (id.clone(), tree::kit_class_name(name)))
+        .collect();
+
+    let mut out = String::new();
+    for (view_id, kit_ids) in view_compositions {
+        if kit_ids.len() < 2 {
+            continue;
+        }
+        let Some(is_box) = primitives.get(view_id).copied() else { continue };
+
+        let mut args_by_kit: HashMap<String, HashMap<String, String>> = HashMap::new();
+        for kid in kit_ids {
+            if let Some(args) = view_axis_args.get(&(view_id.clone(), kid.clone())) {
+                args_by_kit.insert(kid.clone(), args.clone());
+            }
+        }
+
+        let rules = variants::synthesize_contested_rules(
+            kit_ids,
+            &kit_classes,
+            kit_shapes,
+            &args_by_kit,
+            is_box,
+            project_tokens,
+        );
         for rule in rules {
-            if rule.dynamic || !variants::rule_matches_args(rule, args) {
-                continue;
-            }
-            for suffix in &rule.suffixes {
-                out.entry(i).or_default().push(format!("{class}{suffix}"));
-            }
+            let selector: String =
+                rule.selector_classes.iter().map(|c| format!(".{c}")).collect::<Vec<_>>().join("");
+            out.push_str(&format!("{selector} {{\n  {}\n}}\n", rule.declaration));
         }
     }
     out
@@ -532,6 +737,7 @@ mod tests {
         let asset_links = HashMap::new();
         let kit_variant_rules = HashMap::new();
         let instance_modifier_classes = HashMap::new();
+        let view_compositions = HashMap::new();
         let css = css::render_scss(
             nodes,
             &children,
@@ -543,6 +749,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
         let html = html::render_html(
             nodes,
@@ -554,6 +761,7 @@ mod tests {
             &asset_links,
             &css,
             &instance_modifier_classes,
+            &view_compositions,
         );
         (html, css)
     }
@@ -626,6 +834,7 @@ mod tests {
         let roots: Vec<usize> = vec![0];
         let kit_variant_rules = HashMap::new();
         let instance_modifier_classes = HashMap::new();
+        let view_compositions = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -637,6 +846,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
         let html = html::render_html(
             &nodes,
@@ -648,6 +858,7 @@ mod tests {
             &asset_links,
             &css,
             &instance_modifier_classes,
+            &view_compositions,
         );
 
         assert!(html.contains("<img class=\"k10-1\" src=\"/1x/favicon.png\" alt=\"\">"), "html was: {html}");
@@ -679,6 +890,7 @@ mod tests {
 
         let kit_variant_rules = HashMap::new();
         let instance_modifier_classes = HashMap::new();
+        let view_compositions = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -690,6 +902,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
         let html = html::render_html(
             &nodes,
@@ -701,6 +914,7 @@ mod tests {
             &asset_links,
             &css,
             &instance_modifier_classes,
+            &view_compositions,
         );
 
         // A single pinned root normalizes to (0, 0) -- its own raw canvas coordinate (120, 40) IS
@@ -748,6 +962,7 @@ mod tests {
         assert_eq!(roots, vec![1, 3]);
 
         let kit_variant_rules = HashMap::new();
+        let view_compositions = HashMap::new();
         let css = css::render_scss(
             &nodes,
             &children,
@@ -759,6 +974,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
 
         assert!(
@@ -937,6 +1153,7 @@ mod tests {
         let roots = tree::resolve_export_roots(&nodes, &node_view_ids, &selected);
         let kit_variant_rules = HashMap::new();
         let instance_modifier_classes = HashMap::new();
+        let view_compositions = HashMap::new();
         let filtered_css = css::render_scss(
             &nodes,
             &children,
@@ -948,6 +1165,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
         let filtered_html = html::render_html(
             &nodes,
@@ -959,12 +1177,122 @@ mod tests {
             &asset_links,
             &filtered_css,
             &instance_modifier_classes,
+            &view_compositions,
         );
 
         let (unfiltered_html, unfiltered_css) = render_all(&nodes, &node_view_ids);
 
         assert_eq!(filtered_html, unfiltered_html);
         assert_eq!(filtered_css, unfiltered_css);
+    }
+
+    // Real end-to-end proof that a view composing MORE than one kit now represents that in the
+    // export at all -- before this, node_kit_ids collapsed to Charter's single "winning" kit per
+    // node, so a lower-priority composed kit (here, Density) never got its own class or base rule
+    // emitted anywhere, full stop, regardless of whether it was ever contested by the higher kit.
+    #[test]
+    fn a_view_composing_two_kits_gets_both_kits_own_classes_and_base_rules() {
+        use crate::variants::{ExportLayer, ExportLayerEntry, KitExportShape};
+
+        let nodes = vec![UiNode::Box(test_box(None))];
+        let node_view_ids = vec!["view-a".to_string()];
+        // Charter's own single "winning" kit for this node -- Priority, the higher-priority
+        // composed kit (mirrors kit_id_for's kits.last() convention).
+        let node_kit_ids = vec!["priority-kit".to_string()];
+
+        let entry = |property: &str, value: &str| ExportLayerEntry {
+            property: property.to_string(),
+            literal_value: Some(value.to_string()),
+            token_value: None,
+            token_id: None,
+        };
+
+        let density_shape = KitExportShape {
+            kit_id: "density-kit".to_string(),
+            kit_name: "Density".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "density-base".to_string(),
+                conditions: vec![],
+                entries: vec![entry("gap", "4px")],
+            }],
+        };
+        let priority_shape = KitExportShape {
+            kit_id: "priority-kit".to_string(),
+            kit_name: "Priority".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "priority-base".to_string(),
+                conditions: vec![],
+                entries: vec![entry("justify-content", "space-between")],
+            }],
+        };
+
+        let mut kit_names = HashMap::new();
+        kit_names.insert("density-kit".to_string(), "Density".to_string());
+        kit_names.insert("priority-kit".to_string(), "Priority".to_string());
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert("density-kit".to_string(), density_shape);
+        kit_shapes.insert("priority-kit".to_string(), priority_shape);
+
+        let mut view_compositions = HashMap::new();
+        view_compositions.insert(
+            "view-a".to_string(),
+            vec!["density-kit".to_string(), "priority-kit".to_string()],
+        );
+
+        let asset_links = HashMap::new();
+        let children = tree::build_children_map(&nodes);
+        let roots: Vec<usize> = vec![0];
+        let project_tokens = variants::ProjectTokens::new();
+        let kit_variant_rules = synthesize_all_variant_rules(
+            &nodes,
+            &node_view_ids,
+            &node_kit_ids,
+            &view_compositions,
+            &kit_shapes,
+            &project_tokens,
+        );
+        let css = css::render_scss(
+            &nodes,
+            &children,
+            &roots,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &kit_shapes,
+            &asset_links,
+            &project_tokens,
+            &kit_variant_rules,
+            &view_compositions,
+        );
+        let instance_modifier_classes = HashMap::new();
+        let html = html::render_html(
+            &nodes,
+            &children,
+            &roots,
+            &node_view_ids,
+            &node_kit_ids,
+            &kit_names,
+            &asset_links,
+            &css,
+            &instance_modifier_classes,
+            &view_compositions,
+        );
+
+        // Both kits' own classes land on the element -- primary (Priority) first, then Density,
+        // then this 2-kit view's own composition-signature class.
+        assert!(
+            html.contains("<div class=\"priority density comp-"),
+            "html was: {html}"
+        );
+
+        // Both kits' own base rules are emitted, each under its own class -- neither shadows the
+        // other since they declare different properties (the uncontested case).
+        assert!(css.contains(".priority {"), "css was: {css}");
+        assert!(css.contains("justify-content: space-between;"), "css was: {css}");
+        assert!(css.contains(".density {"), "css was: {css}");
+        assert!(css.contains("gap: 4px;"), "css was: {css}");
     }
 
     #[test]
@@ -1066,8 +1394,15 @@ mod tests {
         let children = tree::build_children_map(&nodes);
         let roots: Vec<usize> = vec![0];
         let project_tokens = variants::ProjectTokens::new();
-        let kit_variant_rules =
-            synthesize_all_variant_rules(&nodes, &node_kit_ids, &kit_shapes, &project_tokens);
+        let view_compositions = HashMap::new();
+        let kit_variant_rules = synthesize_all_variant_rules(
+            &nodes,
+            &node_view_ids,
+            &node_kit_ids,
+            &view_compositions,
+            &kit_shapes,
+            &project_tokens,
+        );
         let css = css::render_scss(
             &nodes,
             &children,
@@ -1079,6 +1414,7 @@ mod tests {
             &asset_links,
             &project_tokens,
             &kit_variant_rules,
+            &view_compositions,
         );
 
         // This instance's view resolved theme: secondary -- its own class="" attribute must carry
@@ -1095,6 +1431,7 @@ mod tests {
             &kit_names,
             &kit_variant_rules,
             &view_axis_args,
+            &view_compositions,
         );
         let html = html::render_html(
             &nodes,
@@ -1106,6 +1443,7 @@ mod tests {
             &asset_links,
             &css,
             &instance_modifier_classes,
+            &view_compositions,
         );
 
         assert!(css.contains(".button {"), "css was: {css}");
@@ -1214,8 +1552,15 @@ mod tests {
         let children = tree::build_children_map(&nodes);
         let roots: Vec<usize> = vec![0, 1];
         let project_tokens = variants::ProjectTokens::new();
-        let kit_variant_rules =
-            synthesize_all_variant_rules(&nodes, &node_kit_ids, &kit_shapes, &project_tokens);
+        let view_compositions = HashMap::new();
+        let kit_variant_rules = synthesize_all_variant_rules(
+            &nodes,
+            &node_view_ids,
+            &node_kit_ids,
+            &view_compositions,
+            &kit_shapes,
+            &project_tokens,
+        );
         let css = css::render_scss(
             &nodes,
             &children,
@@ -1227,6 +1572,7 @@ mod tests {
             &asset_links,
             &project_tokens,
             &kit_variant_rules,
+            &view_compositions,
         );
 
         // Sorted by axis_id ("plan" < "theme") -- deterministic regardless of DB condition order.
@@ -1259,6 +1605,7 @@ mod tests {
             &kit_names,
             &kit_variant_rules,
             &view_axis_args,
+            &view_compositions,
         );
         let html = html::render_html(
             &nodes,
@@ -1270,6 +1617,7 @@ mod tests {
             &asset_links,
             &css,
             &instance_modifier_classes,
+            &view_compositions,
         );
 
         assert!(

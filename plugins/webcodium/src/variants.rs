@@ -292,6 +292,123 @@ fn resolve_properties_with_tokens(
     (result, token_vars)
 }
 
+// Winner-only condition COUNT per property (not a resolved value) -- same filter+sort as
+// resolve_properties_with_tokens, but tracking only the winning layer's own condition count.
+// Feeds cross-kit contested-property detection (synthesize_contested_rules below), which compares
+// RAW declared specificity across kits exactly the way manager's flattenKitResults/Charter's
+// merge_kits do -- never WebCodium's own derived/synthesized properties (synthesize_arrange/
+// synthesize_border/synthesize_resize), which are single-kit CSS-emission conveniences with no
+// resolve.ts analog and no meaningful "condition count" of their own.
+fn resolve_condition_counts(shape: &KitExportShape, args: &HashMap<String, String>) -> HashMap<String, usize> {
+    let mut matching: Vec<&ExportLayer> = shape
+        .layers
+        .iter()
+        .filter(|l| l.conditions.iter().all(|c| matches_condition(c, args)))
+        .collect();
+    matching.sort_by_key(|l| l.conditions.len());
+
+    let mut result = HashMap::new();
+    for layer in matching {
+        for entry in &layer.entries {
+            result.insert(entry.property.clone(), layer.conditions.len());
+        }
+    }
+    result
+}
+
+// One disambiguating compound-selector rule for ONE property that 2+ of a view's composed kits
+// both declare -- see resources/webcodium-export-plan.md's Multi-Kit Composition writeup and
+// tree::composition_signature_class's own doc comment for why the extra signature class is
+// needed at all (two views composing the identical kits in OPPOSITE priority order can resolve to
+// different winners for the same property; a bare kit-class compound selector can't tell them
+// apart, since class order in an element's class="" attribute doesn't affect CSS matching).
+pub(crate) struct ContestedRule {
+    pub selector_classes: Vec<String>,
+    pub declaration: String,
+}
+
+// For one view's full ordered composition (kit_ids, priority_index ascending -- lowest first,
+// matching resolve.ts's own convention) and that view's own resolved axis args per kit, finds
+// every property 2+ of those kits declare and returns one ContestedRule per contest, picking the
+// winner exactly the way flattenKitResults/merge_kits do: highest conditionCount wins outright
+// regardless of kit order; a tie falls back to kit order (later/higher-priority kit, i.e. later in
+// `kit_ids`, wins). A kit with no fetched shape, or a contested property that turns out
+// unsupported/non-diffable, is simply skipped -- best-effort, same posture as every other
+// host-fn-backed lookup in this plugin. Property iteration is sorted for deterministic output,
+// mirroring declarations_for_with_tokens' own sort.
+pub(crate) fn synthesize_contested_rules(
+    kit_ids: &[String],
+    kit_classes: &HashMap<String, String>,
+    kit_shapes: &HashMap<String, KitExportShape>,
+    view_axis_args: &HashMap<String, HashMap<String, String>>,
+    is_box: bool,
+    project_tokens: &ProjectTokens,
+) -> Vec<ContestedRule> {
+    if kit_ids.len() < 2 {
+        return Vec::new();
+    }
+
+    let empty_args: HashMap<String, String> = HashMap::new();
+    let mut condition_counts_by_kit: Vec<HashMap<String, usize>> = Vec::with_capacity(kit_ids.len());
+    let mut resolved_by_kit: Vec<(HashMap<String, String>, HashMap<String, String>)> =
+        Vec::with_capacity(kit_ids.len());
+    for kid in kit_ids {
+        let Some(shape) = kit_shapes.get(kid) else {
+            condition_counts_by_kit.push(HashMap::new());
+            resolved_by_kit.push((HashMap::new(), HashMap::new()));
+            continue;
+        };
+        let args = view_axis_args.get(kid).unwrap_or(&empty_args);
+        condition_counts_by_kit.push(resolve_condition_counts(shape, args));
+        resolved_by_kit.push(resolve_properties_with_tokens(shape, args, is_box, project_tokens));
+    }
+
+    // property -> every kit index (into kit_ids) that declares it, with that kit's own condition
+    // count for it.
+    let mut candidates_by_property: HashMap<String, Vec<(usize, usize)>> = HashMap::new();
+    for (kit_index, counts) in condition_counts_by_kit.iter().enumerate() {
+        for (property, count) in counts {
+            candidates_by_property.entry(property.clone()).or_default().push((kit_index, *count));
+        }
+    }
+
+    let mut properties: Vec<&String> = candidates_by_property.keys().collect();
+    properties.sort();
+
+    let selector_classes: Vec<String> = kit_ids
+        .iter()
+        .filter_map(|kid| kit_classes.get(kid).cloned())
+        .chain(std::iter::once(crate::tree::composition_signature_class(kit_ids)))
+        .collect();
+
+    let mut rules = Vec::new();
+    for property in properties {
+        let candidates = &candidates_by_property[property];
+        if candidates.len() < 2 {
+            continue; // only one kit declares this property -- not a contest
+        }
+        // Highest condition count wins; a tie breaks on kit_index (later == higher priority,
+        // since kit_ids is already priority_index ascending) -- exactly flattenKitResults' rule.
+        let &(winner_kit_index, _) =
+            candidates.iter().max_by_key(|&&(kit_index, count)| (count, kit_index)).unwrap();
+
+        let (values, token_vars) = &resolved_by_kit[winner_kit_index];
+        let Some(value) = values.get(property) else { continue };
+        let mut single = HashMap::new();
+        single.insert(property.clone(), value.clone());
+        let Some(declaration) = declarations_for_with_tokens(&single, token_vars, None).into_iter().next()
+        else {
+            continue;
+        };
+        if declaration.starts_with("/*") {
+            continue; // unsupported dynamic-compiled property -- same skip declarations_for_with_tokens itself uses
+        }
+
+        rules.push(ContestedRule { selector_classes: selector_classes.clone(), declaration });
+    }
+    rules
+}
+
 // Replicates the flex-grow half of Charter's compile_resize (plugins/charter/src/lib.rs) directly
 // from a Kit's own raw width/height, with NO parent/sibling axis lookup needed -- this revises the
 // module's original v1 scope cut (see the top-of-file doc comment's history) for the grow half
@@ -2109,5 +2226,220 @@ mod tests {
         // Sort order is by RAW alias ("a-b" < "a.b" lexicographically), so "a-b" claims the
         // unsuffixed name first and "a.b" (sanitizing to the same string) gets "-2".
         assert_eq!(out, ":root {\n  --a-b: 2px;\n  --a-b-2: 1px;\n}\n\n");
+    }
+
+    // A Density kit (lower priority, conditioned on theme=dark) and a Priority kit (higher
+    // priority, unconditioned) both declare `background` -- the exact reported bug scenario.
+    // Density's own 1-condition layer must outrank Priority's 0-condition null layer regardless
+    // of kit order, mirroring flattenKitResults/merge_kits exactly.
+    fn density_shape() -> KitExportShape {
+        KitExportShape {
+            kit_id: "density".to_string(),
+            kit_name: "Density".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "density-dark".to_string(),
+                conditions: vec![condition("theme", "dark")],
+                entries: vec![literal_entry("background", "oklab(10% 0 0 / 1)")],
+            }],
+        }
+    }
+
+    fn priority_shape() -> KitExportShape {
+        KitExportShape {
+            kit_id: "priority".to_string(),
+            kit_name: "Priority".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "priority-base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("background", "oklab(90% 0 0 / 1)")],
+            }],
+        }
+    }
+
+    #[test]
+    fn a_conditioned_lower_priority_kit_beats_an_unconditioned_higher_priority_kit() {
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert("density".to_string(), density_shape());
+        kit_shapes.insert("priority".to_string(), priority_shape());
+        let mut kit_classes = HashMap::new();
+        kit_classes.insert("density".to_string(), "density".to_string());
+        kit_classes.insert("priority".to_string(), "priority".to_string());
+
+        let mut args_by_kit = HashMap::new();
+        args_by_kit.insert("density".to_string(), HashMap::from([("theme".to_string(), "dark".to_string())]));
+
+        // Density composed FIRST (lower priority), Priority SECOND (higher) -- Density still wins
+        // because its layer is more specific (1 condition vs Priority's 0), regardless of order.
+        let kit_ids = vec!["density".to_string(), "priority".to_string()];
+        let rules = synthesize_contested_rules(
+            &kit_ids,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+
+        assert_eq!(rules.len(), 1, "expected exactly one contested property (background)");
+        assert_eq!(rules[0].declaration, "background: oklab(10% 0 0 / 1);");
+        assert_eq!(rules[0].selector_classes[0], "density");
+        assert_eq!(rules[0].selector_classes[1], "priority");
+        assert!(rules[0].selector_classes[2].starts_with("comp-"));
+    }
+
+    #[test]
+    fn kit_order_only_breaks_a_genuine_tie_between_equally_specific_layers() {
+        // Both kits declare `background` unconditionally (condition count 0, a true tie) --
+        // Priority, composed SECOND (higher priority), must win, exactly matching the pre-existing
+        // plain-order behavior for the common uncontested-specificity case.
+        let mut priority_unconditioned = priority_shape();
+        priority_unconditioned.kit_name = "Priority".to_string();
+        let mut density_unconditioned = density_shape();
+        density_unconditioned.layers = vec![ExportLayer {
+            layer_id: "density-base".to_string(),
+            conditions: vec![],
+            entries: vec![literal_entry("background", "oklab(10% 0 0 / 1)")],
+        }];
+
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert("density".to_string(), density_unconditioned);
+        kit_shapes.insert("priority".to_string(), priority_unconditioned);
+        let mut kit_classes = HashMap::new();
+        kit_classes.insert("density".to_string(), "density".to_string());
+        kit_classes.insert("priority".to_string(), "priority".to_string());
+        let args_by_kit = HashMap::new();
+
+        let kit_ids = vec!["density".to_string(), "priority".to_string()];
+        let rules = synthesize_contested_rules(
+            &kit_ids,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].declaration, "background: oklab(90% 0 0 / 1);");
+    }
+
+    #[test]
+    fn reversing_composition_order_flips_the_tie_winner_and_the_signature_class() {
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert(
+            "density".to_string(),
+            KitExportShape {
+                kit_id: "density".to_string(),
+                kit_name: "Density".to_string(),
+                axes: vec![],
+                layers: vec![ExportLayer {
+                    layer_id: "density-base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("background", "oklab(10% 0 0 / 1)")],
+                }],
+            },
+        );
+        kit_shapes.insert("priority".to_string(), priority_shape());
+        let mut kit_classes = HashMap::new();
+        kit_classes.insert("density".to_string(), "density".to_string());
+        kit_classes.insert("priority".to_string(), "priority".to_string());
+        let args_by_kit = HashMap::new();
+
+        // View A: Density first (loses the tie). View B: Priority first (loses the tie instead).
+        let forward = vec!["density".to_string(), "priority".to_string()];
+        let reversed = vec!["priority".to_string(), "density".to_string()];
+
+        let forward_rules = synthesize_contested_rules(
+            &forward,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+        let reversed_rules = synthesize_contested_rules(
+            &reversed,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+
+        assert_eq!(forward_rules[0].declaration, "background: oklab(90% 0 0 / 1);"); // Priority wins
+        assert_eq!(reversed_rules[0].declaration, "background: oklab(10% 0 0 / 1);"); // Density wins
+        // Different composition order -> different signature class, so the two views' rules can
+        // never collide over one shared selector.
+        assert_ne!(
+            forward_rules[0].selector_classes.last(),
+            reversed_rules[0].selector_classes.last()
+        );
+    }
+
+    #[test]
+    fn an_uncontested_property_produces_no_rule() {
+        // Density only declares `gap`, Priority only declares `justify-content` -- no overlap, so
+        // there's nothing to disambiguate.
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert(
+            "density".to_string(),
+            KitExportShape {
+                kit_id: "density".to_string(),
+                kit_name: "Density".to_string(),
+                axes: vec![],
+                layers: vec![ExportLayer {
+                    layer_id: "density-base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("gap", "4px")],
+                }],
+            },
+        );
+        kit_shapes.insert(
+            "priority".to_string(),
+            KitExportShape {
+                kit_id: "priority".to_string(),
+                kit_name: "Priority".to_string(),
+                axes: vec![],
+                layers: vec![ExportLayer {
+                    layer_id: "priority-base".to_string(),
+                    conditions: vec![],
+                    entries: vec![literal_entry("justify-content", "space-between")],
+                }],
+            },
+        );
+        let mut kit_classes = HashMap::new();
+        kit_classes.insert("density".to_string(), "density".to_string());
+        kit_classes.insert("priority".to_string(), "priority".to_string());
+        let args_by_kit = HashMap::new();
+
+        let kit_ids = vec!["density".to_string(), "priority".to_string()];
+        let rules = synthesize_contested_rules(
+            &kit_ids,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+        assert!(rules.is_empty());
+    }
+
+    #[test]
+    fn a_single_kit_view_never_produces_contested_rules() {
+        let kit_shapes = HashMap::new();
+        let kit_classes = HashMap::new();
+        let args_by_kit = HashMap::new();
+        let kit_ids = vec!["density".to_string()];
+        let rules = synthesize_contested_rules(
+            &kit_ids,
+            &kit_classes,
+            &kit_shapes,
+            &args_by_kit,
+            true,
+            &ProjectTokens::new(),
+        );
+        assert!(rules.is_empty());
     }
 }

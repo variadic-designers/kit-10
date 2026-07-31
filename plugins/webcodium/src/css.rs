@@ -456,6 +456,7 @@ pub(crate) fn render_scss(
     asset_links: &HashMap<String, String>,
     project_tokens: &variants::ProjectTokens,
     kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
+    view_compositions: &HashMap<String, Vec<String>>,
 ) -> String {
     let mut out = String::new();
     let mut emitted_kits: HashSet<String> = HashSet::new();
@@ -472,6 +473,7 @@ pub(crate) fn render_scss(
             asset_links,
             project_tokens,
             kit_variant_rules,
+            view_compositions,
             &mut emitted_kits,
             i,
             0,
@@ -518,6 +520,7 @@ fn render_scss_node(
     asset_links: &HashMap<String, String>,
     project_tokens: &variants::ProjectTokens,
     kit_variant_rules: &HashMap<String, Vec<variants::VariantRule>>,
+    view_compositions: &HashMap<String, Vec<String>>,
     emitted_kits: &mut HashSet<String>,
     i: usize,
     depth: usize,
@@ -584,6 +587,7 @@ fn render_scss_node(
     let has_rule = named_kit_id.is_some() || !props.is_empty();
     let class = tree::resolve_class_name(i, nodes, node_view_ids, node_kit_ids, kit_names);
     let indent = "  ".repeat(depth);
+    let inner_indent = "  ".repeat(depth + 1);
 
     // A pinned/positioned root's class may be a Kit's own SHARED selector (tree::resolve_class_name
     // tier 1) -- the same class every other, unpositioned instance of that Kit also renders under.
@@ -595,7 +599,6 @@ fn render_scss_node(
     // class, Kit-shared or not (see root_position's doc comment in tree.rs for the wrapper shape
     // this reads). The rendered element carries both classes (see html.rs).
     if let Some((x, y)) = position {
-        let inner_indent = "  ".repeat(depth + 1);
         out.push_str(&format!("{indent}.{} {{\n", tree::class_name(i)));
         out.push_str(&format!("{inner_indent}position: absolute;\n"));
         out.push_str(&format!("{inner_indent}left: {x}px;\n"));
@@ -613,7 +616,6 @@ fn render_scss_node(
     // only the empty, contentless wrapper text itself is skipped.
     if has_rule && !props.is_empty() {
         out.push_str(&format!("{indent}.{class} {{\n"));
-        let inner_indent = "  ".repeat(depth + 1);
         for p in &props {
             out.push_str(&format!("{inner_indent}{p}\n"));
         }
@@ -634,6 +636,51 @@ fn render_scss_node(
             out.push_str(&format!("{indent}}}\n"));
         }
     }
+
+    // Every OTHER kit this node's own view composes, beyond the single primary named_kit_id
+    // above (Charter's own node_kit_ids collapses to one "winning" kit per node) -- e.g. a
+    // lower-priority kit in a multi-kit composition, which would otherwise never get its own
+    // shared class/base rule emitted at all. Flat sibling rules under that kit's own class,
+    // deduped by emitted_kits the same way the primary block already is -- so a kit already
+    // emitted as some OTHER node's primary (or another node's secondary) is never repeated. Img
+    // nodes are excluded the same way the primary block is (named_kit_id is always None for
+    // them).
+    if !is_img {
+        let view_id = node_view_ids.get(i).map(String::as_str).unwrap_or("");
+        if let Some(kit_ids) = view_compositions.get(view_id) {
+            let primary_kit_id = named_kit_id.map(String::as_str).unwrap_or("");
+            let is_box = matches!(nodes[i], UiNode::Box(_));
+            for kid in kit_ids {
+                if kid.as_str() == primary_kit_id || !emitted_kits.insert(kid.clone()) {
+                    continue;
+                }
+                let Some(name) = kit_names.get(kid) else { continue };
+                let slug = tree::kit_class_name(name);
+                if slug.is_empty() {
+                    continue;
+                }
+                let Some(shape) = kit_shapes.get(kid) else { continue };
+                let decls =
+                    variants::synthesize_base_declarations_with_tokens(shape, is_box, project_tokens);
+                if !decls.is_empty() {
+                    out.push_str(&format!("{indent}.{slug} {{\n"));
+                    for d in &decls {
+                        out.push_str(&format!("{inner_indent}{d}\n"));
+                    }
+                    out.push_str(&format!("{indent}}}\n"));
+                }
+                for rule in kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&[]) {
+                    let selector = variant_rule_selector(&slug, rule);
+                    out.push_str(&format!("{indent}{selector} {{\n"));
+                    for d in &rule.declarations {
+                        out.push_str(&format!("{inner_indent}{d}\n"));
+                    }
+                    out.push_str(&format!("{indent}}}\n"));
+                }
+            }
+        }
+    }
+
     if matches!(nodes[i], UiNode::Box(_)) {
         if let Some(kids) = children.get(&i) {
             let child_depth = if has_rule { depth + 1 } else { depth };
@@ -648,6 +695,7 @@ fn render_scss_node(
                     asset_links,
                     project_tokens,
                     kit_variant_rules,
+                    view_compositions,
                     emitted_kits,
                     k,
                     child_depth,
@@ -802,6 +850,7 @@ mod tests {
         let roots: Vec<usize> = vec![0, 1, 2];
         let asset_links = HashMap::new();
         let kit_variant_rules = HashMap::new();
+        let view_compositions = HashMap::new();
         let css = render_scss(
             &nodes,
             &children,
@@ -813,6 +862,7 @@ mod tests {
             &asset_links,
             &variants::ProjectTokens::new(),
             &kit_variant_rules,
+            &view_compositions,
         );
 
         assert_eq!(css.matches(".product-photo {").count(), 1);
