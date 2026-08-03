@@ -5248,7 +5248,10 @@ mod wire_schema_tests {
     // committed generated/wire-schema.json is stale vs the actual structs. Regenerate with
     // UPDATE_WIRE_SCHEMA=1. The JS side (scripts/generate-plugin-docs) then renders this file
     // into PLUGINS.md, guarded again there -- so the whole Rust struct -> schema -> docs chain
-    // is drift-checked end to end.
+    // is drift-checked end to end. This test is run by `npm test` (package.json's
+    // `test:wire-schema` script) precisely so that guarantee holds without anyone remembering to
+    // run `cargo test` by hand -- it silently didn't for weeks after Grid mastery shipped new
+    // BoxExtra fields, until wire-schema.json's own staleness was found by accident.
     #[test]
     fn wire_schema_matches_committed() {
         let schema = schemars::schema_for!(WireSchemaRoot);
