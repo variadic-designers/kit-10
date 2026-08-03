@@ -604,6 +604,7 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`
 
 | Field                   | Type                 | Required |
 | ----------------------- | -------------------- | -------- |
+| `align_content`         | JustifyValue?        | -        |
 | `align_items`           | AlignValue?          | -        |
 | `align_self`            | AlignValue?          | -        |
 | `flex_basis`            | Extent?              | -        |
@@ -612,12 +613,16 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`
 | `flex_wrap`             | FlexWrapValue        | -        |
 | `gap`                   | number               | -        |
 | `grid_auto_columns`     | TrackSize[]          | -        |
+| `grid_auto_flow`        | GridAutoFlow         | -        |
 | `grid_auto_rows`        | TrackSize[]          | -        |
 | `grid_column`           | [GridLine, GridLine] | -        |
 | `grid_row`              | [GridLine, GridLine] | -        |
+| `grid_template_areas`   | GridTemplateArea[]   | -        |
 | `grid_template_columns` | TrackSize[]          | -        |
 | `grid_template_rows`    | TrackSize[]          | -        |
 | `justify_content`       | JustifyValue?        | -        |
+| `justify_items`         | AlignValue?          | -        |
+| `justify_self`          | AlignValue?          | -        |
 | `margin`                | number               | -        |
 | `position`              | NodePosition         | -        |
 
@@ -652,6 +657,10 @@ One of: `"NoWrap"`, `"Wrap"`, `"WrapReverse"`
 
 One of: `"Normal"`, `"Italic"`, `"Oblique"`
 
+#### `GridAutoFlow`
+
+One of: `"Row"`, `"Column"`, `"RowDense"`, `"ColumnDense"`
+
 #### `GridLine`
 
 One of:
@@ -659,6 +668,18 @@ One of:
 - `"Auto"`
 - `{ "Line": integer }`
 - `{ "Span": integer }`
+- `{ "NamedLine": [string, integer] }`
+- `{ "NamedSpan": [string, integer] }`
+
+#### `GridTemplateArea`
+
+| Field          | Type    | Required |
+| -------------- | ------- | -------- |
+| `column_end`   | integer | ✓        |
+| `column_start` | integer | ✓        |
+| `name`         | string  | ✓        |
+| `row_end`      | integer | ✓        |
+| `row_start`    | integer | ✓        |
 
 #### `ImageSource`
 
@@ -696,6 +717,23 @@ One of: `"Left"`, `"Center"`, `"Right"`, `"Justify"`
 
 One of: `"None"`, `"Underline"`, `"LineThrough"`
 
+#### `TrackMax`
+
+One of:
+
+- `"Auto", "MinContent", "MaxContent"`
+- `{ "Px": number }`
+- `{ "Percent": number }`
+- `{ "Fr": number }`
+
+#### `TrackMin`
+
+One of:
+
+- `"Auto", "MinContent", "MaxContent"`
+- `{ "Px": number }`
+- `{ "Percent": number }`
+
 #### `TrackSize`
 
 One of:
@@ -704,6 +742,10 @@ One of:
 - `{ "Px": number }`
 - `{ "Fr": number }`
 - `{ "AutoFit": number }`
+- `{ "Percent": number }`
+- `{ "FitContent": number }`
+- `{ "AutoFill": number }`
+- `{ "MinMax": [TrackMin, TrackMax] }`
 
 <!-- END GENERATED: wire-types -->
 

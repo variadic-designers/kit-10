@@ -53,6 +53,7 @@
         "extra": {
           "$ref": "#/$defs/BoxExtra",
           "default": {
+            "align_content": null,
             "align_items": null,
             "align_self": null,
             "flex_basis": null,
@@ -61,6 +62,7 @@
             "flex_wrap": "NoWrap",
             "gap": 0.0,
             "grid_auto_columns": [],
+            "grid_auto_flow": "Row",
             "grid_auto_rows": [],
             "grid_column": [
               "Auto",
@@ -70,9 +72,12 @@
               "Auto",
               "Auto"
             ],
+            "grid_template_areas": [],
             "grid_template_columns": [],
             "grid_template_rows": [],
             "justify_content": null,
+            "justify_items": null,
+            "justify_self": null,
             "margin": 0.0,
             "position": "Relative"
           }
@@ -169,6 +174,18 @@
       "description": "Extended flex/grid layout properties, grouped so `BoxData` needn't name every field. Every\nfield is optional - an absent `extra` is all-defaults.",
       "type": "object",
       "properties": {
+        "align_content": {
+          "description": "Container-level `align-content` - distribution of extra space among grid tracks on the\nblock axis. `None` = taffy default (Stretch). Distinct from `align_items`, which\npositions a track's own content within the track.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JustifyValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "align_items": {
           "description": "Cross-axis alignment of children (`align-items`). `None` = taffy default (Stretch).",
           "anyOf": [
@@ -239,6 +256,11 @@
             "$ref": "#/$defs/TrackSize"
           }
         },
+        "grid_auto_flow": {
+          "description": "`grid-auto-flow`.",
+          "$ref": "#/$defs/GridAutoFlow",
+          "default": "Row"
+        },
         "grid_auto_rows": {
           "description": "`grid-auto-rows`.",
           "type": "array",
@@ -283,6 +305,14 @@
             }
           ]
         },
+        "grid_template_areas": {
+          "description": "`grid-template-areas` - named regions, resolved to numeric line coordinates.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/GridTemplateArea"
+          }
+        },
         "grid_template_columns": {
           "description": "`grid-template-columns`.",
           "type": "array",
@@ -304,6 +334,30 @@
           "anyOf": [
             {
               "$ref": "#/$defs/JustifyValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "justify_items": {
+          "description": "Container-level `justify-items` (grid's inline-axis default for items). `None` = taffy\ndefault (Stretch). No flex analog - flex has no separate justify-items concept.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlignValue"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "justify_self": {
+          "description": "Per-item `justify-self` override - the grid analog of `align_self` on the inline axis.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AlignValue"
             },
             {
               "type": "null"
@@ -424,8 +478,18 @@
         "Oblique"
       ]
     },
+    "GridAutoFlow": {
+      "description": "CSS `grid-auto-flow` (taffy's `GridAutoFlow`).",
+      "type": "string",
+      "enum": [
+        "Row",
+        "Column",
+        "RowDense",
+        "ColumnDense"
+      ]
+    },
     "GridLine": {
-      "description": "A grid line reference for item placement.",
+      "description": "A grid line reference for item placement. Not `Copy` - `NamedLine`/`NamedSpan` carry an\nowned name, unlike every other variant.",
       "oneOf": [
         {
           "type": "string",
@@ -462,7 +526,99 @@
           "required": [
             "Span"
           ]
+        },
+        {
+          "description": "A named line reference (`grid-column: sidebar-start`).",
+          "type": "object",
+          "properties": {
+            "NamedLine": {
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "format": "int16",
+                  "maximum": 32767,
+                  "minimum": -32768
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "NamedLine"
+          ]
+        },
+        {
+          "description": "`span <name>` - spans until the nth line with this name (mirrors taffy's own\n`GridPlacement::NamedSpan`, which also carries a count).",
+          "type": "object",
+          "properties": {
+            "NamedSpan": {
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "NamedSpan"
+          ]
         }
+      ]
+    },
+    "GridTemplateArea": {
+      "description": "One named `grid-template-areas` region, resolved to numeric line coordinates (mirrors\ntaffy's own `GridTemplateArea`). `row_start`/`column_start` are 1-indexed grid lines;\n`row_end`/`column_end` are exclusive (one past the area's last line), matching\n`grid-row`/`grid-column`'s own end-line convention.",
+      "type": "object",
+      "properties": {
+        "column_end": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "column_start": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "row_end": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "row_start": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "row_start",
+        "row_end",
+        "column_start",
+        "column_end"
       ]
     },
     "ImageSource": {
@@ -777,6 +933,97 @@
         "LineThrough"
       ]
     },
+    "TrackMax": {
+      "description": "The upper bound of a `minmax()` track - same shapes as `TrackMin` plus `Fr`.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Auto",
+            "MinContent",
+            "MaxContent"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Px": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Px"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Percent": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Percent"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Fr": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Fr"
+          ]
+        }
+      ]
+    },
+    "TrackMin": {
+      "description": "The lower bound of a `minmax()` track - CSS `<track-breadth>` minus `fr`, since a min bound\ncan never itself be a flex fraction.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Auto",
+            "MinContent",
+            "MaxContent"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Px": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Px"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Percent": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Percent"
+          ]
+        }
+      ]
+    },
     "TrackSize": {
       "description": "A single CSS grid track size.",
       "oneOf": [
@@ -826,6 +1073,71 @@
           "additionalProperties": false,
           "required": [
             "AutoFit"
+          ]
+        },
+        {
+          "description": "`<f32>%` of the grid container's own definite size.",
+          "type": "object",
+          "properties": {
+            "Percent": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Percent"
+          ]
+        },
+        {
+          "description": "`fit-content(<f32>px)`.",
+          "type": "object",
+          "properties": {
+            "FitContent": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "FitContent"
+          ]
+        },
+        {
+          "description": "`repeat(auto-fill, minmax(<f32>px, 1fr))` - `AutoFit`'s sibling: fills as many tracks as\nfit without collapsing/stretching empty ones into existing content, CSS's real\nauto-fit-vs-auto-fill distinction.",
+          "type": "object",
+          "properties": {
+            "AutoFill": {
+              "type": "number",
+              "format": "float"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "AutoFill"
+          ]
+        },
+        {
+          "description": "Arbitrary `minmax(<min>, <max>)`, for a shape none of the fixed variants above cover.",
+          "type": "object",
+          "properties": {
+            "MinMax": {
+              "type": "array",
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/TrackMin"
+                },
+                {
+                  "$ref": "#/$defs/TrackMax"
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "MinMax"
           ]
         }
       ]
