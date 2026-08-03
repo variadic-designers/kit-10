@@ -75,7 +75,7 @@ KIT•10 is a design-system editor that models components as **kits** (style sys
 - `matchesArg(condition, arg)` — pure matching function, re-exported for the Axes panel UI.
 - `queryBuilder(dialect)` — typed Kysely instance (the `Api` type), used throughout the UI.
 - `addViewRef`/`removeViewRef`/`reorderViewRefs` — the write path for a multi-ref alias (`children`): append a new `view`-typed row (auto-incrementing `priority_index`), **detach** one specific row by id, or bulk-renumber to a given order. `removeViewRef` clears `composition_alias` to `null` rather than deleting the row — the token, its scope, and any `token_axis_overrides` all survive, exactly mirroring how unbinding a scalar/color token from a property never deletes the token itself. A still-attached view token can still be permanently destroyed via the Tokens panel's own `deleteToken` (a real hard delete, unaffected by this). `upsertViewToken` is still correct for a genuine 1:1 alias (a lone `view` token, or a `scalar`), but not for `children` — its find-then-write assumes exactly one row per (view, alias).
-- `setTokenAxisOverride`/`clearTokenAxisOverride`/`getTokenAxisOverrides`/`getAxesForView` — CRUD for a `view`-typed token's axis overrides, mirroring `setAxisArg`/`clearAxisArg`/`getAllAxisArgs`'s shape but keyed by `token_id`. `getAxesForView(viewId)` lists candidate axes (every axis consumed by any kit that view composes) for the Tokens panel's right-click "Add Axis" submenu.
+- `setTokenAxisOverride`/`clearTokenAxisOverride`/`getTokenAxisOverrides`/`getAxesConsumedByProjectId` — CRUD for a `view`-typed token's axis overrides, mirroring `setAxisArg`/`clearAxisArg`/`getAllAxisArgs`'s shape but keyed by `token_id`. `getAxesConsumedByProjectId(projectId)` lists candidate axes project-wide (every axis consumed by any kit any view in the project composes), each tagged with which view/kit consumes it, for the Tokens panel's right-click "Add Axis" submenu — keyed by `projectId` (not per-view) so the panel can drive it off a single live query and group by view/kit client-side.
 
 **Resolution algorithm (`resolve.ts`):**
 
@@ -87,7 +87,7 @@ KIT•10 is a design-system editor that models components as **kits** (style sys
 
 **Specificity:** `[conditionCount, priority1, priority2, ...]` sorted descending. Higher specificity always wins.
 
-`fetchResolutionRows` issues one UNION ALL query returning all 10 rowsets tagged (`views`, `compositions`, `kits`, `axis_args`, project/kit/view `tokens`, `token_axis_overrides`, `layers`, `conditions`, `entries`), using two leading CTEs (`project_view_ids`, `project_kit_ids`) so every branch shares the same filters instead of repeating the subquery. Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY).
+`fetchResolutionRows` issues one UNION ALL query returning all 10 rowsets tagged (`views`, `compositions`, `axis_args`, `project_tokens`, `view_tokens`, `kit_tokens`, `token_axis_overrides`, `layers`, `conditions`, `entries` — kit names fold into the `compositions` branch, there is no standalone `kits` branch), using two leading CTEs (`project_view_ids`, `project_kit_ids`) so every branch shares the same filters instead of repeating the subquery. Compositions are sorted by `priority_index` client-side (UNION ALL doesn't preserve per-branch ORDER BY).
 
 ---
 
@@ -110,12 +110,15 @@ pluginManager: PluginManager        — Charter plugin wrapper
 
 **Live-query loop (`$effect` in Editor.svelte):** a single JOIN query (`RESOLVE_LIVE_QUERY_SQL`) watches all resolution-relevant tables (tested against `RESOLUTION_RELEVANT_TABLES`). On any write, `scheduleReResolve` debounces and calls `fetchResolutionRows`. Row-level dedup via `rowsKey` skips the resolve + serialize + plugin call entirely when the fetched rows are unchanged — this is what enables content-based dedup, since Svelte 5's reference-based reactivity can't do it on its own. `resolveViewsFromRows` runs only when rows actually changed. A `cancelled` flag + `reResolveVersion` counter discards stale async results from a previous project or a superseded fetch (latest-wins).
 
-**Two separate plugin effects** — keeping them separate lets selection changes use the fast `on_selection_change` path instead of a full `on_resolve`:
+**Three separate plugin effects** — keeping them separate lets selection and hover changes use the fast `on_selection_change` path instead of a full `on_resolve`:
 
 ```ts
-$effect(() => pluginManager.setData(resolvedKits, viewHints, activeViewId, resolvedViews));
-$effect(() => pluginManager.setSelection(selectedViewPrimary, selectedViewSecondary));
+$effect(() => pluginManager.setData(resolvedKits, viewHints, activeViewId, resolvedViews, fontFacts, overriddenOccurrences));
+$effect(() => pluginManager.setSelection(primaryOccurrenceKey, secondaryOccurrenceKeys));
+$effect(() => pluginManager.setHover(hoveredOccurrenceKey));
 ```
+
+`setSelection`/`setHover` operate on occurrence keys, not view ids (see the occurrence model below).
 
 **Axes panel layer-combo indicators (`Axes.svelte`, `Axis.svelte`, `layer-color.ts`):**
 
@@ -248,7 +251,7 @@ Its module layout: `tree.rs` (pure `UiNode`-graph utilities), `css.rs` (value fo
 | --------------------- | --------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `on_init`             | Plugin load           | `{name}`                             | `"ok"`                                                                                                                                           |
 | `on_resolve`          | Data change           | `OnResolveInput`                     | `OnResolveResult`; also publishes `PanelManifest("views")` via `kit10_panel_publish`                                                             |
-| `on_selection_change` | Selection change only | `{primary, secondary, activeViewId}` | `{viewport_data}`                                                                                                                                |
+| `on_selection_change` | Selection or hover change only | `{primary, secondary, activeViewId, hovered_occurrence_id}` (occurrence keys) | `{viewport_data, node_view_ids, node_kit_ids, node_occurrence_ids, viewport_data_binary}`                                                        |
 | `on_field_update`     | User edits a field    | `FieldUpdate`                        | `WriteRenderEntryResult`                                                                                                                          |
 
 `on_resolve` stores its full input payload as `last_resolve_input` (Extism `var` storage). `on_selection_change` reads this, patches the three selection fields, and re-runs `build_viewport` — no full re-resolve round-trip for selection-only changes.

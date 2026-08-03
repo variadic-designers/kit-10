@@ -63,15 +63,14 @@ Layers override per-property, not wholesale. A more specific Layer only replaces
 
 ## Specificity
 
-When multiple Layers match and contest the same property, the more specific one wins.
+When multiple Layers match and contest the same property, the more specific one wins. Specificity works one way within a single Kit and a different way across Kits.
 
-Specificity is determined by three tiers, from highest to lowest:
+**Within one Kit**, a contest is decided by:
 
-1. **Kit priority** - when two Kits in a View declare the same property, the higher-priority Kit wins
-2. **Axis count** - a Layer with two conditions always beats one with one condition, regardless of which axes are involved
-3. **Axis ordering within the Kit** - when two Layers have the same number of conditions, the one whose axes appear later in the Kit's ordering wins
+1. **Axis count** - a Layer with two conditions always beats one with one condition, regardless of which axes are involved
+2. **Axis ordering within the Kit** - when two Layers have the same number of conditions, the one whose axes appear later in the Kit's ordering wins
 
-These tiers are non-overlapping. No amount of lower-tier specificity can beat a higher tier. Given any two Layers and any axis state, there is always exactly one winner per property.
+**Across Kits** (a View composes several, and two of them declare the same property), the tie-break is coarser: the Kit whose winning Layer has the higher **axis count** wins outright, regardless of composition order. Kit priority only breaks a tie between two Kits whose winning Layers have the *same* axis count - then the higher-priority Kit wins. So a lower-priority Kit's more-conditioned Layer *does* beat a higher-priority Kit's less-conditioned one. Note the axis-ordering tier above is a within-Kit refinement only; across Kits the signal is axis count alone.
 
 When two Layers can never both be active at the same time - e.g. `{theme: dark}` and `{theme: light}` - they are mutually exclusive and never contest each other.
 

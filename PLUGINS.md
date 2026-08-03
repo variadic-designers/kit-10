@@ -38,7 +38,7 @@ Every plugin registers with a `PluginManifest` (`manager/src/schema.ts`), stored
 interface PluginManifest {
 	wasm: { url: string }[];
 	provides?: {
-		exports?: ExportCapability[]; // { label, fn, fileExtension, mimeType, target?, multiFile? }
+		exports?: ExportCapability[]; // { label, fn, fileExtension, mimeType, target?, multiFile?, viewScoped? }
 		imports?: ImportCapability[]; // { label, fn, accept }
 	};
 	capabilities?: {
@@ -375,6 +375,53 @@ to ship the Views panel topology.
 
 ```json
 { "panel_id": "views", "manifest": PanelManifest }
+```
+
+---
+
+### `kit10_get_project_tokens(input: string)`
+
+Resolve the exporting project's own PROJECT-scope tokens (`kit_id` and `view_id` both
+null) to `{alias, value, format}`, keyed by token id. Backs WebCodium's `:root` CSS
+custom-property export (`variants::render_root_variables` plus `var(--alias)`
+substitution at usage sites). Only `scalar` tokens carry a CSS-representable value; a
+`view`-typed token is silently excluded.
+
+```json
+// in:  { "project_id": "uuid" }
+// out: { "success": true, "tokens": { "<tokenId>": { "alias": "…", "value": "…", "format": "…" } } }
+```
+
+---
+
+### `kit10_get_view_axis_args(input: string)`
+
+For a batch of view ids, report which axis value each view instance actually resolved to
+(`{view_id, kit_id, axis_id, value}[]`). This is per-VIEW-INSTANCE, unlike the per-Kit
+`kit10_get_kit_export_shape` — Charter's own resolved output can't answer it because
+axis/layer identity doesn't survive property flattening. Lets WebCodium decide which of a
+Kit's static variant rules a given exported element should carry as classes
+(`variants::rule_matches_args`). Only `literal` axis values are returned; `range`/`linked`
+values are dropped (a known static-export gap for locked axes).
+
+```json
+// in:  { "view_ids": ["uuid", …] }
+// out: { "success": true, "rows": [ { "view_id": "…", "kit_id": "…", "axis_id": "…", "value": "…" } ] }
+```
+
+---
+
+### `kit10_get_view_compositions(input: string)`
+
+The full, ordered composition list per requested view id (`{view_id, kit_id,
+priority_index}[]`, ascending `priority_index`). Charter's `node_kit_ids` collapses to a
+single winning kit per node, so this is the only way WebCodium learns a view composes more
+than one kit and in what order — backing multi-kit class emission and cross-kit
+contested-property disambiguation.
+
+```json
+// in:  { "view_ids": ["uuid", …] }
+// out: { "success": true, "rows": [ { "view_id": "…", "kit_id": "…", "priority_index": 0 } ] }
 ```
 
 ---

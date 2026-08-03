@@ -57,7 +57,7 @@ Async initialization completes. `editorLoading` is set to `EditorState`.
 - Live queries begin populating panel data
 - Resolved kits are computed reactively
 
-**Why Vellum must be initialized before data arrives:** `vellum.set_data()` requires an active WebGL context. If data arrived before Phase 3 completed, the call would fail silently and the render loop would never start.
+**Why Vellum must be initialized before data arrives:** `vellum.set_data()` requires an active WebGL context. If data arrived before Phase 3 completed, the call would fail silently and no frame would ever render.
 
 ---
 
@@ -69,16 +69,16 @@ The Viewport's reactive effect on `data` fires:
 
 1. `vellum.set_data(json)` - passes resolved kit data to the renderer
 2. `hasData = true`
-3. Render loop starts via `requestAnimationFrame`
+3. The first frame is drawn via `requestRender()`, which schedules a single rAF-deferred `vellum.render()` (rendering is on-demand, not a perpetual loop)
 4. The logo overlay's `class:ready` toggles, triggering a CSS opacity transition (0.4s ease)
 
-**Why the render loop starts here and not at initialization:** Vellum does not render a blank canvas - starting the loop before data arrives produces nothing and wastes GPU cycles. The overlay hides the canvas until there is something to show.
+**Why the first frame is drawn here and not at initialization:** Vellum does not render a blank canvas - `requestRender()` is gated on `hasData`, so a frame requested before real data arrives produces nothing. The overlay hides the canvas until there is something to show.
 
 ---
 
 ## Phase 6: Runtime
 
-- Render loop runs at vsync via `requestAnimationFrame`
+- Rendering is on-demand: every state mutation affecting the screen calls `requestRender()`, which coalesces bursts into at most one rAF-deferred frame. There is no perpetual vsync loop (`continuousMode` is reserved for future animation work and is currently always `false`)
 - `ResizeObserver` re-initializes the canvas on layout changes, guarded against 0-size for the same reason as Phase 3
 - Theme changes propagate to `vellum.set_colors()`
 - Pointer and wheel events drive pan, zoom, and selection via the Vellum API
@@ -98,10 +98,10 @@ The Viewport's reactive effect on `data` fires:
      |  PGlite ready, plugin manager loaded, panels mounted
      v
 [EditorState] -- panels active, live queries running
-     |  resolveMany() produces viewport data
+     |  fetchResolutionRows + resolveViewsFromRows produce viewport data
      v
 [hasData = true] -- logo overlay fades out (0.4s)
-     |  render loop starts
+     |  first on-demand frame drawn (requestRender)
      v
 [Runtime] -- interactive canvas
 ```

@@ -160,9 +160,9 @@ Pure function of DB state. Queries layers + conditions + entries, calculates spe
 - Input: `db, kitId, axisArgs`
 - Output: `Map<string, ResolvedProperty>` with `value`, `sourceLayerId`, `isToken`, `tokenAlias`
 
-### [x] M3.3 — `resolveMany()`
+### [x] M3.3 — `resolveManySlowPath()` (originally `resolveMany`)
 
-Multi-kit resolution with kit precedence. Gathers axis args per kit, resolves each, then runs token substitution (Pass 2).
+Multi-kit resolution with kit precedence. Later renamed `resolveManySlowPath` when the batched hot path (`fetchResolutionRows` + `resolveViewsFromRows`) was added in M9.5. Gathers axis args per kit, resolves each, then runs token substitution (Pass 2).
 
 - Input: `db, viewId`
 - Output: `ResolvedKit[]` with `kitId`, `kitName`, `properties` (each `ResolvedProperty` carries `viewRefs` for a `view-list` value — see M11)
@@ -239,7 +239,7 @@ Current `render_snippets` is a 1:1 mapping to layers with no output metadata. Ne
 
 ### M6.2 — Render snippet resolver
 
-Given resolved properties from `resolveMany()`, produce structured output matching a target format.
+Given resolved properties from the resolver (`resolveManySlowPath`/`resolveManyViews`), produce structured output matching a target format.
 
 ### M6.3 — Export formats
 
@@ -349,7 +349,7 @@ Charter translates resolved kit data into a flat `UiNode[]` render tree. `on_res
 
 ### [x] M9.4 — Host functions
 
-`kit10_log`, `kit10_kv_get`, `kit10_kv_set`, `kit10_get_resolution`, `kit10_write_render_entry_to_layer`, `kit10_resolve_view`.
+`kit10_log`, `kit10_kv_get`, `kit10_kv_set`, `kit10_get_resolution`, `kit10_write_render_entry_to_layer`.
 
 ### [x] M9.5 — resolveManyViews → batched fetch + row-level dedup
 
@@ -447,3 +447,49 @@ M4 panels can be migrated in parallel once their respective M2 + M3 deps are don
 | `[~]`  | In progress        |
 | `[x]`  | Done               |
 | `[-]`  | Deferred / blocked |
+
+---
+
+## M12: Post-M11 Shipped Work
+
+Landed on `main` after the M11 composition work. Durable contracts for each live in CLAUDE.md; this section is the progress record only.
+
+### [x] M12.1 — Composition-alias decoupling
+
+`tokens.composition_alias` now drives `view`-typed composition membership independently of `tokens.alias` (display name). `removeViewRef` detaches by clearing `composition_alias`, never deleting the row.
+
+### [x] M12.2 — Specificity-aware cross-kit resolution
+
+`flattenKitResults` / Charter `merge_kits`: for a property two composed kits both declare, the higher `conditionCount` wins outright regardless of composition order; kit order only breaks a `conditionCount` tie.
+
+### [x] M12.3 — Axis-override cascade + linked axis args
+
+Right-click Kit → Axis → Value cascade plus drag-to-link (new `ArgValue` `linked` variant). Per-token axis overrides via `token_axis_overrides`; `resolveViewsFromRows` merges them into the resolving axis-arg record.
+
+### [x] M12.4 — Occurrence-aware selection
+
+A view referenced by multiple active `view` tokens renders and selects independently. Occurrence keys (`ViewOccurrence`) drive click/hover selection end to end (Charter `occurrence_map` / `node_occurrence_ids`, editor `selectedOccurrence*`); "active" stays view-level for the Render/Axes/Tokens panels.
+
+### [x] M12.5 — Multi-kit composition CSS export (WebCodium)
+
+A view composing 2+ kits emits one class and base rule per kit, with cross-kit contested properties disambiguated via `synthesize_contested_rules` + a `composition_signature_class`. Static/`.is-` variant rules are made reachable via `kit10_get_view_axis_args`; project-scope tokens export as `:root` custom properties.
+
+### [x] M12.6 — Grid mastery
+
+Full Grid vocabulary shipped (`kit10-scene@v0.2.0`): arbitrary `minmax()`, `%`/`fit-content()`/`repeat(auto-fill,…)` tracks, named lines, `grid-template-areas`, `grid-auto-flow`, `justify/align` controls. Charter parsing, editor track builder / area painter, WebCodium export parity, and the Vellum grid-line overlay all included.
+
+### [x] M12.7 — Box-model hatch overlay
+
+Line-aware gap strips, real 2D Grid gutters via taffy `detailed_layout_info`, and a desaturated-blue unused-space hatch. Toggleable via `canvas.toggleBoxModel`.
+
+### [x] M12.8 — Single-transaction seed
+
+`initEditorDB` runs the whole seed (builtin plugins + demo projects) inside one transaction via `withTransaction`, cutting first-load time.
+
+### [x] M12.9 — Focus View keybind + Projects panel loading gate
+
+`camera.focus`-style Focus View keybind; per-switch disable + throbber on Projects panel rows during a project switch.
+
+### [ ] M12.10 — Deferred
+
+Named-line *declaration* UI, a per-item grid span control, the overlay's child-line-span highlight; host-side gamut mapping + panel fallback UI for Display-P3; resolving `linked` axis values before the static-export filter (locked-axis export gap).

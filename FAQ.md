@@ -30,9 +30,9 @@ A View can also combine multiple Kits. Your button recipe and your color-system 
 
 The more specific one wins. "More specific" has a clear ranking:
 
-1. **Which Kit** - if two Kits both declare a property, the higher-priority Kit wins. No lower-ranked Kit can ever beat this.
-2. **How many conditions** - "when dark AND compact" always beats "when dark." More conditions win regardless of which axes are involved.
-3. **Which axes** - when two rules have the same number of conditions, the one whose axes appear later in the Kit's ordering wins.
+1. **How many conditions** - "when dark AND compact" always beats "when dark." More conditions win regardless of which axes are involved. This is the primary signal, and it holds even across Kits: if two Kits both declare a property, the one whose winning rule has more conditions wins, regardless of Kit order.
+2. **Which Kit** - only used to break a tie. When two Kits declare a property with the *same* number of conditions, the higher-priority Kit wins. A lower-priority Kit with a more-conditioned rule still beats it.
+3. **Which axes** - within a single Kit, when two rules have the same number of conditions, the one whose axes appear later in the Kit's ordering wins.
 
 Two rules that can never both be true at once - like "theme is dark" and "theme is light" - don't compete. They can't both fire.
 
