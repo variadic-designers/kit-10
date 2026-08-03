@@ -1,8 +1,8 @@
-# Animato — animation & transitions, with GSAP as the export target
+# Animato - animation & transitions, with GSAP as the export target
 
 Research on GSAP (the de-facto standard for web motion) and a plan for **animato**,
 KIT•10's animation system. The hard requirement: **animato must export to GSAP code
-losslessly.** That single constraint decides the architecture — because the cheapest
+losslessly.** That single constraint decides the architecture - because the cheapest
 way to export perfectly to a system is to *author in that system's own model*. So the
 thesis of this doc is:
 
@@ -10,7 +10,7 @@ thesis of this doc is:
 > native representation, and make GSAP export a serialization rather than a translation.**
 > Then solve the *performance* separately, against Vellum's GPU renderer.
 
-Companion to [`sdf3d.md`](./sdf3d.md) and [`text.md`](./text.md) — the path/deformation
+Companion to [`sdf3d.md`](./sdf3d.md) and [`text.md`](./text.md) - the path/deformation
 infrastructure those propose is the *same* machinery animato needs for motion-along-a-path.
 
 ---
@@ -18,10 +18,10 @@ infrastructure those propose is the *same* machinery animato needs for motion-al
 ## 1. What GSAP actually is (distilled)
 
 GSAP is a **property interpolation engine** driven by one global ticker. It is not a
-CSS-transition wrapper — it computes values in JS every frame and sets them directly.
+CSS-transition wrapper - it computes values in JS every frame and sets them directly.
 Three layers:
 
-### 1.1 The Tween — the atom
+### 1.1 The Tween - the atom
 
 A tween is "a high-performance property setter": given targets, a duration, and target
 property values, it interpolates each frame. Four constructors:
@@ -43,7 +43,7 @@ gsap.to(".box", { x: 100, rotation: 27, duration: 1, ease: "power2.out" });
 Relative values (`x: "+=100"`), unit conversion, and color interpolation (in RGB) are
 built in.
 
-### 1.2 The Timeline — the composition
+### 1.2 The Timeline - the composition
 
 A timeline is a **container of tweens** (and nested timelines) with a playhead. Chaining
 sequences them; the **position parameter** (§1.3) overrides placement. Moving a parent
@@ -59,13 +59,13 @@ tl.to(".a", { x: 100 })
 
 `defaults` apply to every child tween. Labels are named playhead positions.
 
-### 1.3 The position parameter — the sequencing grammar (quote-exact)
+### 1.3 The position parameter - the sequencing grammar (quote-exact)
 
 The second arg to `.to()/.from()/.fromTo()` on a timeline. Every form:
 
 | Form | Meaning |
 |------|---------|
-| `3` | absolute — 3s from timeline start |
+| `3` | absolute - 3s from timeline start |
 | `"someLabel"` | at a label (created at end if missing) |
 | `"+=1"` / `"-=1"` | 1s gap after / 1s overlap before timeline end |
 | `"<"` / `">"` | start / end of the **previous** animation |
@@ -74,7 +74,7 @@ The second arg to `.to()/.from()/.fromTo()` on a timeline. Every form:
 | `"+=50%"` / `"-=25%"` | gap/overlap as % of the **inserting** tween's duration (3.7+) |
 | `"<25%"` | 25% into the previous animation |
 
-### 1.4 Stagger — one tween, many targets, offset in time
+### 1.4 Stagger - one tween, many targets, offset in time
 
 Number form (`stagger: 0.1` = 0.1s between each), or object form:
 
@@ -89,7 +89,7 @@ stagger: {
 }
 ```
 
-### 1.5 Keyframes — multi-stage within one tween
+### 1.5 Keyframes - multi-stage within one tween
 
 ```js
 gsap.to(".box", { keyframes: {
@@ -108,29 +108,29 @@ scrubber and playhead need to mirror.
 
 ---
 
-## 2. Easing — the fidelity-critical part
+## 2. Easing - the fidelity-critical part
 
 Eases are the *shape* of interpolation `progress = ease(t)`, `t∈[0,1]`. **animato's eases
 must be numerically identical to GSAP's**, or a preview won't match the exported code.
-GSAP's eases are Penner-derived closed forms — cheap to reimplement exactly.
+GSAP's eases are Penner-derived closed forms - cheap to reimplement exactly.
 
 **Built-in** (each with `.in` / `.out` / `.inOut` unless noted):
 
-- `none` (= `linear`) — constant velocity.
-- `power0..power4` — polynomial of degree 1..5 (`power1` = quad, `power2` = cubic, …).
+- `none` (= `linear`) - constant velocity.
+- `power0..power4` - polynomial of degree 1..5 (`power1` = quad, `power2` = cubic, …).
   **GSAP default ease is `power1.out`.** (Note: `power0` = linear.)
-- `sine`, `circ`, `expo` — trig / circular / exponential curves.
-- `back` — overshoots then settles. Configurable: `back.out(1.7)` (overshoot amount).
-- `elastic` — spring oscillation. `elastic.out(amplitude, period)` e.g. `elastic.out(1, 0.3)`.
-- `bounce` — decaying bounces.
-- `steps(n)` — discrete quantized steps.
+- `sine`, `circ`, `expo` - trig / circular / exponential curves.
+- `back` - overshoots then settles. Configurable: `back.out(1.7)` (overshoot amount).
+- `elastic` - spring oscillation. `elastic.out(amplitude, period)` e.g. `elastic.out(1, 0.3)`.
+- `bounce` - decaying bounces.
+- `steps(n)` - discrete quantized steps.
 
 **Plugin eases** (EasePack): `slow(SlowMo)`, `rough(RoughEase)`, `expoScale(ExpoScaleEase)`.
-**Premium**: `CustomEase` (arbitrary bezier curve — an SVG-path-like `d` string),
+**Premium**: `CustomEase` (arbitrary bezier curve - an SVG-path-like `d` string),
 `CustomBounce`, `CustomWiggle`.
 
 Ease strings are passed verbatim (`ease: "elastic.out(1, 0.3)"`), so animato's ease
-model should store the **same string grammar** — name + optional config args — and both
+model should store the **same string grammar** - name + optional config args - and both
 (a) evaluate it and (b) emit it verbatim on export.
 
 > `CustomEase` matters: it's a bezier curve editor. animato's ease-curve editor should
@@ -142,16 +142,16 @@ model should store the **same string grammar** — name + optional config args �
 
 | GSAP technique | What it does | Transfers to Vellum? |
 |---|---|---|
-| **Single rAF ticker** (`gsap.ticker`) | one loop updates *all* animations; no per-tween timers | **Yes** — one ticker drives Vellum, not N |
-| **Lag smoothing** (`gsap.ticker.lagSmoothing(500, 33)`) | on a frame spike, clamps dt so motion doesn't "jump" | **Yes** — same dt-clamp on the ticker |
-| **Direct value setting** | sets props in JS each frame; never CSS transitions | **Yes** — animato writes node transforms per frame |
-| **`force3D` / GPU layer** | promotes transforms to `translate3d` for GPU compositing | **Different** — Vellum *is* the GPU; transforms are uniforms |
-| **Lazy rendering** | batches first-frame reads to avoid layout thrash | Partial — Vellum has no DOM layout to thrash |
-| **Overwrite management** | resolves two tweens hitting the same prop (`overwrite: "auto"`) | **Yes** — needed in animato's evaluator |
+| **Single rAF ticker** (`gsap.ticker`) | one loop updates *all* animations; no per-tween timers | **Yes** - one ticker drives Vellum, not N |
+| **Lag smoothing** (`gsap.ticker.lagSmoothing(500, 33)`) | on a frame spike, clamps dt so motion doesn't "jump" | **Yes** - same dt-clamp on the ticker |
+| **Direct value setting** | sets props in JS each frame; never CSS transitions | **Yes** - animato writes node transforms per frame |
+| **`force3D` / GPU layer** | promotes transforms to `translate3d` for GPU compositing | **Different** - Vellum *is* the GPU; transforms are uniforms |
+| **Lazy rendering** | batches first-frame reads to avoid layout thrash | Partial - Vellum has no DOM layout to thrash |
+| **Overwrite management** | resolves two tweens hitting the same prop (`overwrite: "auto"`) | **Yes** - needed in animato's evaluator |
 
 The load-bearing lessons: **one ticker**, **clamp dt**, **set values directly**, and
 **resolve overwrites**. GSAP's DOM-specific optimizations (force3D, lazy layout reads)
-are moot because Vellum owns the GPU — which is actually an *advantage* (§4).
+are moot because Vellum owns the GPU - which is actually an *advantage* (§4).
 
 ---
 
@@ -168,7 +168,7 @@ Two facts about this stack reshape the performance design:
    DB → resolve → Charter → Vellum `UiNode[]`. A naive "animate = re-resolve every frame"
    would be catastrophic (resolve + serialize + WASM plugin call per frame). So animation
    must **bypass the resolve for the hot properties** and write them straight into Vellum
-   as cheap per-node state — exactly the pattern Vellum already uses for the **selection
+   as cheap per-node state - exactly the pattern Vellum already uses for the **selection
    overlay**, which it rebuilds *every frame* from a light per-node struct without
    re-running layout.
 
@@ -183,7 +183,7 @@ This gives the core performance rule:
 Concretely that means adding an **animatable transform layer** to the `UiNode` wire
 format (a per-node `translate`/`rotate`/`scale`/`opacity`, applied post-layout as a
 matrix, the same way `NodePosition::Absolute` is applied as a post-layout translation
-today) — so animating it never touches taffy.
+today) - so animating it never touches taffy.
 
 ---
 
@@ -191,7 +191,7 @@ today) — so animating it never touches taffy.
 
 KIT•10 already models **discrete states**: a *view* is a specific axis configuration,
 and the resolver produces a full property set for it. So the most natural animation
-primitive in this system isn't "tween a raw number" — it's:
+primitive in this system isn't "tween a raw number" - it's:
 
 > **Interpolate between the resolved property sets of two views (or two axis-arg
 > configurations).**
@@ -201,12 +201,12 @@ property from state A to state B. This is precisely what **GSAP's Flip plugin** 
 (record state → change → animate the delta), which makes it the natural export target
 for state transitions. Two animation authorings, both exportable:
 
-- **Timeline animations** — explicit tweens on a timeline → `gsap.timeline()` + `.to()`.
-- **State transitions** — interpolate resolved state A → B → GSAP **Flip** (or a
+- **Timeline animations** - explicit tweens on a timeline → `gsap.timeline()` + `.to()`.
+- **State transitions** - interpolate resolved state A → B → GSAP **Flip** (or a
   generated set of `.to()` tweens over the diffed properties).
 
 This is animato's differentiator: it doesn't bolt a generic motion tool onto a design
-system — it animates the *transitions between the states the design system already
+system - it animates the *transitions between the states the design system already
 defines*. The `.to()`/timeline model handles freeform motion; the state-diff model
 handles the design-system-native case.
 
@@ -214,7 +214,7 @@ handles the design-system-native case.
 
 ## 6. Proposed animato architecture
 
-**Data model (PGlite, non-destructive — same as everything else in KIT•10).**
+**Data model (PGlite, non-destructive - same as everything else in KIT•10).**
 GSAP-isomorphic so export is serialization:
 
 ```ts
@@ -248,17 +248,17 @@ consumers").
 3. **Resolve overwrites** (`overwrite:"auto"` kills conflicting inflight tweens on the
    same target+prop).
 4. Write results into the **animatable-transform layer** of the affected `UiNode`s
-   (§4) — never through resolve.
-5. `requestRender()` — one repaint.
+   (§4) - never through resolve.
+5. `requestRender()` - one repaint.
 6. On idle (all tweens done / paused), disable `continuousMode`.
 
 **Easing library:** the exact GSAP closed forms (power/sine/expo/circ/back/elastic/
 bounce/steps + config parse for `back(n)`/`elastic(a,p)`/`steps(n)`), plus a
-`CustomEase` bezier evaluator. Unit-tested for numerical parity against GSAP output —
+`CustomEase` bezier evaluator. Unit-tested for numerical parity against GSAP output -
 this is the fidelity gate for export.
 
 **Motion-along-a-path:** reuse the **path/deformation infrastructure** from `text.md`
-Stage C and `sdf3d.md` — a MotionPath tween animates a node's transform along a path by
+Stage C and `sdf3d.md` - a MotionPath tween animates a node's transform along a path by
 arc-length, with `autoRotate` = the path tangent frame. Text-on-path, a shape moving on
 a path, and MotionPath animation are **one path primitive**, three consumers. Exports to
 `MotionPathPlugin`.
@@ -274,9 +274,9 @@ Because the model is GSAP-isomorphic, export is a code-gen walk:
 | `Timeline{defaults, labels, children}` | `gsap.timeline({ defaults })` + `.addLabel()` + chained children |
 | `Tween{targets, vars, duration, ease, position}` | `tl.to(targets, { ...vars, duration, ease }, position)` |
 | `from` present | `.from(...)` / `.fromTo(...)` |
-| `ease: "elastic.out(1,0.3)"` | verbatim — same string |
-| `position: "<25%"` | verbatim — same string |
-| `stagger` object | verbatim — same keys |
+| `ease: "elastic.out(1,0.3)"` | verbatim - same string |
+| `position: "<25%"` | verbatim - same string |
+| `stagger` object | verbatim - same keys |
 | `keyframes` | `{ keyframes: {...} }` |
 | MotionPath tween | `{ motionPath: { path, align, alignOrigin, autoRotate } }` + register `MotionPathPlugin` |
 | State transition (view A→B) | `Flip.from(state, {...})` **or** generated per-prop `.to()` tweens over the diff |
@@ -292,7 +292,7 @@ tl.from(".card", { y: 40, opacity: 0 })
 
 The exporter's only real work is mapping animato `NodeSelector`s to whatever selector
 the exported target uses (CSS class / id / data-attr on the DOM or SVG the design
-compiles to) — the *motion* is 1:1.
+compiles to) - the *motion* is 1:1.
 
 ---
 
@@ -306,32 +306,32 @@ compiles to) — the *motion* is 1:1.
   (x/y/rotation/scale/skew), opacity, color, and path-driven motion.
 - **Ease parity is a test surface, not an assumption.** Ship numerical parity tests
   against GSAP's reference values; a subtly-off `elastic` is a silent export bug.
-- **Overwrite & relative values (`"+=100"`) carry semantics** — replicate them, don't
+- **Overwrite & relative values (`"+=100"`) carry semantics** - replicate them, don't
   approximate. They change *what the exported code does*, not just how it previews.
 - **Timeline is the source of truth, not baked frames.** Never resolve animation to a
-  keyframe dump — keep the tween/timeline structure (non-destructive), the same reason
+  keyframe dump - keep the tween/timeline structure (non-destructive), the same reason
   KIT•10 never bakes resolution. Baked frames can't export to readable GSAP.
 - **Don't animate through resolve.** The single biggest performance trap (see §4). If a
-  property can only be changed via a Charter re-resolve, it is *not* animatable at 60fps —
+  property can only be changed via a Charter re-resolve, it is *not* animatable at 60fps -
   either promote it to the animatable-transform layer or accept it's a slow, discrete change.
 
 ---
 
 ## 9. Phasing
 
-- **Phase 0 — Animatable transform layer in Vellum.** Add per-node
+- **Phase 0 - Animatable transform layer in Vellum.** Add per-node
   `translate/rotate/scale/opacity` applied post-layout (like `NodePosition` today), plus
-  wire it into `continuousMode`. No authoring yet — just prove a node can move at 60fps
+  wire it into `continuousMode`. No authoring yet - just prove a node can move at 60fps
   without re-resolving.
-- **Phase 1 — Ease library + single tween.** Exact GSAP eases (parity-tested) + a
+- **Phase 1 - Ease library + single tween.** Exact GSAP eases (parity-tested) + a
   `gsap.to`-equivalent tween evaluated on the ticker into the Phase-0 layer.
-- **Phase 2 — Timeline + position grammar + stagger + keyframes.** The full composition
+- **Phase 2 - Timeline + position grammar + stagger + keyframes.** The full composition
   model, stored in PGlite. Playhead/scrubber UI mirroring GSAP's control API.
-- **Phase 3 — GSAP exporter.** Code-gen walk of the model → GSAP source. Ships the moment
+- **Phase 3 - GSAP exporter.** Code-gen walk of the model → GSAP source. Ships the moment
   the model is GSAP-isomorphic (which it is by construction).
-- **Phase 4 — State transitions (Flip).** Interpolate resolved view A→B; export to
+- **Phase 4 - State transitions (Flip).** Interpolate resolved view A→B; export to
   `Flip`. The design-system-native payoff (§5).
-- **Phase 5 — MotionPath**, reusing the `text.md`/`sdf3d.md` path infrastructure. Export
+- **Phase 5 - MotionPath**, reusing the `text.md`/`sdf3d.md` path infrastructure. Export
   to `MotionPathPlugin`.
 
 The dependency spine: Phase 0's animatable-transform layer gates everything (nothing
@@ -343,8 +343,8 @@ planned elsewhere, so it's not net-new infrastructure.
 
 ## 10. The one decision that matters
 
-**Author animato in GSAP's own vocabulary** — tween, timeline, verbatim ease/position
-strings, stagger, keyframes — so export is serialization, not translation; and **solve
+**Author animato in GSAP's own vocabulary** - tween, timeline, verbatim ease/position
+strings, stagger, keyframes - so export is serialization, not translation; and **solve
 performance by splitting animatable transforms (cheap, per-frame, straight to Vellum)
 from structural resolve (slow, data-change only)**, driving Vellum's existing
 `continuousMode` from one lag-smoothed ticker. Do that and GSAP export is free, the
@@ -352,7 +352,7 @@ preview matches the export, and animation never fights the resolve pipeline.
 
 ---
 
-*Sources: GSAP v3 docs — core/tweens/timelines, Eases, position parameter,
+*Sources: GSAP v3 docs - core/tweens/timelines, Eases, position parameter,
 MotionPathPlugin, Flip. Current Vellum hooks referenced: `continuousMode` &
 `requestRender()` in `Viewport.svelte`, the per-frame selection-overlay rebuild and
 post-layout `NodePosition` translation in `taf_can_do/src/render/`.*

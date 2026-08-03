@@ -92,7 +92,7 @@
 	</div>
 
 	{#if tracks.length === 0}
-		<div class="grid-tracks__empty">No explicit tracks — using the responsive default above.</div>
+		<div class="grid-tracks__empty">No explicit tracks - using the responsive default above.</div>
 	{:else}
 		<ul class="grid-tracks__list">
 			{#each tracks as t, i (i)}

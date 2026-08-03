@@ -36,7 +36,7 @@ describe('generate-plugin-docs (inputType table)', () => {
 		}
 	});
 
-	it('PLUGINS.md generated sections are up to date — run `npm run generate-docs` if this fails', async () => {
+	it('PLUGINS.md generated sections are up to date - run `npm run generate-docs` if this fails', async () => {
 		expect(await generatePluginsMd(typesSource, pluginsMd, wireSchema)).toBe(pluginsMd);
 	});
 
@@ -58,13 +58,13 @@ describe('generate-plugin-docs (host functions)', () => {
 		const documented = parseDocumentedHostFns(pluginsMd);
 		// Sanity floor so a parse regression (e.g. zero matches) can't make this pass vacuously.
 		expect(registered.length).toBeGreaterThanOrEqual(11);
-		// Set equality both ways — an undocumented new host fn OR a doc for a removed one both fail.
+		// Set equality both ways - an undocumented new host fn OR a doc for a removed one both fail.
 		expect(documented, 'PLUGINS.md host-fn headings vs. makeHostFunctions').toEqual(registered);
 	});
 });
 
 describe('generate-plugin-docs (wire node examples)', () => {
-	// Fields deliberately elided from the illustrative examples for brevity — PLUGINS.md documents
+	// Fields deliberately elided from the illustrative examples for brevity - PLUGINS.md documents
 	// each omission in prose (e.g. "extra: BoxExtra ... is omitted here; it defaults when absent").
 	// Anything NOT listed here must appear in its node's example.
 	const OMITTED: Record<string, string[]> = { Box: ['extra'], Text: [], Img: [] };

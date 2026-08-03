@@ -1,4 +1,4 @@
-# Penpot Flex/Grid Layout — accessibility & affordance critique
+# Penpot Flex/Grid Layout - accessibility & affordance critique
 
 Grounding: Penpot exposes two layout modes (Flex, Grid) from the Design panel's
 Layout section. Flex shows **direction** (row / row-reverse / column /
@@ -14,18 +14,18 @@ Inspect tab emits real production CSS.
 
 - **Frontend:** **ClojureScript + React**, compiled via shadow-cljs; state through
   Potok (Redux-like) + Okulary (reactive derived state); **SCSS** styling.
-- **Rendering:** historically **SVG in the DOM** ("what you design is what ships" —
+- **Rendering:** historically **SVG in the DOM** ("what you design is what ships" -
   SVG/CSS/HTML), now augmented by a **Rust `render-wasm`** module for near-native
   canvas rendering performance.
 - **Backend:** **Clojure/JVM**, **PostgreSQL** for persistence. Fully open source.
 
 The all-DOM/React frontend is why its accessibility ceiling is high even though the
-current polish is low — and the open source + Rust-wasm direction mirrors KIT•10's
+current polish is low - and the open source + Rust-wasm direction mirrors KIT•10's
 own PGlite + Rust/WASM shape more than any other tool here.
 
 ## Accessibility
 
-- **Better baseline than Figma, by architecture — but under-exploited.** Because
+- **Better baseline than Figma, by architecture - but under-exploited.** Because
   the panel is real HTML, its inputs *can* be genuine focusable, labelable form
   controls, and it's open source so a11y is fixable in the open. That's a real
   structural advantage. But the implementation hasn't cashed it in: the board
@@ -33,11 +33,11 @@ own PGlite + Rust/WASM shape more than any other tool here.
   mostly small icon-toggles without visible labels.
 - **Density is the a11y tax.** Flex and Grid surface nearly every CSS property at
   once (direction, align, justify, align-content, row/column gap, 4-side padding,
-  margin, sizing — and for Grid, track definitions on top). It's a wall of tiny
+  margin, sizing - and for Grid, track definitions on top). It's a wall of tiny
   targets; punishing for low-vision and motor-impaired users, and no respect for
   OS dynamic-type/zoom.
 - **Icon-only segmented controls.** align-items / justify-content / direction are
-  glyph rows whose meaning is tooltip-gated — the same keyboard/touch-invisible,
+  glyph rows whose meaning is tooltip-gated - the same keyboard/touch-invisible,
   learn-by-hover problem Figma has.
 - **Contrast.** The dark chrome uses low-contrast gray icons/dividers that, by
   inspection, likely miss the 3:1 non-text-component bar in places.
@@ -46,7 +46,7 @@ own PGlite + Rust/WASM shape more than any other tool here.
 
 ## Affordance
 
-- **CSS literalism is the headline flaw — and the team admits it.** Penpot said it
+- **CSS literalism is the headline flaw - and the team admits it.** Penpot said it
   did "a very straightforward translation by listing the available properties while
   keeping the CSS naming… we may have been too literal." Controls name the *CSS
   property* (`justify-content`, `align-items`, `fr`, `minmax`) rather than the
@@ -60,9 +60,9 @@ own PGlite + Rust/WASM shape more than any other tool here.
   tracks, on-canvas badges) is expressive but has a steep, acknowledged learning
   curve, with little scaffolding for someone who doesn't already think in CSS Grid.
 - **The upside worth naming:** the literal-CSS mapping is *good* affordance for the
-  dev-adjacent audience — predictable, and it round-trips to real CSS in Inspect.
+  dev-adjacent audience - predictable, and it round-trips to real CSS in Inspect.
   Penpot also discloses more than Figma: properties are listed with names and values
-  rather than buried behind an unlabeled "…" popover. So its failure is narrower —
+  rather than buried behind an unlabeled "…" popover. So its failure is narrower -
   it optimizes hard for CSS-fluent users and leaves pure designers behind, rather
   than being opaque to everyone.
 
@@ -73,7 +73,7 @@ widgets on an inaccessible canvas; Penpot over-*exposes* meaning as raw CSS on a
 accessible-by-architecture-but-unpolished DOM. Penpot is more honest and more
 fixable, but it offloads the CSS spec onto the user as the price of admission.
 
-Relevant to KIT•10: Penpot is the cautionary tale for our VISION 1st Principle —
+Relevant to KIT•10: Penpot is the cautionary tale for our VISION 1st Principle -
 Charter is deliberately *not* a raw CSS pass-through and doesn't 1:1-expose every
 Vellum capability as a literal render-panel property. Penpot shows exactly what
 "too literal a translation" costs in learnability. Steal the good part (real
@@ -83,8 +83,8 @@ control).
 
 ## Sources
 
-- [Penpot Help — Flexible Layouts](https://help.penpot.app/user-guide/flexible-layouts/)
-- [Penpot Blog — How to create CSS Flex & Grid layout components](https://penpot.app/blog/how-to-create-css-flex-and-grid-layout-components-in-penpot/)
-- [Penpot Blog — Responsive CSS Grid layouts](https://penpot.app/blog/tutorial-how-to-create-responsive-css-grid-layouts-in-penpot/)
-- [Penpot Community — Simplify the Grid & Flex layout UI](https://community.penpot.app/t/simplify-the-grid-flex-layout-ui/4895)
-- [Penpot — Responsive Design: CSS Grid & Flex Layout](https://penpot.app/design/layout)
+- [Penpot Help - Flexible Layouts](https://help.penpot.app/user-guide/flexible-layouts/)
+- [Penpot Blog - How to create CSS Flex & Grid layout components](https://penpot.app/blog/how-to-create-css-flex-and-grid-layout-components-in-penpot/)
+- [Penpot Blog - Responsive CSS Grid layouts](https://penpot.app/blog/tutorial-how-to-create-responsive-css-grid-layouts-in-penpot/)
+- [Penpot Community - Simplify the Grid & Flex layout UI](https://community.penpot.app/t/simplify-the-grid-flex-layout-ui/4895)
+- [Penpot - Responsive Design: CSS Grid & Flex Layout](https://penpot.app/design/layout)

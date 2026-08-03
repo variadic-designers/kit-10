@@ -211,7 +211,7 @@
 					displayText: `Export as ${group.target}`,
 					icon: 'fa-solid fa-file-export',
 					disabled: true,
-					description: `${group.providers.length} plugins can export ${group.target} — choose one in the Export panel.`
+					description: `${group.providers.length} plugins can export ${group.target} - choose one in the Export panel.`
 				};
 			}
 

@@ -28,7 +28,7 @@ export function set_colors(grid_r: number, grid_g: number, grid_b: number, grid_
 export function set_data(json: string): void;
 
 /**
- * Binary-path equivalent of `set_data` — deserializes a MessagePack-encoded `Vec<UiNode>` instead of
+ * Binary-path equivalent of `set_data` - deserializes a MessagePack-encoded `Vec<UiNode>` instead of
  * JSON. ~4× faster than serde_json for the same data, and avoids the 47ms parse wall at 10k views.
  * Kept as a separate export so the JS side can choose which to call based on what Charter emitted.
  */

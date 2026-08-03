@@ -63,7 +63,7 @@
 </script>
 
 <div class="tab">
-	<p class="hint">You’re on the free plan. Upgrades are illustrative — there’s no billing backend yet.</p>
+	<p class="hint">You’re on the free plan. Upgrades are illustrative - there’s no billing backend yet.</p>
 	<div class="tiers">
 		{#each tiers as t (t.id)}
 			<article class="tier" class:active={t.active} class:featured={t.featured}>

@@ -254,7 +254,7 @@
 		await api.removePropertyFromLayer(src, key);
 	}
 
-	// "Move to Layer…" — arms pipette pick-a-target mode (same shared state as painting) for the
+	// "Move to Layer…" - arms pipette pick-a-target mode (same shared state as painting) for the
 	// NEXT axis value picked up in the Axes panel, but instead of painting a value onto it, this
 	// relocates the property's existing render entry there (api.moveRenderEntryToLayer preserves the
 	// entry's id/token, unlike a paint's copy). The move fires automatically the moment the picked

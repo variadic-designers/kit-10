@@ -83,8 +83,8 @@
 </script>
 
 <svelte:head>
-	<title>KIT•10 — Plugin Store</title>
-	<meta name="description" content="Browse and install KIT•10 plugins — interpreters, utilities, and renderers." />
+	<title>KIT•10 - Plugin Store</title>
+	<meta name="description" content="Browse and install KIT•10 plugins - interpreters, utilities, and renderers." />
 </svelte:head>
 
 <div id="store" data-prefers-color-scheme data-compel-color-scheme={getTheme()}>
@@ -109,13 +109,13 @@
 			<h1>Extend <span class="store-accent">everything</span></h1>
 			<p class="store-sub">
 				Interpreters translate your resolved data. Utilities add fields, fonts, icons, and export
-				targets. Renderers draw the pixels. Every layer of KIT•10 is a plugin — swap one, run
+				targets. Renderers draw the pixels. Every layer of KIT•10 is a plugin - swap one, run
 				two, or write your own.
 			</p>
 			<div class="store-note">
 				<i class="fa-solid fa-circle-info"></i>
 				<span
-					>This is a design preview — Install hands off to the editor's plugin registry. Charter,
+					>This is a design preview - Install hands off to the editor's plugin registry. Charter,
 					Fontavious, Tenner, and WebCodium are real; the remaining "Community" cards are
 					illustrative and have no real plugin behind them yet.</span
 				>
@@ -220,7 +220,7 @@
 			<h2>Capabilities, up front</h2>
 			<p>
 				Every plugin declares the host powers it needs. When installs go live you'll grant these at
-				install time — a font utility asking for network is expected; a picker asking to create
+				install time - a font utility asking for network is expected; a picker asking to create
 				projects is worth a second look.
 			</p>
 			<div class="legend-grid">

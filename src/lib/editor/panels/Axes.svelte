@@ -349,7 +349,7 @@
 			);
 			if (!match) {
 				ready = false;
-				labels.push('—');
+				labels.push('-');
 				continue;
 			}
 			ids.push(match.axisValueId);
@@ -557,17 +557,17 @@
 		loadAxes();
 	});
 
-	// Recomputes whenever axis args change (not just when the kit/view changes) — this is what
+	// Recomputes whenever axis args change (not just when the kit/view changes) - this is what
 	// keeps the "active" flag on each layer-combo dot in sync with the currently selected values.
 	//
 	// One entry per DISTINCT key-set a value belongs to (not one per literal Layer). Two different
-	// Layers can share the exact same axis-set — e.g. theme:dark;density:compact and
-	// theme:light;density:compact are both {theme,density} — and since axis values within one
+	// Layers can share the exact same axis-set - e.g. theme:dark;density:compact and
+	// theme:light;density:compact are both {theme,density} - and since axis values within one
 	// axis are mutually exclusive, at most one of them can ever be active at once. They're also
 	// visually identical (same hue, same shape), so showing both as separate dots is pure clutter,
 	// not information. Grouped by key-set; a group is active if ANY Layer in it currently matches.
 	//
-	// Includes single-axis Layers (conditioned solely on this value, nothing else) — unlike the
+	// Includes single-axis Layers (conditioned solely on this value, nothing else) - unlike the
 	// null layer, those DO belong to this specific value, and StyleField already colors properties
 	// sourced from them with a real (non-muted) hue, so they need a dot here to match against.
 	const valueLayerCells = $derived.by(() => {

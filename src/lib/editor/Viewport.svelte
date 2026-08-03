@@ -689,7 +689,7 @@
 				{#if isFirefox}
 					<p>This editor renders with WebGPU. Firefox supports it, but it's switched off by default.</p>
 					<details class="fix" open>
-						<summary>Turn it on — about 20 seconds</summary>
+						<summary>Turn it on - about 20 seconds</summary>
 						<ol>
 							<li>Open a new tab and visit <code>about:config</code>.</li>
 							<li>If Firefox shows a warning, choose <strong>Accept the Risk and Continue</strong>.</li>

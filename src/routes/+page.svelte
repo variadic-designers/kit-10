@@ -16,7 +16,7 @@
 
 	// ── Live resolve demo ──────────────────────────────────────────────────────
 	// One Kit ("Button") resolving across Emphasis + State. Emphasis is the star
-	// axis (primary/secondary/tertiary/disabled) — a change users actually notice.
+	// axis (primary/secondary/tertiary/disabled) - a change users actually notice.
 	// Flip an axis and the winning value per property is recomputed by specificity
 	// (condition count). Faithful to CONCEPTS.md: Kits, Layers, Axes, Tokens,
 	// per-property override, more-specific-wins.
@@ -51,7 +51,7 @@
 
 	// Layers: condition-set → property declarations. Per-emphasis hover layers carry
 	// two conditions, so they beat the single-condition emphasis rule for background
-	// — and disabled has no hover layer, so it correctly ignores hover.
+	// - and disabled has no hover layer, so it correctly ignores hover.
 	type Layer = { when: Partial<Args>; set: Record<string, string> };
 	const layers: Layer[] = [
 		{ when: {}, set: { background: 'primary', color: 'text.onPrimary', padding: 'pad.cozy', radius: 'radius.md' } },
@@ -89,7 +89,7 @@
 </script>
 
 <svelte:head>
-	<title>KIT•10 — Design System Framework</title>
+	<title>KIT•10 - Design System Framework</title>
 	<meta
 		name="description"
 		content="KIT•10 is the shared model beneath design and code. Declare intent once; every variant resolves; the code exports to match."
@@ -167,7 +167,7 @@
         Said rules gives enough context to manifest as <strong>code</strong>.</p>
 				<ul class="ticks">
 					<li><i class="fa-solid fa-xmark"></i> Design says one thing. Code says it again, differently.</li>
-					<li><i class="fa-solid fa-xmark"></i> Every change is re-translated by hand — the <strong>handoff</strong> tax.</li>
+					<li><i class="fa-solid fa-xmark"></i> Every change is re-translated by hand - the <strong>handoff</strong> tax.</li>
 					<li><i class="fa-solid fa-check"></i> KIT•10 gives both sides one model. The conditions <em>are</em> the code.</li>
 				</ul>
 			</div>
@@ -199,7 +199,7 @@
 			<div class="section-text section-text--center">
 				<h2>Change a condition. Watch it resolve.</h2>
 				<p class="lead">
-					One Kit, a handful of rules. Flip an axis — the winning value is recomputed <em>per
+					One Kit, a handful of rules. Flip an axis - the winning value is recomputed <em>per
 						property</em>. No variant was ever drawn by hand.
 				</p>
 			</div>
@@ -234,7 +234,7 @@
 					<div class="demo__code-head">
 						<span class="demo__dot"></span><span class="demo__dot"></span><span class="demo__dot"
 						></span>
-						<span class="demo__code-title">Button — resolved</span>
+						<span class="demo__code-title">Button - resolved</span>
 					</div>
 					<div class="demo__code-body">
 						<div class="code-line code-line--brace">Button {'{'}</div>
@@ -244,7 +244,7 @@
 								<span class="code-prop">{prop}</span><span class="code-punc">:</span>
 								{#if isColor(prop)}<span class="code-swatch" style={`background:${val(r?.token)}`}
 									></span>{/if}
-								<span class="code-val">{r?.token ?? '—'}</span>
+								<span class="code-val">{r?.token ?? '-'}</span>
 								<span class="code-from"
 									>{#if r && r.from.length}// {r.from.join(' ∧ ')}{:else}// base{/if}</span
 								>
@@ -256,16 +256,16 @@
 			</div>
 			<p class="demo__caption">
 				<i class="fa-solid fa-circle-check"></i>
-				More specific wins — a two-condition rule beats a one-condition rule, per property. Try
+				More specific wins - a two-condition rule beats a one-condition rule, per property. Try
 				<strong>disabled + hover</strong>: it ignores the hover, because no rule matches both.
 			</p>
 		</section>
 
-		<!-- 3 · The parts — a concrete build-up using the Button example -->
+		<!-- 3 · The parts - a concrete build-up using the Button example -->
 		<section class="section section--block">
 			<div class="section-text section-text--center">
 				<h2>Five parts, built up</h2>
-				<p class="lead">Follow one Button from a choice to a screen — each piece builds on the last.</p>
+				<p class="lead">Follow one Button from a choice to a screen - each piece builds on the last.</p>
 			</div>
 			<div class="anatomy">
 				<div class="anatomy__step">
@@ -287,7 +287,7 @@
 
 				<div class="anatomy__step">
 					<div class="anatomy__head"><span class="anatomy__num">2</span><h3>Tokens</h3></div>
-					<p class="anatomy__def">Named values the rules reuse — set once, and every rule follows.</p>
+					<p class="anatomy__def">Named values the rules reuse - set once, and every rule follows.</p>
 					<div class="anatomy__ex ex-tokens">
 						<span class="ex-token"
 							><span class="ex-dot" style="background:oklch(62.3% 0.188 259.8)"></span>brand</span
@@ -325,13 +325,13 @@
 				<div class="anatomy__step">
 					<div class="anatomy__head"><span class="anatomy__num">4</span><h3>Kits</h3></div>
 					<p class="anatomy__def">
-						One thing’s axes + rules, bundled and reusable — a spec, not a component.
+						One thing’s axes + rules, bundled and reusable - a spec, not a component.
 					</p>
 					<div class="anatomy__ex">
 						<div class="ex-kit">
 							<span class="ex-kit__title"><i class="fa-solid fa-cube"></i> Kit · Button</span>
-							<span class="ex-kit__line">Axes — Emphasis, State</span>
-							<span class="ex-kit__line">Layers — 3 rules</span>
+							<span class="ex-kit__line">Axes - Emphasis, State</span>
+							<span class="ex-kit__line">Layers - 3 rules</span>
 						</div>
 					</div>
 				</div>
@@ -357,10 +357,10 @@
 		<!-- 4 · Specificity: theory + a concrete result -->
 		<section class="section section--alt section--block">
 			<div class="section-text section-text--center">
-				<h2>More specific always wins — and only one thing wins</h2>
+				<h2>More specific always wins - and only one thing wins</h2>
 				<p class="lead">
 					Three tiers settle every contest. No lower tier ever beats a higher one, so every axis
-					state has exactly one winner per property — always traceable to the rule that set it.
+					state has exactly one winner per property - always traceable to the rule that set it.
 				</p>
 			</div>
 			<div class="g-spec-pair">
@@ -390,7 +390,7 @@
 				</div>
 
 				<div class="g-why">
-					<span class="g-why__label">This button looks like this because —</span>
+					<span class="g-why__label">This button looks like this because -</span>
 					<div class="g-why__stage">
 						<button
 							type="button"
@@ -480,7 +480,7 @@
 			<div class="section-text section-text--center">
 				<h2>Bring designs in. Own everything you ship out.</h2>
 				<p class="lead">
-					Import existing work, refine it as rules, and export code that’s <em>yours</em> — no
+					Import existing work, refine it as rules, and export code that’s <em>yours</em> - no
 					lock-in, no attribution, nothing phoning home.
 				</p>
 			</div>
@@ -685,7 +685,7 @@
 
 		h1 {
 			@include fonts-stack('Satoshi-Bold', sans);
-			// Fluid: ~40px on phones up to ~60px on wide screens — a confident hero without the
+			// Fluid: ~40px on phones up to ~60px on wide screens - a confident hero without the
 			// oversized 76px two-line block the fixed 6xl produced.
 			font-size: clamp(2.5rem, 5vw, 3.75rem);
 			line-height: 1.1;
@@ -804,7 +804,7 @@
 			}
 		}
 
-		// Skimmable tick lists — the prose lives here, one line each.
+		// Skimmable tick lists - the prose lives here, one line each.
 		.ticks {
 			list-style: none;
 			padding: 0;
@@ -1219,7 +1219,7 @@
 		}
 	}
 
-	// Axes example — labelled chip rows
+	// Axes example - labelled chip rows
 	.ex-axis {
 		display: flex;
 		align-items: center;
@@ -1256,7 +1256,7 @@
 		}
 	}
 
-	// Tokens example — named swatches
+	// Tokens example - named swatches
 	.ex-tokens {
 		flex-direction: row;
 		flex-wrap: wrap;
@@ -1280,7 +1280,7 @@
 		}
 	}
 
-	// Layers example — readable rules
+	// Layers example - readable rules
 	.ex-rule {
 		display: block;
 		font-family: $x-font-family-mono;
@@ -1323,7 +1323,7 @@
 		font-style: italic;
 	}
 
-	// Kit example — a bundle box
+	// Kit example - a bundle box
 	.ex-kit {
 		border: 1.5px solid var(--color-primary);
 		border-radius: $x-space-2;
@@ -1350,7 +1350,7 @@
 		}
 	}
 
-	// View example — a mini screen with a rendered button
+	// View example - a mini screen with a rendered button
 	.ex-view {
 		border: 1px solid var(--color-border);
 		border-radius: $x-space-2;

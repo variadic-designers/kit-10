@@ -69,7 +69,7 @@
 <div class="tab">
 	<p class="note">
 		<i class="fa-solid fa-circle-info"></i>
-		This account lives only in this browser — there’s no server yet. These controls behave as they
+		This account lives only in this browser - there’s no server yet. These controls behave as they
 		would against a real account.
 	</p>
 
@@ -97,7 +97,7 @@
 		<h3>Change details</h3>
 		{#if !unlocked}
 			<p class="hint">
-				Editing your details requires your password{hasPassword() ? '' : ' (none set yet — leave blank)'}.
+				Editing your details requires your password{hasPassword() ? '' : ' (none set yet - leave blank)'}.
 			</p>
 			<div class="inline">
 				<input

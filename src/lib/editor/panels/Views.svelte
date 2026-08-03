@@ -25,7 +25,7 @@
 		// Which specific occurrence is hovered (see EditorSelection.selectedOccurrencePrimary) --
 		// null means "not occurrence-qualified".
 		hoveredOccurrenceKey?: string | null;
-		// The full resolve array — the host walks this for composition-field view_refs to build
+		// The full resolve array - the host walks this for composition-field view_refs to build
 		// the Views DAG itself. Generic graph math (root detection, ordering, cycle guard);
 		// routing it through the plugin manifest (Phase 1's `child_ids`/`is_root`) just wrapped a
 		// universal computation across the WASM boundary for nothing. The manifest carries only
@@ -38,7 +38,7 @@
 		overriddenOccurrences?: OverriddenOccurrence[];
 		// The Views panel manifest published by the active plugin via `kit10_panel_publish`
 		// (Charter today). Carries composition_field_keys + per-view write_alias + per-view ops +
-		// header_ops — everything the tree needs to render menus and dispatch DnD writes without
+		// header_ops - everything the tree needs to render menus and dispatch DnD writes without
 		// the editor re-deriving which field is the composition one. undefined until the first
 		// `on_resolve` lands; the panel renders empty in that window.
 		viewsPanelManifest?: PanelManifest;
@@ -118,7 +118,7 @@
 	// fields at all, and `applySelfDeclaredViewRefs` (manager/src/resolve/resolve.ts) has
 	// nowhere to attach a self-declared `children` token if the user tries to add a child to
 	// it. Auto-attaching a blank kit (same "New Kit" pattern Compose.svelte's `attachKit` uses:
-	// createKitInProject + attachKitToComposition) makes a new Box immediately functional —
+	// createKitInProject + attachKitToComposition) makes a new Box immediately functional -
 	// it gets real Styles panel fields and somewhere for the first `children` write to land.
 	// Text/Image are untouched: they don't declare a `children` field, so there's nothing to
 	// provision for them yet.
@@ -128,9 +128,9 @@
 		await api.attachKitToComposition(kit.id, viewId);
 	}
 
-	// Op dispatch — the manifest declares which ops exist + their label/icon; the editor switches
+	// Op dispatch - the manifest declares which ops exist + their label/icon; the editor switches
 	// on `op.name` to actually execute. Adding a new op name requires editor support here, but the
-	// plugin still owns *availability* (which items get which ops in their context menu) — the
+	// plugin still owns *availability* (which items get which ops in their context menu) - the
 	// editor never decides "Box should be deletable" on its own, the manifest's `ops` list does.
 	// `kind` is the op-specific payload (today only `add-child` uses it: "box"|"text"|"image").
 	// `item` carries the parent's `write_alias` (used by `add-child` to attach the new view) and
@@ -166,10 +166,10 @@
 				const kind = op.kind ?? 'box';
 				const created = await api.createViewInProject(projectId, `New ${kind}`);
 				if (!created) return;
-				// Primitive is a Charter hint, not a column — set it on `hints.charter.primitive`
+				// Primitive is a Charter hint, not a column - set it on `hints.charter.primitive`
 				// only for non-box kinds (Box is the default detection path). The editor merges
 				// sub-objects itself (see QueryView.updateViewHints in manager), so pass a full
-				// `{ charter: { primitive } }` object — not just `{ charter: { primitive: kind } }`
+				// `{ charter: { primitive } }` object - not just `{ charter: { primitive: kind } }`
 				// (which would wipe any other charter hints). In practice a freshly-created view has
 				// no hints yet, so the merge is a clean write. Skipping it for `box` keeps the
 				// common path minimal.
@@ -189,7 +189,7 @@
 
 	// Build a context menu (the shared `MenuItem` shape) from a list of manifest ops, splitting
 	// op-name groups with `'hr'` separators so the menu reads as grouped (container ops first,
-	// then common ops — same visual order as the original hardcoded menu). `add-child` ops with
+	// then common ops - same visual order as the original hardcoded menu). `add-child` ops with
 	// different `kind`s collapse into a single "Add Child" submenu entry, mirroring the original
 	// pre-Phase-1 "Box/Text/Image" trio.
 	function buildMenuFromOps(ops: PanelOp[], dispatch: (op: PanelOp) => void): (MenuItem | 'hr')[] {
@@ -231,9 +231,9 @@
 		return items;
 	}
 
-	// Per-item context menu — built from the item's declared ops. The plugin owns what's on the
+	// Per-item context menu - built from the item's declared ops. The plugin owns what's on the
 	// menu (Charter's `common_item_ops`/`container_item_ops`), the editor only renders + dispatches.
-	// The "Export to" submenu appended below is editor-native, not manifest-driven — export
+	// The "Export to" submenu appended below is editor-native, not manifest-driven - export
 	// capability comes from whatever plugins are installed (project-export-providers.ts), a
 	// concern orthogonal to Charter's View-composition ops.
 	function menuFor(viewId: string): ContextMenuContentGenerator {
@@ -241,7 +241,7 @@
 			const item = manifestById.get(viewId);
 			const row = rowsByViewId.get(viewId);
 			// `lock`/`hide` op labels override the generic plugin-supplied ones with the actual
-			// next-state of the toggle ("Lock" when currently unlocked, "Unlock" when locked) —
+			// next-state of the toggle ("Lock" when currently unlocked, "Unlock" when locked) -
 			// live DB state the manifest doesn't carry. Pure presentation; `name` stays the same
 			// so dispatch routing is unaffected.
 			const items: (MenuItem | 'hr')[] = item
@@ -280,7 +280,7 @@
 		};
 	}
 
-	// Panel-header context menu — built from the manifest's `header_ops` (today: the "create a
+	// Panel-header context menu - built from the manifest's `header_ops` (today: the "create a
 	// top-level Box/Text/Image" trio). Same builder, just no parent view to attach to.
 	let kitsContextMenu: ContextMenuContentGenerator = () => {
 		const ops = viewsPanelManifest?.header_ops ?? [];
@@ -310,7 +310,7 @@
 
 	const rowsByViewId = $derived(new Map(viewsQuery.rows.map((v) => [v.viewId, v] as const)));
 
-	// Index PanelManifest.items by id — used for per-view `write_alias` + `ops` lookups, not
+	// Index PanelManifest.items by id - used for per-view `write_alias` + `ops` lookups, not
 	// topology (that's host-computed below off `resolvedViews` + `composition_field_keys`).
 	const manifestById = $derived.by(() => {
 		const map = new Map<string, PanelItem>();
@@ -320,7 +320,7 @@
 		return map;
 	});
 
-	// The composition field keys Charter declares — its single nesting opinion: "this resolved
+	// The composition field keys Charter declares - its single nesting opinion: "this resolved
 	// property name's `viewRefs` nest as children." Everything else in nesting (root detection,
 	// ordering, cycle guarding) is generic graph math the host does itself, using this list as
 	// the only plugin-injected input. Reads off the manifest instead of a separate
@@ -365,7 +365,7 @@
 	}
 
 	// Cycle guard for DnD: is `candidateId` anywhere inside `rootId`'s subtree? Walks the manifest's
-	// topology — no resolved-kits reading, no composition-key lookup. This is the only place the
+	// topology - no resolved-kits reading, no composition-key lookup. This is the only place the
 	// panel still traverses the DAG itself (necessary: a cycle check has to walk the candidate's
 	// subtree, which is intrinsically a traversal, not a single lookup).
 	function isDescendant(rootId: string, candidateId: string): boolean {
@@ -398,11 +398,11 @@
 		return out;
 	}
 
-	// The token alias a parent view's children live under — the plugin's manifest carries, per
+	// The token alias a parent view's children live under - the plugin's manifest carries, per
 	// item, the `write_alias` to write when that item's children list changes (overriding any
-	// kit-declared `children` by alias during resolution; self-declares when no kit declares one —
+	// kit-declared `children` by alias during resolution; self-declares when no kit declares one -
 	// see CLAUDE.md). `write_alias` is null when this view's primitive has no children field
-	// (Text/Image) — drops onto such a view are rejected by `canDrop` before they reach here, but
+	// (Text/Image) - drops onto such a view are rejected by `canDrop` before they reach here, but
 	// guard anyway so a stale manifest can't crash a write.
 	function childrenAlias(parentViewId: string): string {
 		return manifestById.get(parentViewId)?.write_alias ?? 'children';
@@ -478,21 +478,21 @@
 		}
 		// newParentId === null: dropped at root -> detach only; it renders as a root automatically
 		// (its `is_root` flag recomputes in Charter's next manifest publish, after the DB write
-		// fires the resolve loop — no client-side root-list bookkeeping).
+		// fires the resolve loop - no client-side root-list bookkeeping).
 	}
 
-	// Per-row hydration gate. Each view row renders only when its id is in `resolvedViews` —
+	// Per-row hydration gate. Each view row renders only when its id is in `resolvedViews` -
 	// i.e. the resolve pipeline has caught up to the live DB query for *that* row. A
 	// freshly-added child view (id in viewsQuery but not yet in resolvedViews) is filtered out
 	// for one tick, then appears already nested when its resolve lands. The previous design gated
-	// the entire tree on "every row hydrated" — one unresolved row hid the whole `<ul>`, causing
+	// the entire tree on "every row hydrated" - one unresolved row hid the whole `<ul>`, causing
 	// the Big Flicker on add-child / project switch. Per-row gating hides only the row that's
 	// actually unsettled; existing rows keep rendering uninterrupted. Also filters roots the
 	// same way in `rootViews` above, so the new view never flashes at the root while resolve is
 	// catching up to know its parent's `children` now lists it.
 	const resolvedViewIdSet = $derived(new Set(resolvedViews.map((v) => v.viewId)));
 
-	// Plain (non-$state) bookkeeping var — see comment below.
+	// Plain (non-$state) bookkeeping var - see comment below.
 	let lastProjectId: string | null = null;
 
 	$effect(() => {

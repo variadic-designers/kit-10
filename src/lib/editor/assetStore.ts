@@ -120,7 +120,7 @@ export async function importAssetFile(
 		width = dims.width;
 		height = dims.height;
 	} catch {
-		// dimensions unknown — use 0
+		// dimensions unknown - use 0
 	}
 
 	const row = await api.upsertAsset({
@@ -139,7 +139,7 @@ export async function importAssetFile(
 	await assetBytes.put(row.id, raw);
 
 	// Upload to Vellum's GPU cache synchronously so the image is loaded before the re-resolve
-	// this import triggers runs layout — intrinsic sizing needs the decoded dimensions on the
+	// this import triggers runs layout - intrinsic sizing needs the decoded dimensions on the
 	// first layout pass, otherwise a freshly-imported image renders at the wrong size for a
 	// frame. The WASM decode + GPU upload blocks the main thread for ~50ms on a 4K image, which
 	// is acceptable for a one-off manual import (vs. the old deferred queueMicrotask upload).

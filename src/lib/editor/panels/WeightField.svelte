@@ -158,7 +158,7 @@
 				class="weight-field__btn"
 				class:weight-field__btn--sel={displayWeight === opt.weight}
 				title={displayWeight === opt.weight && currentWeight !== opt.weight
-					? `${opt.label} (${opt.weight}) — ${currentFamily} has no ${currentWeight}, showing nearest`
+					? `${opt.label} (${opt.weight}) - ${currentFamily} has no ${currentWeight}, showing nearest`
 					: `${opt.label} (${opt.weight})`}
 				onclick={() => selectWeight(opt.weight)}
 			>

@@ -52,11 +52,11 @@ export interface ResolvedProperty {
 	// per-view `children` token) without a separate lookup-by-alias round trip.
 	tokenId: string | null;
 	conditionCount: number;
-	// Axis-id set the winning Layer conditions on — lets the UI color a property by which axes
+	// Axis-id set the winning Layer conditions on - lets the UI color a property by which axes
 	// combine to produce it (e.g. theme+state vs theme+density), not just how many conditions.
 	keys: string[];
 	// Same conditions as `keys`, but with the actual matched value per axis (e.g. theme: "dark"),
-	// for display — "Theme + Density" tells you which axes combine, this tells you which value.
+	// for display - "Theme + Density" tells you which axes combine, this tells you which value.
 	conditionValues: { axisId: string; value: string }[];
 	// Views this property's value references, when its declaring alias has one or more `view`-typed
 	// token rows -- otherwise null. Each entry carries the referencing token's own id (`tokenId`,
@@ -516,7 +516,7 @@ function applyScopeTokenRows(
 async function gatherScopedTokens(
 	db: SchemaDialect,
 	projectId: string | undefined,
-	// ordered by kit priority_index ASC — determines which kit wins alias conflicts
+	// ordered by kit priority_index ASC - determines which kit wins alias conflicts
 	kitIds: string[],
 	viewId: string
 ): Promise<ScopedTokenMaps & { viewTokens: ScopableTokenRow[] }> {

@@ -5,7 +5,7 @@
 	// chrome (today only StyleField's plain-text fallback showed anything at all). Reuses the same
 	// icon-swatch + alias grammar the Tokens panel (Variables.svelte) and StyleField's old
 	// `token-pill` already established: a shape/color icon tinted by the resolved scalar, the alias
-	// as the label, and — when detachable — a click-to-detach affordance.
+	// as the label, and - when detachable - a click-to-detach affordance.
 	import { iconFromResolvedScalar, isColorScalar } from './token-utils.ts';
 
 	type TokenBadgeProps = {
@@ -22,7 +22,7 @@
 <span
 	class="token-badge"
 	style="--color-icon: {value ?? 'transparent'}"
-	title="Token: {alias ?? 'token'} — editing changes every use of this token"
+	title="Token: {alias ?? 'token'} - editing changes every use of this token"
 >
 	<i
 		class="fa-solid {iconFromResolvedScalar(value)} token-badge__icon"

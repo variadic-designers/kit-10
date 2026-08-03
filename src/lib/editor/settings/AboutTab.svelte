@@ -10,7 +10,7 @@
 		<img src="/favicon.svg" alt="KIT-10" />
 		<div>
 			<h2>KIT·10</h2>
-			<p>A design-system editor — kits, axes, and views.</p>
+			<p>A design-system editor - kits, axes, and views.</p>
 		</div>
 	</div>
 

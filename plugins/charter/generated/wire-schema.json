@@ -33,7 +33,7 @@
       ]
     },
     "BoxData": {
-      "description": "A box — a pure container. It never renders inline text; nest a `Text` child for that.",
+      "description": "A box - a pure container. It never renders inline text; nest a `Text` child for that.",
       "type": "object",
       "properties": {
         "bg_color": {
@@ -128,7 +128,7 @@
           "minimum": 0
         },
         "selected": {
-          "description": "0 = none, 1 = secondary, 2 = primary/active. The renderer owns how it's drawn — it must\nNOT overload `border_*` to signal selection.",
+          "description": "0 = none, 1 = secondary, 2 = primary/active. The renderer owns how it's drawn - it must\nNOT overload `border_*` to signal selection.",
           "type": "integer",
           "format": "uint8",
           "default": 0,
@@ -166,7 +166,7 @@
       ]
     },
     "BoxExtra": {
-      "description": "Extended flex/grid layout properties, grouped so `BoxData` needn't name every field. Every\nfield is optional — an absent `extra` is all-defaults.",
+      "description": "Extended flex/grid layout properties, grouped so `BoxData` needn't name every field. Every\nfield is optional - an absent `extra` is all-defaults.",
       "type": "object",
       "properties": {
         "align_items": {
@@ -318,7 +318,7 @@
           "default": 0.0
         },
         "position": {
-          "description": "`position` — flow (`Relative`) vs. floated (`Absolute { x, y }`).",
+          "description": "`position` - flow (`Relative`) vs. floated (`Absolute { x, y }`).",
           "$ref": "#/$defs/NodePosition",
           "default": "Relative"
         }
@@ -361,7 +361,7 @@
       ]
     },
     "Extent": {
-      "description": "A box-model size dimension (mirrors taffy's `Dimension`). `fr` is deliberately absent —\nfractional-of-free-space is a container concern (`TrackSize::Fr` / flex grow), not a size a\nchild declares about itself.",
+      "description": "A box-model size dimension (mirrors taffy's `Dimension`). `fr` is deliberately absent -\nfractional-of-free-space is a container concern (`TrackSize::Fr` / flex grow), not a size a\nchild declares about itself.",
       "oneOf": [
         {
           "description": "Size to content / fill per flex-grow.",
@@ -399,7 +399,7 @@
       ]
     },
     "FlexDir": {
-      "description": "CSS `flex-direction`. Previously emitted as a bare `String` by Charter — now a real enum, so\nan invalid value fails to deserialize instead of silently mismatching.",
+      "description": "CSS `flex-direction`. Previously emitted as a bare `String` by Charter - now a real enum, so\nan invalid value fails to deserialize instead of silently mismatching.",
       "type": "string",
       "enum": [
         "Row",
@@ -565,7 +565,7 @@
       ]
     },
     "JustifyValue": {
-      "description": "CSS `justify-content` (taffy's `JustifyContent`) — adds the `Space*` distributions.",
+      "description": "CSS `justify-content` (taffy's `JustifyContent`) - adds the `Space*` distributions.",
       "type": "string",
       "enum": [
         "Start",
@@ -815,7 +815,7 @@
           ]
         },
         {
-          "description": "`repeat(auto-fit, minmax(<f32>px, 1fr))` — the one responsive-grid shape the Grid\narrangement needs, not a general `repeat()`.",
+          "description": "`repeat(auto-fit, minmax(<f32>px, 1fr))` - the one responsive-grid shape the Grid\narrangement needs, not a general `repeat()`.",
           "type": "object",
           "properties": {
             "AutoFit": {

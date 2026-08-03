@@ -110,7 +110,7 @@
 	<section class="layers">
 		<header class="layers__header">
 			<h2
-				title="Resolution inspector — matched rules for the active view, shown as a tree: kit → specificity tier → rule → property. Struck-through values were overridden by a higher rule; hover one to see which."
+				title="Resolution inspector - matched rules for the active view, shown as a tree: kit → specificity tier → rule → property. Struck-through values were overridden by a higher rule; hover one to see which."
 			>
 				Layers
 			</h2>

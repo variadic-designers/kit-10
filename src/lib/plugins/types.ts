@@ -5,7 +5,7 @@ import type { ResolvedKit } from 'manager';
 // on each member is the table description). Run `npm run generate-docs` after changing a member;
 // the drift-guard test (scripts/generate-plugin-docs.test.ts) fails in CI if the doc is stale.
 export type InputType =
-	// @doc: OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.
+	// @doc: OKLCH color picker - L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.
 	| 'color'
 	// @doc: Plain text input. The default when `inputType` is omitted.
 	| 'text'
@@ -17,7 +17,7 @@ export type InputType =
 	| 'slider'
 	// @doc: Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts.
 	| 'font'
-	// @doc: View-composition field — the child view list.
+	// @doc: View-composition field - the child view list.
 	| 'children'
 	// @doc: Asset picker.
 	| 'asset'
@@ -31,7 +31,7 @@ export type InputType =
 	| 'arrange'
 	// A numeric stepper (see FieldDef.spacingMode for scalar vs. CSS-shorthand box mode). See
 	// SpacingField.
-	// @doc: Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.
+	// @doc: Numeric stepper - a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.
 	| 'spacing'
 	// A segmented row of named-weight buttons, same "selector, not free text" grammar as
 	// arrange/resize -- but the choices are runtime data (the currently resolved font-family's
@@ -52,11 +52,11 @@ export type InputType =
 	// Ordered track-list builder for grid-template-columns/rows -- add/remove/reorder tracks, each
 	// picking a kind (Fixed/Fraction/Auto/Min/Max/Percent/Fit-content/Responsive) via a segmented
 	// control instead of typing raw CSS. See GridTracksField.
-	// @doc: Grid track-list builder — add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind.
+	// @doc: Grid track-list builder - add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind.
 	| 'grid-tracks'
 	// Visual grid-template-areas editor -- a mini-grid matching the box's own track count, painted
 	// by click-drag into named regions, serialized to real CSS quoted-row text. See GridAreaPainter.
-	// @doc: Visual grid-template-areas painter — click-drag to name/merge cells into regions.
+	// @doc: Visual grid-template-areas painter - click-drag to name/merge cells into regions.
 	| 'grid-area-painter'
 	// Row/Column segmented control + a Dense toggle, writing the keyword values Charter's
 	// parse_auto_flow understands.
@@ -156,7 +156,7 @@ export interface BoxShadow {
 
 // A box-model size dimension, mirroring Vellum/Charter's `Extent` serde enum. `"Auto"` is a
 // unit variant (bare string); `Px`/`Percent` are newtype variants (single-key object). These
-// are produced by Charter and consumed by Vellum — the editor passes them through opaquely.
+// are produced by Charter and consumed by Vellum - the editor passes them through opaquely.
 export type Extent = 'Auto' | { Px: number } | { Percent: number };
 
 export interface UiBoxNode {
@@ -229,7 +229,7 @@ export interface FamilyFacts {
 	variants: FontFactVariant[];
 }
 
-// The concrete (family, weight, style) set Charter's viewport renders, post weight-snapping —
+// The concrete (family, weight, style) set Charter's viewport renders, post weight-snapping -
 // what the editor's font scan fetches, so it never re-derives weights from raw kit properties.
 // snake_case fields: Charter-authored output.
 export interface FontRequest {
@@ -273,12 +273,12 @@ export interface OnResolveResult {
 	font_requests?: FontRequest[];
 	// MessagePack-encoded Vec<UiNode>, base64-encoded for JSON transport. When present, the JS
 	// side base64-decodes this and calls vellum.set_data_binary() instead of the JSON-stringified
-	// viewport_data path — avoids the ~47ms JSON parse wall at 10k views.
+	// viewport_data path - avoids the ~47ms JSON parse wall at 10k views.
 	viewport_data_binary?: string;
 }
 
 // Panel manifest published by a plugin via `kit10_panel_publish`. The editor's panels are
-// generic renderers over this shape — topology lives plugin-side, live metadata (view names,
+// generic renderers over this shape - topology lives plugin-side, live metadata (view names,
 // locked) stays in the editor's own DB query and is joined against `id` at render time. Wire
 // keys are snake_case (plugin-authored output, see CLAUDE.md's camelCase pitfall).
 export interface PanelOp {
@@ -293,9 +293,9 @@ export interface PanelOp {
 export interface PanelItem {
 	id: string;
 	// Token alias to upsert when DnD writes this item's children list. null when this item's
-	// primitive has no `children` field (e.g. Text/Image) — panel hides the DnD-nest affordance.
+	// primitive has no `children` field (e.g. Text/Image) - panel hides the DnD-nest affordance.
 	write_alias: string | null;
-	// Ops the plugin declares available on this item — drives the editor's right-click context
+	// Ops the plugin declares available on this item - drives the editor's right-click context
 	// menu. Each op is self-describing: `name` is the dispatch key, `label`/`icon` are what to
 	// render. Editor switches on `name` to execute (rename/delete/clone/lock/hide/add-child).
 	ops: PanelOp[];
@@ -306,7 +306,7 @@ export interface PanelManifest {
 	// The resolved-property keys Charter treats as view-composition fields (its fields whose
 	// inputType is the composition kind). Charter's whole opinion on nesting: "this field's
 	// `viewRefs` are the children." The host walks `resolvedViews` for these keys to build the
-	// DAG client-side — root detection, ordering, cycle guarding are generic graph math, not
+	// DAG client-side - root detection, ordering, cycle guarding are generic graph math, not
 	// plugin-owned, so they don't ride the manifest.
 	composition_field_keys: string[];
 	// One entry per opaque id (one per project view today). The panel indexes by `id` and

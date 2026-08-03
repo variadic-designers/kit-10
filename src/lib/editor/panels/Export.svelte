@@ -161,7 +161,7 @@
 								{#if flagged.length > 0}
 									Views: {flagged.map((v) => v.viewName).join(', ')}
 								{:else}
-									No views flagged — right-click a view in the Views panel → Export to → {group
+									No views flagged - right-click a view in the Views panel → Export to → {group
 										.effective.label}
 								{/if}
 							</span>

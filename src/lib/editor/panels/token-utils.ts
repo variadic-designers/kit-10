@@ -28,7 +28,7 @@ export function isColorValue(v: TokenValue | null | undefined): boolean {
 
 // For the Render panel's StyleField: takes the already-resolved scalar string
 // (ResolvedProperty.value) and chooses an icon purely by pattern-matching on the
-// string's lexical shape. No TokenValue indirection — the Render panel never has one.
+// string's lexical shape. No TokenValue indirection - the Render panel never has one.
 export function iconFromResolvedScalar(s: string | null | undefined): string {
 	if (!s) return 'fa-question';
 	if (isColorScalar(s)) return 'fa-square-full';

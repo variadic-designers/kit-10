@@ -1,6 +1,6 @@
 // Colors a Layer's combination-dot by the *set* of axes it conditions on (its "key set"),
 // not by which specific values were picked. theme:dark;state:hover and theme:dark;state:click
-// share a key set ({theme, state}) and so share a hue — they're siblings along the state axis.
+// share a key set ({theme, state}) and so share a hue - they're siblings along the state axis.
 // theme:dark;density:compact has a different key set ({theme, density}) and gets a different hue,
 // even though both are 2-condition layers.
 export function axisSetHue(axisIds: string[]): number {
@@ -13,7 +13,7 @@ export function axisSetHue(axisIds: string[]): number {
 }
 
 export function layerDotColor(axisIds: string[], active: boolean): string {
-	// No axes to combine — the null layer, or a plain single-axis rule. Neutral, not a hash hue.
+	// No axes to combine - the null layer, or a plain single-axis rule. Neutral, not a hash hue.
 	if (axisIds.length === 0) return 'var(--color-text-muted)';
 	const hue = axisSetHue(axisIds);
 	const L = active ? 0.72 : 0.6;

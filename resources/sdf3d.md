@@ -1,4 +1,4 @@
-# 3D Signed Distance Functions — the wisdom for making SDFs a primitive system
+# 3D Signed Distance Functions - the wisdom for making SDFs a primitive system
 
 Research digest of Inigo Quilez's [*distance functions*](https://iquilezles.org/articles/distfunctions/)
 (the canonical 3D-SDF reference), distilled with an eye toward **KIT•10 one day
@@ -7,7 +7,7 @@ that a GPU turns into pixels.
 
 The article is a catalogue + a small algebra. The catalogue is ~40 primitives.
 The algebra is ~15 operators (booleans, transforms, repetition, deformations).
-The wisdom is in the caveats about *which combinations stay correct* — that's the
+The wisdom is in the caveats about *which combinations stay correct* - that's the
 part that decides whether an SDF-primitive system is a toy or an engine.
 
 ---
@@ -16,7 +16,7 @@ part that decides whether an SDF-primitive system is a toy or an engine.
 
 KIT•10 already resolves designs into a **flat `UiNode[]` tree** (Charter → Vellum),
 and Vellum already leans on **SDF math for anti-aliasing** box borders/radii
-(`fwidth`-based `aa_half` in `shader.wgsl`). So SDFs are not foreign here — the
+(`fwidth`-based `aa_half` in `shader.wgsl`). So SDFs are not foreign here - the
 2D renderer is *already* half an SDF renderer.
 
 An SDF-primitive system is attractive for a design tool for four structural reasons:
@@ -27,10 +27,10 @@ An SDF-primitive system is attractive for a design tool for four structural reas
    into that one function. This is *exactly* the shape of a resolved KIT•10 tree:
    nodes + operators folding into one evaluable thing.
 2. **Non-destructive CSG for free.** Union/subtract/intersect are `min`/`max`.
-   A boolean is an operator node, not a baked mesh — so the design stays editable
+   A boolean is an operator node, not a baked mesh - so the design stays editable
    forever, which is KIT•10's whole thesis (resolution is derived, never baked).
 3. **Smooth blends meshes can't do cheaply.** `smin` (smooth-minimum) gives
-   organic fillets/welds between shapes with one extra parameter — a genuine
+   organic fillets/welds between shapes with one extra parameter - a genuine
    design superpower that polygon booleans make painful.
 4. **Resolution independence.** No tessellation. A sphere is perfect at any zoom,
    same as Vellum's rounded rects are today. Fits the "crisp at any zoom" bar the
@@ -43,7 +43,7 @@ that right.
 
 > **Notation used throughout:** `dot2(v)` ≡ `dot(v,v)` (squared length). `p` is the
 > sample point in the primitive's local space. Primitives are centred at the origin
-> and axis-aligned unless the signature says otherwise — you *position* them by
+> and axis-aligned unless the signature says otherwise - you *position* them by
 > transforming `p` (see §5), not by baking coordinates in.
 
 ---
@@ -51,14 +51,14 @@ that right.
 ## 1. The core idea & the correctness ladder
 
 A **signed distance function** returns, for any point `p`, the shortest distance
-to the surface — positive outside, negative inside, zero on it. Three tiers of
+to the surface - positive outside, negative inside, zero on it. Three tiers of
 "how true" a function is, and it governs everything downstream:
 
 | Tier | Meaning | Safe to raymarch? |
 |------|---------|-------------------|
 | **Exact SDF** | Returns the real Euclidean distance everywhere. | Yes, full step size. |
 | **Bound (lower bound)** | Never *over*-estimates distance (Lipschitz ≤ 1), but may under-estimate. | Yes, but you waste steps; still converges. |
-| **Not a bound** | Can over-estimate → sphere tracing overshoots the surface → artifacts. | No — must shrink step size by hand. |
+| **Not a bound** | Can over-estimate → sphere tracing overshoots the surface → artifacts. | No - must shrink step size by hand. |
 
 The single most important property is the **Lipschitz condition**: `|f(a) − f(b)| ≤ |a − b|`.
 Sphere tracing marches `t += f(p)` and is only guaranteed not to tunnel through
@@ -70,7 +70,7 @@ online are wrong precisely because an operator broke the bound.
 
 ## 2. Primitive catalogue
 
-Verbatim GLSL. Grouped by whether they're **exact** or only a **bound** — a
+Verbatim GLSL. Grouped by whether they're **exact** or only a **bound** - a
 distinction the article makes explicitly and that you must carry into any type
 system that wraps these.
 
@@ -312,7 +312,7 @@ float sdPyramid( vec3 p, float h ) {
 }
 ```
 
-### 2.2 Unsigned distance surfaces (open geometry — `ud*`, no inside)
+### 2.2 Unsigned distance surfaces (open geometry - `ud*`, no inside)
 
 Triangles and quads are infinitely thin, so distance is unsigned. Useful as
 building blocks; give them thickness with `opOnion`/`opRound` (§4).
@@ -354,14 +354,14 @@ float udQuad( vec3 p, vec3 a, vec3 b, vec3 c, vec3 d ) {
 }
 ```
 
-### 2.3 Bounds only (NOT exact — mind the step size)
+### 2.3 Bounds only (NOT exact - mind the step size)
 
 The article is explicit that these **do not return true distance**; they're lower
 bounds. Fine to raymarch, but they under-report near the surface so you burn extra
 steps, and combining them compounds the error.
 
 ```glsl
-float sdEllipsoid( vec3 p, vec3 r ) { // lower bound — the classic "why is my ellipsoid wrong" shape
+float sdEllipsoid( vec3 p, vec3 r ) { // lower bound - the classic "why is my ellipsoid wrong" shape
   float k0 = length(p/r);
   float k1 = length(p/(r*r));
   return k0*(k0-1.0)/k1;
@@ -374,7 +374,7 @@ float sdTriPrism( vec3 p, vec2 h ) { // lower bound
 ```
 
 > **Ellipsoid is the cautionary tale.** There is no known closed-form exact SDF for
-> a general ellipsoid — the naive `length(p/r)-1.0` is *not even a bound* and will
+> a general ellipsoid - the naive `length(p/r)-1.0` is *not even a bound* and will
 > tunnel. The formula above is the best cheap lower bound. Lesson for a primitive
 > system: **an ellipsoid is not a scaled sphere.** Non-uniform scale (§5) is the
 > trap; a first-class ellipsoid primitive is the fix.
@@ -383,7 +383,7 @@ float sdTriPrism( vec3 p, vec2 h ) { // lower bound
 
 ## 3. Bridging 2D → 3D (the natural growth path for KIT•10)
 
-KIT•10 is 2D today. These two operators lift **any 2D SDF** into 3D — meaning the
+KIT•10 is 2D today. These two operators lift **any 2D SDF** into 3D - meaning the
 rounded-rectangle field Vellum already computes for box corners could become a 3D
 extruded panel with *no new primitive*, just a wrapper. This is the cheapest
 possible on-ramp to 3D.
@@ -404,7 +404,7 @@ float opExtrusion( in vec3 p, in sdf2d primitive, in float h ) {
 ```
 
 **Implication:** a KIT•10 "SDF primitive" abstraction should treat 2D and 3D as one
-family, with extrude/revolve as adapters — exactly how the current 2D box already
+family, with extrude/revolve as adapters - exactly how the current 2D box already
 *is* a rounded-box SDF cross-section waiting to be extruded.
 
 ---
@@ -414,13 +414,13 @@ family, with extrude/revolve as adapters — exactly how the current 2D box alre
 These take one primitive and warp it. Two flavours, and the distinction is the
 whole game:
 
-- **Surface warps that preserve the metric** (`opRound`, `opOnion`, `opElongate`) —
+- **Surface warps that preserve the metric** (`opRound`, `opOnion`, `opElongate`) -
   stay exact/bounded, safe to march normally.
-- **Space warps** (`opTwist`, `opCheapBend`, `opDisplace`) — **break the Lipschitz
+- **Space warps** (`opTwist`, `opCheapBend`, `opDisplace`) - **break the Lipschitz
   bound** because they compress space non-uniformly. Must reduce step size.
 
 ```glsl
-// Inflate the surface outward by rad — turns any shape "rounded". Exact-preserving.
+// Inflate the surface outward by rad - turns any shape "rounded". Exact-preserving.
 float opRound( in sdf3d primitive, in float rad ) {
   return primitive(p) - rad;
 }
@@ -468,7 +468,7 @@ float opCheapBend( in sdf3d primitive, in vec3 p ) {
 }
 ```
 
-**Metric-change norms** (fake `length` to round edges cheaply — all lower bounds):
+**Metric-change norms** (fake `length` to round edges cheaply - all lower bounds):
 
 ```glsl
 float length2( vec3 p ){ p=p*p;             return sqrt(p.x+p.y+p.z); }
@@ -500,17 +500,17 @@ float opScale( in vec3 p, in float s, in sdf3d primitive ) {
 > distances lie (the field is no longer Euclidean). This is a hard architectural
 > constraint: **an SDF primitive system cannot expose a free `scale: vec3`.** You
 > get non-uniform shapes by choosing a primitive that's parameterised that way
-> (box half-extents, ellipsoid radii, capped-cone radii) — *not* by scaling a
+> (box half-extents, ellipsoid radii, capped-cone radii) - *not* by scaling a
 > sphere. Bake this into the type system or users will produce broken fields.
 
-**Mirror symmetry** — free, exact, halves your work (`abs()` folds space):
+**Mirror symmetry** - free, exact, halves your work (`abs()` folds space):
 
 ```glsl
 float opSymX ( in vec3 p, in sdf3d primitive ){ p.x    = abs(p.x);  return primitive(p); }
 float opSymXZ( in vec3 p, in sdf3d primitive ){ p.xz   = abs(p.xz); return primitive(p); }
 ```
 
-**Repetition** — one primitive tiles infinite (or bounded) space for *zero* extra
+**Repetition** - one primitive tiles infinite (or bounded) space for *zero* extra
 storage. Huge for UI grids / arrays:
 
 ```glsl
@@ -530,7 +530,7 @@ vec3 opLimitedRepetition( in vec3 p, in float s, in vec3 l, in sdf3d primitive )
 
 ---
 
-## 6. Combining primitives (CSG) — the algebra, and where it stays true
+## 6. Combining primitives (CSG) - the algebra, and where it stays true
 
 ```glsl
 float opUnion       ( float a, float b ){ return min(a,b); }
@@ -540,14 +540,14 @@ float opXor         ( float a, float b ){ return max(min(a,b),-max(a,b)); }
 ```
 
 > **The correctness fault line, stated by IQ:** `min` (**Union**) and `Xor` produce a
-> **true** SDF. `max` (**Subtraction**, **Intersection**) produce only a **bound** —
+> **true** SDF. `max` (**Subtraction**, **Intersection**) produce only a **bound** -
 > the result under-reports distance near the seam where the two surfaces meet, so
 > sphere tracing must be a touch more conservative around CSG cuts. Not fatal, but
 > a system that pretends the output of a subtraction is exact will occasionally
 > show artifacts. Track "exact vs bound" as a *propagated* property up the CSG tree,
 > not just per-leaf.
 
-**Smooth CSG (`smin`) — the design superpower.** `k` is the blend radius; larger
+**Smooth CSG (`smin`) - the design superpower.** `k` is the blend radius; larger
 = softer weld. This is the current (quadratic, corrected) form from the article:
 
 ```glsl
@@ -561,7 +561,7 @@ float opSmoothIntersection( float a, float b, float k ) { return -opSmoothUnion(
 ```
 
 Smooth-min also **breaks the exact bound** in the blend zone (it pulls the surface
-inward), so the same step-size caution applies. It's worth it — organic fillets
+inward), so the same step-size caution applies. It's worth it - organic fillets
 between arbitrary shapes with one slider are something no polygon pipeline gives
 you for free, and for a *design tool* that's a headline feature, not a footnote.
 
@@ -571,7 +571,7 @@ you for free, and for a *design tool* that's a headline feature, not a footnote.
 
 The distfunctions page defines the *field*. Turning it into pixels needs two more
 pieces, universal enough to state here so this doc is self-contained. These are
-**not** quoted from the page — they're the standard sphere-tracing setup.
+**not** quoted from the page - they're the standard sphere-tracing setup.
 
 **Sphere tracing (raymarch):** march along the ray, stepping by the current
 distance, until you're within `eps` or exceed a max distance/step count.
@@ -589,7 +589,7 @@ float raymarch( vec3 ro, vec3 rd ) {
 }
 ```
 
-**Normals via the gradient** (tetrahedron technique — 4 evals, robust & cheap):
+**Normals via the gradient** (tetrahedron technique - 4 evals, robust & cheap):
 
 ```glsl
 vec3 calcNormal( vec3 p ) {
@@ -608,7 +608,7 @@ field along the normal) falls out of having `map()` + `calcNormal()`.
 
 ---
 
-## 8. Distilled wisdom — the rules that matter for a primitive system
+## 8. Distilled wisdom - the rules that matter for a primitive system
 
 1. **The field is the model.** A scene = one function `map(p)->dist`. Design a
    KIT•10 SDF node tree so it *folds* into that function; that's the whole point,
@@ -621,7 +621,7 @@ field along the normal) falls out of having `map()` + `calcNormal()`.
    Scaling = uniform only, divide-in-multiply-out.
 4. **Ban non-uniform scale at the type level.** It cannot produce a correct SDF.
    Offer parameterised primitives (box extents, ellipsoid radii) instead. The
-   ellipsoid isn't even exact — treat "no free vec3 scale" as a hard invariant.
+   ellipsoid isn't even exact - treat "no free vec3 scale" as a hard invariant.
 5. **Prefer exact primitives + minimal distortion** over stacking approximate
    deformers. IQ: get as close as possible with true Euclidean primitives/ops,
    *then* apply the smallest distortion needed. Deformation is a garnish, not a base.
@@ -630,11 +630,11 @@ field along the normal) falls out of having `map()` + `calcNormal()`.
 7. **`min`/`max` are your CSG, `smin` is your differentiator.** Booleans are one
    line each; the smooth blends are the thing a *design* tool should surface as a
    first-class, sliderable operator.
-8. **Repetition & symmetry are free geometry.** `abs()` and `round()` fold space —
+8. **Repetition & symmetry are free geometry.** `abs()` and `round()` fold space -
    one primitive becomes a mirrored pair or an infinite grid at no storage cost.
    Directly relevant to arraying UI elements.
 9. **`dot2(v) = dot(v,v)`** and the "two-part" `min(max(d.x,d.y),0)+length(max(d,0))`
-   idiom (exterior + interior distance) recur across almost every exact primitive —
+   idiom (exterior + interior distance) recur across almost every exact primitive -
    learn that pattern once and most of the catalogue reads clearly.
 
 ---
@@ -642,7 +642,7 @@ field along the normal) falls out of having `map()` + `calcNormal()`.
 ## 9. Where this leaves KIT•10 / Vellum (opinion)
 
 Vellum today rasterizes 2D quads and uses SDF math only for edge AA. A full 3D-SDF
-engine is a *different renderer* (raymarched fragment pass), so this is far-future —
+engine is a *different renderer* (raymarched fragment pass), so this is far-future -
 consistent with the "Vellum is preview-only; 3D is far-future courtesy" scope note.
 But the shape of the migration is unusually clean **because the data model already
 fits**:
@@ -650,33 +650,33 @@ fits**:
 - Charter's flat `UiNode[]` + parent indices is structurally a CSG/scene tree.
   An SDF backend would add primitive/operator node *kinds*, not a new architecture.
 - Selection/hit-testing already exists (Vellum returns node ids, draws a selection
-  overlay). Raymarching returns the nearest primitive id per pixel the same way —
+  overlay). Raymarching returns the nearest primitive id per pixel the same way -
   the selection model ports over.
 - The correctness ladder (§1) wants an `exact|bound|unbounded` bit tracked per node
-  and propagated — a small, well-defined addition to the wire format, and exactly
+  and propagated - a small, well-defined addition to the wire format, and exactly
   the kind of "opinionated property Charter owns" the project already reasons about.
 - The **cheapest first step is not 3D at all**: adopt SDF *evaluation* for the
   existing 2D primitives (Vellum is already partway there), prove out the
   field-as-model plumbing in 2D, then add `opExtrusion` as the literal first 3D node.
 
 The single most important design decision, if this is ever built: **make "is this a
-true distance" a tracked, propagated property of every node** — because that one bit
+true distance" a tracked, propagated property of every node** - because that one bit
 is what separates an SDF renderer that's robust from one that shimmers and tunnels,
 and it has to live in the model, not be rediscovered in the shader.
 
 ---
 
-## 10. Curated shape library — what KIT•10 actually exposes to users
+## 10. Curated shape library - what KIT•10 actually exposes to users
 
 §2's catalogue is ~33 functions, quoted verbatim because completeness matters for a
-reference. But a design tool's shape picker is a UI surface, not a textbook — putting
+reference. But a design tool's shape picker is a UI surface, not a textbook - putting
 all 33 in front of a user is noise, not power. Most of the catalogue is redundant
 variants (arbitrary-orientation forms, once a node has its own position/rotation via
 `opTx`) or single-purpose curios. This section consolidates §2 into what the picker
 should actually offer, applying §8's own rules (#5 prefer exact primitives, #4 no
 free `vec3` scale) as the filter.
 
-### 10.1 Tier 1 — core set (ship first)
+### 10.1 Tier 1 - core set (ship first)
 
 | Shape | Backing primitive | Exactness | Why it's core |
 |---|---|---|---|
@@ -689,74 +689,74 @@ free `vec3` scale) as the filter.
 | Pyramid | `sdPyramid` | exact | common structural shape |
 | Plane | `sdPlane` | exact | backdrop/ground-catcher utility more than a "placed shape," but cheap and near-universally wanted for studio-style compositions |
 
-### 10.2 Tier 2 — secondary set (add once Tier 1 ships and demand shows)
+### 10.2 Tier 2 - secondary set (add once Tier 1 ships and demand shows)
 
 | Shape | Backing primitive | Exactness | Why it's secondary, not core |
 |---|---|---|---|
 | Rounded Cylinder | `sdRoundedCylinder` | exact | a Cylinder refinement; real but lower-frequency need |
 | Round Cone | `sdRoundCone` | exact | smoothly-tapered cone/capsule hybrid, more specialized silhouette |
-| Box Frame | `sdBoxFrame` | exact | hollow/wireframe look — popular in modern UI decoration, but a style choice more than a base shape |
-| Octahedron | `sdOctahedron` (the exact branch — see §10.3 caution) | exact | diamond/gem silhouette, distinct enough from Box/Pyramid to earn a slot |
+| Box Frame | `sdBoxFrame` | exact | hollow/wireframe look - popular in modern UI decoration, but a style choice more than a base shape |
+| Octahedron | `sdOctahedron` (the exact branch - see §10.3 caution) | exact | diamond/gem silhouette, distinct enough from Box/Pyramid to earn a slot |
 | Hex Prism | `sdHexPrism` | exact | common in badge/iconography work |
 | Rhombus | `sdRhombus` | exact | diamond-plate silhouette |
-| Cut Sphere / Cut Hollow Sphere | `sdCutSphere` / `sdCutHollowSphere` | exact | dome/bowl/shell shapes — genuinely useful for badges and UI chrome, but a compound idea (sphere + cut) rather than a first shape a user reaches for |
+| Cut Sphere / Cut Hollow Sphere | `sdCutSphere` / `sdCutHollowSphere` | exact | dome/bowl/shell shapes - genuinely useful for badges and UI chrome, but a compound idea (sphere + cut) rather than a first shape a user reaches for |
 
-### 10.3 Excluded from the picker (with reasons — revisit only on a concrete need)
+### 10.3 Excluded from the picker (with reasons - revisit only on a concrete need)
 
 - **All "Arb" (arbitrary-endpoint) variants** (`sdCappedCylinderArb`, `sdCappedConeArb`,
-  `sdRoundConeArb`) — **redundant by construction.** Every KIT•10 node already carries
+  `sdRoundConeArb`) - **redundant by construction.** Every KIT•10 node already carries
   its own position + rotation (`opTx`, §5); a user orients the ordinary Tier-1/2
   primitive rather than needing a bespoke "from point A to point B" version of the
   same shape. The math stays available internally where a primitive is inherently
-  segment-defined (Capsule already is), but never as a *distinct* picker entry —
+  segment-defined (Capsule already is), but never as a *distinct* picker entry -
   shipping both would just be two ways to do the same thing.
-- **`sdCappedTorus`, `sdLink`, `sdSolidAngle`, `sdVesicaSegment`, `sdDeathStar`** —
+- **`sdCappedTorus`, `sdLink`, `sdSolidAngle`, `sdVesicaSegment`, `sdDeathStar`** -
   single-purpose curios (chain link, angular wedge, lens, crescent) that read as "one
   specific icon" rather than a general-purpose building block. Skip for v1; each is a
   candidate to add later only if a specific design need names it (e.g. an actual
   chain-link icon), not preemptively.
-- **Infinite `sdCylinder` / `sdConeInfinite`** — only meaningful combined with a
+- **Infinite `sdCylinder` / `sdConeInfinite`** - only meaningful combined with a
   boolean cut; not independently placeable/resizable the way a shape picker expects.
   The capped versions (already Tier 1/2) cover the practical need.
-- **`udTriangle` / `udQuad`** — unsigned (open, no inside/outside), need `opOnion`/
+- **`udTriangle` / `udQuad`** - unsigned (open, no inside/outside), need `opOnion`/
   `opRound` layered on top to become solid. Building blocks other primitives could
   compose from, not standalone picker shapes.
-- **`sdOctahedron`'s bound/approximate branch** — the article gives an exact form
+- **`sdOctahedron`'s bound/approximate branch** - the article gives an exact form
   (used above) and a cheaper bound approximation for distant/LOD rendering. KIT•10 has
   no LOD system; always use the exact branch. Flagged here so it isn't accidentally
   reached for as "the" octahedron formula later.
-- **`sdEllipsoid`** — **flagged, not excluded outright.** Per §2.3, this is *not* an
-  exact SDF, only a lower bound — and per §5, non-uniform scale is banned at the type
+- **`sdEllipsoid`** - **flagged, not excluded outright.** Per §2.3, this is *not* an
+  exact SDF, only a lower bound - and per §5, non-uniform scale is banned at the type
   level, so a first-class Ellipsoid primitive is the *only* legal way to get a
   stretched-sphere shape at all (you cannot fake it by scaling a Sphere). Real design
   value, real correctness cost. **Gate it behind the exact/bound propagation actually
-  being implemented (§8 rule 2)** — do not ship it before the raymarcher can be
+  being implemented (§8 rule 2)** - do not ship it before the raymarcher can be
   conservative near a bound-only surface, or it will tunnel/shimmer.
-- **`sdTriPrism`** — bound only, and its silhouette is already well covered by Box (+ a
+- **`sdTriPrism`** - bound only, and its silhouette is already well covered by Box (+ a
   boolean cut) or Hex Prism's family. Not enough unique value to carry the step-size
   risk.
 
 ### 10.4 "Rounded" is a modifier, not a separate shape
 
 Don't multiply the picker with a rounded variant of every entry (`sdBox` next to
-`sdRoundBox`, etc.) — expose **one** corner/edge-rounding control per shape (`opRound`
+`sdRoundBox`, etc.) - expose **one** corner/edge-rounding control per shape (`opRound`
 generically, or a primitive's own native round parameter where it has one, e.g.
 `sdRoundBox`/`sdRoundedCylinder`/`sdCappedCone`→`sdRoundCone`) rather than doubling
 the shape count. This mirrors how the existing 2D box already has one radius control,
-not "Box" and "Rounded Box" as two menu entries — same interaction model, one
+not "Box" and "Rounded Box" as two menu entries - same interaction model, one
 dimension higher.
 
 ### 10.5 Net picker contents (Tier 1 + Tier 2)
 
 Box, Sphere, Cylinder, Cone, Torus, Capsule, Pyramid, Plane, Rounded Cylinder, Round
-Cone, Box Frame, Octahedron, Hex Prism, Rhombus, Cut Sphere, Cut Hollow Sphere — **16
+Cone, Box Frame, Octahedron, Hex Prism, Rhombus, Cut Sphere, Cut Hollow Sphere - **16
 shapes**, every one an exact SDF, out of §2's ~33. Ellipsoid is the one flagged
 future addition once bound-propagation exists; everything else in §10.3 stays
 excluded pending a concrete need.
 
 ---
 
-*Source: Inigo Quilez, "distance functions" — https://iquilezles.org/articles/distfunctions/
+*Source: Inigo Quilez, "distance functions" - https://iquilezles.org/articles/distfunctions/
 (3D primitives, operators, deformations). §7 sphere-trace/normal snippets are standard
 practice from IQ's raymarching material, flagged as not being on the distfunctions page.
 All GLSL in §§2–6 is quoted verbatim from the article. §10 is original curation, not

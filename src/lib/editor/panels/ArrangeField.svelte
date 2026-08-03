@@ -56,32 +56,32 @@
 			kind: 'stack',
 			label: 'Stack',
 			icon: 'fa-solid fa-bars',
-			tooltip: 'Flow children in one direction with a gap — forms, lists, the default box shape'
+			tooltip: 'Flow children in one direction with a gap - forms, lists, the default box shape'
 		},
 		{
 			kind: 'cluster',
 			label: 'Cluster',
 			icon: 'fa-solid fa-grip',
-			tooltip: 'Wrap children in a row, packed to the start — chip rows, toolbars, button groups'
+			tooltip: 'Wrap children in a row, packed to the start - chip rows, toolbars, button groups'
 		},
 		{
 			kind: 'split',
 			label: 'Split',
 			icon: 'fa-solid fa-arrows-left-right',
-			tooltip: 'Push children to opposite ends, centered on the cross axis — headers, nav bars'
+			tooltip: 'Push children to opposite ends, centered on the cross axis - headers, nav bars'
 		},
 		{
 			kind: 'center',
 			label: 'Center',
 			icon: 'fa-solid fa-align-center',
-			tooltip: 'Center a child on both axes — hero sections, empty states, badges'
+			tooltip: 'Center a child on both axes - hero sections, empty states, badges'
 		},
 		{
 			kind: 'grid',
 			label: 'Grid',
 			icon: 'fa-solid fa-table-cells',
 			tooltip:
-				'Equal-size responsive cells that wrap automatically — galleries, card grids, dashboards'
+				'Equal-size responsive cells that wrap automatically - galleries, card grids, dashboards'
 		}
 	];
 
@@ -231,7 +231,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={!directionIsRow}
-						title="Stack downward — a column"
+						title="Stack downward - a column"
 						onclick={() => writeDirection('column')}
 					>
 						<i class="fa-solid fa-arrow-down"></i>
@@ -240,7 +240,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={directionIsRow}
-						title="Stack rightward — a row"
+						title="Stack rightward - a row"
 						onclick={() => writeDirection('row')}
 					>
 						<i class="fa-solid fa-arrow-right"></i>
@@ -260,7 +260,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={directionIsRow}
-						title="Split left/right — a row"
+						title="Split left/right - a row"
 						onclick={() => writeDirection('row')}
 					>
 						<i class="fa-solid fa-arrows-left-right"></i>
@@ -269,7 +269,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={!directionIsRow}
-						title="Split top/bottom — a column"
+						title="Split top/bottom - a column"
 						onclick={() => writeDirection('column')}
 					>
 						<i class="fa-solid fa-arrows-up-down"></i>
@@ -313,7 +313,7 @@
 						type="button"
 						class="arrange-seg__btn"
 						class:arrange-seg__btn--sel={autoFlowIsDense}
-						title="Dense — backfill earlier gaps left by larger items"
+						title="Dense - backfill earlier gaps left by larger items"
 						onclick={() => writeAutoFlow(autoFlowIsColumn, !autoFlowIsDense)}
 					>
 						<i class="fa-solid fa-layer-group"></i>
@@ -393,7 +393,7 @@
 		{#if activeKind !== 'grid'}
 			<details
 				class="arrange-disclosure"
-				title="Raw flex properties {activeKind} doesn't expose directly — still real, still editable"
+				title="Raw flex properties {activeKind} doesn't expose directly - still real, still editable"
 			>
 				<summary class="arrange-disclosure__summary">
 					<span>Advanced flex</span>

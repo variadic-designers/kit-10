@@ -168,7 +168,7 @@ export function set_data(json) {
 }
 
 /**
- * Binary-path equivalent of `set_data` — deserializes a MessagePack-encoded `Vec<UiNode>` instead of
+ * Binary-path equivalent of `set_data` - deserializes a MessagePack-encoded `Vec<UiNode>` instead of
  * JSON. ~4× faster than serde_json for the same data, and avoids the 47ms parse wall at 10k views.
  * Kept as a separate export so the JS side can choose which to call based on what Charter emitted.
  * @param {Uint8Array} bytes

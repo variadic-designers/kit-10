@@ -35,7 +35,7 @@
 	}
 
 	// Drop-to-reorder: place the dragged kit on the target's before/after edge, then persist the
-	// whole new order in one collision-safe call — mirrors Axes.svelte's handleAxisReorder.
+	// whole new order in one collision-safe call - mirrors Axes.svelte's handleAxisReorder.
 	// kitsQuery is a live query, so no manual refetch is needed after the write (unlike
 	// Axes.svelte's consumedAxes, which is a one-shot fetch).
 	async function handleKitReorder(

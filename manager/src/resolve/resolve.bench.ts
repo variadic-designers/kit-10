@@ -442,7 +442,7 @@ if (
 	);
 	console.log(
 		`  dependency depth: ${LEGACY_BARRIERS} → ${BATCHED_BARRIERS}  ` +
-			`(sequential round-trip stalls — the wall-time-relevant one)`
+			`(sequential round-trip stalls - the wall-time-relevant one)`
 	);
 
 	// --- In-process CPU baseline (quick median) ---
@@ -463,15 +463,15 @@ if (
 	console.log('──────────────── in-process CPU (no worker boundary) ─────────────');
 	console.log(
 		`  legacy fetch: ${legacyCpu.toFixed(2)}ms   batched fetch: ${batchedCpu.toFixed(2)}ms   ` +
-			`(≈ equal — node has no IPC to save; batched query is marginally heavier CPU)`
+			`(≈ equal - node has no IPC to save; batched query is marginally heavier CPU)`
 	);
 
 	// --- Browser projection: the win node can't measure is the worker round-trip stalls.
 	// Model wall = exec_cpu + barriers × L, where L is one worker round-trip latency. This
 	// is the KEY point: exec_cpu is a FLOOR the batching does not move (PGlite is single-
-	// threaded — the same rows get computed either way, batched is even slightly more CPU).
+	// threaded - the same rows get computed either way, batched is even slightly more CPU).
 	// Only the (barriers × L) term shrinks (4L → 1L). So it's "substantially cheaper" ONLY
-	// when 3×L is large relative to the ~14ms execution floor — i.e. when round-trips are
+	// when 3×L is large relative to the ~14ms execution floor - i.e. when round-trips are
 	// slow (contended main thread, slow OPFS), not on an idle worker. ---
 	console.log('──────────────── projected browser fetch (exec_cpu + barriers×L) ──');
 	console.log('  round-trip L │  legacy (4 barriers) │  batched (1) │  speedup');
@@ -489,7 +489,7 @@ if (
 			'   worker → modest win; the waterfall dominates under latency → substantial.)'
 	);
 	console.log('──────────────── per-op stats (vitest bench, below) ──────────────');
-	console.log('  Read the `legacy` vs `batched` rows pairwise — the auto-Summary ranks all');
+	console.log('  Read the `legacy` vs `batched` rows pairwise - the auto-Summary ranks all');
 	console.log('  benches against the single fastest (compute), which is not the comparison.\n');
 	/* eslint-enable no-console */
 }

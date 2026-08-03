@@ -99,8 +99,8 @@
 
 	{#if showLimits}
 		<div class="resize-field__limits">
-			{@render fieldRow(resizeKeys.min, `Won't shrink below this — the floor for a fill/% size`)}
-			{@render fieldRow(resizeKeys.max, `Won't grow past this — the ceiling for a fill/% size`)}
+			{@render fieldRow(resizeKeys.min, `Won't shrink below this - the floor for a fill/% size`)}
+			{@render fieldRow(resizeKeys.max, `Won't grow past this - the ceiling for a fill/% size`)}
 		</div>
 	{/if}
 </div>

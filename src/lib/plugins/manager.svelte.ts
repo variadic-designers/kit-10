@@ -97,7 +97,7 @@ export function createPluginManager(api: Api) {
 	// `compositionFieldKeys` / `viewIcons` flat state (Charter now bundles topology + icon +
 	// write-alias into one PanelManifest per panel-id, so the editor's panel can render purely
 	// off this map instead of re-deriving topology client-side). Keyed by panel_id ("views"
-	// today; additive for future plugin-driven panels — see CLAUDE.md's panel-manifest section).
+	// today; additive for future plugin-driven panels - see CLAUDE.md's panel-manifest section).
 	let panelManifests = $state<Map<string, PanelManifest>>(new Map());
 	let viewportData = $state<string>('[]');
 	// MessagePack-binary path: when Charter emits viewport_data_binary, this is the
@@ -136,7 +136,7 @@ export function createPluginManager(api: Api) {
 	// against each other, only against their own prior calls.
 	const utilityQueues = new Map<string, Promise<unknown>>();
 
-	// Latest state — always reflects the most recent setter call
+	// Latest state - always reflects the most recent setter call
 	let _kits: ResolvedKit[] | null = null;
 	let _hints: Record<string, unknown> | null = null;
 	let _viewId: string | null = null;
@@ -153,7 +153,7 @@ export function createPluginManager(api: Api) {
 	let selectionTimer: ReturnType<typeof setTimeout> | null = null;
 
 	// Incremented on every setData call. Any runSelectionChange captured before
-	// the increment was enqueued while data was stale — skip it.
+	// the increment was enqueued while data was stale - skip it.
 	let selectionGen = 0;
 
 	// True from beginPendingResolve() until the next runResolve actually completes. Guards a
@@ -170,7 +170,7 @@ export function createPluginManager(api: Api) {
 	// timing, until an actual resolve has landed.
 	let resolvePending = false;
 
-	// Serial queue — all plugin calls are chained so they never run concurrently
+	// Serial queue - all plugin calls are chained so they never run concurrently
 	let pluginQueue: Promise<void> = Promise.resolve();
 
 	function enqueue(fn: () => Promise<void>): void {
@@ -569,7 +569,7 @@ export function createPluginManager(api: Api) {
 				// map keyed by `panel_id`, so any editor panel that derives off `pluginManager.panelManifest(id)`
 				// re-renders the moment a plugin (e.g. Charter, from inside `on_resolve`) writes a new
 				// manifest. Decoupled from `OnResolveResult`'s return shape on purpose: see CLAUDE.md's
-				// panel-manifest section — a future plugin refreshing its own panel doesn't need a full
+				// panel-manifest section - a future plugin refreshing its own panel doesn't need a full
 				// resolve cycle, and `OnResolveResult` stays focused on viewport data + categories.
 				kit10_panel_publish(cp: any, inputOffs: bigint) {
 					const rawJson = cp.read(inputOffs).text();
@@ -635,18 +635,18 @@ export function createPluginManager(api: Api) {
 			nodeViewIds = parsed.node_view_ids ?? [];
 			nodeKitIds = parsed.node_kit_ids ?? [];
 			nodeOccurrenceIds = parsed.node_occurrence_ids ?? [];
-			// Panel manifests are NOT read here — they're published via the `kit10_panel_publish`
+			// Panel manifests are NOT read here - they're published via the `kit10_panel_publish`
 			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
 			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
 			// and the host fn's writes both happen before any panel subtends. Decoupled on
-			// purpose: see CLAUDE.md — "Charter owns panel manifests."
+			// purpose: see CLAUDE.md - "Charter owns panel manifests."
 		}
 	}
 
 	function makeSelectionChangeRunner(capturedGen: number): () => Promise<void> {
 		return async () => {
 			// If setData fired between enqueue and execution, our project_views
-			// are stale — runResolve will produce a correct viewport instead.
+			// are stale - runResolve will produce a correct viewport instead.
 			// resolvePending additionally blocks a call that hasn't even started yet when a
 			// caller already knows (via beginPendingResolve) a resolve is on its way but hasn't
 			// reached pluginQueue -- see resolvePending's own doc above.
@@ -843,7 +843,7 @@ export function createPluginManager(api: Api) {
 		_overriddenOccurrences = overriddenOccurrences;
 		context = { resolvedKits: kits };
 
-		// Invalidate any already-queued runSelectionChange — its last_resolve_input is stale.
+		// Invalidate any already-queued runSelectionChange - its last_resolve_input is stale.
 		// Even if selectionTimer already fired (null) the generation mismatch will skip it.
 		selectionGen++;
 
@@ -874,7 +874,7 @@ export function createPluginManager(api: Api) {
 	// then need the same debounced on_selection_change call carrying ALL current state
 	// (primary/secondary/activeViewId/hoveredViewId), not just the field that changed.
 	function scheduleSelectionChange() {
-		// Data resolve already pending — it will send the updated state, skip separate update
+		// Data resolve already pending - it will send the updated state, skip separate update
 		if (dataTimer !== null) return;
 
 		const gen = selectionGen;
@@ -933,7 +933,7 @@ export function createPluginManager(api: Api) {
 			return fieldCategories;
 		},
 		// Look up a published panel manifest by id. Returns undefined when the plugin hasn't
-		// published one yet (e.g. before the first resolve fires). Panels derive off this —
+		// published one yet (e.g. before the first resolve fires). Panels derive off this -
 		// Svelte 5 reactivity fires when the underlying `panelManifests` $state is reassigned
 		// (the kit10_panel_publish host fn always writes a new Map instance, never mutates in
 		// place, so the assignment triggers subscribers).

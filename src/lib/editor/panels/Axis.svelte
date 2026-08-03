@@ -150,14 +150,14 @@
 		onEditLayerConditions
 	}: AxisProps = $props();
 
-	// One dot per distinct axis key-set this variant belongs to — not one per other-axis column,
+	// One dot per distinct axis key-set this variant belongs to - not one per other-axis column,
 	// and not one per literal Layer (different Layers sharing the same key-set are visually
 	// identical and mutually exclusive within an axis, so they're pre-grouped in valueLayerCells).
-	// Includes Layers conditioned solely on this axis (no "other" axis at all) — those still color
+	// Includes Layers conditioned solely on this axis (no "other" axis at all) - those still color
 	// real properties in the Render panel, so they need a dot to match against. A value can belong
 	// to several DIFFERENT key-sets at once; a more specific Layer overriding another on a shared
 	// property doesn't make the less specific one inactive, so every key-set family whose conditions
-	// currently match still gets its own dot. The null layer never appears here — it has no
+	// currently match still gets its own dot. The null layer never appears here - it has no
 	// conditions, so it isn't "attached" to any axis value; it belongs to property/token resolution
 	// (Render, Tokens panels), not axis-value selection.
 	function layerDots(variantId: string) {
@@ -169,7 +169,7 @@
 		return [...new Set(keys)].sort().join('|');
 	}
 
-	// Stable column order shared across every value of THIS axis — the union of key-sets that
+	// Stable column order shared across every value of THIS axis - the union of key-sets that
 	// appear for any of its values, sorted by magnitude descending (most specific first, on the
 	// left) so specificity reads right-to-left. Lets matching combos line up vertically (e.g.
 	// the "Theme+Density" dot always sits in the same column for both "dark" and "light")
@@ -191,7 +191,7 @@
 		return layerDots(variantId).find((layer) => keySetId(layer.keys) === columnId) ?? null;
 	}
 
-	// Names of the other axes a Layer combines with, for the dot's tooltip — empty if this Layer
+	// Names of the other axes a Layer combines with, for the dot's tooltip - empty if this Layer
 	// conditions solely on this one axis.
 	function otherAxisNames(keys: string[]): string {
 		return keys

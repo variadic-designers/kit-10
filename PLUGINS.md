@@ -1,4 +1,4 @@
-# KIT•10 — Plugin System
+# KIT•10 - Plugin System
 
 KIT•10 has two kinds of plugins with different roles and different levels of system access.
 
@@ -16,23 +16,23 @@ KIT•10 has two kinds of plugins with different roles and different levels of s
 └──────────────────────────────────────────────────────────┘
 ```
 
-**Core renderer (Vellum)** — a single Rust/WGPU crate compiled to WebAssembly via `wasm-bindgen`. It owns the GPU canvas and is loaded directly by the editor. It is not an Extism plugin and cannot be replaced by third parties for now. Vellum integration should not get in the way of future renderers.
+**Core renderer (Vellum)** - a single Rust/WGPU crate compiled to WebAssembly via `wasm-bindgen`. It owns the GPU canvas and is loaded directly by the editor. It is not an Extism plugin and cannot be replaced by third parties for now. Vellum integration should not get in the way of future renderers.
 
-**Data plugins (Extism)** — sandboxed WASM modules written in any language with an Extism PDK. They receive resolved design data and decide what to draw and what fields to show. This is where all third-party extensibility lives: viewport interpreters, render targets (CSS, SCSS, JSON), domain-specific renderers.
+**Data plugins (Extism)** - sandboxed WASM modules written in any language with an Extism PDK. They receive resolved design data and decide what to draw and what fields to show. This is where all third-party extensibility lives: viewport interpreters, render targets (CSS, SCSS, JSON), domain-specific renderers.
 
-**Utility plugins** — a third category, called on demand rather than participating in the `on_resolve`/`on_selection_change`/`on_field_update` lifecycle at all. Loaded via the editor's `loadUtilityPlugin` (not `loadPlugin`) so they coexist with the active viewport-interpreter plugin instead of replacing it, and invoked with `callUtilityPlugin(name, fn, payload)` whenever something needs them — no continuous resolve loop. Extism's `allowedHosts` capability (requires `runInWorker: true`) lets a utility plugin make sandboxed HTTP requests, restricted to an explicit host allowlist. `plugins/fontavious/` (fetches WOFF2 font files from vendor CDNs) is the first example — its exports are `on_init` plus three on-demand functions (`search_fonts`, `fetch_font`, and `variant_url` — a cheap, no-HTTP catalogue lookup answering "which URL would `fetch_font` use for this request", so a caller can dedupe against already-loaded URLs without asking the renderer to introspect font internals), no viewport/resolve entry points at all.
+**Utility plugins** - a third category, called on demand rather than participating in the `on_resolve`/`on_selection_change`/`on_field_update` lifecycle at all. Loaded via the editor's `loadUtilityPlugin` (not `loadPlugin`) so they coexist with the active viewport-interpreter plugin instead of replacing it, and invoked with `callUtilityPlugin(name, fn, payload)` whenever something needs them - no continuous resolve loop. Extism's `allowedHosts` capability (requires `runInWorker: true`) lets a utility plugin make sandboxed HTTP requests, restricted to an explicit host allowlist. `plugins/fontavious/` (fetches WOFF2 font files from vendor CDNs) is the first example - its exports are `on_init` plus three on-demand functions (`search_fonts`, `fetch_font`, and `variant_url` - a cheap, no-HTTP catalogue lookup answering "which URL would `fetch_font` use for this request", so a caller can dedupe against already-loaded URLs without asking the renderer to introspect font internals), no viewport/resolve entry points at all.
 
 **Adding a new suggestion-backed field type (fonts are just the first case):**
 1. Write a utility plugin exposing a search function returning `Vec<{ value, label }>` JSON (substring/fuzzy match against whatever catalogue it owns), and optionally a fetch function taking `{ value }` and returning raw bytes if picking a suggestion needs to fetch/produce something (fonts do; a plain autocomplete wouldn't need this).
-2. In the plugin that *defines* the field (e.g. Charter), set `FieldDef.inputType` to a name for the kind (e.g. `"font"`, `"icon"`) — nothing more. **Never put the provider plugin's name in the defining plugin's source** — that's the lock-in this whole mechanism exists to avoid (see VISION.md's 1st Principle).
-3. Register the mapping in `src/lib/plugins/suggestion-providers.ts`: `inputType → { plugin, searchFn, fetchFn? }`. This is the one place "which plugin currently serves this kind" lives — editable without recompiling any plugin.
-4. `StyleField.svelte`'s `SuggestField.svelte` handles the rest generically (search-as-you-type, keyboard nav, fetch-on-pick). If the fetched bytes need special handling (like `vellum.load_font()` for `"font"`), that goes in `StyleField.svelte`'s `confirmSuggestionPick`, keyed off `inputType` — that's the one place allowed to have an opinion about what a specific *kind* means, since `SuggestField` itself stays fully generic.
+2. In the plugin that *defines* the field (e.g. Charter), set `FieldDef.inputType` to a name for the kind (e.g. `"font"`, `"icon"`) - nothing more. **Never put the provider plugin's name in the defining plugin's source** - that's the lock-in this whole mechanism exists to avoid (see VISION.md's 1st Principle).
+3. Register the mapping in `src/lib/plugins/suggestion-providers.ts`: `inputType → { plugin, searchFn, fetchFn? }`. This is the one place "which plugin currently serves this kind" lives - editable without recompiling any plugin.
+4. `StyleField.svelte`'s `SuggestField.svelte` handles the rest generically (search-as-you-type, keyboard nav, fetch-on-pick). If the fetched bytes need special handling (like `vellum.load_font()` for `"font"`), that goes in `StyleField.svelte`'s `confirmSuggestionPick`, keyed off `inputType` - that's the one place allowed to have an opinion about what a specific *kind* means, since `SuggestField` itself stays fully generic.
 
 ---
 
 ## Plugin manifest
 
-Every plugin registers with a `PluginManifest` (`manager/src/schema.ts`), stored as jsonb on the `plugins` table (`api.registerPlugin`, upsert-by-name). Beyond `wasm: [{ url }]`, a manifest can declare three independent, optional facts about itself — each additive: a manifest with none of them behaves exactly as if this section didn't exist.
+Every plugin registers with a `PluginManifest` (`manager/src/schema.ts`), stored as jsonb on the `plugins` table (`api.registerPlugin`, upsert-by-name). Beyond `wasm: [{ url }]`, a manifest can declare three independent, optional facts about itself - each additive: a manifest with none of them behaves exactly as if this section didn't exist.
 
 ```ts
 interface PluginManifest {
@@ -49,15 +49,15 @@ interface PluginManifest {
 }
 ```
 
-**`provides.exports`** — what the plugin can export, and how the host presents it. `target` is a normalized format id (e.g. `"html"`, `"yaml"`) letting two different plugins be recognized as competing options for the same output — see "Export Profile" below. `multiFile`, when `true`, changes the plugin function's return contract: instead of a single text blob, it returns JSON `{ files: [{ filename, mimeType, content }] }`, and the host downloads exactly those filenames — needed whenever one export produces cross-referencing files (e.g. HTML that links its own CSS by name) and the plugin must guarantee the reference matches what's actually downloaded, since the host would otherwise invent a filename independently.
+**`provides.exports`** - what the plugin can export, and how the host presents it. `target` is a normalized format id (e.g. `"html"`, `"yaml"`) letting two different plugins be recognized as competing options for the same output - see "Export Profile" below. `multiFile`, when `true`, changes the plugin function's return contract: instead of a single text blob, it returns JSON `{ files: [{ filename, mimeType, content }] }`, and the host downloads exactly those filenames - needed whenever one export produces cross-referencing files (e.g. HTML that links its own CSS by name) and the plugin must guarantee the reference matches what's actually downloaded, since the host would otherwise invent a filename independently.
 
-**`capabilities`** — the host-fn/network surface this plugin requests. `makeHostFunctions(pluginName, grantedHostFns)` filters its full function map down to exactly `hostFns` when the manifest declares it; an undeclared `capabilities` still gets the full set (additive rollout — nothing is silently more locked down than before this field existed). `hosts` is the source for the plugin's Extism `allowedHosts` option.
+**`capabilities`** - the host-fn/network surface this plugin requests. `makeHostFunctions(pluginName, grantedHostFns)` filters its full function map down to exactly `hostFns` when the manifest declares it; an undeclared `capabilities` still gets the full set (additive rollout - nothing is silently more locked down than before this field existed). `hosts` is the source for the plugin's Extism `allowedHosts` option.
 
-**`supports`** — a plugin declaring specific compatibility with another plugin by registry name, e.g. an HTML exporter that understands Charter's particular translation opinions (its `UiNode` shape, arrangement/resize conventions) rather than "any interpreter." The reverse view ("X is a dependency of Y") is never stored — it's derived from every installed plugin's own `supports` list (`src/lib/plugins/plugin-relationships.ts`). Purely informational today: nothing gates on whether a declared `supports` target is actually installed.
+**`supports`** - a plugin declaring specific compatibility with another plugin by registry name, e.g. an HTML exporter that understands Charter's particular translation opinions (its `UiNode` shape, arrangement/resize conventions) rather than "any interpreter." The reverse view ("X is a dependency of Y") is never stored - it's derived from every installed plugin's own `supports` list (`src/lib/plugins/plugin-relationships.ts`). Purely informational today: nothing gates on whether a declared `supports` target is actually installed.
 
-**Export Profile.** A project's `hints.exportProfile` (jsonb, `target -> plugin registry name`) records which plugin the user picked when more than one competes for the same `target` — resolved by `src/lib/plugins/export-profile.ts`'s `resolveExportProfile`: the saved choice if it's still installed, else the sole provider if there's only one, else `null` (ambiguous, shown as a picker in the Export panel). No DB migration for this — it rides the same `hints` jsonb column views/projects already use for plugin-namespaced data (`hints.vellum`, `hints.charter`).
+**Export Profile.** A project's `hints.exportProfile` (jsonb, `target -> plugin registry name`) records which plugin the user picked when more than one competes for the same `target` - resolved by `src/lib/plugins/export-profile.ts`'s `resolveExportProfile`: the saved choice if it's still installed, else the sole provider if there's only one, else `null` (ambiguous, shown as a picker in the Export panel). No DB migration for this - it rides the same `hints` jsonb column views/projects already use for plugin-namespaced data (`hints.vellum`, `hints.charter`).
 
-**Worked example — `plugins/webcodium/`** (a real, non-first-party plugin; not registered in `manager/src/plugins-bootstrap.ts` on purpose, since VISION.md frames it as a community/store plugin — install it via the Plugins panel's form):
+**Worked example - `plugins/webcodium/`** (a real, non-first-party plugin; not registered in `manager/src/plugins-bootstrap.ts` on purpose, since VISION.md frames it as a community/store plugin - install it via the Plugins panel's form):
 
 ```json
 {
@@ -101,7 +101,7 @@ Return any string to confirm initialization.
 
 ### `on_resolve(input: string) -> string`
 
-Called every time the resolution updates — when axis args change, a layer is edited, a token changes, or the active view changes.
+Called every time the resolution updates - when axis args change, a layer is edited, a token changes, or the active view changes.
 
 Input (`OnResolveInput`):
 ```json
@@ -127,15 +127,15 @@ Output (`OnResolveResult`):
 ```
 
 `categories` populates the render panel. `viewport_data` is a `UiNode` tree passed
-directly to Vellum. `node_view_ids` is parallel to `viewport_data` (same length/order) —
+directly to Vellum. `node_view_ids` is parallel to `viewport_data` (same length/order) -
 which view each node belongs to (`""` for structural grid scaffolding), used to map a
 viewport click-hit index back to a view id. `font_requests` (optional) is the concrete
 post-snapping `(family, weight, style)` set the editor's font scan fetches.
 `viewport_data_binary` (optional) is a MessagePack+base64 encoding of `viewport_data`;
 when present the host base64-decodes it and calls `vellum.set_data_binary()` instead of
-the JSON path — avoids the JSON-parse wall at ~10k views.
+the JSON path - avoids the JSON-parse wall at ~10k views.
 
-Keys are plain snake_case (Charter-authored output) — do **not** add
+Keys are plain snake_case (Charter-authored output) - do **not** add
 `#[serde(rename_all = "camelCase")]` to this struct; the host reads these exact names.
 
 ---
@@ -162,7 +162,7 @@ Typically delegates to `kit10_write_render_entry_to_layer` to persist the change
 
 ### `on_selection_change(input: string) -> string`
 
-Called when only the selection changes — no axis args, layers, or tokens were modified. This is a fast path that avoids a full re-resolve by patching the selection fields into the last known resolve input and re-running layout.
+Called when only the selection changes - no axis args, layers, or tokens were modified. This is a fast path that avoids a full re-resolve by patching the selection fields into the last known resolve input and re-running layout.
 
 Input:
 ```json
@@ -186,11 +186,11 @@ If `on_resolve` has not been called yet in the session, this function should be 
 
 ### `preferences(input: string) -> string`  *(optional)*
 
-Called by the editor's Settings menu (opened from the profile picture) to discover the **global editor preferences** this plugin wants surfaced. Purely declarative — the same "declare capability as data, host renders + stores it" idiom as `FieldDef.inputType` and `composition_field_keys`. Any plugin (interpreter or utility) may export it; a plugin that doesn't simply contributes nothing to the menu (the host's aggregation, `collectPreferences` in `manager.svelte.ts`, swallows the missing-function error per-plugin).
+Called by the editor's Settings menu (opened from the profile picture) to discover the **global editor preferences** this plugin wants surfaced. Purely declarative - the same "declare capability as data, host renders + stores it" idiom as `FieldDef.inputType` and `composition_field_keys`. Any plugin (interpreter or utility) may export it; a plugin that doesn't simply contributes nothing to the menu (the host's aggregation, `collectPreferences` in `manager.svelte.ts`, swallows the missing-function error per-plugin).
 
 Input: `"{}"` (reserved for future scoping).
 
-Output (`PreferenceDef[]`) — the real shipped case is Fontavious's license-tier toggles:
+Output (`PreferenceDef[]`) - the real shipped case is Fontavious's license-tier toggles:
 ```json
 [
   {
@@ -204,11 +204,11 @@ Output (`PreferenceDef[]`) — the real shipped case is Fontavious's license-tie
 ```
 `"number"` may add `"min"`/`"max"`; `"select"` adds `"options": [{ "value", "label" }]`.
 
-Only declare something here if it's genuinely a **global, user-level** preference. A plugin's own structural opinions (e.g. Charter's auto-grid columns/gap) are not preferences and stay internal constants — don't surface them just because they're tunable numbers.
+Only declare something here if it's genuinely a **global, user-level** preference. A plugin's own structural opinions (e.g. Charter's auto-grid columns/gap) are not preferences and stay internal constants - don't surface them just because they're tunable numbers.
 
-The plugin **never stores the value** — it stays stateless (Key Invariant #3). The host persists values to `localStorage` (`src/lib/plugins/preferences.ts`) and is responsible for feeding them back to the plugin through its normal call inputs (the same pattern `fontFacts` uses to ride `on_resolve`'s input — a value change must force a re-resolve, since preference values are not DB rows and the `rowsKey` dedup never sees them). Wiring a specific preference's value back into `on_resolve` is per-preference work; the discovery/menu half is generic and already in place.
+The plugin **never stores the value** - it stays stateless (Key Invariant #3). The host persists values to `localStorage` (`src/lib/plugins/preferences.ts`) and is responsible for feeding them back to the plugin through its normal call inputs (the same pattern `fontFacts` uses to ride `on_resolve`'s input - a value change must force a re-resolve, since preference values are not DB rows and the `rowsKey` dedup never sees them). Wiring a specific preference's value back into `on_resolve` is per-preference work; the discovery/menu half is generic and already in place.
 
-Host preferences that are **not** plugin-owned (theme, reduced motion, and canvas input mappings — pan gesture, zoom-invert — since Vellum is wasm-bindgen, not an Extism plugin) are declared the same way, as data: `editor/host-preferences.ts` is a registry of `PreferenceBinding` entries (a `PreferenceDef` joined to its store + codec). Host and plugin preferences merge into one list and render through a single generic control (`editor/PreferenceControl.svelte`) — the Settings menu has **no per-preference markup**, so adding either kind is a data entry, never a new row. Add a host preference by appending to `host-preferences.ts`; add a plugin preference by exporting it here.
+Host preferences that are **not** plugin-owned (theme, reduced motion, and canvas input mappings - pan gesture, zoom-invert - since Vellum is wasm-bindgen, not an Extism plugin) are declared the same way, as data: `editor/host-preferences.ts` is a registry of `PreferenceBinding` entries (a `PreferenceDef` joined to its store + codec). Host and plugin preferences merge into one list and render through a single generic control (`editor/PreferenceControl.svelte`) - the Settings menu has **no per-preference markup**, so adding either kind is a data entry, never a new row. Add a host preference by appending to `host-preferences.ts`; add a plugin preference by exporting it here.
 
 ---
 
@@ -318,7 +318,7 @@ Exactly one of `value` or `token_id` must be non-null.
 
 ### `kit10_set_viewport_data(input: string)`
 
-Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning `viewport_data` from `on_resolve` — useful when you want to update the viewport independently of a resolve cycle.
+Push a `UiNode[]` JSON string to the viewport directly. Alternative to returning `viewport_data` from `on_resolve` - useful when you want to update the viewport independently of a resolve cycle.
 
 ---
 
@@ -335,13 +335,13 @@ vendor CDN, so reloads are network-free/offline.
 
 Store font bytes after a CDN miss. `metaJson` carries `{ url, licenseTier, family, … }`
 (the `licenseTier` is retained for a future export-only-OFL guard); `bytes` is the raw
-WOFF2. Errors are swallowed — a cache-write fault never breaks font fetching.
+WOFF2. Errors are swallowed - a cache-write fault never breaks font fetching.
 
 ---
 
 ### `kit10_get_project_export(input: string) -> string`
 
-Exposes Manager's `exportProject` (a full project data dump — views, kits, axes, layers,
+Exposes Manager's `exportProject` (a full project data dump - views, kits, axes, layers,
 render entries, tokens) to any plugin on demand, so export-target plugins pull the same
 data without the host pre-marshaling a per-plugin payload.
 
@@ -354,7 +354,7 @@ data without the host pre-marshaling a per-plugin payload.
 
 ### `kit10_import_project_data(input: string) -> string`
 
-Inverse of `kit10_get_project_export` — wraps Manager's `importProjectData`, creating a
+Inverse of `kit10_get_project_export` - wraps Manager's `importProjectData`, creating a
 brand-new project (fresh ids throughout) from an export-shaped payload. All id generation
 and remapping happen in Manager.
 
@@ -369,7 +369,7 @@ and remapping happen in Manager.
 
 Publish a `PanelManifest` (see below) into the editor's `$state` map, keyed by
 `panel_id`. Any editor panel that derives off `pluginManager.panelManifest(id)`
-re-renders. Decoupled from `on_resolve`'s return shape on purpose — a plugin can refresh
+re-renders. Decoupled from `on_resolve`'s return shape on purpose - a plugin can refresh
 its own panel without a full resolve cycle. Charter calls this from inside `on_resolve`
 to ship the Views panel topology.
 
@@ -398,7 +398,7 @@ substitution at usage sites). Only `scalar` tokens carry a CSS-representable val
 
 For a batch of view ids, report which axis value each view instance actually resolved to
 (`{view_id, kit_id, axis_id, value}[]`). This is per-VIEW-INSTANCE, unlike the per-Kit
-`kit10_get_kit_export_shape` — Charter's own resolved output can't answer it because
+`kit10_get_kit_export_shape` - Charter's own resolved output can't answer it because
 axis/layer identity doesn't survive property flattening. Lets WebCodium decide which of a
 Kit's static variant rules a given exported element should carry as classes
 (`variants::rule_matches_args`). Only `literal` axis values are returned; `range`/`linked`
@@ -416,7 +416,7 @@ values are dropped (a known static-export gap for locked axes).
 The full, ordered composition list per requested view id (`{view_id, kit_id,
 priority_index}[]`, ascending `priority_index`). Charter's `node_kit_ids` collapses to a
 single winning kit per node, so this is the only way WebCodium learns a view composes more
-than one kit and in what order — backing multi-kit class emission and cross-kit
+than one kit and in what order - backing multi-kit class emission and cross-kit
 contested-property disambiguation.
 
 ```json
@@ -451,7 +451,7 @@ contested-property disambiguation.
 }
 ```
 
-There is **no `childViewIds`** on `ResolvedKit` — the resolver is name-neutral about
+There is **no `childViewIds`** on `ResolvedKit` - the resolver is name-neutral about
 composition. A property whose value is a `view-list` token carries the referenced view
 ids in **`viewRefs`** (otherwise `null`), gated on the value *type*, never on a property
 *name* like `children`. A consumer that wants to treat some property as nested
@@ -488,29 +488,29 @@ edits.
 ```
 
 `inputType` selects the render-panel widget. The table below is GENERATED from the
-`InputType` union in `src/lib/plugins/types.ts` (run `npm run generate-docs`) — edit the
+`InputType` union in `src/lib/plugins/types.ts` (run `npm run generate-docs`) - edit the
 union's `@doc:` comments, not this table.
 
-<!-- BEGIN GENERATED: input-types (source: src/lib/plugins/types.ts) — do not edit by hand -->
+<!-- BEGIN GENERATED: input-types (source: src/lib/plugins/types.ts) - do not edit by hand -->
 
 | `inputType`         | Widget                                                                                                   |
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
-| `color`             | OKLCH color picker — L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.               |
+| `color`             | OKLCH color picker - L/C/H/alpha sliders, live swatch, and a legacy hex/rgb/hsl paste row.               |
 | `text`              | Plain text input. The default when `inputType` is omitted.                                               |
 | `number`            | Numeric input.                                                                                           |
 | `select`            | Dropdown over the field's `options` list.                                                                |
 | `slider`            | Range slider.                                                                                            |
 | `font`              | Suggestion-backed family picker (search-as-you-type). Provider mapped in suggestion-providers.ts.        |
-| `children`          | View-composition field — the child view list.                                                            |
+| `children`          | View-composition field - the child view list.                                                            |
 | `asset`             | Asset picker.                                                                                            |
 | `resize`            | Fixed / Hug / Fill segmented control, plus contextual min/max limits via `resizeKeys`.                   |
 | `arrange`           | Stack / Cluster / Split / Center / Grid tab row, with follow-on fields via `arrangeKeys`.                |
-| `spacing`           | Numeric stepper — a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.                         |
+| `spacing`           | Numeric stepper - a scalar, or a CSS T/R/B/L shorthand ladder per `spacingMode`.                         |
 | `weight`            | Named-weight segmented control, filtered to the resolved family's real weights.                          |
 | `align`             | Left / Center / Right / Justify segmented control.                                                       |
 | `decoration`        | None / Underline / Line-through segmented control.                                                       |
-| `grid-tracks`       | Grid track-list builder — add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind. |
-| `grid-area-painter` | Visual grid-template-areas painter — click-drag to name/merge cells into regions.                        |
+| `grid-tracks`       | Grid track-list builder - add/reorder/remove tracks, each a Fixed/Fraction/Auto/Percent/Responsive kind. |
+| `grid-area-painter` | Visual grid-template-areas painter - click-drag to name/merge cells into regions.                        |
 | `grid-auto-flow`    | Row / Column segmented control with a Dense toggle, for grid-auto-flow.                                  |
 | `align-picker`      | Icon-based alignment/distribution picker, for justify-items and align-content.                           |
 
@@ -519,7 +519,7 @@ union's `@doc:` comments, not this table.
 A plugin that *defines* a field only names the `inputType`; it never names a provider
 plugin (see the suggestion-field note above and VISION.md's 1st Principle). Adding a new
 `inputType` currently also requires editor-side widget support (`Styles.svelte` /
-`StyleField.svelte`) — the set is editor-owned, not yet plugin-extensible.
+`StyleField.svelte`) - the set is editor-owned, not yet plugin-extensible.
 
 `layerId` tells the render panel which layer to target when the field is edited.
 
@@ -527,11 +527,11 @@ plugin (see the suggestion-field note above and VISION.md's 1st Principle). Addi
 
 Field-by-field tables for the `UiNode` wire structs, GENERATED from Charter's schemars-derived
 JSON Schema (`plugins/charter/generated/wire-schema.json`, produced by `cargo test --features
-schema`; rendered by `npm run generate-docs`). This is the machine-truth contract — the JSON
-examples in the sections below are illustrative. `Required: —` means the field is optional
+schema`; rendered by `npm run generate-docs`). This is the machine-truth contract - the JSON
+examples in the sections below are illustrative. `Required: -` means the field is optional
 (Rust `#[serde(default)]`); `T?` is a nullable/optional type.
 
-<!-- BEGIN GENERATED: wire-types (source: plugins/charter/generated/wire-schema.json) — do not edit by hand -->
+<!-- BEGIN GENERATED: wire-types (source: plugins/charter/generated/wire-schema.json) - do not edit by hand -->
 
 #### `BoxData`
 
@@ -541,19 +541,19 @@ examples in the sections below are illustrative. `Required: —` means the field
 | `border_color`   | OklabColor   | ✓        |
 | `border_width`   | number       | ✓        |
 | `corner_radius`  | number       | ✓        |
-| `extra`          | BoxExtra     | —        |
+| `extra`          | BoxExtra     | -        |
 | `flex_direction` | FlexDir      | ✓        |
 | `height`         | Extent       | ✓        |
-| `hovered`        | boolean      | —        |
-| `max_height`     | Extent       | —        |
-| `max_width`      | Extent       | —        |
-| `min_height`     | Extent       | —        |
-| `min_width`      | Extent       | —        |
+| `hovered`        | boolean      | -        |
+| `max_height`     | Extent       | -        |
+| `max_width`      | Extent       | -        |
+| `min_height`     | Extent       | -        |
+| `min_width`      | Extent       | -        |
 | `opacity`        | number       | ✓        |
 | `padding`        | [number × 4] | ✓        |
-| `parent_id`      | integer?     | —        |
-| `selected`       | integer      | —        |
-| `shadow`         | BoxShadow?   | —        |
+| `parent_id`      | integer?     | -        |
+| `selected`       | integer      | -        |
+| `shadow`         | BoxShadow?   | -        |
 | `show_border`    | boolean      | ✓        |
 | `width`          | Extent       | ✓        |
 
@@ -571,28 +571,28 @@ examples in the sections below are illustrative. `Required: —` means the field
 | `font_style`      | FontStyle          | ✓        |
 | `font_weight`     | integer            | ✓        |
 | `height`          | Extent             | ✓        |
-| `hovered`         | boolean            | —        |
-| `line_height`     | number             | —        |
+| `hovered`         | boolean            | -        |
+| `line_height`     | number             | -        |
 | `opacity`         | number             | ✓        |
 | `padding`         | [number × 4]       | ✓        |
-| `parent_id`       | integer?           | —        |
-| `selected`        | integer            | —        |
+| `parent_id`       | integer?           | -        |
+| `selected`        | integer            | -        |
 | `show_border`     | boolean            | ✓        |
-| `text_align`      | TextAlign          | —        |
+| `text_align`      | TextAlign          | -        |
 | `text_color`      | OklabColor         | ✓        |
-| `text_decoration` | TextDecorationKind | —        |
+| `text_decoration` | TextDecorationKind | -        |
 | `width`           | Extent             | ✓        |
 
 #### `ImgData`
 
 | Field             | Type         | Required |
 | ----------------- | ------------ | -------- |
-| `fit`             | string       | —        |
+| `fit`             | string       | -        |
 | `height`          | Extent       | ✓        |
-| `hovered`         | boolean      | —        |
-| `object_position` | [number × 2] | —        |
-| `parent_id`       | integer?     | —        |
-| `selected`        | integer      | —        |
+| `hovered`         | boolean      | -        |
+| `object_position` | [number × 2] | -        |
+| `parent_id`       | integer?     | -        |
+| `selected`        | integer      | -        |
 | `source`          | ImageSource  | ✓        |
 | `width`           | Extent       | ✓        |
 
@@ -604,22 +604,22 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`
 
 | Field                   | Type                 | Required |
 | ----------------------- | -------------------- | -------- |
-| `align_items`           | AlignValue?          | —        |
-| `align_self`            | AlignValue?          | —        |
-| `flex_basis`            | Extent?              | —        |
-| `flex_grow`             | number               | —        |
-| `flex_shrink`           | number?              | —        |
-| `flex_wrap`             | FlexWrapValue        | —        |
-| `gap`                   | number               | —        |
-| `grid_auto_columns`     | TrackSize[]          | —        |
-| `grid_auto_rows`        | TrackSize[]          | —        |
-| `grid_column`           | [GridLine, GridLine] | —        |
-| `grid_row`              | [GridLine, GridLine] | —        |
-| `grid_template_columns` | TrackSize[]          | —        |
-| `grid_template_rows`    | TrackSize[]          | —        |
-| `justify_content`       | JustifyValue?        | —        |
-| `margin`                | number               | —        |
-| `position`              | NodePosition         | —        |
+| `align_items`           | AlignValue?          | -        |
+| `align_self`            | AlignValue?          | -        |
+| `flex_basis`            | Extent?              | -        |
+| `flex_grow`             | number               | -        |
+| `flex_shrink`           | number?              | -        |
+| `flex_wrap`             | FlexWrapValue        | -        |
+| `gap`                   | number               | -        |
+| `grid_auto_columns`     | TrackSize[]          | -        |
+| `grid_auto_rows`        | TrackSize[]          | -        |
+| `grid_column`           | [GridLine, GridLine] | -        |
+| `grid_row`              | [GridLine, GridLine] | -        |
+| `grid_template_columns` | TrackSize[]          | -        |
+| `grid_template_rows`    | TrackSize[]          | -        |
+| `justify_content`       | JustifyValue?        | -        |
+| `margin`                | number               | -        |
+| `position`              | NodePosition         | -        |
 
 #### `BoxShadow`
 
@@ -740,7 +740,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
   }
 }
 ```
-(`extra: BoxExtra` — gap/align/flex/`flex_basis`/grid/position — is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary — Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection.)
+(`extra: BoxExtra` - gap/align/flex/`flex_basis`/grid/position - is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary - Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection.)
 
 **Text node:**
 ```json
@@ -773,7 +773,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
 `text_align` is `"Left" | "Center" | "Right" | "Justify"`; `text_decoration` is
 `"None" | "Underline" | "LineThrough"` (Vellum enum-variant names verbatim).
 `line_height` is an absolute px value; `0.0` reads as "not provided" (Vellum falls back
-to its own ratio). Text nodes must always emit `width: "Auto", height: "Auto"` — Vellum
+to its own ratio). Text nodes must always emit `width: "Auto", height: "Auto"` - Vellum
 measures text during layout.
 
 **Image node:**
@@ -791,7 +791,7 @@ measures text during layout.
   }
 }
 ```
-`fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong — Vellum reads `fit`.)
+`fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong - Vellum reads `fit`.)
 
 `source` is one of: `"None"`, `{ "Url": "..." }`, `{ "Bytes": [u8 array] }`, or `{ "Ref": "..." }` (an asset reference).
 
@@ -799,7 +799,7 @@ measures text during layout.
 
 **`font_style`**: `"Normal"` | `"Italic"` | `"Oblique"`
 
-**Colors** are an **`OklabColor` object** — `{ "l", "a", "b", "alpha" }`, Oklab, **not**
+**Colors** are an **`OklabColor` object** - `{ "l", "a", "b", "alpha" }`, Oklab, **not**
 the old `[r,g,b,a]` sRGB array. `l` is perceptual lightness (`0.0–1.0`), `a`/`b` are the
 opponent-color axes (roughly `-0.4–0.4`), `alpha` is `0.0–1.0`. Charter's `parse_color`
 parses `oklch()`/`oklab()` first-class and accepts hex/`rgb()`/`hsl()`/`transparent` as
@@ -841,7 +841,7 @@ DB query against each item's `id` at render time. Wire keys are snake_case.
 }
 ```
 
-`composition_field_keys` is Charter's *entire* nesting opinion — "this field's `viewRefs`
+`composition_field_keys` is Charter's *entire* nesting opinion - "this field's `viewRefs`
 are the children." The host walks `resolvedViews` for these keys to build the DAG; root
 detection, ordering, and cycle-guarding are generic graph math done host-side, so they do
 **not** ride the manifest. The manifest also does not carry `icon` (read from
@@ -859,7 +859,7 @@ detection, ordering, and cycle-guarding are generic graph math done host-side, s
 when the item's primitive has no `children` field (Text/Image), so the panel hides the
 nest affordance.
 
-**`PanelOp`** — one self-describing context-menu operation. The plugin owns *which* ops
+**`PanelOp`** - one self-describing context-menu operation. The plugin owns *which* ops
 an item offers; the editor owns *how* to execute each (switch on `name`).
 ```json
 {
@@ -870,7 +870,7 @@ an item offers; the editor owns *how* to execute each (switch on `name`).
 }
 ```
 `name` is the dispatch key (`rename`/`clone`/`lock`/`hide`/`deselect`/`delete`/`add-child`).
-`kind` is an op-specific payload — today only `add-child` uses it to carry the primitive
+`kind` is an op-specific payload - today only `add-child` uses it to carry the primitive
 to create (`"box"|"text"|"image"`); other ops leave it `null`.
 
 ---
@@ -927,4 +927,4 @@ The output `.wasm` can be loaded by the editor directly or hosted remotely and r
 
 A render target plugin does not produce `viewport_data`. Instead, `on_resolve` returns an empty `viewport_data` array and uses `kit10_write_render_entry_to_layer` (or a future export API) to serialize the resolved properties into the target format.
 
-The vite-kit10-plugin.js in this repository is an example render target skeleton for SvelteKit projects — it receives resolved properties and emits SCSS files into `.kit10/`.
+The vite-kit10-plugin.js in this repository is an example render target skeleton for SvelteKit projects - it receives resolved properties and emits SCSS files into `.kit10/`.

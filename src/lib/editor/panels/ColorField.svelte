@@ -157,7 +157,7 @@
 		{#if isUnset}
 			<span
 				class="color-field__swatch color-field__swatch--unset"
-				title="No color set — drag a slider or click to add"
+				title="No color set - drag a slider or click to add"
 				aria-label="No color set"
 			>
 				<i class="fa-solid fa-plus"></i>

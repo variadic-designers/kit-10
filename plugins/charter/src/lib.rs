@@ -217,13 +217,13 @@ struct FieldCategory {
 struct OnResolveResult {
     categories: Vec<FieldCategory>,
     viewport_data: Vec<UiNode>,
-    // Parallel to viewport_data (same length/order) — which view each node belongs to, for the
+    // Parallel to viewport_data (same length/order) - which view each node belongs to, for the
     // editor to resolve a viewport click-to-select hit-test index back to a view id. "" for
     // structural grid scaffolding nodes that don't belong to any view. Deliberately not a field
     // on UiNode itself: view identity has zero rendering relevance, so it never crosses into
     // the wire format Vellum deserializes.
     node_view_ids: Vec<String>,
-    // Parallel to viewport_data (same length/order) — this node's OCCURRENCE key: the referencing
+    // Parallel to viewport_data (same length/order) - this node's OCCURRENCE key: the referencing
     // `view`-typed token's own id for a nested child, or the view's own id (same as node_view_ids'
     // entry) for a root. "" for structural scaffolding, matching node_view_ids. Lets the editor
     // disambiguate a click/hover/selection to the SPECIFIC rendered instance rather than the first
@@ -231,14 +231,14 @@ struct OnResolveResult {
     // OverriddenOccurrence / SelectionCtx).
     #[serde(default)]
     node_occurrence_ids: Vec<String>,
-    // Parallel to viewport_data (same length/order) — the highest-priority composed Kit's id for
+    // Parallel to viewport_data (same length/order) - the highest-priority composed Kit's id for
     // each node, "" for structural scaffolding or a kit-less view. Lets WebCodium's Kit-basis
     // export (Phase 3) name which Kit a node came from -- a Kit has no subtree of its own in the
     // merged output (merge_kits collapses composed kits into one property map per node), so this
     // is the only place that fact survives past resolution. See resources/webcodium-export-plan.md.
     #[serde(default)]
     node_kit_ids: Vec<String>,
-    // The concrete (family, weight, style) set the viewport renders, post weight-snapping —
+    // The concrete (family, weight, style) set the viewport renders, post weight-snapping -
     // what the editor's font scan should fetch (see resolve_font_weight). snake_case like the
     // rest of this Charter-authored struct.
     #[serde(default)]
@@ -254,32 +254,32 @@ struct OnResolveResult {
 
 // One entry in a panel manifest the plugin publishes via `kit10_panel_publish`. The editor's
 // panels are generic renderers over this shape. The schema carries only the plugin's
-// *opinionated* facts per item — never generic graph math. Concretely: a panel-item carries
+// *opinionated* facts per item - never generic graph math. Concretely: a panel-item carries
 // identity, the write-alias for composition edits, and the ops the plugin declares available on
 // it. Tree topology (parent/child, root-ness) is computed host-side from `resolvedViews` +
 // `PanelManifest.composition_field_keys`, because that's a generic graph walk the host is
-// perfectly positioned to do — routing it through the plugin just to "dedupe" wrapped a
+// perfectly positioned to do - routing it through the plugin just to "dedupe" wrapped a
 // universal computation across the WASM boundary for nothing. Similarly, the panel icon comes
-// from the view's `hints.view_icon`, authorable directly — Charter has no business emitting
+// from the view's `hints.view_icon`, authorable directly - Charter has no business emitting
 // icon strings for the editor's panel.
 //
-// No rename_all — plugin-authored output the editor reads, same snake_case rule as
+// No rename_all - plugin-authored output the editor reads, same snake_case rule as
 // OnResolveResult (see the camelCase pitfall in CLAUDE.md).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct PanelItem {
     id: String,
     // Token alias to upsert when the editor's DnD writes this item's children list. None when
-    // this item's primitive has no `children` field (e.g. Text/Image) — editor hides the DnD
+    // this item's primitive has no `children` field (e.g. Text/Image) - editor hides the DnD
     // nesting affordance in that case. The alias itself comes from the resolved `children`
     // property's `token_alias`, since that's what the editor's `api.upsertViewToken` writes-by-alias
     // call already targets (see CLAUDE.md's View-token override pitfalls).
     #[serde(default)]
     write_alias: Option<String>,
-    // Ops the plugin declares available on this item — drives the editor's right-click context
+    // Ops the plugin declares available on this item - drives the editor's right-click context
     // menu for this item. Each op is self-describing: `name` is the dispatch key the editor
     // switches on, `label`/`icon` are what to render. Editor shows the menu item iff `name` is
     // in this list; plugin owns what's available, editor owns how to execute. The op set is
-    // per-primitive (a Box gets `add-child` ops; a Text/Image doesn't — see
+    // per-primitive (a Box gets `add-child` ops; a Text/Image doesn't - see
     // build_views_panel_manifest).
     #[serde(default)]
     ops: Vec<PanelOp>,
@@ -287,7 +287,7 @@ struct PanelItem {
 
 // One operation the plugin declares available on a panel item (or a panel header, via
 // `PanelManifest.header_ops`). Self-describing: the editor renders menu items straight off
-// `{label, icon}` and switches on `name` to dispatch. `kind` is an op-specific payload — today
+// `{label, icon}` and switches on `name` to dispatch. `kind` is an op-specific payload - today
 // only `add-child` uses it to carry which primitive to create ("box"|"text"|"image"); other ops
 // leave it None. Future ops can extend `kind`'s vocabulary without changing this struct.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -304,13 +304,13 @@ struct PanelOp {
 struct PanelManifest {
     panel_id: String,
     // The resolved-property keys Charter treats as view-composition fields (its fields whose
-    // `inputType` is the composition kind). VIEW-INDEPENDENT — this is the full, stable set
+    // `inputType` is the composition kind). VIEW-INDEPENDENT - this is the full, stable set
     // across every primitive, so the editor can nest the Views tree by field-kind no matter
     // which view happens to be active. The host walks `resolvedViews` for these keys' `viewRefs`
     // to build the DAG client-side (the same math `build_viewport`'s `referenced` set uses, but
     // generic and host-owned, not in the manifest). This is Charter's whole opinion on nesting:
-    // *which field is the composition one*. Everything else — root detection, ordering, cycle
-    // guarding — is the host's.
+    // *which field is the composition one*. Everything else - root detection, ordering, cycle
+    // guarding - is the host's.
     #[serde(default)]
     composition_field_keys: Vec<String>,
     // One entry per opaque id (today: one per project view id). The editor indexes by `id` and
@@ -326,7 +326,7 @@ struct PanelManifest {
     header_ops: Vec<PanelOp>,
 }
 
-// Input to the `kit10_panel_publish` host fn — Charter authors this, JS reads it. No
+// Input to the `kit10_panel_publish` host fn - Charter authors this, JS reads it. No
 // rename_all (snake_case wire, same reasoning as WriteRenderEntryInput above).
 #[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
 #[encoding(Json)]
@@ -354,7 +354,7 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
     use serde::Serialize;
     let mut buf = Vec::new();
     // rmp_serde serializes structs as arrays by default, but Vellum's deserializer
-    // expects maps (struct-variant format). with_struct_map() fixes this — see
+    // expects maps (struct-variant format). with_struct_map() fixes this - see
     // CLAUDE.md's "bincode was unmaintained" and the rmp_serde replace note.
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     data.serialize(&mut ser).ok()?;
@@ -395,7 +395,7 @@ const CREATABLE_PRIMITIVES: &[CreatablePrimitive] = &[
     },
 ];
 
-// Convention mapping from a view primitive to its FA icon class — authoritative for what
+// Convention mapping from a view primitive to its FA icon class - authoritative for what
 // `hints.view_icon` values the seed sets. Derived from `CREATABLE_PRIMITIVES` so it can't drift
 // from the real add-child table. `#[cfg(test)]` because production code no longer calls it
 // (Phase 3 moved icon authoring to the seed's `hints.view_icon`), but the test
@@ -414,7 +414,7 @@ fn primitive_icon(primitive: &str) -> &'static str {
 // composition inputType. This is the single plugin-owned fact about nesting: "this resolved
 // property name is the one whose `viewRefs` are the children." Everything else in nesting
 // (root detection, ordering, cycle guarding) is host-side generic graph math over
-// `resolvedViews` + this list — see build_views_panel_manifest's caller in Views.svelte.
+// `resolvedViews` + this list - see build_views_panel_manifest's caller in Views.svelte.
 fn composition_field_keys() -> Vec<String> {
     box_categories()
         .into_iter()
@@ -433,7 +433,7 @@ struct CharterHints {
 
 // Hints consumed straight-through into Vellum's UiNode wire fields with no Charter-side
 // interpretation, kept separate from CharterHints (which holds Charter's own translation
-// choices — currently just the primitive override).
+// choices - currently just the primitive override).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct VellumHints {
@@ -468,7 +468,7 @@ struct OverriddenOccurrence {
 
 // One weight-range + style a font family actually has. Host-assembled from Fontavious's
 // catalogue (`family_facts`) today; a future uploaded-font path would contribute entries from
-// Vellum's loaded bytes instead — same shape either way (see resources/text-affordances.md's
+// Vellum's loaded bytes instead - same shape either way (see resources/text-affordances.md's
 // two-oracle note). camelCase: this JSON is JS-authored.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -504,13 +504,13 @@ struct OnResolveInput {
     selected_occurrence_primary: Option<String>,
     #[serde(default)]
     selected_occurrence_secondary: Vec<String>,
-    // Patched in by on_selection_change alongside the selection fields above — persisted here
+    // Patched in by on_selection_change alongside the selection fields above - persisted here
     // (rather than only in OnSelectionChangeInput) so it survives being stashed into
     // last_resolve_input and re-read on the next selection-only patch.
     #[serde(default)]
     hovered_occurrence_id: Option<String>,
     // Keyed by family name as the kit property spells it (matched case-insensitively). Absent
-    // families pass their requested weight through untouched — no facts, no opinion. Riding
+    // families pass their requested weight through untouched - no facts, no opinion. Riding
     // last_resolve_input like everything else, so the selection fast path snaps identically.
     #[serde(default)]
     font_facts: std::collections::HashMap<String, FamilyFacts>,
@@ -564,7 +564,7 @@ struct OnSelectionChangeInput {
     // Host always sends this so active_view_id in last_resolve_input never goes stale.
     #[serde(default)]
     active_view_id: Option<String>,
-    // Unlike active_view_id, always overwritten unconditionally (including with null) — the
+    // Unlike active_view_id, always overwritten unconditionally (including with null) - the
     // host sends null exactly when the mouse leaves a hoverable area, and that must actually
     // clear the hover border, not leave the last-hovered occurrence highlighted. An occurrence
     // key (not a view id) -- see OnResolveInput's hovered_occurrence_id.
@@ -583,7 +583,7 @@ extern "ExtismHost" {
     // content can refresh on the plugin's own cadence, and so a future plugin's panel (not
     // driven by resolve at all) can publish through the same surface. The host stores the
     // manifest keyed by `panel_id` in a Svelte `$state` map; panels derive off that map.
-    // Returns true unconditionally — failure to publish is non-fatal (panel just stays empty).
+    // Returns true unconditionally - failure to publish is non-fatal (panel just stays empty).
     pub fn kit10_panel_publish(input: PanelPublishInput) -> bool;
 }
 
@@ -861,7 +861,7 @@ fn parse_px(s: Option<&str>) -> f32 {
 
 // A box-model size dimension. `auto`/empty/unparseable -> Auto (the historical `width:0` default);
 // `N%` -> Percent(N/100); `Npx` or bare `N` -> Px(N). No `fr` here on purpose (that's a grid track
-// / flex-grow concern, not a self-declared size — see the Extent enum). Percent parsing is what
+// / flex-grow concern, not a self-declared size - see the Extent enum). Percent parsing is what
 // gives designers a fractional width without hardcoding pixels.
 fn parse_extent(s: Option<&str>) -> Extent {
     let Some(v) = s else { return Extent::Auto };
@@ -1549,7 +1549,7 @@ fn build_box_node(
         flex_shrink: get_prop(props, "flex-shrink").map(|s| parse_px(Some(&s))),
         align_self: raw_align_self,
         flex_basis: None,
-        // Charter deliberately does not expose margin — spacing between siblings is a container
+        // Charter deliberately does not expose margin - spacing between siblings is a container
         // concern (gap / justify-content), not a per-child opinion. The field stays in the wire
         // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
         margin: 0.0,
@@ -2046,7 +2046,7 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
 }
 
 // Bundles the interaction-state fields needed to answer "is this node selected/hovered right
-// now" — passed down through render_view_nodes' recursion so both a top-level view and any view
+// now" - passed down through render_view_nodes' recursion so both a top-level view and any view
 // reached via child_view_ids resolve their own selection/hover against the same source of truth,
 // instead of the caller precomputing it only for the top level.
 //
@@ -2118,7 +2118,7 @@ fn kit_id_for(kits: &[ResolvedKit]) -> String {
 // nested child, or `view_id` itself for a root/top-level view -- see `ViewRef`). Two different
 // occurrences of the same view_id get two independent nodes with the SAME view_id but DIFFERENT
 // occurrence_id, each resolving/selecting/hovering independently.
-// node_view_ids: parallel accumulator to viewport — every push here is paired with a push
+// node_view_ids: parallel accumulator to viewport - every push here is paired with a push
 // there recording which view (view_id) that node belongs to, for the editor's viewport
 // click-to-select hit-test lookup.
 // node_occurrence_ids: a third parallel accumulator, recording each node's occurrence_id -- lets
@@ -2239,7 +2239,7 @@ fn render_view_nodes(
         node_kit_ids.push(kit_id_for(kits));
         node_occurrence_ids.push(occurrence_id.to_string());
 
-        // An image is a leaf — it has no children (no content tab, no children field).
+        // An image is a leaf - it has no children (no content tab, no children field).
         // Any child views assigned to an image view are silently ignored.
     } else {
         let box_idx = viewport.len();
@@ -2307,14 +2307,14 @@ pub fn on_init(_input: String) -> FnResult<String> {
     Ok("ok".to_string())
 }
 
-// Returns (viewport_data, node_view_ids) — the two are always parallel (same length/order).
+// Returns (viewport_data, node_view_ids) - the two are always parallel (same length/order).
 // "" entries in node_view_ids mark structural grid scaffolding (root/row/cell wrapper boxes)
 // that don't belong to any view; a click resolving to one of those should be treated the same
 // as clicking empty space.
 // The CSS font-weight matching algorithm over the weights a family actually has, per its
 // facts. Charter's single decision point for weight substitution (text-affordances Phase 1):
 // the editor's font fetching consumes this function's OUTPUT (via `font_requests`), never
-// re-deciding — so the panel's requested weight, the fetched file, and the rendered glyphs
+// re-deciding - so the panel's requested weight, the fetched file, and the rendered glyphs
 // can't disagree. A family with no facts (uncatalogued) returns the request untouched;
 // cosmic-text's own nearest-loaded matching remains the last-line fallback for that case and
 // for the not-yet-loaded window.
@@ -2378,7 +2378,7 @@ fn snap_text_weights(nodes: &mut [UiNode], facts: &std::collections::HashMap<Str
     }
 }
 
-// The concrete (family, weight, style) set the viewport actually renders — post-snapping — so
+// The concrete (family, weight, style) set the viewport actually renders - post-snapping - so
 // the editor fetches exactly the files Charter decided on, instead of re-deriving weights from
 // raw kit properties (which may name weights that don't exist).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -2477,7 +2477,7 @@ fn build_viewport(parsed: &OnResolveInput) -> (Vec<UiNode>, Vec<String>, Vec<Str
         })
         .collect();
 
-    // Views with an explicit world position float independently, each as its own root —
+    // Views with an explicit world position float independently, each as its own root -
     // no shared flex parent to couple their placement to a sibling's content size.
     let (positioned, flowing): (Vec<_>, Vec<_>) =
         top_views.into_iter().partition(|(_, _, pos)| pos.is_some());
@@ -2594,17 +2594,17 @@ fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
 }
 
 // Build the Views panel manifest from the resolve graph. Every piece here is already computed
-// elsewhere in this file — `collect_child_view_ids` (the per-view child list), the `referenced`
-// set (which views are claimed as somebody's child — computed identically in `build_viewport`),
+// elsewhere in this file - `collect_child_view_ids` (the per-view child list), the `referenced`
+// set (which views are claimed as somebody's child - computed identically in `build_viewport`),
 // `primitive_for_view` + `primitive_icon` (the icon), and the `children` property's `token_alias`
 // (the write alias for DnD). This function just bundles them into a PanelManifest and ships them
 // through `kit10_panel_publish` instead of leaving the editor to re-derive all four client-side
 // (which it did, as `childrenByViewId`/`referencedViewIds`/`rootViews`/`childrenPropOf` in
-// Views.svelte — all deleted in favor of this).
+// Views.svelte - all deleted in favor of this).
 //
 // `panel_id` is fixed to "views" today. A future plugin publishing a different panel would use a
 // different id; the editor's panel renderer is generic over the manifest shape.
-// The op set every panel item gets, regardless of primitive — operations that make sense for
+// The op set every panel item gets, regardless of primitive - operations that make sense for
 // any view. Per-primitive ops (e.g. `add-child` for Boxes) are layered on top in
 // `build_views_panel_manifest`. Labels/icons are plugin-authored so a future plugin can re-skin
 // the menu without editor changes; `name` is the dispatch key the editor switches on.
@@ -2649,7 +2649,7 @@ fn common_item_ops() -> Vec<PanelOp> {
     ]
 }
 
-// Ops only a container (Box primitive with a `children` field) gets — currently the
+// Ops only a container (Box primitive with a `children` field) gets - currently the
 // "add child of kind X" trio. Gated on `write_alias.is_some()` so a Box that somehow has no
 // `children` field (no kit declares it) doesn't get an "add child" affordance that would have
 // nowhere to write.
@@ -2666,7 +2666,7 @@ fn container_item_ops() -> Vec<PanelOp> {
 }
 
 // Ops for the panel header's affordance menu (the "+" menu in the Views panel). Today this is
-// the same "add a top-level view of kind X" trio — header ops aren't tied to a specific item, so
+// the same "add a top-level view of kind X" trio - header ops aren't tied to a specific item, so
 // they create top-level orphans (the editor's resolve loop will pick them up and the next
 // manifest publish will mark them `is_root: true`).
 fn views_header_ops() -> Vec<PanelOp> {
@@ -2688,7 +2688,7 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
         .map(|view| {
             // The write alias is the token alias on this view's `children` property, if any kit
             // layer already declares one. `None` when no children write has happened yet (a
-            // freshly composed Box) — the editor's `write_alias ?? 'children'` fallback (see
+            // freshly composed Box) - the editor's `write_alias ?? 'children'` fallback (see
             // Views.svelte) writes the canonical alias name on first use. The alias itself, when
             // present, comes from the resolved property's `token_alias`, which is what the
             // editor's `api.upsertViewToken` already targets (see CLAUDE.md's View-token
@@ -2701,15 +2701,15 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
             });
 
             // Per-item op set: common ops always, container ops only for a Box primitive. Gated
-            // on primitive rather than write_alias.is_some() — a Box that has never had a child
+            // on primitive rather than write_alias.is_some() - a Box that has never had a child
             // added yet has no live `children` token, but it can still get one (the editor
             // upserts on first use), so it must still show the "Add Box/Text/Image" affordance.
-            // A Text/Image primitive gets the common ops only — no add-child sub-menu, since it
+            // A Text/Image primitive gets the common ops only - no add-child sub-menu, since it
             // has nowhere to attach them.
             let mut ops = common_item_ops();
             if primitive_for_kits(&view.resolved_kits, &view.hints) == "box" {
                 // Prepend container ops so "Add Box/Text/Image" groups appear above the generic
-                // rename/clone/lock/... — visual grouping the original hardcoded menu had.
+                // rename/clone/lock/... - visual grouping the original hardcoded menu had.
                 let mut container = container_item_ops();
                 container.append(&mut ops);
                 ops = container;
@@ -2726,7 +2726,7 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
     PanelManifest {
         panel_id: "views".to_string(),
         // Charter's whole opinion on nesting: "this field's `viewRefs` are the children."
-        // The host walks `resolvedViews` for these keys to build the DAG itself — no
+        // The host walks `resolvedViews` for these keys to build the DAG itself - no
         // `child_ids`/`is_root` shipped in the manifest. See PanelItem's doc comment.
         composition_field_keys: composition_field_keys(),
         items,
@@ -2758,7 +2758,7 @@ pub fn on_resolve(input: String) -> FnResult<String> {
     };
 
     // Publish the Views panel manifest as a side effect of resolve. The topology is a pure
-    // function of the resolve graph, so the manifest's lifecycle is coupled to resolve — but
+    // function of the resolve graph, so the manifest's lifecycle is coupled to resolve - but
     // the *channel* is separate from `OnResolveResult`'s return value. Decoupling lets a future
     // plugin publish a panel manifest on whatever cadence it wants (e.g. a non-Charter utility
     // plugin refreshing its own panel without a full resolve), and keeps `OnResolveResult` focused
@@ -3414,7 +3414,7 @@ mod selection_and_hover_tests {
         assert!(!json.contains("\"headerOps\""), "json was: {json}");
         // Removed in Phase 3: `icon` on PanelItem (now read from `hints.view_icon` host-side),
         // `child_ids` and `is_root` (host computes topology from resolvedViews +
-        // composition_field_keys — generic graph walk that doesn't need to round-trip through
+        // composition_field_keys - generic graph walk that doesn't need to round-trip through
         // the plugin). Asserting they're absent guards against someone restoring the old shape.
         assert!(!json.contains("\"child_ids\""), "json was: {json}");
         assert!(!json.contains("\"is_root\""), "json was: {json}");
@@ -3422,7 +3422,7 @@ mod selection_and_hover_tests {
 
     // build_views_panel_manifest carries `composition_field_keys` so the host can do the DAG
     // walk itself, instead of the manifest carrying pre-computed `child_ids`/`is_root` (which
-    // Phase 1 did — shipping a generic graph computation across the WASM boundary just to dedupe
+    // Phase 1 did - shipping a generic graph computation across the WASM boundary just to dedupe
     // it, when the host already had `resolvedViews` in scope). Charter's whole nesting opinion
     // lives in this one field: "this is the resolved-property name whose `viewRefs` nest."
     #[test]
@@ -3485,7 +3485,7 @@ mod selection_and_hover_tests {
 
     // Per-item op set: a container (Box with a `children` field) gets the `add-child` ops on top
     // of the common ops; a leaf (Text/Image) gets only the common ops. The op set is plugin-owned
-    // — the editor's context menu is built straight off this list, no editor-side hardcoded menu.
+    // - the editor's context menu is built straight off this list, no editor-side hardcoded menu.
     #[test]
     fn build_views_panel_manifest_container_gets_add_child_ops_leaf_does_not() {
         let mut box_kit_props = std::collections::HashMap::new();
@@ -3557,7 +3557,7 @@ mod selection_and_hover_tests {
 
     // The core fix this test guards: a freshly composed Box (a kit is attached, but nobody has
     // ever written a `children` value yet, so there's no live token/write_alias) must still get
-    // the add-child ops. Gating on write_alias.is_some() regressed this — a brand-new Box would
+    // the add-child ops. Gating on write_alias.is_some() regressed this - a brand-new Box would
     // never show "Add Child" until some other write happened to seed the token first. Gating on
     // primitive instead means the affordance is available the moment a view is a Box, and the
     // editor's `write_alias ?? 'children'` fallback (Views.svelte) writes the canonical alias on
@@ -3591,7 +3591,7 @@ mod selection_and_hover_tests {
         );
     }
 
-    // Header ops are populated — the "+" menu in the Views panel header renders straight off this
+    // Header ops are populated - the "+" menu in the Views panel header renders straight off this
     // list. Currently Charter ships the add-child (box/text/image) trio.
     #[test]
     fn build_views_panel_manifest_carries_header_ops() {
@@ -4683,7 +4683,7 @@ mod font_facts_tests {
     }
 
     // Wire-key tests, per the serde-rename pitfall: the INPUT is JS-authored (camelCase key
-    // `fontFacts`), the OUTPUT is Charter-authored (snake_case key `font_requests`) — a test
+    // `fontFacts`), the OUTPUT is Charter-authored (snake_case key `font_requests`) - a test
     // asserting only on struct fields would pass even if either rename regressed.
     #[test]
     fn on_resolve_input_deserializes_camel_case_font_facts() {

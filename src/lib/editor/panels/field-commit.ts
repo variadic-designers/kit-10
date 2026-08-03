@@ -1,6 +1,6 @@
 // Shared, token-aware write path for every Render-panel field widget (StyleField + the composite
 // ColorField/WeightField/ArrangeField/ResizeField). Before this existed, each widget committed a
-// value by calling `onFieldUpdate({ layerId, property, value })` with no `tokenId` — which routes
+// value by calling `onFieldUpdate({ layerId, property, value })` with no `tokenId` - which routes
 // through `kit10_write_render_entry_to_layer` → `updateRenderEntryValue(..., token_id ?? null)` and
 // so SILENTLY cleared the token link, converting a token-backed property to a one-off literal the
 // moment a designer nudged a stepper or dragged a slider. Centralizing the write here makes the
@@ -8,13 +8,13 @@
 //
 // Semantics (per the approved plan):
 //   - token-backed (isToken && tokenId): edit the *shared token's* value via `updateTokenValue`, so
-//     the change propagates to every property/view referencing that alias — the whole point of a
+//     the change propagates to every property/view referencing that alias - the whole point of a
 //     token. NEVER incidentally detached.
 //   - literal: write the render entry's literal value, exactly as before.
 //   - detaching a token to a literal is a separate, explicit action (`detachToken`), never a side
 //     effect of editing.
 //
-// This is an editor-only data-integrity concern — no Charter/plugin involvement (the plugin-agnostic
+// This is an editor-only data-integrity concern - no Charter/plugin involvement (the plugin-agnostic
 // boundary is unaffected; the editor is just deciding how its own widgets persist writes).
 
 import type { Api } from 'manager';
@@ -75,7 +75,7 @@ export function attachToken(
 
 /**
  * Explicitly detach a token-backed property back to a literal, seeded with the token's current
- * resolved value. The token itself is untouched — other references keep it. This is the ONLY path
+ * resolved value. The token itself is untouched - other references keep it. This is the ONLY path
  * that severs the token link; editing never does.
  */
 export function detachToken(

@@ -154,7 +154,7 @@ export async function seedDemoProject(
 	const tokenTertiary = (await api.createToken(proj.id, 'colors.tertiary', s('oklch(92.9% 0.0126 255.5)')))!;
 	const tokenSuccess = (await api.createToken(proj.id, 'colors.positive', s('oklch(72.3% 0.192 149.6)')))!;
 	const tokenDanger = (await api.createToken(proj.id, 'colors.danger', s('oklch(63.7% 0.2078 25.3)')))!;
-	// Distinct from colors.bg — this is text-on-a-colored-surface, not the neutral page
+	// Distinct from colors.bg - this is text-on-a-colored-surface, not the neutral page
 	// background. They happen to share a value today, but changing colors.bg (a warmer
 	// off-white, say) shouldn't also silently retint every button's label.
 	const tokenOnColor = (await api.createToken(proj.id, 'colors.onColor', s('oklch(100% 0 0)')))!;
@@ -340,16 +340,16 @@ export async function seedDemoProject(
 	//
 	// Density never gets theme-crossed: padding is a spacing decision, not a color one, and
 	// theme has no reason to change it. Similarly, primary/positive/danger don't get a
-	// {theme:dark, role} variant — a saturated brand color reads fine on any page background,
+	// {theme:dark, role} variant - a saturated brand color reads fine on any page background,
 	// and re-tinting every solid button for dark mode is the kind of combinatorial expansion
 	// that looks thorough but isn't actually a design decision anyone made on purpose. Theme's
-	// job is the neutral/default look only (btnDark, above) — once a role sets its own
+	// job is the neutral/default look only (btnDark, above) - once a role sets its own
 	// background, theme steps out of the way entirely.
 	//
-	// Only the three semantic/hero roles — primary (emphasis), positive and danger (sentiment)
-	// — get a full base→hover→click→disabled ramp. Secondary/tertiary/ghost deliberately share
+	// Only the three semantic/hero roles - primary (emphasis), positive and danger (sentiment)
+	// - get a full base→hover→click→disabled ramp. Secondary/tertiary/ghost deliberately share
 	// the universal 1-condition state layers (btnHover/btnClick/btnDisabled) instead of each
-	// getting bespoke interaction colors — not every variant needs its own hover art, and a
+	// getting bespoke interaction colors - not every variant needs its own hover art, and a
 	// shared "lower emphasis" feedback treatment is itself a legitimate, common pattern.
 	//
 	// The hover/click/disabled shade step is the same for every role: darken one and two
@@ -406,12 +406,12 @@ export async function seedDemoProject(
 	const btnDangerHoverSnip = (await api.createRenderSnippet(btnDangerHover.id))!;
 	await api.createRenderEntry(btnDangerHoverSnip.id, 'background', 'oklch(57.7% 0.2152 27.3)');
 
-	// {sentiment: danger, state: click} — without this, any view combining
+	// {sentiment: danger, state: click} - without this, any view combining
 	// sentiment:danger with emphasis:primary (or any other 2-condition emphasis/theme combo)
 	// at state:click renders danger invisibly: btnDanger alone is only 1 condition, so it loses
 	// to btnPrimaryClick {emphasis, state} on raw condition count, regardless of sentiment's
 	// higher axis priority. Same axis pair shape as btnPrimaryClick (sentiment+state vs
-	// emphasis+state) means the tie is broken by priority instead — sentiment (4000) beats
+	// emphasis+state) means the tie is broken by priority instead - sentiment (4000) beats
 	// emphasis (3000), so danger correctly wins here.
 	const btnDangerClick = (await api.createLayer(buttonKit.id))!;
 	await api.addAxisValueToLayer(btnDangerClick.id, sentimentDanger.id);
@@ -419,7 +419,7 @@ export async function seedDemoProject(
 	const btnDangerClickSnip = (await api.createRenderSnippet(btnDangerClick.id))!;
 	await api.createRenderEntry(btnDangerClickSnip.id, 'background', 'oklch(50.5% 0.1905 27.5)');
 
-	// {sentiment: danger, state: disabled} — mirrors btnPrimaryDisabled's pale/washed-out
+	// {sentiment: danger, state: disabled} - mirrors btnPrimaryDisabled's pale/washed-out
 	// treatment, same reasoning as click: without it, a disabled danger button falls back to
 	// whatever 2-condition emphasis/theme combo happens to be active instead of reading as
 	// disabled.
@@ -430,7 +430,7 @@ export async function seedDemoProject(
 	await api.createRenderEntry(btnDangerDisabledSnip.id, 'background', 'oklch(80.8% 0.1035 19.6)');
 	await api.createRenderEntry(btnDangerDisabledSnip.id, 'opacity', '0.4');
 
-	// Button label kit — text child rendered inside each button box
+	// Button label kit - text child rendered inside each button box
 	const labelKit = (await api.createKitInProject(proj.id, 'ButtonLabel'))!;
 	await api.consumeAxis(labelKit.id, themeAxis.id);
 	await api.consumeAxis(labelKit.id, emphasisAxis.id);
@@ -438,7 +438,7 @@ export async function seedDemoProject(
 	await api.consumeAxis(labelKit.id, stateAxis.id);
 	// auto-assigned priorities (1000/2000/3000/4000) already give the right relative order
 
-	// Null layer — baseline label
+	// Null layer - baseline label
 	const lblNull = (await api.createLayer(labelKit.id))!;
 	const lblNullSnip = (await api.createRenderSnippet(lblNull.id))!;
 	await api.createRenderEntry(lblNullSnip.id, 'content', 'Button');

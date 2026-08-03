@@ -239,7 +239,7 @@
 
 		const init = async () => {
 			// Single live query touching all resolution-relevant tables.
-			// PGlite tracks table access from the query plan — this reliably fires
+			// PGlite tracks table access from the query plan - this reliably fires
 			// on any write to views, compositions, kits, layers, axis_args, render_entries, or tokens.
 			// The SQL + its table-coverage assertion live in resolve-live-query.ts.
 			const live = await editor.core.live.query(
@@ -859,9 +859,9 @@
 
 <svelte:head>
 	{#if editorActivity.activeProjectName}
-		<title>{editorActivity.activeProjectName} — KIT•10</title>
+		<title>{editorActivity.activeProjectName} - KIT•10</title>
 	{:else}
-		<title>KIT•10 — New</title>
+		<title>KIT•10 - New</title>
 	{/if}
 
 	<meta name="description" content="Yor Designs Editor Superpowered" />

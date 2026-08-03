@@ -104,7 +104,7 @@ export interface QueryOrdering {
 		viewId: string
 	) => Promise<{ priority_index: number; kit_id: string; view_id: string } | undefined>;
 	detachKitFromComposition: (kitId: string, viewId: string) => Promise<void>;
-	// Persist a full reorder of a view's composed kits in one collision-safe transaction — mirrors
+	// Persist a full reorder of a view's composed kits in one collision-safe transaction - mirrors
 	// setConsumedAxesOrder's park-then-stamp shape, since `compositions` carries the same
 	// unique_priority_per_view(view_id, priority_index) constraint axes_consumed has for kit_id.
 	// `orderedKitIds` is top-to-bottom as the Compose panel displays it (priority_index desc, so
@@ -856,7 +856,7 @@ export interface AssetRow {
 }
 
 export interface QueryAsset {
-	// Upsert an asset by checksum — if the same file (same project_id + checksum) already
+	// Upsert an asset by checksum - if the same file (same project_id + checksum) already
 	// exists, return it unchanged. Otherwise insert a new row.
 	upsertAsset: (input: {
 		projectId: string;

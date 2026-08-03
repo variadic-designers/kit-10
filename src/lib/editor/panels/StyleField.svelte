@@ -131,7 +131,7 @@
 		return layerDotColor(axisIds, true);
 	}
 
-	// Describes which Layer this property is sourced from — same axis key-set the Axes panel's
+	// Describes which Layer this property is sourced from - same axis key-set the Axes panel's
 	// combo dot for this Layer would show, with the actual matched value per axis (not just which
 	// axes), so hovering here tells you exactly what to go look for there.
 	function trackTitle(conditions: { axisId: string; value: string }[]): string {

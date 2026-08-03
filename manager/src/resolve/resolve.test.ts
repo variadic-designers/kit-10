@@ -227,7 +227,7 @@ describe('resolve', () => {
 	it('per-property override: compact layer overrides padding but dark overrides background and color', async () => {
 		const s = await seedButtonKit();
 
-		// Set only density=compact — no theme layer matches
+		// Set only density=compact - no theme layer matches
 		const result = await resolve(ctx.db, s.kit.id, {
 			[s.densityAxis.id]: { type: 'literal', value: 'compact' }
 		});
@@ -264,7 +264,7 @@ describe('resolve', () => {
 		// compactLayer conditions on density (priority 2000).
 		// When they contest a property, density wins.
 		// But they declare different properties: dark→{background,color}, compact→{padding}
-		// So they merge orthogonally — no contest.
+		// So they merge orthogonally - no contest.
 		// Now test with both matching: theme=dark, density=compact
 		// darkCompactLayer (2 conditions) wins on padding over compactLayer (1 condition)
 		// and over darkLayer (1 condition) on background and color.
@@ -353,7 +353,7 @@ describe('resolve', () => {
 		// For overlapping ranges on the same axis, layers that declare contested
 		// properties are resolved in creation order. wideLayer overtakes mediumLayer
 		// on 'columns' because it was created after and overwrites in order.
-		// 'sidebar' is uncontested — inherited from mediumLayer.
+		// 'sidebar' is uncontested - inherited from mediumLayer.
 		const resultWide = await resolve(ctx.db, kit.id, {
 			[vpAxis.id]: { type: 'literal', value: '1200' }
 		});
@@ -372,7 +372,7 @@ describe('resolveManySlowPath', () => {
 		await ctx.pg.close();
 	});
 
-	it('resolves view with two kits — lower-priority kit fills gaps, higher-priority kit wins contested properties', async () => {
+	it('resolves view with two kits - lower-priority kit fills gaps, higher-priority kit wins contested properties', async () => {
 		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Multi-Kit'))!;
 
@@ -382,7 +382,7 @@ describe('resolveManySlowPath', () => {
 			value: 'dark'
 		}))!;
 
-		// Layout kit (lower priority) — provides structure
+		// Layout kit (lower priority) - provides structure
 		const layoutKit = (await ctx.api.createKitInProject(proj.id, 'Layout'))!;
 		await ctx.api.consumeAxis(layoutKit.id, themeAxis.id);
 		const layoutNull = (await ctx.api.createLayer(layoutKit.id))!;
@@ -397,7 +397,7 @@ describe('resolveManySlowPath', () => {
 		await ctx.api.createRenderEntry(layoutDarkSnip.id, 'background', '#1a1a2e');
 		await ctx.api.createRenderEntry(layoutDarkSnip.id, 'gap', '4px');
 
-		// Button kit (higher priority) — provides component styling
+		// Button kit (higher priority) - provides component styling
 		const buttonKit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
 		await ctx.api.consumeAxis(buttonKit.id, themeAxis.id);
 		const buttonNull = (await ctx.api.createLayer(buttonKit.id))!;
@@ -556,7 +556,7 @@ describe('range overlap matching', () => {
 		const wideSnippet = (await ctx.api.createRenderSnippet(wideLayer.id))!;
 		await ctx.api.createRenderEntry(wideSnippet.id, 'columns', '2');
 
-		// Unconstrained range — should match >=768
+		// Unconstrained range - should match >=768
 		const result = await resolve(ctx.db, kit.id, {
 			[vpAxis.id]: { type: 'range', min: null, max: null }
 		});

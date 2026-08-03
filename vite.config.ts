@@ -73,7 +73,7 @@ export default defineConfig({
 		// PGlite init throws "failed to initialize properly"). Excluding keeps them served
 		// as-is so Vite rewrites the asset URL correctly. As of pglite 0.5 the extensions
 		// (pg_uuidv7) moved out of the main package into their own package, which must be
-		// excluded on its own — it used to be covered by excluding '@electric-sql/pglite'.
+		// excluded on its own - it used to be covered by excluding '@electric-sql/pglite'.
 		exclude: ['@electric-sql/pglite', '@electric-sql/pglite-pg_uuidv7']
 	},
 
