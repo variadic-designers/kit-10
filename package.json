@@ -15,8 +15,9 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"test:unit": "vitest",
+		"test:manager": "cd manager && npx vitest run",
 		"test:wire-schema": "cargo test --manifest-path plugins/charter/Cargo.toml --features schema wire_schema_matches_committed",
-		"test": "npm run test:unit -- --run && npm run test:wire-schema"
+		"test": "npm run test:unit -- --run && npm run test:manager && npm run test:wire-schema"
 	},
 	"files": [
 		"dist",
