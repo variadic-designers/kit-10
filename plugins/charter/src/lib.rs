@@ -1554,32 +1554,76 @@ fn build_box_node(
         // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
         margin: 0.0,
         position: NodePosition::default(),
-        grid_template_columns: ac
-            .grid_template_columns
-            .unwrap_or_else(|| raw_grid_template_columns.unwrap_or_default()),
-        grid_template_rows: get_prop(props, "grid-template-rows")
-            .map(|s| parse_track_list(&s))
-            .unwrap_or_default(),
-        grid_auto_rows: get_prop(props, "grid-auto-rows")
-            .map(|s| parse_track_list(&s))
-            .unwrap_or_default(),
-        grid_auto_columns: get_prop(props, "grid-auto-columns")
-            .map(|s| parse_track_list(&s))
-            .unwrap_or_default(),
+        // grid-template-columns/rows, grid-auto-rows/columns, grid-template-areas, grid-auto-flow,
+        // justify-items, align-content are this box's own Grid-CONTAINER opinions (ArrangeKeys'
+        // `grid_advanced`/friendly-control set) -- meaningful only while `arrange` is actually
+        // Grid. A raw property left over in the DB from a previous Grid stint must NOT leak
+        // through once the box is switched to Stack/Cluster/Split/Center, or it silently flips
+        // taffy's own Display::Grid decision (`!grid_template_columns.is_empty() ||
+        // !grid_template_rows.is_empty()`, taf_can_do's apply_box_extra) back on and keeps
+        // Vellum's grid-line overlay showing for a box that's no longer Grid. Gated on
+        // `arrange_kind` directly, never as a fallback.
+        grid_template_columns: if arrange_kind == ArrangeKind::Grid {
+            ac.grid_template_columns
+                .unwrap_or_else(|| raw_grid_template_columns.unwrap_or_default())
+        } else {
+            Vec::new()
+        },
+        grid_template_rows: if arrange_kind == ArrangeKind::Grid {
+            get_prop(props, "grid-template-rows")
+                .map(|s| parse_track_list(&s))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        grid_auto_rows: if arrange_kind == ArrangeKind::Grid {
+            get_prop(props, "grid-auto-rows")
+                .map(|s| parse_track_list(&s))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        grid_auto_columns: if arrange_kind == ArrangeKind::Grid {
+            get_prop(props, "grid-auto-columns")
+                .map(|s| parse_track_list(&s))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        // grid-column/grid-row/justify-self are CHILD placement properties: meaningful based on
+        // whether this box's PARENT is a Grid, entirely independent of this box's own arrange kind
+        // (see resources/grid-child-placement-plan.md). Deliberately NOT gated on arrange_kind --
+        // a Stack/Cluster child sitting inside a Grid parent still needs these to place itself.
         grid_column: get_prop(props, "grid-column")
             .map(|s| parse_grid_line_pair(&s))
             .unwrap_or_default(),
         grid_row: get_prop(props, "grid-row")
             .map(|s| parse_grid_line_pair(&s))
             .unwrap_or_default(),
-        grid_template_areas: get_prop(props, "grid-template-areas")
-            .map(|s| parse_grid_template_areas(&s))
-            .unwrap_or_default(),
-        grid_auto_flow: get_prop(props, "grid-auto-flow")
-            .map(|s| parse_auto_flow(&s))
-            .unwrap_or_default(),
-        justify_items: parse_align(get_prop(props, "justify-items").as_deref()),
-        align_content: parse_justify(get_prop(props, "align-content").as_deref()),
+        grid_template_areas: if arrange_kind == ArrangeKind::Grid {
+            get_prop(props, "grid-template-areas")
+                .map(|s| parse_grid_template_areas(&s))
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        grid_auto_flow: if arrange_kind == ArrangeKind::Grid {
+            get_prop(props, "grid-auto-flow")
+                .map(|s| parse_auto_flow(&s))
+                .unwrap_or_default()
+        } else {
+            GridAutoFlow::default()
+        },
+        justify_items: if arrange_kind == ArrangeKind::Grid {
+            parse_align(get_prop(props, "justify-items").as_deref())
+        } else {
+            None
+        },
+        align_content: if arrange_kind == ArrangeKind::Grid {
+            parse_justify(get_prop(props, "align-content").as_deref())
+        } else {
+            None
+        },
         justify_self: parse_align(get_prop(props, "justify-self").as_deref()),
     };
 
@@ -5168,10 +5212,16 @@ mod arrange_tests {
     }
 
     // --- build_box_node: new BoxExtra fields wired from raw props ---
+    //
+    // grid-template-areas/grid-auto-flow/justify-items/align-content are Grid-CONTAINER opinions
+    // (ArrangeKeys' grid_advanced set, same bucket as grid-template-columns/rows) so they only
+    // wire through while `arrange` is actually "grid" -- see the arrange_kind gate added to
+    // build_box_node. justify-self stays a child-placement field and wires unconditionally.
 
     #[test]
     fn build_box_node_wires_the_five_new_grid_fields() {
         let d = box_with(&[
+            ("arrange", "grid"),
             ("grid-template-areas", r#""a a" "b b""#),
             ("grid-auto-flow", "column dense"),
             ("justify-items", "center"),
@@ -5187,12 +5237,57 @@ mod arrange_tests {
 
     #[test]
     fn build_box_node_defaults_the_five_new_grid_fields_when_unset() {
-        let d = box_with(&[]);
+        let d = box_with(&[("arrange", "grid")]);
         assert!(d.extra.grid_template_areas.is_empty());
         assert_eq!(d.extra.grid_auto_flow, GridAutoFlow::Row);
         assert_eq!(d.extra.justify_items, None);
         assert_eq!(d.extra.align_content, None);
         assert_eq!(d.extra.justify_self, None);
+    }
+
+    #[test]
+    fn switching_arrange_away_from_grid_drops_stale_grid_container_fields() {
+        // Regression for the grid-overlay-stuck-on bug: a box that was previously Grid (raw
+        // grid-template-columns/rows/etc still sitting in the DB from that stint) but whose
+        // `arrange` property now reads e.g. "stack" must compile with an EMPTY/default grid
+        // container surface -- never fall back to the leftover raw values. This is exactly the
+        // field taf_can_do's apply_box_extra and Vellum's grid-line overlay both gate on
+        // (`!grid_template_columns.is_empty() || !grid_template_rows.is_empty()`), so leaking it
+        // silently keeps the box rendering/overlaying as Grid after the user switched away.
+        let d = box_with(&[
+            ("arrange", "stack"),
+            ("grid-template-columns", "1fr 2fr"),
+            ("grid-template-rows", "100px 200px"),
+            ("grid-auto-rows", "50px"),
+            ("grid-auto-columns", "50px"),
+            ("grid-template-areas", r#""a a" "b b""#),
+            ("grid-auto-flow", "column dense"),
+            ("justify-items", "center"),
+            ("align-content", "space-between"),
+        ]);
+        assert!(d.extra.grid_template_columns.is_empty());
+        assert!(d.extra.grid_template_rows.is_empty());
+        assert!(d.extra.grid_auto_rows.is_empty());
+        assert!(d.extra.grid_auto_columns.is_empty());
+        assert!(d.extra.grid_template_areas.is_empty());
+        assert_eq!(d.extra.grid_auto_flow, GridAutoFlow::Row);
+        assert_eq!(d.extra.justify_items, None);
+        assert_eq!(d.extra.align_content, None);
+    }
+
+    #[test]
+    fn switching_arrange_away_from_grid_still_honors_child_placement_props() {
+        // grid-column/grid-row/justify-self are the CHILD's own placement within a Grid PARENT,
+        // independent of this box's own arrange kind -- must NOT be gated the same way.
+        let d = box_with(&[
+            ("arrange", "stack"),
+            ("grid-column", "2"),
+            ("grid-row", "span 2"),
+            ("justify-self", "end"),
+        ]);
+        assert_eq!(d.extra.grid_column, (GridLine::Line(2), GridLine::Auto));
+        assert_eq!(d.extra.grid_row, (GridLine::Span(2), GridLine::Auto));
+        assert_eq!(d.extra.justify_self, Some(AlignValue::End));
     }
 
     // --- arrange_field()'s new grid FieldDefs ---

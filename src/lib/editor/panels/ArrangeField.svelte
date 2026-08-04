@@ -1,5 +1,6 @@
 <script lang="ts">
 	import StyleField from './StyleField.svelte';
+	import GridSizePicker from './GridSizePicker.svelte';
 	import GridTracksField from './GridTracksField.svelte';
 	import GridAreaPainter from './GridAreaPainter.svelte';
 	import { layerDotColor } from './layer-color.ts';
@@ -283,6 +284,14 @@
 			)}
 			{@render fieldRow(arrangeKeys.gap, 'Space between cells')}
 
+			<GridSizePicker
+				columnsField={arrangeKeys.gridColumns}
+				rowsField={arrangeKeys.gridRows}
+				{track}
+				{resolvedMap}
+				{api}
+				{onFieldUpdate}
+			/>
 			<GridTracksField field={arrangeKeys.gridColumns} label="Columns" {track} {resolvedMap} {api} {onFieldUpdate} />
 			<GridTracksField field={arrangeKeys.gridRows} label="Rows" {track} {resolvedMap} {api} {onFieldUpdate} />
 
