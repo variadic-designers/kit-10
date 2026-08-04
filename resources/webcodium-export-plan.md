@@ -138,13 +138,23 @@ rendering (`v0.2.2`), so it had no visibility into `BoxData`/`TextData.squircle`
 pass bumped `plugins/webcodium/Cargo.toml`'s tag.
 
 **The question this section answers: what should a squircle box's `border-radius` export as, given
-real CSS has no broadly-shipped way to render a true superellipse corner?** `corner-shape:
-superellipse()` is not confirmed to be broadly stable in shipping browsers; `clip-path:
-path("...")` is broadly supported but only clips the element's silhouette - it does not draw a
-matching border stroke or shadow along the new edge, so a bordered/shadowed squircle box would need
-extra per-node markup (an SVG overlay, or an offset pseudo-element faking a stroke) just to look
-right. Both were scoped OUT of this pass: the whole point of a fallback is staying simple, and
-neither is simple.
+real CSS has no broadly-shipped way to render a true superellipse corner today?** Real CSS's
+`corner-shape` property IS a genuine companion to `border-radius`, not an unrelated/competing
+mechanism - `border-radius` still sizes the corner box, `corner-shape: superellipse(n)` picks the
+curve drawn inside it, conceptually the same split this codebase already makes (`corner_radius` +
+`squircle`). But as of mid-2026 it's Chromium-only (Chrome/Edge 139+, ~65% global users), not
+Baseline, no public Firefox/Safari timeline - not usable as the ONLY mechanism for a static export
+meant to just work everywhere. `clip-path: path("...")` is broadly supported but only clips the
+element's silhouette - it does not draw a matching border stroke or shadow along the new edge, so a
+bordered/shadowed squircle box would need extra per-node markup (an SVG overlay, or an offset
+pseudo-element faking a stroke) just to look right. Both were scoped OUT of this pass: the whole
+point of a fallback is staying simple, and neither is simple as the ONLY mechanism.
+
+A future `@supports (corner-shape: superellipse(4))` progressive-enhancement layer (real squircle
+where Chromium supports it, this scaled-circle fallback everywhere else) remains a clean, additive
+follow-up. **Must use the explicit `superellipse(4)` function, never the bare `squircle` keyword**
+- that keyword is shorthand for `superellipse(2)`, a visibly rounder curve than this codebase's
+`SQUIRCLE_N = 4`, and would diverge from the very fallback it's supposed to be enhancing.
 
 **What shipped instead: a proportionally-scaled circular `border-radius`, not the literal value.**
 "Same px number" is not actually the closest visual match - a circular corner at radius `r` removes
