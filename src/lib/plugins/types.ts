@@ -65,7 +65,12 @@ export type InputType =
 	// Shared icon-based alignment picker (Start/End/FlexStart/FlexEnd/Center/Stretch/Space* as
 	// relevant), reused for justify-items/align-content.
 	// @doc: Icon-based alignment/distribution picker, for justify-items and align-content.
-	| 'align-picker';
+	| 'align-picker'
+	// Numeric radius stepper with an inline circle/squircle corner-style toggle button, riding one
+	// visible row backed by two properties (the px value, plus a boolean squircle flag via
+	// `radiusKeys`) -- never a second top-level row. See RadiusField.
+	// @doc: Numeric radius stepper with an inline circle/squircle corner-style toggle.
+	| 'radius';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -102,6 +107,13 @@ export interface ResizeKeys {
 	max: FieldDef;
 }
 
+// Declared only on "radius" FieldDefs (border-radius) -- the companion boolean squircle-mode
+// property, ridden as the same control's own inline toggle button rather than a second visible
+// row. Mirrors Charter's RadiusKeys struct exactly (camelCase, see plugins/charter/src/lib.rs).
+export interface RadiusKeys {
+	squircle: FieldDef;
+}
+
 export interface FieldDef {
 	key: string;
 	displayText?: string;
@@ -111,6 +123,7 @@ export interface FieldDef {
 	suggestionsFrom?: SuggestionSource;
 	arrangeKeys?: ArrangeKeys;
 	resizeKeys?: ResizeKeys;
+	radiusKeys?: RadiusKeys;
 	// Only meaningful when inputType is "spacing". "scalar" (gap, cell-min -- one number) vs.
 	// "box" (padding -- CSS 1/2/3/4-value shorthand with a 1<->4 expand/collapse affordance).
 	spacingMode?: 'scalar' | 'box';

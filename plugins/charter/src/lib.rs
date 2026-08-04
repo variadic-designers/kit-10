@@ -89,6 +89,11 @@ struct FieldDef {
     // (padding -- CSS 1/2/3/4-value shorthand, with a 1<->4 expand/collapse affordance).
     #[serde(rename = "spacingMode", default)]
     spacing_mode: Option<String>,
+    // Only set on inputType "radius" fields (border-radius). Declares the companion boolean
+    // squircle-mode property, ridden as the same control's inline toggle button rather than a
+    // second visible top-level row -- same side-channel shape as resize_keys' min/max.
+    #[serde(rename = "radiusKeys", default)]
+    radius_keys: Option<Box<RadiusKeys>>,
 }
 
 impl FieldDef {
@@ -101,6 +106,7 @@ impl FieldDef {
             arrange_keys: None,
             resize_keys: None,
             spacing_mode: None,
+            radius_keys: None,
         }
     }
 
@@ -125,6 +131,11 @@ impl FieldDef {
 
     fn with_spacing_mode(mut self, mode: &str) -> Self {
         self.spacing_mode = Some(mode.to_string());
+        self
+    }
+
+    fn with_radius_keys(mut self, keys: RadiusKeys) -> Self {
+        self.radius_keys = Some(Box::new(keys));
         self
     }
 }
@@ -185,6 +196,16 @@ struct ArrangeKeys {
 struct ResizeKeys {
     min: FieldDef,
     max: FieldDef,
+}
+
+// Declared only on "radius" FieldDefs (border-radius). Squircle mode is a companion boolean
+// property riding the SAME visible Radius row as its own inline toggle button, never a second
+// top-level row -- same side-channel shape as ResizeKeys' min/max. The boolean is carried as an
+// ordinary resolved property, parsed truthy on "1" (see extract_paint_props), empty/absent = off.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RadiusKeys {
+    squircle: FieldDef,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1181,6 +1202,7 @@ struct PaintProps {
     border_color: OklabColor,
     border_width: f32,
     corner_radius: f32,
+    squircle: bool,
     padding: [f32; 4],
 }
 
@@ -1210,6 +1232,9 @@ fn extract_paint_props(
     let border = get_prop(props, "border").unwrap_or_default();
     let border_width = parse_px(get_prop(props, "border-width").as_deref());
     let radius = parse_px(get_prop(props, "border-radius").as_deref());
+    // "1" is truthy, empty/absent is false -- same sentinel this file's own test fixtures already
+    // use to mark a boolean-ish property present (see the box-forcing detect_primitive tests).
+    let squircle = get_prop(props, "border-radius-squircle").as_deref() == Some("1");
     let padding = parse_padding_shorthand(get_prop(props, "padding").as_deref());
     let has_border = !border.is_empty() && border != "none";
 
@@ -1233,6 +1258,7 @@ fn extract_paint_props(
             0.0
         },
         corner_radius: radius,
+        squircle,
         padding,
     }
 }
@@ -1671,6 +1697,7 @@ fn build_box_node(
         border_color: paint.border_color,
         border_width: paint.border_width,
         corner_radius: paint.corner_radius,
+        squircle: paint.squircle,
         opacity: 1.0,
         shadow: None,
         extra,
@@ -1756,6 +1783,7 @@ fn build_text_node(
         border_color: paint.border_color,
         border_width: paint.border_width,
         corner_radius: paint.corner_radius,
+        squircle: paint.squircle,
         opacity: 1.0,
         content,
         font_size: resolved_font_size,
@@ -1945,7 +1973,11 @@ fn box_categories() -> Vec<FieldCategory> {
             fields: vec![
                 FieldDef::new("background", Some("Fill")).with_input_type("color"),
                 FieldDef::new("border", None).with_input_type("color"),
-                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("border-radius", Some("Radius"))
+                    .with_input_type("radius")
+                    .with_radius_keys(RadiusKeys {
+                        squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
+                    }),
                 FieldDef::new("outline", None),
             ],
         },
@@ -1998,7 +2030,11 @@ fn text_categories() -> Vec<FieldCategory> {
             fields: vec![
                 FieldDef::new("background", Some("Highlight")).with_input_type("color"),
                 FieldDef::new("border", Some("Border")).with_input_type("color"),
-                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("border-radius", Some("Radius"))
+                    .with_input_type("radius")
+                    .with_radius_keys(RadiusKeys {
+                        squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
+                    }),
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
@@ -2024,7 +2060,11 @@ fn image_categories() -> Vec<FieldCategory> {
                 FieldDef::new("height", None),
                 FieldDef::new("background", Some("Fill")).with_input_type("color"),
                 FieldDef::new("border", None).with_input_type("color"),
-                FieldDef::new("border-radius", Some("Radius")),
+                FieldDef::new("border-radius", Some("Radius"))
+                    .with_input_type("radius")
+                    .with_radius_keys(RadiusKeys {
+                        squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
+                    }),
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
@@ -2049,6 +2089,7 @@ fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32
         border_color: OklabColor::default(),
         border_width: 0.0,
         corner_radius: 0.0,
+        squircle: false,
         opacity: 1.0,
         shadow: None,
         extra: BoxExtra::default(),
@@ -2075,6 +2116,7 @@ fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
         border_color: OklabColor::default(),
         border_width: 0.0,
         corner_radius: 0.0,
+        squircle: false,
         opacity: 1.0,
         shadow: None,
         extra: BoxExtra {
@@ -4141,6 +4183,7 @@ mod text_paint_properties_tests {
         props.insert("background".to_string(), prop("#ff0000"));
         props.insert("border".to_string(), prop("#00ff00"));
         props.insert("border-radius".to_string(), prop("4px"));
+        props.insert("border-radius-squircle".to_string(), prop("1"));
         props.insert("padding".to_string(), prop("8px"));
 
         let node = build_text_node(&props, 0);
@@ -4151,6 +4194,7 @@ mod text_paint_properties_tests {
         assert!(text_data.show_border);
         assert_eq!(text_data.border_color, OklabColor::from_srgb([0.0, 1.0, 0.0, 1.0]));
         assert_eq!(text_data.corner_radius, 4.0);
+        assert!(text_data.squircle);
         assert_eq!(text_data.padding, [8.0; 4]);
         // Still always auto-measured -- paint properties never affect sizing.
         assert_eq!(text_data.width, Extent::Auto);
@@ -4168,6 +4212,32 @@ mod text_paint_properties_tests {
         };
         assert_eq!(text_data.bg_color, OklabColor::default());
         assert!(!text_data.show_border);
+    }
+
+    #[test]
+    fn build_box_node_reads_squircle_mode_off_the_companion_property() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("border-radius".to_string(), prop("12px"));
+        props.insert("border-radius-squircle".to_string(), prop("1"));
+
+        let node = build_box_node(&props, None, None, None);
+        let UiNode::Box(box_data) = node else {
+            panic!("expected a Box node");
+        };
+        assert_eq!(box_data.corner_radius, 12.0);
+        assert!(box_data.squircle);
+    }
+
+    #[test]
+    fn build_box_node_defaults_squircle_to_false_when_unset() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("border-radius".to_string(), prop("12px"));
+
+        let node = build_box_node(&props, None, None, None);
+        let UiNode::Box(box_data) = node else {
+            panic!("expected a Box node");
+        };
+        assert!(!box_data.squircle);
     }
 
     #[test]
@@ -4229,6 +4299,7 @@ mod text_paint_properties_tests {
             border_color: OklabColor::from_srgb([0.8, 0.8, 0.8, 1.0]),
             border_width: 1.0,
             corner_radius: 8.0,
+            squircle: false,
             opacity: 1.0,
             shadow: None,
             extra: Default::default(),
@@ -4879,6 +4950,19 @@ mod arrange_tests {
         let rk = height.resize_keys.as_ref().expect("height should carry resizeKeys");
         assert_eq!(rk.min.key, "min-height");
         assert_eq!(rk.max.key, "max-height");
+    }
+
+    #[test]
+    fn radius_field_carries_its_own_squircle_key() {
+        let categories = box_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let radius = fields
+            .iter()
+            .find(|f| f.key == "border-radius")
+            .expect("border-radius field");
+        assert_eq!(radius.input_type.as_deref(), Some("radius"));
+        let rk = radius.radius_keys.as_ref().expect("border-radius should carry radiusKeys");
+        assert_eq!(rk.squircle.key, "border-radius-squircle");
     }
 
     // --- parse_padding_shorthand ---

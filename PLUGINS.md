@@ -513,6 +513,7 @@ union's `@doc:` comments, not this table.
 | `grid-area-painter` | Visual grid-template-areas painter - click-drag to name/merge cells into regions.                        |
 | `grid-auto-flow`    | Row / Column segmented control with a Dense toggle, for grid-auto-flow.                                  |
 | `align-picker`      | Icon-based alignment/distribution picker, for justify-items and align-content.                           |
+| `radius`            | Numeric radius stepper with an inline circle/squircle corner-style toggle.                               |
 
 <!-- END GENERATED: input-types -->
 
