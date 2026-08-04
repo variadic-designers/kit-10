@@ -270,6 +270,25 @@ pub(crate) fn render_font_faces(links: &[crate::ResolvedFontLink]) -> String {
     out
 }
 
+// Real CSS has no broadly-shipped way to render a true superellipse corner (no confirmed stable
+// support for `corner-shape: superellipse()`, and `clip-path: path(...)` clips the whole element
+// without drawing a matching border/shadow along the new silhouette - would need extra markup per
+// squircle-styled node for a fallback whose whole point is staying simple). So a squircle box
+// exports as a PROPORTIONALLY SCALED circular `border-radius` instead of its own literal
+// corner_radius - "same px value" is not actually the closest match: a circular corner at radius r
+// removes a fixed ~21.5% of its own r×r corner-square area (1 - pi/4), while Vellum's shipped
+// squircle (SQUIRCLE_N = 4, taf_can_do/src/render/shader.wgsl) removes a fixed ~7.3%
+// (1 - integral of (1-x^4)^0.25 from 0 to 1) - both ratios independent of r. SQUIRCLE_AREA_MATCH_SCALE
+// is the radius multiplier that makes the fallback circle remove the SAME ABSOLUTE corner area the
+// squircle did, so the exported page reads as proportionally similar rather than "same number,
+// rounder shape". See squircle_area_match_scale_is_self_consistent below for the derivation, and
+// resources/webcodium-export-plan.md for the full writeup.
+//
+// COUPLING WARNING: this constant is mathematically derived FROM SQUIRCLE_N = 4. If that shader
+// constant is ever retuned, this must be recomputed too - there is no automated link across the
+// WGSL/Rust-Charter/Rust-WebCodium boundary for it.
+pub(crate) const SQUIRCLE_AREA_MATCH_SCALE: f64 = 0.58306;
+
 // Shared by Box and Text -- both carry padding/background/border/border-radius/opacity
 // identically on the wire (mirrors Charter's own `extract_paint_props`, which is shared by
 // `build_box_node`/`build_text_node` for exactly this reason: real CSS text can have a
@@ -286,6 +305,7 @@ fn paint_props(
     border_color: &OklabColor,
     border_width: f32,
     corner_radius: f32,
+    squircle: bool,
     opacity: f32,
 ) -> Vec<String> {
     let mut props = Vec::new();
@@ -298,7 +318,12 @@ fn paint_props(
         props.push(format!("border: {border_width}px solid {};", oklab_css(border_color)));
     }
     if corner_radius > 0.0 {
-        props.push(format!("border-radius: {corner_radius}px;"));
+        let exported_radius = if squircle {
+            ((corner_radius as f64) * SQUIRCLE_AREA_MATCH_SCALE).round()
+        } else {
+            corner_radius as f64
+        };
+        props.push(format!("border-radius: {exported_radius}px;"));
     }
     if opacity < 1.0 {
         props.push(format!("opacity: {opacity};"));
@@ -339,6 +364,7 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
                 &d.border_color,
                 d.border_width,
                 d.corner_radius,
+                d.squircle,
                 d.opacity,
             ));
 
@@ -457,6 +483,7 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
                 &d.border_color,
                 d.border_width,
                 d.corner_radius,
+                d.squircle,
                 d.opacity,
             ));
             props.push(format!("color: {};", oklab_css(&d.text_color)));
@@ -1100,6 +1127,59 @@ mod tests {
         assert!(props.contains(&"border: 2px solid oklab(50% 0 0 / 1);".to_string()));
         assert!(props.contains(&"border-radius: 6px;".to_string()));
         assert!(props.contains(&"opacity: 0.8;".to_string()));
+    }
+
+    // The constant must be re-derivable from the same area formulas its own doc comment cites,
+    // not just hand-typed and trusted - this is what actually guards against silent drift if
+    // someone edits the literal without re-deriving it (or forgets to, after retuning
+    // SQUIRCLE_N in taf_can_do/shader.wgsl - see the COUPLING WARNING on the constant itself).
+    #[test]
+    fn squircle_area_match_scale_is_self_consistent() {
+        const SQUIRCLE_N: f64 = 4.0;
+        let circle_area_removed = 1.0 - std::f64::consts::PI / 4.0;
+
+        // Numeric integration (trapezoid, matches the same approach used to sanity-check this
+        // convention interactively before it was implemented) of the area UNDER the superellipse
+        // quadrant curve y = (1 - x^n)^(1/n) over x in [0,1], then removed = 1 - that area.
+        let samples = 100_000;
+        let mut area_under = 0.0;
+        for i in 0..samples {
+            let x0 = i as f64 / samples as f64;
+            let x1 = (i + 1) as f64 / samples as f64;
+            let y = |x: f64| (1.0 - x.powf(SQUIRCLE_N)).max(0.0).powf(1.0 / SQUIRCLE_N);
+            area_under += (y(x0) + y(x1)) / 2.0 * (x1 - x0);
+        }
+        let squircle_area_removed = 1.0 - area_under;
+
+        let derived_scale = (squircle_area_removed / circle_area_removed).sqrt();
+        assert!(
+            (derived_scale - SQUIRCLE_AREA_MATCH_SCALE).abs() < 1e-4,
+            "SQUIRCLE_AREA_MATCH_SCALE ({SQUIRCLE_AREA_MATCH_SCALE}) has drifted from the derived \
+             value ({derived_scale}) - re-derive it if SQUIRCLE_N changed"
+        );
+    }
+
+    #[test]
+    fn squircle_box_exports_a_proportionally_scaled_circular_radius_not_the_literal_value() {
+        let mut b = test_box(None);
+        b.corner_radius = 20.0;
+        b.squircle = true;
+        let props = node_props(&UiNode::Box(b), false).unwrap();
+        // 20 * 0.58306 = 11.6612 -> rounds to 12, the worked example from this feature's design.
+        assert!(
+            props.contains(&"border-radius: 12px;".to_string()),
+            "props were: {:?}",
+            props
+        );
+    }
+
+    #[test]
+    fn non_squircle_box_still_exports_its_literal_corner_radius() {
+        let mut b = test_box(None);
+        b.corner_radius = 20.0;
+        b.squircle = false;
+        let props = node_props(&UiNode::Box(b), false).unwrap();
+        assert!(props.contains(&"border-radius: 20px;".to_string()), "props were: {:?}", props);
     }
 
     #[test]

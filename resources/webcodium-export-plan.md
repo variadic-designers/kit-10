@@ -129,4 +129,50 @@ This surfaced because of a separate resolver fix earlier the same session: `flat
 
 Scope cut, deliberate: cross-kit tie-breaking compares condition *count* only, not the full `[count, ...axisPriorities]` specificity `matchLayers` uses within one kit - two different kits tying on condition count fall back to kit order even if their axis priorities would tie-break differently within a single kit (same scope cut `flattenKitResults` itself takes, see CLAUDE.md).
 
+---
+
+## Squircle export fallback - proportional area-match convention (shipped 2026-08-04)
+
+WebCodium was two `kit10-scene` tags behind (`v0.2.0`) when Vellum/Charter shipped squircle corner
+rendering (`v0.2.2`), so it had no visibility into `BoxData`/`TextData.squircle` at all until this
+pass bumped `plugins/webcodium/Cargo.toml`'s tag.
+
+**The question this section answers: what should a squircle box's `border-radius` export as, given
+real CSS has no broadly-shipped way to render a true superellipse corner?** `corner-shape:
+superellipse()` is not confirmed to be broadly stable in shipping browsers; `clip-path:
+path("...")` is broadly supported but only clips the element's silhouette - it does not draw a
+matching border stroke or shadow along the new edge, so a bordered/shadowed squircle box would need
+extra per-node markup (an SVG overlay, or an offset pseudo-element faking a stroke) just to look
+right. Both were scoped OUT of this pass: the whole point of a fallback is staying simple, and
+neither is simple.
+
+**What shipped instead: a proportionally-scaled circular `border-radius`, not the literal value.**
+"Same px number" is not actually the closest visual match - a circular corner at radius `r` removes
+a FIXED ~21.5% of its own `r×r` corner-square area (`1 - π/4`), while the shipped `n=4` squircle
+removes a FIXED ~7.3% (`1 - ∫₀¹(1-x⁴)^0.25 dx`), both ratios independent of `r` (confirmed
+interactively with an area-vs-diagonal-reach comparison before committing to this metric - the two
+metrics pull in OPPOSITE directions for the fallback radius, and area-removed weight was the one
+chosen as matching perceived "amount of rounding" more closely than diagonal reach/sharpness would).
+`SQUIRCLE_AREA_MATCH_SCALE ≈ 0.58306` (`css.rs`, `pub(crate)`) is the radius multiplier that makes
+the fallback circle remove the same ABSOLUTE corner area the squircle did - computed via numeric
+integration, not hand-typed, and guarded by a test (`squircle_area_match_scale_is_self_consistent`)
+that re-derives it the same way and fails loudly on drift.
+
+**Both export paths apply it, from the same shared constant:**
+- **Path A** (`css.rs::paint_props`) reads `BoxData`/`TextData.squircle` directly (now visible
+  post-version-bump) and scales `corner_radius` before emitting `border-radius`.
+- **Path B** (`variants.rs`) has no compiled `squircle` field to read - only the raw kit property
+  `border-radius-squircle` (Charter's `RadiusKeys` companion, a `"1"`/absent boolean-string). New
+  `synthesize_radius` consumes that raw property and scales `border-radius` in place, mirroring
+  `synthesize_border`'s existing "merge two raw properties into one atomic declaration" shape -
+  added to `DIFFABLE_PROPERTIES`'s synthesis pass (`synthesize_border` -> `synthesize_radius` ->
+  `synthesize_resize`), not the passthrough whitelist itself, since `border-radius-squircle` must
+  never reach `format_value` as its own (non-numeric) declaration.
+
+**Named, accepted coupling risk**: `0.58306` is mathematically derived FROM `SQUIRCLE_N = 4` in
+`taf_can_do/src/render/shader.wgsl`. There is no automated cross-language link between a WGSL
+shader constant and a Rust plugin constant in a different crate - if `SQUIRCLE_N` is ever retuned,
+this scale factor must be manually recomputed and the self-consistency test's expected value
+updated with it. A code comment in both locations points at the other; nothing enforces it further.
+
 Verification: `plugins/webcodium/src/tree.rs`/`variants.rs`/`lib.rs` gained targeted unit + end-to-end tests, including the exact reported scenario (a `Density` kit with a `theme=dark`-conditioned layer composed below an unconditioned `Priority` kit; reversing the two kits' composition order flips both the winning value and the signature class so the two resolutions never collide). 118/118 webcodium tests passing, 117/117 charter, manager suite unaffected by this phase (Phase A's `fetchViewCompositions` tests live in `manager/src/resolve/export-shape.test.ts`).

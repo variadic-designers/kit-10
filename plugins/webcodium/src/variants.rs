@@ -283,6 +283,7 @@ fn resolve_properties_with_tokens(
         }
     }
     synthesize_border(&mut result);
+    synthesize_radius(&mut result);
     synthesize_resize(&mut result);
     if is_box {
         synthesize_arrange(&mut result);
@@ -533,6 +534,29 @@ fn synthesize_arrange(properties: &mut HashMap<String, String>) {
 
 fn parse_px_like(raw: &str) -> f32 {
     raw.trim().trim_end_matches("px").trim().parse::<f32>().unwrap_or(0.0)
+}
+
+// "border-radius-squircle" is a boolean-ish companion property (Charter's RadiusKeys - see
+// plugins/charter/src/lib.rs, and the FieldDef declared for "border-radius") that real CSS has no
+// native way to express as an actual shape. Mirrors css.rs's paint_props (Path A) exactly: scales
+// the raw "border-radius" value by the SAME shared SQUIRCLE_AREA_MATCH_SCALE constant (not a
+// second hand-typed copy of the literal - see that constant's own doc comment in css.rs for the
+// full area-matching derivation and the SQUIRCLE_N coupling warning) so Path A and Path B never
+// silently disagree on what a squircle box exports as. Mutates `properties` in place: consumes
+// (removes) the boolean companion key so it never reaches format_value as a spurious non-numeric
+// property, and replaces "border-radius" with its scaled value so the normal diffable-property
+// pipeline (DIFFABLE_PROPERTIES/format_value's as_px_if_bare_number) formats it exactly like any
+// other length. A no-op if squircle isn't set, or if no border-radius was declared at all.
+fn synthesize_radius(properties: &mut HashMap<String, String>) {
+    let is_squircle = properties.remove("border-radius-squircle").as_deref() == Some("1");
+    if !is_squircle {
+        return;
+    }
+    if let Some(raw) = properties.get("border-radius") {
+        let px = parse_px_like(raw);
+        let scaled = (px as f64 * crate::css::SQUIRCLE_AREA_MATCH_SCALE).round();
+        properties.insert("border-radius".to_string(), format!("{scaled}"));
+    }
 }
 
 // Combines the raw "border" (a COLOR ONLY value -- box_categories()'s FieldDef is
@@ -1403,6 +1427,44 @@ mod tests {
             base,
             vec!["border: 1px solid #000000;".to_string(), "line-height: 24px;".to_string()]
         );
+    }
+
+    #[test]
+    fn squircle_radius_property_scales_border_radius_and_is_consumed() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("border-radius", "20px"),
+                    literal_entry("border-radius-squircle", "1"),
+                ],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        // Same worked example as css.rs's Path A test: 20 * 0.58306 = 11.6612 -> rounds to 12,
+        // and the boolean companion key must never surface as its own declaration.
+        assert!(base.contains(&"border-radius: 12px;".to_string()), "declarations were: {:?}", base);
+        assert!(!base.iter().any(|d| d.starts_with("border-radius-squircle")));
+    }
+
+    #[test]
+    fn non_squircle_border_radius_passes_through_literally() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border-radius", "20px")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(base.contains(&"border-radius: 20px;".to_string()), "declarations were: {:?}", base);
     }
 
     #[test]
