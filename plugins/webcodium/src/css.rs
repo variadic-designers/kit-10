@@ -331,6 +331,45 @@ fn paint_props(
     props
 }
 
+// Path A analog of variants.rs's resolve_squircle_radius/resolve_squircle_radius_for_base: reads
+// a UiNode's own already-resolved `squircle`/`corner_radius` directly (Charter's fully-resolved
+// output, no raw-property re-resolution needed here, unlike Path B which only ever sees raw kit
+// properties). The LITERAL (unscaled) radius, for the @supports progressive-enhancement block -
+// never the SQUIRCLE_AREA_MATCH_SCALE-scaled fallback paint_props emits.
+fn squircle_radius(node: &UiNode) -> Option<f32> {
+    match node {
+        UiNode::Box(d) if d.squircle && d.corner_radius > 0.0 => Some(d.corner_radius),
+        UiNode::Text(d) if d.squircle && d.corner_radius > 0.0 => Some(d.corner_radius),
+        _ => None,
+    }
+}
+
+// One `@supports` progressive-enhancement block, shared by every emission site (Path A's primary
+// rule, Path B's base/variant/secondary-kit rules) so the exact CSS text can never drift between
+// them. Gives a supporting browser the real, unapproximated curve - the literal `radius` plus
+// `corner-shape: superellipse(4)` - overriding the always-present scaled-circle fallback via
+// ordinary CSS cascade (same selector, later in source order, same specificity: last declaration
+// wins per-property). MUST say `superellipse(4)` explicitly, never the bare `squircle` keyword -
+// that keyword means `superellipse(2)`, a visibly rounder curve than this codebase's own
+// `SQUIRCLE_N = 4` (see CLAUDE.md's WebCodium section), which would make a supporting browser show
+// a DIFFERENT shape than the fallback it's meant to enhance. A non-supporting browser skips this
+// whole block via feature detection, leaving the fallback declaration untouched.
+//
+// `selector` must be a full, already-prefixed CSS selector (e.g. ".button" or
+// ".button--theme-dark" or ".button:hover" - variant_rule_selector's own output shape), not a
+// bare class name - this function never adds its own leading `.`.
+fn squircle_supports_block(selector: &str, radius: f32, indent: &str) -> String {
+    let inner = format!("{indent}  ");
+    format!(
+        "{indent}@supports (corner-shape: superellipse(4)) {{\n\
+         {inner}{selector} {{\n\
+         {inner}  border-radius: {radius}px;\n\
+         {inner}  corner-shape: superellipse(4);\n\
+         {inner}}}\n\
+         {indent}}}\n"
+    )
+}
+
 // This node's own declarations, not including nested children. `has_resolved_img_src` gates the
 // Img case -- None when no real URL was resolved for this node's asset id (see lib.rs's
 // kit10_get_asset_links call and tree.rs's doc comment on why an unresolved image still emits no
@@ -655,40 +694,46 @@ fn render_scss_node(
     };
 
     let empty_rules: Vec<variants::VariantRule> = Vec::new();
-    let (props, variant_rules): (Option<Vec<String>>, &[variants::VariantRule]) = if is_img {
-        let has_resolved_img_src = tree::resolved_img_src(&nodes[i], asset_links).is_some();
-        (node_props(&nodes[i], has_resolved_img_src), &empty_rules)
-    } else {
-        match named_kit_id {
-            Some(kid) => {
-                if emitted_kits.insert(kid.clone()) {
-                    match kit_shapes.get(kid) {
-                        Some(shape) => {
-                            let is_box = matches!(nodes[i], UiNode::Box(_));
-                            (
-                                Some(variants::synthesize_base_declarations_with_tokens(
-                                    shape,
-                                    is_box,
-                                    project_tokens,
-                                )),
-                                kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&empty_rules),
-                            )
+    // Third element: the LITERAL (unscaled) squircle radius for the primary rule's own
+    // @supports override, if any - Path A (node_props) reads it straight off the resolved
+    // UiNode; Path B (a Kit's own shape) re-resolves it from raw properties independently, since
+    // synthesize_base_declarations_with_tokens's own declarations have already scaled it away.
+    let (props, variant_rules, squircle_override): (Option<Vec<String>>, &[variants::VariantRule], Option<f32>) =
+        if is_img {
+            let has_resolved_img_src = tree::resolved_img_src(&nodes[i], asset_links).is_some();
+            (node_props(&nodes[i], has_resolved_img_src), &empty_rules, None)
+        } else {
+            match named_kit_id {
+                Some(kid) => {
+                    if emitted_kits.insert(kid.clone()) {
+                        match kit_shapes.get(kid) {
+                            Some(shape) => {
+                                let is_box = matches!(nodes[i], UiNode::Box(_));
+                                (
+                                    Some(variants::synthesize_base_declarations_with_tokens(
+                                        shape,
+                                        is_box,
+                                        project_tokens,
+                                    )),
+                                    kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&empty_rules),
+                                    variants::resolve_squircle_radius_for_base(shape),
+                                )
+                            }
+                            // Shape never fetched/resolved for this Kit -- fall back to this first
+                            // instance's own literal properties (same source the no-Kit-name path
+                            // below uses), but still claimed in emitted_kits above so later
+                            // instances of the same shared class don't repeat it.
+                            None => (node_props(&nodes[i], false), &empty_rules, squircle_radius(&nodes[i])),
                         }
-                        // Shape never fetched/resolved for this Kit -- fall back to this first
-                        // instance's own literal properties (same source the no-Kit-name path
-                        // below uses), but still claimed in emitted_kits above so later
-                        // instances of the same shared class don't repeat it.
-                        None => (node_props(&nodes[i], false), &empty_rules),
+                    } else {
+                        // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
+                        // child this instance introduces) but no duplicate content.
+                        (Some(Vec::new()), &empty_rules, None)
                     }
-                } else {
-                    // Already emitted elsewhere -- keep the wrapper (nesting depth for any new
-                    // child this instance introduces) but no duplicate content.
-                    (Some(Vec::new()), &empty_rules)
                 }
+                None => (node_props(&nodes[i], false), &empty_rules, squircle_radius(&nodes[i])),
             }
-            None => (node_props(&nodes[i], false), &empty_rules),
-        }
-    };
+        };
 
     let Some(props) = props else { return };
     // Box/Text always push at least one property unconditionally above, so a kit-less node is
@@ -732,6 +777,10 @@ fn render_scss_node(
         }
         out.push_str(&format!("{indent}}}\n"));
 
+        if let Some(radius) = squircle_override {
+            out.push_str(&squircle_supports_block(&format!(".{class}"), radius, &indent));
+        }
+
         // Static/dynamic variant rules ride at the SAME depth as the base rule, not nested
         // inside it -- they're independent selectors on the same element (a BEM modifier class
         // or a pseudo-class), not a descendant. Emitting them here, at this exact recursion
@@ -745,6 +794,14 @@ fn render_scss_node(
                 out.push_str(&format!("{inner_indent}{d}\n"));
             }
             out.push_str(&format!("{indent}}}\n"));
+
+            // A variant with its own squircle_radius overrode border-radius itself (see
+            // VariantRule.squircle_radius's doc comment) - needs its own @supports override
+            // under the SAME variant selector, not the base class, since that's what's actually
+            // carrying the overridden radius in a supporting browser too.
+            if let Some(radius) = rule.squircle_radius {
+                out.push_str(&squircle_supports_block(&selector, radius, &indent));
+            }
         }
     }
 
@@ -779,6 +836,10 @@ fn render_scss_node(
                         out.push_str(&format!("{inner_indent}{d}\n"));
                     }
                     out.push_str(&format!("{indent}}}\n"));
+
+                    if let Some(radius) = variants::resolve_squircle_radius_for_base(shape) {
+                        out.push_str(&squircle_supports_block(&format!(".{slug}"), radius, &indent));
+                    }
                 }
                 for rule in kit_variant_rules.get(kid).map(Vec::as_slice).unwrap_or(&[]) {
                     let selector = variant_rule_selector(&slug, rule);
@@ -787,6 +848,10 @@ fn render_scss_node(
                         out.push_str(&format!("{inner_indent}{d}\n"));
                     }
                     out.push_str(&format!("{indent}}}\n"));
+
+                    if let Some(radius) = rule.squircle_radius {
+                        out.push_str(&squircle_supports_block(&selector, radius, &indent));
+                    }
                 }
             }
         }
@@ -1060,6 +1125,116 @@ mod tests {
         );
 
         assert_eq!(css.matches(".product-photo {").count(), 1);
+    }
+
+    #[test]
+    fn squircle_box_gets_an_at_supports_progressive_enhancement_block_with_the_literal_radius() {
+        let mut squircle_box = test_box(None);
+        squircle_box.corner_radius = 20.0;
+        squircle_box.squircle = true;
+        let nodes = vec![UiNode::Box(squircle_box)];
+        let children = tree::build_children_map(&nodes);
+        let css = render_scss(
+            &nodes,
+            &children,
+            &[0],
+            &["view-a".to_string()],
+            &[String::new()],
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &variants::ProjectTokens::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        // The always-present, area-matched fallback stays exactly as before.
+        assert!(css.contains("border-radius: 12px;"), "css was: {css}");
+        // The progressive-enhancement override carries the LITERAL (unscaled) radius, using
+        // superellipse(4) explicitly - never the bare "squircle" keyword (which means
+        // superellipse(2), a different curve than this codebase's own SQUIRCLE_N).
+        assert!(css.contains("@supports (corner-shape: superellipse(4))"), "css was: {css}");
+        assert!(css.contains("border-radius: 20px;"), "css was: {css}");
+        assert!(css.contains("corner-shape: superellipse(4);"), "css was: {css}");
+        assert!(!css.contains("squircle)"), "must never emit the bare squircle keyword; css was: {css}");
+    }
+
+    #[test]
+    fn non_squircle_box_emits_no_at_supports_block_at_all() {
+        let mut plain_box = test_box(None);
+        plain_box.corner_radius = 20.0;
+        plain_box.squircle = false;
+        let nodes = vec![UiNode::Box(plain_box)];
+        let children = tree::build_children_map(&nodes);
+        let css = render_scss(
+            &nodes,
+            &children,
+            &[0],
+            &["view-a".to_string()],
+            &[String::new()],
+            &HashMap::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+            &variants::ProjectTokens::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+        assert!(!css.contains("@supports"), "a non-squircle node must never emit this block; css was: {css}");
+    }
+
+    // Path B: a Kit-basis base rule that's squircle gets its own @supports override under the
+    // SAME shared class the fallback rule uses.
+    #[test]
+    fn squircle_kit_base_rule_gets_an_at_supports_block_under_its_own_shared_class() {
+        let shape = variants::KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![variants::ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    variants::ExportLayerEntry {
+                        property: "border-radius".to_string(),
+                        literal_value: Some("20px".to_string()),
+                        token_value: None,
+                        token_id: None,
+                    },
+                    variants::ExportLayerEntry {
+                        property: "border-radius-squircle".to_string(),
+                        literal_value: Some("1".to_string()),
+                        token_value: None,
+                        token_id: None,
+                    },
+                ],
+            }],
+        };
+
+        let nodes = vec![UiNode::Box(test_box(None))];
+        let children = tree::build_children_map(&nodes);
+        let mut kit_names = HashMap::new();
+        kit_names.insert("card-kit".to_string(), "Card".to_string());
+        let mut kit_shapes = HashMap::new();
+        kit_shapes.insert("card-kit".to_string(), shape);
+
+        let css = render_scss(
+            &nodes,
+            &children,
+            &[0],
+            &["view-a".to_string()],
+            &["card-kit".to_string()],
+            &kit_names,
+            &kit_shapes,
+            &HashMap::new(),
+            &variants::ProjectTokens::new(),
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert!(css.contains(".card {"), "css was: {css}");
+        assert!(css.contains("border-radius: 12px;"), "fallback should still be area-matched; css was: {css}");
+        assert!(css.contains("@supports (corner-shape: superellipse(4)) {\n  .card {"), "css was: {css}");
+        assert!(css.contains("border-radius: 20px;"), "override should carry the literal radius; css was: {css}");
     }
 
     #[test]

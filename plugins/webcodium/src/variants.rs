@@ -536,6 +536,49 @@ fn parse_px_like(raw: &str) -> f32 {
     raw.trim().trim_end_matches("px").trim().parse::<f32>().unwrap_or(0.0)
 }
 
+// Independently re-resolves whether "border-radius-squircle" wins for a given arg-set, mirroring
+// resolve_properties_with_tokens's own filter-by-conditions + sort-by-condition-count-ascending +
+// last-wins loop (variants.rs's resolve_properties_with_tokens), scoped to just these two
+// properties. Deliberately separate from the main declaration pipeline - synthesize_radius below
+// mutates a DIFFERENT, shared `properties` map (consuming the raw fact as it scales it), so by the
+// time a caller has final declarations the "was this squircle, and what was the literal radius"
+// fact is already gone. This is what feeds the @supports (corner-shape: superellipse(4))
+// progressive-enhancement block (css.rs), which needs the LITERAL (unscaled) radius, not the
+// SQUIRCLE_AREA_MATCH_SCALE-scaled fallback value synthesize_radius produces.
+pub(crate) fn resolve_squircle_radius(shape: &KitExportShape, args: &HashMap<String, String>) -> Option<f32> {
+    let mut matching: Vec<&ExportLayer> = shape
+        .layers
+        .iter()
+        .filter(|l| l.conditions.iter().all(|c| matches_condition(c, args)))
+        .collect();
+    matching.sort_by_key(|l| l.conditions.len());
+
+    let mut radius: Option<String> = None;
+    let mut squircle = false;
+    for layer in matching {
+        for entry in &layer.entries {
+            match entry.property.as_str() {
+                "border-radius" => radius = Some(resolve_entry_value(entry)),
+                "border-radius-squircle" => squircle = resolve_entry_value(entry) == "1",
+                _ => {}
+            }
+        }
+    }
+    if !squircle {
+        return None;
+    }
+    let px = parse_px_like(&radius.unwrap_or_default());
+    (px > 0.0).then_some(px)
+}
+
+// Wraps resolve_squircle_radius with the same excluded-axis base args
+// synthesize_base_declarations_with_tokens itself resolves against - kept private
+// (excluded_axis_args stays unexposed) so css.rs's base-rule call site doesn't need to know how
+// the base arg-set is derived, just that this answers "is the base rule itself squircle."
+pub(crate) fn resolve_squircle_radius_for_base(shape: &KitExportShape) -> Option<f32> {
+    resolve_squircle_radius(shape, &excluded_axis_args(shape))
+}
+
 // "border-radius-squircle" is a boolean-ish companion property (Charter's RadiusKeys - see
 // plugins/charter/src/lib.rs, and the FieldDef declared for "border-radius") that real CSS has no
 // native way to express as an actual shape. Mirrors css.rs's paint_props (Path A) exactly: scales
@@ -897,6 +940,13 @@ pub(crate) struct VariantRule {
     // "does this rule apply to some node instance's own resolved axis args" (see
     // rule_matches_args) without re-deriving anything from the shape.
     pub conditions: Vec<ExportLayerCondition>,
+    // Set only when THIS variant's own delta declarations actually change border-radius (i.e.
+    // `declarations` contains a "border-radius:" entry) AND resolving this variant's own args
+    // resolves border-radius-squircle to true - the LITERAL (unscaled) radius for a per-variant
+    // @supports override (css.rs). A variant that doesn't touch radius at all needs no override of
+    // its own; the base rule's own @supports block already covers it via ordinary CSS cascade
+    // (each declared PROPERTY cascades independently, not each rule block as a whole).
+    pub squircle_radius: Option<f32>,
 }
 
 fn dynamic_selector_suffix(value: &str) -> String {
@@ -1037,11 +1087,18 @@ pub(crate) fn synthesize_variant_rules_with_tokens(
             (frags, false)
         };
 
+        let squircle_radius = if declarations.iter().any(|d| d.starts_with("border-radius:")) {
+            resolve_squircle_radius(shape, &variant_args)
+        } else {
+            None
+        };
+
         rules.push(VariantRule {
             suffixes,
             dynamic,
             declarations,
             conditions: relevant.into_iter().cloned().collect(),
+            squircle_radius,
         });
     }
     rules
@@ -1344,6 +1401,7 @@ mod tests {
             suffixes: vec!["--plan-elite".to_string(), "--theme-secondary".to_string()],
             dynamic: false,
             declarations: vec![],
+            squircle_radius: None,
             conditions: vec![condition("plan", "elite"), condition("theme", "secondary")],
         };
         let matching =
@@ -1359,7 +1417,13 @@ mod tests {
         ]);
         assert!(!rule_matches_args(&rule, &wrong_value));
 
-        let empty_rule = VariantRule { suffixes: vec![], dynamic: false, declarations: vec![], conditions: vec![] };
+        let empty_rule = VariantRule {
+            suffixes: vec![],
+            dynamic: false,
+            declarations: vec![],
+            conditions: vec![],
+            squircle_radius: None,
+        };
         assert!(
             !rule_matches_args(&empty_rule, &matching),
             "a rule with no conditions must never claim to match"
@@ -1465,6 +1529,147 @@ mod tests {
         };
         let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"border-radius: 20px;".to_string()), "declarations were: {:?}", base);
+    }
+
+    #[test]
+    fn resolve_squircle_radius_returns_the_literal_unscaled_value() {
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![
+                    literal_entry("border-radius", "20px"),
+                    literal_entry("border-radius-squircle", "1"),
+                ],
+            }],
+        };
+        assert_eq!(resolve_squircle_radius(&shape, &HashMap::new()), Some(20.0));
+        assert_eq!(resolve_squircle_radius_for_base(&shape), Some(20.0));
+    }
+
+    #[test]
+    fn resolve_squircle_radius_is_none_when_squircle_is_unset_or_overridden() {
+        let unset = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("border-radius", "20px")],
+            }],
+        };
+        assert_eq!(resolve_squircle_radius(&unset, &HashMap::new()), None);
+
+        // A more-specific layer turning squircle back off must win, same last-wins semantics
+        // resolve_properties_with_tokens itself uses.
+        let overridden = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![AxisExportMeta {
+                axis_id: "theme".to_string(),
+                axis_name: Some("theme".to_string()),
+                kind: Some("categorical".to_string()),
+                variant_kind: "static".to_string(),
+                excluded_from_export: false,
+                default_value: Some(literal("primary")),
+                priority_index: 0,
+                values: vec![
+                    ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("primary"), priority_index: 0 },
+                    ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("secondary"), priority_index: 1000 },
+                ],
+            }],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![
+                        literal_entry("border-radius", "20px"),
+                        literal_entry("border-radius-squircle", "1"),
+                    ],
+                },
+                ExportLayer {
+                    layer_id: "secondary".to_string(),
+                    conditions: vec![condition("theme", "secondary")],
+                    entries: vec![literal_entry("border-radius-squircle", "")],
+                },
+            ],
+        };
+        let secondary_args = HashMap::from([("theme".to_string(), "secondary".to_string())]);
+        assert_eq!(resolve_squircle_radius(&overridden, &secondary_args), None);
+        // Base args (theme unset/primary) are untouched by the secondary layer.
+        assert_eq!(resolve_squircle_radius(&overridden, &HashMap::new()), Some(20.0));
+    }
+
+    // The tricky gate on VariantRule.squircle_radius: only set when the variant's OWN delta
+    // declarations actually change border-radius. A variant that leaves radius untouched needs no
+    // override of its own - the base rule's own @supports block already covers it via ordinary
+    // per-property CSS cascade (css.rs).
+    #[test]
+    fn variant_rule_carries_squircle_radius_only_when_it_actually_overrides_the_radius() {
+        // A custom shape with two INDEPENDENT single-condition axes (not two_axis_shape's own
+        // combo layer, whose 2-condition arg-set would also satisfy a single-condition radius
+        // layer's own subset condition and inherit the override - a real cascade behavior, just
+        // not what this test wants to isolate).
+        let axis = |id: &str| AxisExportMeta {
+            axis_id: id.to_string(),
+            axis_name: Some(id.to_string()),
+            kind: Some("categorical".to_string()),
+            variant_kind: "static".to_string(),
+            excluded_from_export: false,
+            default_value: Some(literal("primary")),
+            priority_index: 0,
+            values: vec![
+                ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("primary"), priority_index: 0 },
+                ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("secondary"), priority_index: 1000 },
+            ],
+        };
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![axis("theme"), axis("plan")],
+            layers: vec![
+                ExportLayer {
+                    layer_id: "base".to_string(),
+                    conditions: vec![],
+                    entries: vec![
+                        literal_entry("background", "oklab(60% 0.1 0.02 / 1)"),
+                        literal_entry("border-radius", "20px"),
+                        literal_entry("border-radius-squircle", "1"),
+                    ],
+                },
+                // DOES override border-radius (stays squircle) - must carry its own literal
+                // radius.
+                ExportLayer {
+                    layer_id: "radius-variant".to_string(),
+                    conditions: vec![condition("theme", "secondary")],
+                    entries: vec![literal_entry("border-radius", "8px")],
+                },
+                // Touches an unrelated property only - must stay None even though the base
+                // itself is squircle, since this variant never redeclares border-radius.
+                ExportLayer {
+                    layer_id: "unrelated-variant".to_string(),
+                    conditions: vec![condition("plan", "secondary")],
+                    entries: vec![literal_entry("background", "oklab(10% 0.1 0.02 / 1)")],
+                },
+            ],
+        };
+
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        let radius_variant = rules
+            .iter()
+            .find(|r| r.declarations.iter().any(|d| d.starts_with("border-radius:")))
+            .expect("the radius-overriding variant should produce a border-radius declaration");
+        assert_eq!(radius_variant.squircle_radius, Some(8.0));
+
+        let unrelated_variant = rules
+            .iter()
+            .find(|r| r.declarations.iter().any(|d| d.starts_with("background:")))
+            .expect("the unrelated variant should produce a background declaration");
+        assert_eq!(unrelated_variant.squircle_radius, None);
     }
 
     #[test]

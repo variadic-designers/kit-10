@@ -185,4 +185,56 @@ shader constant and a Rust plugin constant in a different crate - if `SQUIRCLE_N
 this scale factor must be manually recomputed and the self-consistency test's expected value
 updated with it. A code comment in both locations points at the other; nothing enforces it further.
 
+---
+
+## Squircle `@supports` progressive-enhancement layer (shipped 2026-08-04)
+
+Follow-up to the area-match convention above: real CSS's `corner-shape` property IS a genuine
+companion to `border-radius` (size vs. curve, conceptually the same split this codebase already
+makes), but as of mid-2026 it's Chromium-only (Chrome/Edge 139+, ~65% global users, not Baseline,
+no Firefox/Safari timeline) - not usable as the ONLY export mechanism, but perfectly usable as an
+ADDITIVE enhancement layered on top of the always-present scaled-circle fallback.
+
+**Mechanism: standard CSS progressive enhancement, source-order cascade does the work for free.**
+Every squircle rule gets a normal fallback declaration first (the existing scaled `border-radius`),
+then a sibling `@supports (corner-shape: superellipse(4)) { <same selector> { border-radius:
+<literal>px; corner-shape: superellipse(4); } }` block immediately after. A supporting browser
+applies both; the later declaration (same specificity) wins per-property per ordinary cascade
+rules - no `!important`, no extra specificity needed. A non-supporting browser skips the whole
+block via feature detection. **Must say `superellipse(4)` explicitly, never the bare `squircle`
+keyword** - that keyword means `superellipse(2)`, a visibly rounder curve than `SQUIRCLE_N = 4`,
+which would make the enhancement show a DIFFERENT shape than the fallback it's supposed to upgrade.
+
+**Implementation is an independent side-pass in both paths, not threaded through the existing
+declaration pipeline.** `synthesize_radius`'s in-place mutation already consumes and discards the
+"was this squircle, what was the literal radius" fact before any caller assembling rule text could
+see it - re-plumbing a return value through every layer (`resolve_properties_with_tokens` ->
+`synthesize_base_declarations_with_tokens`/`synthesize_variant_rules_with_tokens`/
+`synthesize_contested_rules`) would have been a wide, invasive diff for one boolean+float. Instead,
+two small standalone helpers, mirroring this plugin's existing precedent for "one node/rule needs a
+second, separate rule block" (the pinned-position rule, `css.rs`'s positioned-root handling; the
+contested-rules pass, computed entirely independently of the main declaration walk):
+
+- **Path A** (`css.rs::squircle_radius`): reads a `UiNode`'s own already-resolved
+  `squircle`/`corner_radius` directly - Charter's fully-resolved output, no re-resolution needed.
+- **Path B** (`variants.rs::resolve_squircle_radius`/`resolve_squircle_radius_for_base`):
+  independently re-resolves whether `border-radius-squircle` wins for a given arg-set, mirroring
+  `resolve_properties_with_tokens`'s own filter/sort/last-wins matching loop but scoped to just
+  these two properties - entirely separate from `synthesize_radius`'s shared mutable map, so the
+  two can never interact or double-consume anything.
+
+**Variant rules needed one extra piece: `VariantRule.squircle_radius: Option<f32>`**, set only
+when that SPECIFIC variant's own delta declarations actually redeclare `border-radius` (checked via
+`declarations.iter().any(|d| d.starts_with("border-radius:"))`) - a variant that doesn't touch
+radius at all needs no override of its own, since the base rule's own `@supports` block already
+covers it: CSS cascades per-DECLARED-PROPERTY, not per rule-block-as-a-whole, so an untouched
+property simply keeps inheriting from whichever earlier rule last set it.
+
+**Deliberate v1 scope cut: contested rules (`synthesize_contested_rules`, cross-kit `border-radius`
+disagreement) do NOT get an `@supports` override.** A squircle radius becoming the subject of a
+cross-kit contest is a narrow edge case; wiring progressive enhancement through that pass too would
+meaningfully widen the diff for a rare case. A contested squircle radius still exports its already-
+resolved scaled fallback correctly - it just never gets the Chromium-enhanced curve. Revisit if this
+ever turns out to matter in practice.
+
 Verification: `plugins/webcodium/src/tree.rs`/`variants.rs`/`lib.rs` gained targeted unit + end-to-end tests, including the exact reported scenario (a `Density` kit with a `theme=dark`-conditioned layer composed below an unconditioned `Priority` kit; reversing the two kits' composition order flips both the winning value and the signature class so the two resolutions never collide). 118/118 webcodium tests passing, 117/117 charter, manager suite unaffected by this phase (Phase A's `fetchViewCompositions` tests live in `manager/src/resolve/export-shape.test.ts`).
