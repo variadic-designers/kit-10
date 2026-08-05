@@ -5,7 +5,7 @@
 	import type { EditorActivity, EditorSelection } from './Editor.svelte';
 	import { selectView, deselectView } from './selection.js';
 	import { viewportInput, updateViewportInput } from './viewport-input.js';
-	import { keybinds, matchKey, matchMouse, isTextEntryTarget } from './keybinds.js';
+	import { keybinds, matchKey, matchMouse, matchWheel, isTextEntryTarget } from './keybinds.js';
 	import { buildViewTree, resolveDragTargetViewId, type ViewOccurrence } from './view-tree.js';
 	import type { Api, OverriddenOccurrence } from 'manager';
 	import type { ResolvedView } from '$lib/plugins/types.js';
@@ -658,6 +658,22 @@
 	function onWheel(e: WheelEvent) {
 		if (!vellum) return;
 		e.preventDefault();
+
+		if (matchWheel(e, $keybinds['canvas.panHorizontal'])) {
+			const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+			vellum.set_pan(-delta, 0);
+			requestRender();
+			schedulePanSave();
+			return;
+		}
+		if (matchWheel(e, $keybinds['canvas.panVertical'])) {
+			const delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+			vellum.set_pan(0, -delta);
+			requestRender();
+			schedulePanSave();
+			return;
+		}
+
 		const rect = canvas.getBoundingClientRect();
 		const cx = e.clientX - rect.left;
 		const cy = e.clientY - rect.top;

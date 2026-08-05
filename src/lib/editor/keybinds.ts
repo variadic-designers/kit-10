@@ -43,7 +43,9 @@ export type KeybindAction =
 	| 'property.remove'
 	| 'edit.cancel'
 	| 'panel.toggleLayers'
-	| 'axis.cycleValue';
+	| 'axis.cycleValue'
+	| 'canvas.panVertical'
+	| 'canvas.panHorizontal';
 
 // Grouping headers in the Keybinds tab.
 const NAV = 'Navigation';
@@ -100,6 +102,20 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 	// -- same no-op-if-already-visible, zoom-out-only-if-needed behavior, just triggerable directly
 	// instead of only as a side effect of a selection actually changing.
 	{ id: 'canvas.focusView', label: 'Focus View', group: CANVAS, allow: ['key'], default: key('Period') },
+	{
+		id: 'canvas.panVertical',
+		label: 'Pan up/down (scroll)',
+		group: CANVAS,
+		allow: ['wheel'],
+		default: wheel({ shift: true })
+	},
+	{
+		id: 'canvas.panHorizontal',
+		label: 'Pan sideways (scroll)',
+		group: CANVAS,
+		allow: ['wheel'],
+		default: wheel({ ctrl: true, shift: true })
+	},
 	{ id: 'layer.delete', label: 'Delete layer', group: AUTHORING, allow: ['mouse'], default: mouse('Mouse0', { alt: true }) },
 	{
 		id: 'property.remove',

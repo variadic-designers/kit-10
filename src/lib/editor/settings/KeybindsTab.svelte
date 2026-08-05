@@ -206,11 +206,12 @@
 	}
 
 	.kb-row {
-		display: flex;
+		display: grid;
 		align-items: center;
 		justify-content: space-between;
 		gap: $x-space-sm;
-		padding: calc($x-space-xs / 2) $x-space-sm;
+		padding: 0 $x-space-sm;
+		grid-template-columns: 4fr 5fr 1fr;
 
 		.kb-label {
 			font-size: $x-font-size-md;
