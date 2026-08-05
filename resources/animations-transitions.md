@@ -280,6 +280,11 @@ Because the model is GSAP-isomorphic, export is a code-gen walk:
 | `keyframes` | `{ keyframes: {...} }` |
 | MotionPath tween | `{ motionPath: { path, align, alignOrigin, autoRotate } }` + register `MotionPathPlugin` |
 | State transition (view A→B) | `Flip.from(state, {...})` **or** generated per-prop `.to()` tweens over the diff |
+| SplitText target | `SplitText.create(el, { type })` + a staggered `.to()` over the returned chars/words/lines |
+| Content tween (text / scramble) | `{ text: "..." }` / `{ scrambleText: {...} }` verbatim |
+| DrawSVG / MorphSVG | `{ drawSVG: "0% 100%" }` / `{ morphSVG: {...} }` (path-gated, §8.4) |
+| Scroll-bound timeline | `scrollTrigger: { trigger, start, end, scrub, pin, toggleActions }` verbatim |
+| CustomWiggle / CustomBounce ease | `CustomWiggle.create(...)` / `CustomBounce.create(...)` + register (else the raw CustomEase `d`) |
 
 ```js
 // generated
@@ -296,7 +301,74 @@ compiles to) - the *motion* is 1:1.
 
 ---
 
-## 8. Caveats & honesty
+## 8. The plugin ecosystem - what a GPU design editor can actually use
+
+GSAP's reach comes from its plugins, but animato lives on the far side of a split GSAP never has to cross: the **preview** is a GPU scene (Vellum), the **export** is DOM/SVG/GSAP. So the useful question isn't "which plugins do we support" - it's "which side of that split does each one live on," because that decides whether it's a cheap native fit, expensive new infrastructure, or export-only with no real preview. Every plugin below sorts into one of six buckets.
+
+### 8.1 The buckets
+
+| Bucket | Meaning | Plugins |
+|---|---|---|
+| **A. Native fit** | previews natively in Vellum AND exports cleanly | SplitText, Flip, CustomEase family, EasePack |
+| **B. Content tween** | animates a node's *content* (its text string) - a new evaluator category that bypasses resolve like §4's transform layer | TextPlugin (Text Replacement), ScrambleText |
+| **C. Path-gated** | needs the vector-path infrastructure from `sdf3d.md`/`text.md`; then three plugins share one arc-length/morph primitive | MotionPath, DrawSVG, MorphSVG |
+| **D. Export-only** | no meaningful canvas preview; authored as a binding/attribute, previewed through a proxy control | ScrollTrigger, ScrollTo, ScrollSmoother |
+| **E. Interaction layer** | end-user interactivity / physics, orthogonal to the tween/timeline core - a separate feature, not animato motion | Draggable, Inertia, Observer, Physics2D, PhysicsProps |
+| **F. Our own UI, never exported** | a GSAP authoring/debug *tool* whose analog is an animato editor affordance | GSDevTools, MotionPathHelper |
+| **(out)** | third-party-runtime integrations with no KIT•10 export target | EaselPlugin, PixiPlugin |
+
+The rest of this section is the per-bucket detail: what each plugin does and the exact reason it lands where it does.
+
+### 8.2 A - native fit (build these first)
+
+- **SplitText** (popular). Splits a text element into per-char / per-word / per-line pieces so each can animate and stagger. This is animato's **best-fit plugin**: Vellum already shapes text into positioned glyphs (cosmic-text), so a split is "promote each glyph/word/line to its own animatable-transform sub-target" (§4) - the geometry already exists, no re-layout. Preview is fully native; export is `SplitText.create(el, { type: "chars,words,lines" })` + a staggered tween over the returned array, which the stagger grammar (§1.4) already addresses. Model a Text node's split as `{ type, mask?, ... }` producing N sub-targets. (Modern SplitText is now free in GSAP and handles masking, smart-wrap, and aria restore - track those as export options, not preview concerns.)
+- **Flip** (popular). Already core to animato as the **state-transition** export target (§5, §7, Phase 4): record resolved state A, change to B, animate the diff. No new infra.
+- **CustomEase family + EasePack** (§2). CustomEase (popular), CustomWiggle (needs CustomEase), CustomBounce (needs CustomEase), and EasePack's `rough` / `slow` / `expoScale`. The load-bearing insight: **every one of these reduces to a CustomEase `d` string.** CustomWiggle and CustomBounce literally *generate* a CustomEase (CustomBounce can emit two - a bounce ease plus a matching squash/stretch ease). So a single CustomEase bezier evaluator previews the entire family, and export picks the *readable* form: emit the generator call (`CustomWiggle.create(...)`, `CustomBounce.create(...)`) and register the plugin, falling back to the raw `d` string only for a hand-drawn curve. The whole premium-ease set is therefore nearly free once the Phase-1 CustomEase evaluator exists.
+
+### 8.3 B - content tweens (a new evaluator category)
+
+`TextPlugin` (**Text Replacement**, `text: "..."`) and **ScrambleText** (`scrambleText: {...}`, the "decoding/hacker" reveal) both animate the **string a Text node displays**, not its transform. That's a category §4 doesn't cover: it mutates content, which normally rides the slow resolve path. But it changes only the string, never layout topology, and Vellum owns text shaping - so animato special-cases a **per-frame text-content override** written straight into the Text node (the same "bypass resolve, write cheap per-node state, repaint" move §4 makes for transforms, applied to the glyph buffer instead). One small runtime addition - a "current display string" override, re-shaped per frame, cleared when the tween ends - covers both plugins. Export → `text:` / `scrambleText:` verbatim. Self-contained, no path infra.
+
+### 8.4 C - path-gated (one primitive, three plugins)
+
+All three depend on KIT•10 gaining a **stroked vector-path primitive**, which it does not have today (Vellum is SDF rects/squircles/text/img). That primitive, plus an **arc-length parameterization** and a **shape-morph interpolator**, is exactly the path/deformation work `sdf3d.md` and `text.md` already propose - so these aren't net-new, they're consumers of that infrastructure:
+
+- **MotionPath** - already planned (§6, §7, Phase 5): move a node's transform along a path by arc-length, `autoRotate` = tangent frame. Arc-length is the shared piece.
+- **DrawSVG** (popular) - animate the *visible fraction* of a stroked path ("draw it on"). Same arc-length parameterization as MotionPath, just driving stroke start/end instead of a transform. Export → `drawSVG: "0% 100%"`.
+- **MorphSVG** - interpolate one path's `d` into another's (point-count-matched). Adds a morph interpolator on top of the path primitive. Highest value for logo/icon motion, deepest infra. Export → `morphSVG: {...}`.
+- **MotionPathHelper** is **not** here - it's an on-canvas path *editor*, i.e. bucket F: its analog is animato's own path-editing UI (sibling to the CustomEase curve editor), with nothing to export.
+
+### 8.5 D - export-only (scroll: dominant on the web, absent on the canvas)
+
+Vellum is a pan/zoom canvas, not a scrolling document, so none of these have a literal preview - yet scroll-driven motion is the **single most common web-animation pattern**, so ScrollTrigger still ranks high. The move is to **author scroll as a binding on a timeline and preview it through a proxy scrubber**:
+
+- **ScrollTrigger** (popular). Links a timeline's progress (`scrub`) or its play/reverse (`toggleActions`) to a scroll range. Author it as a per-timeline `scrollTrigger: { trigger, start, end, scrub, pin, toggleActions, snap }` block; preview by mapping a **virtual scroll slider** to timeline progress (reusing the Phase-2 playhead/scrubber, just fed by a fake scroll position instead of a play clock). Export → `scrollTrigger:` verbatim. The highest-value non-core plugin for a web-motion export tool.
+- **ScrollTo** (`scrollTo: y | element`). A tween whose target is the *scroller*. Meaningless on the canvas (nothing scrolls); model as a special "page scroll" target that only manifests on export. Requires ScrollToPlugin. Low priority.
+- **ScrollSmoother** (needs ScrollTrigger). Smooth-scroll + parallax via per-element `data-speed` / `data-lag`. The design-meaningful part is **parallax speed per node**, which animato can model as a per-node export attribute (and fake in preview by offsetting layers against the virtual scroll). The smooth-scroll wrapper itself is a pure DOM-runtime behavior with nothing to preview. Lower priority.
+
+### 8.6 E - the interaction layer (a separate feature from motion)
+
+- **Draggable** + **Inertia** (formerly ThrowProps) - make an exported element user-draggable, with momentum/flick physics and snap on release. **Observer** - a normalized wheel/touch/pointer/scroll event abstraction with velocity/delta (no animation of its own; it's input plumbing). **Physics2D** / **PhysicsProps** - ballistic motion from velocity/acceleration/gravity/friction instead of duration+ease.
+
+  These are real GSAP and exportable (`Draggable.create`, `inertia:`, `physics2D:`), but they're **end-user interactivity and physics, not timeline motion** - a different authoring axis from animato's tween/timeline core. Two honest notes: (1) KIT•10 already has editor-side drag and a normalized wheel/pointer pipeline in `Viewport.svelte`, but that's *authoring* infrastructure, unrelated to *exporting* an interaction onto the final design. (2) Physics2D/PhysicsProps are self-contained - the ticker can integrate them per frame with no path infra - so they're the cheapest of this bucket to preview if an interactions feature is ever scoped. Recommendation: defer the whole bucket to a post-animato **"interactions"** feature; don't let it dilute the tween/timeline core.
+
+### 8.7 F - GSAP tools that are actually *our* UI
+
+- **GSDevTools** - GSAP's overlay scrubber / play-controls / timeline-visualizer for *debugging* animations. animato's own playhead + scrubber (§1.6, Phase 2) **is** this. Nothing to export; building animato's scrubber well is building our GSDevTools.
+- **MotionPathHelper** - the on-canvas path-point editor (see §8.4). Analog = animato's path-editing UI. Not exported.
+
+### 8.8 Out of scope
+
+- **EaselPlugin** - integration for the legacy EaselJS/CreateJS canvas library. No KIT•10 export target; skip.
+- **PixiPlugin** - integration for PixiJS (animate Pixi display objects' transform/tint/filters). Only relevant if animato ever gains a **PixiJS export target** instead of DOM/SVG. One note worth keeping: Pixi is itself a GPU scene graph, so PixiPlugin is the closest existing analog to *what animato's own runtime does internally* (drive a GPU scene from GSAP-shaped tweens) - but as a design **export** it's niche. Out of scope unless a Pixi target is deliberately added.
+
+### 8.9 Priority read
+
+Collapsed to a build order: **SplitText** and the **CustomEase family** first (bucket A - native, cheap, high-visibility), then **content tweens** (bucket B - one small runtime addition), then **ScrollTrigger** (bucket D - the dominant web pattern, previewed via the scrub proxy), then the **path plugins** (bucket C) whenever the `sdf3d.md`/`text.md` vector-path work lands. The **interaction layer** (E) is a separate future feature; **GSDevTools / MotionPathHelper** (F) are just names for animato UI we're already building; **Easel / Pixi** are out.
+
+---
+
+## 9. Caveats & honesty
 
 - **GSAP animates the DOM/CSS/SVG; animato animates a GPU scene.** The preview runs on
   Vellum; the export runs on the user's DOM. So (a) not every GSAP property is meaningful
@@ -317,7 +389,7 @@ compiles to) - the *motion* is 1:1.
 
 ---
 
-## 9. Phasing
+## 10. Phasing
 
 - **Phase 0 - Animatable transform layer in Vellum.** Add per-node
   `translate/rotate/scale/opacity` applied post-layout (like `NodePosition` today), plus
@@ -333,15 +405,27 @@ compiles to) - the *motion* is 1:1.
   `Flip`. The design-system-native payoff (§5).
 - **Phase 5 - MotionPath**, reusing the `text.md`/`sdf3d.md` path infrastructure. Export
   to `MotionPathPlugin`.
+- **Phase 6 - SplitText.** Per-glyph/word/line animatable sub-targets off Vellum's
+  existing shaped glyphs, staggered via the Phase-2 grammar. Bucket A (§8.2).
+- **Phase 7 - Content tweens.** Per-frame text-content override (text replacement /
+  scramble) bypassing resolve. Bucket B (§8.3).
+- **Phase 8 - ScrollTrigger.** Scroll-binding authoring + virtual-scroll scrub preview +
+  export; the dominant web pattern. Bucket D (§8.5).
+- **Phase 9 - Path plugins (DrawSVG, MorphSVG).** Once the `sdf3d.md`/`text.md`
+  vector-path infra lands; shares arc-length with MotionPath (Phase 5). Bucket C (§8.4).
 
 The dependency spine: Phase 0's animatable-transform layer gates everything (nothing
 animates at 60fps without it); the exporter (Phase 3) is nearly free because the model is
 GSAP-shaped from day one; MotionPath (Phase 5) is shared with the path work already
-planned elsewhere, so it's not net-new infrastructure.
+planned elsewhere, so it's not net-new infrastructure. The plugin phases (6-9) are mostly
+independent and slot in by value: SplitText and the CustomEase family (folded into Phase
+1) are cheap native wins; the path plugins (Phase 9) wait on the same vector-path work as
+MotionPath; the interaction layer (Draggable/Inertia/Observer/Physics, §8.6) is a
+deliberately separate later feature, not part of animato's motion core.
 
 ---
 
-## 10. The one decision that matters
+## 11. The one decision that matters
 
 **Author animato in GSAP's own vocabulary** - tween, timeline, verbatim ease/position
 strings, stagger, keyframes - so export is serialization, not translation; and **solve
@@ -352,7 +436,10 @@ preview matches the export, and animation never fights the resolve pipeline.
 
 ---
 
-*Sources: GSAP v3 docs - core/tweens/timelines, Eases, position parameter,
-MotionPathPlugin, Flip. Current Vellum hooks referenced: `continuousMode` &
+*Sources: GSAP v3 docs - core/tweens/timelines, Eases, position parameter, and the
+plugin catalogue (ScrollTrigger/ScrollTo/ScrollSmoother, SplitText/ScrambleText/TextPlugin,
+DrawSVG/MorphSVG/MotionPath/MotionPathHelper, Flip/Draggable/Inertia/Observer,
+Physics2D/PhysicsProps/GSDevTools/EaselPlugin/PixiPlugin, CustomEase/EasePack/CustomWiggle/
+CustomBounce). Current Vellum hooks referenced: `continuousMode` &
 `requestRender()` in `Viewport.svelte`, the per-frame selection-overlay rebuild and
 post-layout `NodePosition` translation in `taf_can_do/src/render/`.*
