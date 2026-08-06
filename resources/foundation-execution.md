@@ -5,6 +5,27 @@ Companion to [`foundation.md`](./foundation.md). That doc names the shared subst
 (B → A → D → C → E → F). This doc turns it into concrete, PR-sized milestones grounded in the
 real integration points, so the substrate gets built low-risk-first.
 
+> **Status (2026-08-06).** M1-M4 SHIPPED and M5 partially shipped, all Vellum-side (Charter and
+> the resolve pipeline are untouched; the animation layer is additive and inert until driven):
+> - **M1 (kit10-motion crate):** interpolation + GSAP eases + CustomEase. DONE.
+> - **M2 (dynamic layer, Pillar A):** per-node full affine (translate/scale/rotate/opacity) applied
+>   at instance-build time via `render_affines`; rotation threaded through the box + image vertex
+>   shaders; selection/hover overlays follow. DONE.
+> - **M3 (tween runner, Pillar B):** GSAP-ease tweens on the ticker. DONE.
+> - **M4 (Flip, Pillar D-a):** per-node interpolation between two resolved layouts
+>   (`begin_flip`/`commit_flip`). DONE.
+> - **M5 (Pillar C):** the arc-length `Path` primitive + `MotionPath` (a node along a path with
+>   autoRotate) are DONE. The deferred per-glyph text transform is DONE (text rotates/scales with
+>   no reshape via `GlyphTransform`). REMAINING: text-*on*-path (per-glyph path placement) and the
+>   `Deform` wire contract (a `kit10-scene` tag bump + Charter emission).
+> - **M6 (host-fns):** not started.
+>
+> In-app verification: web debug keybinds `Shift+T` (tween), `Shift+F` (Flip), `Shift+M`
+> (MotionPath) on the selected view; native `cargo run --features standalone` runs a self-contained
+> "Animation Stage" panel cycling Flip / gentle in-place tweens / small MotionPath loops, kept
+> clear of the `example_scene` feature showcase. These debug hooks are scaffolding, removed when the
+> real animation authoring UI lands.
+
 Three facts about the codebase reshape the sequencing:
 
 1. **`kit10-scene` is a git-tagged shared crate** (`tag = "v0.2.2"`), consumed by BOTH Vellum
