@@ -556,6 +556,7 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `selected`       | integer      | -        |
 | `shadow`         | BoxShadow?   | -        |
 | `show_border`    | boolean      | ✓        |
+| `squircle`       | boolean      | -        |
 | `width`          | Extent       | ✓        |
 
 #### `TextData`
@@ -579,6 +580,7 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `parent_id`       | integer?           | -        |
 | `selected`        | integer            | -        |
 | `show_border`     | boolean            | ✓        |
+| `squircle`        | boolean            | -        |
 | `text_align`      | TextAlign          | -        |
 | `text_color`      | OklabColor         | ✓        |
 | `text_decoration` | TextDecorationKind | -        |
@@ -596,6 +598,26 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `selected`        | integer      | -        |
 | `source`          | ImageSource  | ✓        |
 | `width`           | Extent       | ✓        |
+
+#### `ShapeData`
+
+| Field          | Type       | Required |
+| -------------- | ---------- | -------- |
+| `extra`        | BoxExtra   | -        |
+| `fill`         | OklabColor | ✓        |
+| `height`       | Extent     | ✓        |
+| `hovered`      | boolean    | -        |
+| `kind`         | ShapeKind  | ✓        |
+| `max_height`   | Extent     | -        |
+| `max_width`    | Extent     | -        |
+| `min_height`   | Extent     | -        |
+| `min_width`    | Extent     | -        |
+| `opacity`      | number     | ✓        |
+| `parent_id`    | integer?   | -        |
+| `selected`     | integer    | -        |
+| `stroke`       | OklabColor | ✓        |
+| `stroke_width` | number     | ✓        |
+| `width`        | Extent     | ✓        |
 
 #### `AlignValue`
 
@@ -710,6 +732,14 @@ One of:
 | `b`     | number | ✓        |
 | `l`     | number | ✓        |
 
+#### `ShapeKind`
+
+One of:
+
+- `"Rect", "Ellipse", "Line"`
+- `{ "Polygon": object }`
+- `{ "Star": object }`
+
 #### `TextAlign`
 
 One of: `"Left"`, `"Center"`, `"Right"`, `"Justify"`
@@ -776,6 +806,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "border_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
     "border_width": 0.0,
     "corner_radius": 8.0,
+    "squircle": false,
     "opacity": 1.0,
     "shadow": null,
     "selected": 0,
@@ -783,7 +814,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
   }
 }
 ```
-(`extra: BoxExtra` - gap/align/flex/`flex_basis`/grid/position - is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary - Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection.)
+(`extra: BoxExtra` - gap/align/flex/`flex_basis`/grid/position - is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary - Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection. `squircle: true` renders corners as a superellipse instead of a circular arc, at the same `corner_radius`.)
 
 **Text node:**
 ```json
@@ -798,6 +829,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "border_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
     "border_width": 0.0,
     "corner_radius": 0.0,
+    "squircle": false,
     "opacity": 1.0,
     "content": "Label",
     "font_size": 14.0,
@@ -837,6 +869,35 @@ measures text during layout.
 `fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong - Vellum reads `fit`.)
 
 `source` is one of: `"None"`, `{ "Url": "..." }`, `{ "Bytes": [u8 array] }`, or `{ "Ref": "..." }` (an asset reference).
+
+**Shape node:**
+```json
+{
+  "Shape": {
+    "parent_id": 0,
+    "kind": "Ellipse",
+    "width": { "Px": 64.0 },
+    "height": { "Px": 64.0 },
+    "min_width": "Auto",
+    "min_height": "Auto",
+    "max_width": "Auto",
+    "max_height": "Auto",
+    "fill": { "l": 0.65, "a": 0.15, "b": -0.05, "alpha": 1.0 },
+    "stroke": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 0.0 },
+    "stroke_width": 0.0,
+    "opacity": 1.0,
+    "selected": 0,
+    "hovered": false
+  }
+}
+```
+(`extra: BoxExtra` is omitted here, same as the Box node above; it defaults when absent.)
+
+A parametric vector shape (analytic SDF, not a rasterized asset), sized like Box - `kind` is one
+of `"Rect"`, `"Ellipse"`, `"Line"`, `{ "Polygon": { "sides": 5 } }`, or
+`{ "Star": { "points": 5, "inner_ratio": 0.5 } }`. Always a leaf (no children). `fill`/`stroke`
+follow the same `OklabColor` shape as every other color field; `stroke_width` is `0.0` for no
+stroke.
 
 **`flex_direction`**: `"Row"` | `"Column"` | `"RowReverse"` | `"ColumnReverse"`
 
@@ -899,7 +960,7 @@ detection, ordering, and cycle-guarding are generic graph math done host-side, s
 }
 ```
 `write_alias` is the token alias to upsert when DnD writes this item's child list; `null`
-when the item's primitive has no `children` field (Text/Image), so the panel hides the
+when the item's primitive has no `children` field (Text/Image/Shape), so the panel hides the
 nest affordance.
 
 **`PanelOp`** - one self-describing context-menu operation. The plugin owns *which* ops
@@ -914,7 +975,7 @@ an item offers; the editor owns *how* to execute each (switch on `name`).
 ```
 `name` is the dispatch key (`rename`/`clone`/`lock`/`hide`/`deselect`/`delete`/`add-child`).
 `kind` is an op-specific payload - today only `add-child` uses it to carry the primitive
-to create (`"box"|"text"|"image"`); other ops leave it `null`.
+to create (`"box"|"text"|"image"|"shape"`); other ops leave it `null`.
 
 ---
 

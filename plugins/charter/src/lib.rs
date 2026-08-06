@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use kit10_scene::{
     AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridAutoFlow,
     GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition, OklabColor,
-    TextAlign, TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize, UiNode,
+    ShapeData, ShapeKind, TextAlign, TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize,
+    UiNode,
 };
 
 /// Map Charter's internal flex-direction string (as `resolve_flex_direction` produces it, always
@@ -413,6 +414,12 @@ const CREATABLE_PRIMITIVES: &[CreatablePrimitive] = &[
         item_label: "Add Image",
         header_label: "Image",
         icon: "fa-solid fa-image",
+    },
+    CreatablePrimitive {
+        kind: "shape",
+        item_label: "Add Shape",
+        header_label: "Shape",
+        icon: "fa-solid fa-shapes",
     },
 ];
 
@@ -1844,11 +1851,111 @@ fn build_img_node(
     })
 }
 
+// kind: "rect" (default) | "ellipse" | "line" | "polygon" | "star". sides/points below 3 fall
+// back to a sane default rather than producing a degenerate 0/1/2-vertex shape.
+fn parse_shape_kind(props: &std::collections::HashMap<String, ResolvedProperty>) -> ShapeKind {
+    match get_prop(props, "kind").as_deref() {
+        Some("ellipse") => ShapeKind::Ellipse,
+        Some("line") => ShapeKind::Line,
+        Some("polygon") => {
+            let sides = parse_px(get_prop(props, "sides").as_deref()) as u32;
+            ShapeKind::Polygon { sides: if sides >= 3 { sides } else { 5 } }
+        }
+        Some("star") => {
+            let points = parse_px(get_prop(props, "points").as_deref()) as u32;
+            let inner_ratio = get_prop(props, "inner-ratio")
+                .and_then(|s| s.trim().parse::<f32>().ok())
+                .map(|v| v.clamp(0.0, 1.0))
+                .unwrap_or(0.5);
+            ShapeKind::Star { points: if points >= 3 { points } else { 5 }, inner_ratio }
+        }
+        _ => ShapeKind::Rect,
+    }
+}
+
+// A parametric vector shape - sized like Box (mirrors its width/height/min/max, including
+// Fixed/Hug/Fill via compile_resize as a flex item), but always a leaf: no arrange/grid-container
+// opinion, since a Shape has no children (see resources/shapes-drawing-plan.md's Phase 1 scope).
+fn build_shape_node(
+    props: &std::collections::HashMap<String, ResolvedProperty>,
+    parent_id: Option<usize>,
+    parent_main_horizontal: Option<bool>,
+    parent_align_items: Option<AlignValue>,
+) -> UiNode {
+    let kind = parse_shape_kind(props);
+
+    let width_str = get_prop(props, "width");
+    let height_str = get_prop(props, "height");
+    let width_kw = resize_keyword(width_str.as_deref());
+    let height_kw = resize_keyword(height_str.as_deref());
+    let base_width = parse_extent(width_str.as_deref());
+    let base_height = parse_extent(height_str.as_deref());
+    let base_min_width = parse_extent(get_prop(props, "min-width").as_deref());
+    let base_min_height = parse_extent(get_prop(props, "min-height").as_deref());
+    let max_width = parse_extent(get_prop(props, "max-width").as_deref());
+    let max_height = parse_extent(get_prop(props, "max-height").as_deref());
+
+    let rc = compile_resize(
+        width_kw,
+        height_kw,
+        base_width,
+        base_height,
+        base_min_width,
+        base_min_height,
+        parent_main_horizontal,
+        parent_align_items,
+    );
+
+    let mut extra = BoxExtra {
+        flex_grow: rc.flex_grow.unwrap_or(0.0),
+        flex_shrink: rc.flex_shrink,
+        flex_basis: rc.flex_basis,
+        align_self: rc.align_self,
+        ..BoxExtra::default()
+    };
+    // An explicit raw align-self always wins over compile_resize's Hug default -- same
+    // "explicit set wins" convention build_box_node follows.
+    if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
+        extra.align_self = Some(raw);
+    }
+
+    let fill = get_prop(props, "fill");
+    let stroke = get_prop(props, "stroke");
+    let stroke_width = parse_px(get_prop(props, "stroke-width").as_deref());
+    let opacity = get_prop(props, "opacity")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .unwrap_or(1.0);
+
+    UiNode::Shape(ShapeData {
+        parent_id,
+        kind,
+        width: rc.width,
+        height: rc.height,
+        min_width: rc.min_width,
+        min_height: rc.min_height,
+        max_width,
+        max_height,
+        fill: fill.map(|c| parse_color(&c)).unwrap_or_default(),
+        stroke: stroke.map(|c| parse_color(&c)).unwrap_or_default(),
+        stroke_width,
+        opacity,
+        extra,
+        selected: 0,
+        hovered: false,
+    })
+}
+
 fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>) -> &'static str {
     // An image view has a `src` property. Just having one doesn't preclude also having
     // text props (a label over an image), but the `src` presence makes it an image primitive.
     if props.contains_key("src") {
         return "image";
+    }
+
+    // A shape view has a `kind` property (rect/ellipse/line/polygon/star) -- unique to Shape,
+    // same "one property this primitive alone has" test as `src` above.
+    if props.contains_key("kind") {
+        return "shape";
     }
 
     let has_text_props = props.contains_key("font-size")
@@ -2068,6 +2175,48 @@ fn image_categories() -> Vec<FieldCategory> {
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
+            ],
+        },
+    ]
+}
+
+// `kind`/`sides`/`points`/`inner-ratio` are plain fields (no inputType), same precedent as
+// image_categories' `fit` field (also conceptually a fixed-choice value) -- there is no "select"
+// inputType widget actually implemented in the editor yet (the inputType doc comment above lists
+// it aspirationally), so a plain text field is the real "reuse existing widgets" choice for
+// Phase 1, not a speculative one. `sides`/`points`/`inner-ratio` only take effect for their
+// matching `kind` (polygon/star) -- Charter doesn't hide the inapplicable ones; that's an editor
+// polish opportunity, not a resolvability concern (an unused property is simply never read).
+fn shape_categories() -> Vec<FieldCategory> {
+    vec![
+        FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                FieldDef::new("width", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-width", Some("Min")),
+                        max: FieldDef::new("max-width", Some("Max")),
+                    }),
+                FieldDef::new("height", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-height", Some("Min")),
+                        max: FieldDef::new("max-height", Some("Max")),
+                    }),
+            ],
+        },
+        FieldCategory {
+            name: "shape".to_string(),
+            fields: vec![
+                FieldDef::new("kind", Some("Kind")),
+                FieldDef::new("sides", Some("Sides")),
+                FieldDef::new("points", Some("Points")),
+                FieldDef::new("inner-ratio", Some("Inner Ratio")),
+                FieldDef::new("fill", Some("Fill")).with_input_type("color"),
+                FieldDef::new("stroke", Some("Stroke")).with_input_type("color"),
+                FieldDef::new("stroke-width", Some("Stroke Width")),
+                FieldDef::new("opacity", Some("Opacity")),
             ],
         },
     ]
@@ -2327,6 +2476,20 @@ fn render_view_nodes(
 
         // An image is a leaf - it has no children (no content tab, no children field).
         // Any child views assigned to an image view are silently ignored.
+    } else if primitive == "shape" {
+        let mut node = build_shape_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
+        if let UiNode::Shape(shape_data) = &mut node {
+            shape_data.selected = selection;
+            shape_data.hovered = hovered;
+        }
+        viewport.push(node);
+        node_view_ids.push(view_id.to_string());
+        node_kit_ids.push(kit_id_for(kits));
+        node_occurrence_ids.push(occurrence_id.to_string());
+
+        // A shape is a leaf, same as image - Phase 1 shapes don't contain child views (see
+        // resources/shapes-drawing-plan.md's "Explicitly deferred" section). Any child views
+        // assigned to a shape view are silently ignored.
     } else {
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
@@ -2674,6 +2837,8 @@ fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
         text_categories()
     } else if primitive == "image" {
         image_categories()
+    } else if primitive == "shape" {
+        shape_categories()
     } else {
         box_categories()
     }
@@ -5411,6 +5576,7 @@ struct WireSchemaRoot {
     box_node: BoxData,
     text_node: TextData,
     img_node: ImgData,
+    shape_node: ShapeData,
 }
 
 #[cfg(all(feature = "schema", test))]

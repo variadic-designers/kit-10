@@ -539,6 +539,13 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
                 props.push(format!("line-height: {}px;", d.line_height));
             }
         }
+        // The Shape primitive (resources/shapes-drawing-plan.md) has no CSS export path yet --
+        // ellipse/polygon/star have no cheap real-CSS equivalent (a true regular-polygon/star
+        // silhouette needs a computed `clip-path: polygon(...)`, out of scope for this pass), so
+        // this stays a documented v1 gap rather than a half-implemented "only rect/ellipse work"
+        // surface. No rule at all, same "nothing rather than something wrong" posture as an
+        // unresolved Img above.
+        UiNode::Shape(_) => return None,
         UiNode::Img(d) => {
             // No known URL for this image (see lib.rs's kit10_get_asset_links) -- no rule at
             // all, matching html.rs emitting no `<img>` tag for the same node. ImageSource::None/

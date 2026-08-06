@@ -226,7 +226,33 @@ export interface UiImgNode {
 	};
 }
 
-export type UiNode = UiBoxNode | UiTextNode | UiImgNode;
+// Mirrors kit10-scene's `ShapeKind` serde shape: unit variants are bare strings, struct-like
+// variants are single-key objects - same externally-tagged convention `Extent` above uses.
+export type ShapeKind =
+	| 'Rect'
+	| 'Ellipse'
+	| 'Line'
+	| { Polygon: { sides: number } }
+	| { Star: { points: number; inner_ratio: number } };
+
+export interface UiShapeNode {
+	Shape: {
+		parent_id: number | null;
+		kind: ShapeKind;
+		width: Extent;
+		height: Extent;
+		min_width: Extent;
+		min_height: Extent;
+		max_width: Extent;
+		max_height: Extent;
+		fill: [number, number, number, number];
+		stroke: [number, number, number, number];
+		stroke_width: number;
+		opacity: number;
+	};
+}
+
+export type UiNode = UiBoxNode | UiTextNode | UiImgNode | UiShapeNode;
 
 // One weight-range + style a font family actually has. Assembled host-side (Editor.svelte)
 // from Fontavious's `family_facts` and handed to Charter in on_resolve's `fontFacts` map,
@@ -299,7 +325,7 @@ export interface PanelOp {
 	label: string;
 	icon: string;
 	// Op-specific payload. Today only `add-child` uses it to carry which primitive to create
-	// ("box"|"text"|"image"); other ops leave it null.
+	// ("box"|"text"|"image"|"shape"); other ops leave it null.
 	kind: string | null;
 }
 

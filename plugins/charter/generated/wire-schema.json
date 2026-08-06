@@ -9,6 +9,9 @@
     "img_node": {
       "$ref": "#/$defs/ImgData"
     },
+    "shape_node": {
+      "$ref": "#/$defs/ShapeData"
+    },
     "text_node": {
       "$ref": "#/$defs/TextData"
     }
@@ -16,7 +19,8 @@
   "required": [
     "box_node",
     "text_node",
-    "img_node"
+    "img_node",
+    "shape_node"
   ],
   "$defs": {
     "AlignValue": {
@@ -152,6 +156,11 @@
         },
         "show_border": {
           "type": "boolean"
+        },
+        "squircle": {
+          "description": "`true` renders corners as a superellipse (\"squircle\") instead of a circular arc, at\nthe same `corner_radius`. Box-shadow blur always stays circular-arc regardless - see\n`BoxShadow`'s own doc note.",
+          "type": "boolean",
+          "default": false
         },
         "width": {
           "$ref": "#/$defs/Extent"
@@ -379,7 +388,7 @@
       }
     },
     "BoxShadow": {
-      "description": "A drop shadow (`box-shadow`).",
+      "description": "A drop shadow (`box-shadow`). Always blurs against a circular-arc corner, even when the\nowning `BoxData`/`TextData.squircle` is `true` - an exact squircle blur has no closed form\n(would need a 2D numeric quadrature over the implicit boundary); this is an accepted,\ndeliberate visual inconsistency (rounded shadow under a sharp squircle corner), not a bug.",
       "type": "object",
       "properties": {
         "blur_radius": {
@@ -800,6 +809,174 @@
         "alpha"
       ]
     },
+    "ShapeData": {
+      "description": "A parametric vector shape (rect / ellipse / line / regular polygon / star), rendered via an\nanalytic SDF rather than a rasterized quad. Sized like `Box` (mirrors its width/height/min/max\nso Fixed/Hug/Fill resizing and flex/grid participation work identically); `hug` has no\nintrinsic content to hug, so it behaves like an explicit size. Fill/stroke are ordinary\nresolvable properties, never baked - same as every other paintable property in this dialect.",
+      "type": "object",
+      "properties": {
+        "extra": {
+          "$ref": "#/$defs/BoxExtra",
+          "default": {
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "flex_basis": null,
+            "flex_grow": 0.0,
+            "flex_shrink": null,
+            "flex_wrap": "NoWrap",
+            "gap": 0.0,
+            "grid_auto_columns": [],
+            "grid_auto_flow": "Row",
+            "grid_auto_rows": [],
+            "grid_column": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_row": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_template_areas": [],
+            "grid_template_columns": [],
+            "grid_template_rows": [],
+            "justify_content": null,
+            "justify_items": null,
+            "justify_self": null,
+            "margin": 0.0,
+            "position": "Relative"
+          }
+        },
+        "fill": {
+          "$ref": "#/$defs/OklabColor"
+        },
+        "height": {
+          "$ref": "#/$defs/Extent"
+        },
+        "hovered": {
+          "type": "boolean",
+          "default": false
+        },
+        "kind": {
+          "$ref": "#/$defs/ShapeKind"
+        },
+        "max_height": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "max_width": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "min_height": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "min_width": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "opacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "parent_id": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "selected": {
+          "description": "0 = none, 1 = secondary, 2 = primary/active - same convention as `BoxData.selected`.",
+          "type": "integer",
+          "format": "uint8",
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "stroke": {
+          "$ref": "#/$defs/OklabColor"
+        },
+        "stroke_width": {
+          "type": "number",
+          "format": "float"
+        },
+        "width": {
+          "$ref": "#/$defs/Extent"
+        }
+      },
+      "required": [
+        "kind",
+        "width",
+        "height",
+        "fill",
+        "stroke",
+        "stroke_width",
+        "opacity"
+      ]
+    },
+    "ShapeKind": {
+      "description": "The geometric kind of a `Shape` node, and its shape-specific parameters. Analytic/parametric\nonly for now (Phase 1) - a future `Path { .. }` variant (Phase 2, freeform) slots in here\nwithout breaking this tag, since the enum is already externally tagged per-variant.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "Rect",
+            "Ellipse",
+            "Line"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Polygon": {
+              "type": "object",
+              "properties": {
+                "sides": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "sides"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Polygon"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Star": {
+              "type": "object",
+              "properties": {
+                "inner_ratio": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "points": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "points",
+                "inner_ratio"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Star"
+          ]
+        }
+      ]
+    },
     "TextAlign": {
       "description": "CSS `text-align` (LTR-relative; no bidi yet). `Left` is the wire default.",
       "type": "string",
@@ -890,6 +1067,11 @@
         },
         "show_border": {
           "type": "boolean"
+        },
+        "squircle": {
+          "description": "Same superellipse-corner toggle as `BoxData.squircle` - `Text` paints its own\nbackground/border/radius via the shared `extract_paint_props` helper.",
+          "type": "boolean",
+          "default": false
         },
         "text_align": {
           "$ref": "#/$defs/TextAlign",

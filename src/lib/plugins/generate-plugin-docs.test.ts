@@ -67,20 +67,21 @@ describe('generate-plugin-docs (wire node examples)', () => {
 	// Fields deliberately elided from the illustrative examples for brevity - PLUGINS.md documents
 	// each omission in prose (e.g. "extra: BoxExtra ... is omitted here; it defaults when absent").
 	// Anything NOT listed here must appear in its node's example.
-	const OMITTED: Record<string, string[]> = { Box: ['extra'], Text: [], Img: [] };
+	const OMITTED: Record<string, string[]> = { Box: ['extra'], Text: [], Img: [], Shape: ['extra'] };
 	const MARKER: Record<string, string> = {
 		Box: '**Box node:**',
 		Text: '**Text node:**',
-		Img: '**Image node:**'
+		Img: '**Image node:**',
+		Shape: '**Shape node:**'
 	};
 
 	const nodeFields = nodeFieldsFromSchema(wireSchema);
 
-	it('schema covers exactly the Box/Text/Img variants', () => {
-		expect(Object.keys(nodeFields).sort()).toEqual(['Box', 'Img', 'Text']);
+	it('schema covers exactly the Box/Text/Img/Shape variants', () => {
+		expect(Object.keys(nodeFields).sort()).toEqual(['Box', 'Img', 'Shape', 'Text']);
 	});
 
-	for (const variant of ['Box', 'Text', 'Img'] as const) {
+	for (const variant of ['Box', 'Text', 'Img', 'Shape'] as const) {
 		it(`PLUGINS.md ${variant} example documents every wire field (source: schema)`, () => {
 			const block = extractJsonBlockAfter(pluginsMd, MARKER[variant]);
 			const omitted = OMITTED[variant];

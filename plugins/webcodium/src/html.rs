@@ -130,6 +130,10 @@ fn render_html_node(
                 ));
             }
         }
+        // No CSS rule is ever emitted for a Shape node (see css.rs::node_props's matching
+        // comment), so emitting a classed element for it here would just be an empty, unstyled
+        // div -- staying silent is the honest behavior until Shape export is actually built.
+        UiNode::Shape(_) => {}
     }
 }
 
