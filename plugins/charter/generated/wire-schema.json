@@ -461,6 +461,16 @@
         }
       ]
     },
+    "FillRule": {
+      "description": "Which fill values count as \"inside\" a `ShapeKind::Path` contour. Mirrors\n`fdsm::bezier::scanline::FillRule`'s variant set exactly (same names, same order), so a\nrenderer's Path-baking code can map this 1:1 with no translation table.",
+      "type": "string",
+      "enum": [
+        "Nonzero",
+        "Odd",
+        "Positive",
+        "Negative"
+      ]
+    },
     "FlexDir": {
       "description": "CSS `flex-direction`. Previously emitted as a bare `String` by Charter - now a real enum, so\nan invalid value fails to deserialize instead of silently mismatching.",
       "type": "string",
@@ -809,6 +819,149 @@
         "alpha"
       ]
     },
+    "PathSegment": {
+      "description": "One Bezier segment of a `ShapeKind::Path` contour, in the shape's own local coordinate\nspace (same origin/units as the containing `ShapeData`'s box). Mirrors\n`fdsm::bezier::Segment`'s three constructible orders (`line`/`quad`/`cubic`) exactly, so a\nrenderer's Path-baking code can map each variant onto the matching `fdsm` constructor with\nno reinterpretation.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "Line": {
+              "type": "object",
+              "properties": {
+                "p0": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p1": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                }
+              },
+              "required": [
+                "p0",
+                "p1"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Line"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Quad": {
+              "type": "object",
+              "properties": {
+                "p0": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p1": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p2": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                }
+              },
+              "required": [
+                "p0",
+                "p1",
+                "p2"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Quad"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Cubic": {
+              "type": "object",
+              "properties": {
+                "p0": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p1": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p2": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                },
+                "p3": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2
+                }
+              },
+              "required": [
+                "p0",
+                "p1",
+                "p2",
+                "p3"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Cubic"
+          ]
+        }
+      ]
+    },
     "ShapeData": {
       "description": "A parametric vector shape (rect / ellipse / line / regular polygon / star), rendered via an\nanalytic SDF rather than a rasterized quad. Sized like `Box` (mirrors its width/height/min/max\nso Fixed/Hug/Fill resizing and flex/grid participation work identically); `hug` has no\nintrinsic content to hug, so it behaves like an explicit size. Fill/stroke are ordinary\nresolvable properties, never baked - same as every other paintable property in this dialect.",
       "type": "object",
@@ -916,7 +1069,7 @@
       ]
     },
     "ShapeKind": {
-      "description": "The geometric kind of a `Shape` node, and its shape-specific parameters. Analytic/parametric\nonly for now (Phase 1) - a future `Path { .. }` variant (Phase 2, freeform) slots in here\nwithout breaking this tag, since the enum is already externally tagged per-variant.",
+      "description": "The geometric kind of a `Shape` node, and its shape-specific parameters. `Path` (Phase 2,\nfreeform) is an arbitrary boundary authored as a flat list of segments - never a brush or\npressure concept, just geometry a plugin has already computed (see\nresources/vellum-sprite-batch-plan.md). Scoped to `closed: true` for v1; an unfilled\nopen-path stroke render is a deferred, separate concern.",
       "oneOf": [
         {
           "type": "string",
@@ -973,6 +1126,37 @@
           "additionalProperties": false,
           "required": [
             "Star"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Path": {
+              "type": "object",
+              "properties": {
+                "closed": {
+                  "type": "boolean"
+                },
+                "fill_rule": {
+                  "$ref": "#/$defs/FillRule"
+                },
+                "segments": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/PathSegment"
+                  }
+                }
+              },
+              "required": [
+                "segments",
+                "fill_rule",
+                "closed"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Path"
           ]
         }
       ]

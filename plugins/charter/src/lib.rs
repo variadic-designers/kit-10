@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 // Vellum both conform to), not in Charter. Charter builds and serializes these; it no longer owns
 // their definition.
 use kit10_scene::{
-    AlignValue, BoxData, BoxExtra, Extent, FlexDir, FlexWrapValue, FontStyle, GridAutoFlow,
-    GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition, OklabColor,
-    ShapeData, ShapeKind, TextAlign, TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize,
-    UiNode,
+    AlignValue, BoxData, BoxExtra, Extent, FillRule, FlexDir, FlexWrapValue, FontStyle,
+    GridAutoFlow, GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition,
+    OklabColor, PathSegment, ShapeData, ShapeKind, TextAlign, TextData, TextDecorationKind,
+    TrackMax, TrackMin, TrackSize, UiNode,
 };
 
 /// Map Charter's internal flex-direction string (as `resolve_flex_direction` produces it, always
@@ -1851,8 +1851,8 @@ fn build_img_node(
     })
 }
 
-// kind: "rect" (default) | "ellipse" | "line" | "polygon" | "star". sides/points below 3 fall
-// back to a sane default rather than producing a degenerate 0/1/2-vertex shape.
+// kind: "rect" (default) | "ellipse" | "line" | "polygon" | "star" | "path". sides/points below 3
+// fall back to a sane default rather than producing a degenerate 0/1/2-vertex shape.
 fn parse_shape_kind(props: &std::collections::HashMap<String, ResolvedProperty>) -> ShapeKind {
     match get_prop(props, "kind").as_deref() {
         Some("ellipse") => ShapeKind::Ellipse,
@@ -1868,6 +1868,27 @@ fn parse_shape_kind(props: &std::collections::HashMap<String, ResolvedProperty>)
                 .map(|v| v.clamp(0.0, 1.0))
                 .unwrap_or(0.5);
             ShapeKind::Star { points: if points >= 3 { points } else { 5 }, inner_ratio }
+        }
+        Some("path") => {
+            // `segments` is a resolved property carrying the wire type's own natural JSON
+            // serialization (`serde_json::to_string(&Vec<PathSegment>)`), not a hand-typed
+            // CSS-like shorthand -- unlike `grid-template-columns`/`-areas`, a raw segment list is
+            // authored programmatically (a pen/brush tool, per resources/vellum-sprite-batch-
+            // plan.md), never hand-typed, so there is no shorthand grammar worth inventing here.
+            let segments: Vec<PathSegment> = get_prop(props, "segments")
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default();
+            let fill_rule = match get_prop(props, "fill-rule").as_deref() {
+                Some("odd") => FillRule::Odd,
+                Some("positive") => FillRule::Positive,
+                Some("negative") => FillRule::Negative,
+                _ => FillRule::Nonzero,
+            };
+            // v1 scope cut (resources/vellum-sprite-batch-plan.md's Part 0): closed fills only.
+            // An explicit `closed: false` is preserved on the wire (Vellum's own bake auto-closes
+            // regardless), but Charter doesn't yet expose any authoring path that produces it.
+            let closed = get_prop(props, "closed").as_deref() != Some("false");
+            ShapeKind::Path { segments, fill_rule, closed }
         }
         _ => ShapeKind::Rect,
     }
@@ -2213,6 +2234,13 @@ fn shape_categories() -> Vec<FieldCategory> {
                 FieldDef::new("sides", Some("Sides")),
                 FieldDef::new("points", Some("Points")),
                 FieldDef::new("inner-ratio", Some("Inner Ratio")),
+                // `kind: "path"` only -- `segments` is raw JSON (see `parse_shape_kind`'s doc
+                // comment), authored programmatically (a future pen/brush tool), not through a
+                // dedicated widget yet, so this rides the same plain-text fallback `sides`/
+                // `points` already use rather than a bespoke inputType.
+                FieldDef::new("segments", Some("Segments")),
+                FieldDef::new("fill-rule", Some("Fill Rule")),
+                FieldDef::new("closed", Some("Closed")),
                 FieldDef::new("fill", Some("Fill")).with_input_type("color"),
                 FieldDef::new("stroke", Some("Stroke")).with_input_type("color"),
                 FieldDef::new("stroke-width", Some("Stroke Width")),
@@ -4643,6 +4671,77 @@ mod color_input_type_tests {
         let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
         assert_color_input_type(&fields, "background");
         assert_color_input_type(&fields, "border");
+    }
+}
+
+#[cfg(test)]
+mod shape_kind_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn parses_path_segments_from_json_and_defaults_fill_rule_and_closed() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("kind".into(), prop("kind", "path"));
+        props.insert(
+            "segments".into(),
+            prop(
+                "segments",
+                r#"[{"Line":{"p0":[0.0,0.0],"p1":[10.0,0.0]}}]"#,
+            ),
+        );
+        let ShapeKind::Path { segments, fill_rule, closed } = parse_shape_kind(&props) else {
+            panic!("expected ShapeKind::Path");
+        };
+        assert_eq!(segments.len(), 1);
+        assert!(matches!(segments[0], PathSegment::Line { .. }));
+        // Neither `fill-rule` nor `closed` was set -- defaults are Nonzero / true.
+        assert!(matches!(fill_rule, FillRule::Nonzero));
+        assert!(closed);
+    }
+
+    #[test]
+    fn reads_fill_rule_and_explicit_closed_false() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("kind".into(), prop("kind", "path"));
+        props.insert("fill-rule".into(), prop("fill-rule", "odd"));
+        props.insert("closed".into(), prop("closed", "false"));
+        let ShapeKind::Path { fill_rule, closed, .. } = parse_shape_kind(&props) else {
+            panic!("expected ShapeKind::Path");
+        };
+        assert!(matches!(fill_rule, FillRule::Odd));
+        assert!(!closed);
+    }
+
+    #[test]
+    fn missing_or_malformed_segments_json_degrades_to_an_empty_list_not_a_panic() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("kind".into(), prop("kind", "path"));
+        props.insert("segments".into(), prop("segments", "not json"));
+        let ShapeKind::Path { segments, .. } = parse_shape_kind(&props) else {
+            panic!("expected ShapeKind::Path");
+        };
+        assert!(segments.is_empty());
+    }
+
+    #[test]
+    fn unrecognized_kind_still_falls_back_to_rect() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("kind".into(), prop("kind", "not-a-real-kind"));
+        assert!(matches!(parse_shape_kind(&props), ShapeKind::Rect));
     }
 }
 

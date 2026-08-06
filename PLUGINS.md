@@ -668,6 +668,10 @@ One of:
 - `{ "Px": number }`
 - `{ "Percent": number }`
 
+#### `FillRule`
+
+One of: `"Nonzero"`, `"Odd"`, `"Positive"`, `"Negative"`
+
 #### `FlexDir`
 
 One of: `"Row"`, `"Column"`, `"RowReverse"`, `"ColumnReverse"`
@@ -732,6 +736,14 @@ One of:
 | `b`     | number | ✓        |
 | `l`     | number | ✓        |
 
+#### `PathSegment`
+
+One of:
+
+- `{ "Line": object }`
+- `{ "Quad": object }`
+- `{ "Cubic": object }`
+
 #### `ShapeKind`
 
 One of:
@@ -739,6 +751,7 @@ One of:
 - `"Rect", "Ellipse", "Line"`
 - `{ "Polygon": object }`
 - `{ "Star": object }`
+- `{ "Path": object }`
 
 #### `TextAlign`
 
