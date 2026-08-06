@@ -1,6 +1,20 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function begin_flip(): void;
+
+export function clear_node_dynamic(index: number): void;
+
+export function clear_node_dynamics(): void;
+
+export function commit_flip(duration: number, ease: string): boolean;
+
+export function debug_flip_demo(duration: number, ease: string): void;
+
+export function debug_motion_path_selected(duration: number, ease: string): boolean;
+
+export function debug_tween_selected(tx: number, ty: number, sx: number, sy: number, rot: number, opacity: number, duration: number, ease: string): boolean;
+
 export function end_node_drag(): Float32Array;
 
 export function ensure_index_visible(index: number): boolean;
@@ -10,6 +24,8 @@ export function get_pan(): Float32Array;
 export function get_selection(x: number, y: number): number | undefined;
 
 export function initialize(canvas_id: string, width: number, height: number): Promise<void>;
+
+export function is_animating(): boolean;
 
 export function is_font_loaded(name: string): boolean;
 
@@ -33,6 +49,8 @@ export function set_data(json: string): void;
  * Kept as a separate export so the JS side can choose which to call based on what Charter emitted.
  */
 export function set_data_binary(bytes: Uint8Array): void;
+
+export function set_node_dynamic(index: number, tx: number, ty: number, sx: number, sy: number, rot: number, opacity: number): void;
 
 export function set_pan(dx: number, dy: number): void;
 
@@ -62,11 +80,19 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly begin_flip: () => void;
+    readonly clear_node_dynamic: (a: number) => void;
+    readonly clear_node_dynamics: () => void;
+    readonly commit_flip: (a: number, b: number, c: number) => number;
+    readonly debug_flip_demo: (a: number, b: number, c: number) => void;
+    readonly debug_motion_path_selected: (a: number, b: number, c: number) => number;
+    readonly debug_tween_selected: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly end_node_drag: (a: number) => void;
     readonly ensure_index_visible: (a: number) => number;
     readonly get_pan: (a: number) => void;
     readonly get_selection: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
+    readonly is_animating: () => number;
     readonly is_font_loaded: (a: number, b: number) => number;
     readonly is_settling: () => number;
     readonly load_font: (a: number, b: number, c: number) => void;
@@ -76,6 +102,7 @@ export interface InitOutput {
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly set_data: (a: number, b: number) => void;
     readonly set_data_binary: (a: number, b: number) => void;
+    readonly set_node_dynamic: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly set_pan: (a: number, b: number) => void;
     readonly set_pan_absolute: (a: number, b: number) => void;
     readonly set_pixel_snap: (a: number) => void;
@@ -88,11 +115,11 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_9411: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7958: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7958_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_7958_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9413: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9575: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8122: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8122_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_8122_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9577: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

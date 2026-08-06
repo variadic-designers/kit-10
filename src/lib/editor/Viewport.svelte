@@ -184,6 +184,42 @@
 		if (vellum.is_settling()) requestAnimationFrame(driveSettleAnimation);
 	}
 
+	// Drives repaints for the dynamic-layer tween runner (foundation.md Pillar A/B): Vellum advances
+	// in-flight tweens in step_tweens and reports whether any is still running via is_animating().
+	// Same self-terminating rAF shape as driveSettleAnimation -- polled each frame until the tween
+	// completes. (continuousMode stays reserved for truly open-ended animation with no stop signal.)
+	function driveDynamicAnimation() {
+		if (!vellum) return;
+		requestRender();
+		if (vellum.is_animating()) requestAnimationFrame(driveDynamicAnimation);
+	}
+
+	// TEMPORARY M3 verification hook: tween the primary-selected view (translate + scale + spin +
+	// fade, yoyo back to rest) so the dynamic layer can be exercised in-app before the real animation
+	// authoring UI exists. Remove when that ships. Guarded so it never fires while typing.
+	function debugTweenSelected() {
+		if (!vellum) return;
+		const started = vellum.debug_tween_selected(120, 0, 1.35, 1.35, Math.PI / 6, 1, 0.7, 'back.out(1.7)');
+		if (started) driveDynamicAnimation();
+	}
+
+	// TEMPORARY M4 verification hook: a self-contained Flip (Pillar D-a) - every node flies in from a
+	// scattered/shrunk state to its real resolved layout, exercising the two-layout interpolation.
+	// Remove when the real Flip-on-resolve wiring + authoring land.
+	function debugFlipDemo() {
+		if (!vellum) return;
+		vellum.debug_flip_demo(0.8, 'power3.out');
+		driveDynamicAnimation();
+	}
+
+	// TEMPORARY M5 verification hook: Shift+M sends the selected view around a loop path (MotionPath,
+	// Pillar C) with autoRotate. Remove with the other debug hooks when authoring lands.
+	function debugMotionPathSelected() {
+		if (!vellum) return;
+		const started = vellum.debug_motion_path_selected(2.2, 'sine.inOut');
+		if (started) driveDynamicAnimation();
+	}
+
 	// Resolves a vellum.get_selection(x, y) hit-test index to the index, the view it belongs to,
 	// and the SPECIFIC OCCURRENCE it belongs to, via Charter's node_view_ids/node_occurrence_ids
 	// side-maps (parallel to the viewport_data array). "" (structural grid scaffolding, no owning
@@ -341,6 +377,26 @@
 
 	function onKeydown(e: KeyboardEvent) {
 		if (isTextEntryTarget(e.target)) return;
+		// TEMPORARY M3 verification hook (foundation.md): Shift+T tweens the selected view so the
+		// dynamic layer is drivable in-app before the animation authoring UI exists. Not a real
+		// keybind (not in the registry) - remove with debugTweenSelected when authoring lands.
+		if (e.code === 'KeyT' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			debugTweenSelected();
+			e.preventDefault();
+			return;
+		}
+		// TEMPORARY M4 hook: Shift+F runs the self-contained Flip demo. Remove with debugFlipDemo.
+		if (e.code === 'KeyF' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			debugFlipDemo();
+			e.preventDefault();
+			return;
+		}
+		// TEMPORARY M5 hook: Shift+M sends the selected view around a loop path (MotionPath).
+		if (e.code === 'KeyM' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			debugMotionPathSelected();
+			e.preventDefault();
+			return;
+		}
 		if (matchKey(e, $keybinds['canvas.pixelSnap'])) {
 			pixelSnap = !pixelSnap;
 			vellum?.set_pixel_snap(pixelSnap);
