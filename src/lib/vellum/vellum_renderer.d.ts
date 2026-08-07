@@ -13,6 +13,8 @@ export function debug_flip_demo(duration: number, ease: string): void;
 
 export function debug_motion_path_selected(duration: number, ease: string): boolean;
 
+export function debug_text_on_path_selected(): boolean;
+
 export function debug_tween_selected(tx: number, ty: number, sx: number, sy: number, rot: number, opacity: number, duration: number, ease: string): boolean;
 
 export function end_node_drag(): Float32Array;
@@ -88,6 +90,7 @@ export interface InitOutput {
     readonly commit_flip: (a: number, b: number, c: number) => number;
     readonly debug_flip_demo: (a: number, b: number, c: number) => void;
     readonly debug_motion_path_selected: (a: number, b: number, c: number) => number;
+    readonly debug_text_on_path_selected: () => number;
     readonly debug_tween_selected: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
     readonly end_node_drag: (a: number) => void;
     readonly ensure_index_visible: (a: number) => number;
@@ -118,11 +121,11 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_10284: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_8831: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_8831_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_8831_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_10286: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_10646: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9193: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9193_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9193_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_10648: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

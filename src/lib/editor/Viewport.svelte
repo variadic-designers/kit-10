@@ -220,6 +220,16 @@
 		if (started) driveDynamicAnimation();
 	}
 
+	// TEMPORARY M5 verification hook: Shift+P toggles the selected TEXT view onto/off a demo
+	// sine-wave path (text-on-path, Pillar C's Deform::ArclengthPath). Unlike the other M5 hooks
+	// this mutates the wire scene directly (set_scene inside Vellum), not a post-layout dynamic
+	// transform - there's no ongoing animation to drive, just one render after the toggle. Remove
+	// with the other debug hooks when real Charter authoring (a text-path property) lands.
+	function debugTextOnPathSelected() {
+		if (!vellum) return;
+		if (vellum.debug_text_on_path_selected()) requestRender();
+	}
+
 	// Resolves a vellum.get_selection(x, y) hit-test index to the index, the view it belongs to,
 	// and the SPECIFIC OCCURRENCE it belongs to, via Charter's node_view_ids/node_occurrence_ids
 	// side-maps (parallel to the viewport_data array). "" (structural grid scaffolding, no owning
@@ -394,6 +404,12 @@
 		// TEMPORARY M5 hook: Shift+M sends the selected view around a loop path (MotionPath).
 		if (e.code === 'KeyM' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			debugMotionPathSelected();
+			e.preventDefault();
+			return;
+		}
+		// TEMPORARY M5 hook: Shift+P toggles the selected TEXT view onto a demo path (text-on-path).
+		if (e.code === 'KeyP' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			debugTextOnPathSelected();
 			e.preventDefault();
 			return;
 		}
