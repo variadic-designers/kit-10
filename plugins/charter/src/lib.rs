@@ -1958,6 +1958,15 @@ fn build_shape_node(
         flex_shrink: rc.flex_shrink,
         flex_basis: rc.flex_basis,
         align_self: rc.align_self,
+        // grid-column/grid-row are CHILD placement properties, meaningful based on whether this
+        // shape's PARENT is a Grid, independent of the shape's own leaf status -- same posture as
+        // build_box_node's own grid_column/grid_row (see the comment there).
+        grid_column: get_prop(props, "grid-column")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        grid_row: get_prop(props, "grid-row")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
         ..BoxExtra::default()
     };
     // An explicit raw align-self always wins over compile_resize's Hug default -- same
@@ -2030,6 +2039,15 @@ fn build_sprite_batch_node(
         flex_shrink: rc.flex_shrink,
         flex_basis: rc.flex_basis,
         align_self: rc.align_self,
+        // grid-column/grid-row are CHILD placement properties, meaningful based on whether this
+        // batch's PARENT is a Grid, independent of its own leaf status -- same posture as
+        // build_box_node's own grid_column/grid_row (see the comment there).
+        grid_column: get_prop(props, "grid-column")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        grid_row: get_prop(props, "grid-row")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
         ..BoxExtra::default()
     };
     if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
@@ -2333,6 +2351,12 @@ fn shape_categories() -> Vec<FieldCategory> {
                         min: FieldDef::new("min-height", Some("Min")),
                         max: FieldDef::new("max-height", Some("Max")),
                     }),
+                // build_shape_node already reads all three into `extra` - only the panel exposure
+                // was missing (a composability audit finding: the wire capacity existed but was
+                // only reachable by hand-authoring a raw render entry, never through the UI).
+                FieldDef::new("align-self", Some("Align")).with_input_type("align"),
+                FieldDef::new("grid-column", Some("Col Span")),
+                FieldDef::new("grid-row", Some("Row Span")),
             ],
         },
         FieldCategory {
@@ -2375,6 +2399,11 @@ fn sprite_batch_categories() -> Vec<FieldCategory> {
                         min: FieldDef::new("min-height", Some("Min")),
                         max: FieldDef::new("max-height", Some("Max")),
                     }),
+                // build_sprite_batch_node already reads all three into `extra` - only the panel
+                // exposure was missing (same composability audit finding as Shape's own, above).
+                FieldDef::new("align-self", Some("Align")).with_input_type("align"),
+                FieldDef::new("grid-column", Some("Col Span")),
+                FieldDef::new("grid-row", Some("Row Span")),
             ],
         },
         FieldCategory {
@@ -4975,6 +5004,28 @@ mod shape_kind_tests {
         props.insert("kind".into(), prop("kind", "not-a-real-kind"));
         assert!(matches!(parse_shape_kind(&props), ShapeKind::Rect));
     }
+
+    #[test]
+    fn build_shape_node_reads_grid_column_and_row_from_props() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("kind".into(), prop("kind", "rect"));
+        props.insert("grid-column".into(), prop("grid-column", "2"));
+        props.insert("grid-row".into(), prop("grid-row", "span 2"));
+        let UiNode::Shape(data) = build_shape_node(&props, None, None, None) else {
+            panic!("expected UiNode::Shape");
+        };
+        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
+        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+    }
+
+    #[test]
+    fn shape_categories_declares_align_self_and_grid_placement_fields() {
+        let categories = shape_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        assert!(fields.iter().any(|f| f.key == "align-self"));
+        assert!(fields.iter().any(|f| f.key == "grid-column"));
+        assert!(fields.iter().any(|f| f.key == "grid-row"));
+    }
 }
 
 #[cfg(test)]
@@ -5056,6 +5107,27 @@ mod sprite_batch_tests {
         for camel in ["spriteId", "minWidth", "maxWidth", "parentId"] {
             assert!(!json.contains(camel), "unexpected camelCase key '{camel}' in {json}");
         }
+    }
+
+    #[test]
+    fn build_sprite_batch_node_reads_grid_column_and_row_from_props() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("grid-column".into(), prop("grid-column", "2"));
+        props.insert("grid-row".into(), prop("grid-row", "span 2"));
+        let UiNode::SpriteBatch(data) = build_sprite_batch_node(&props, None, None, None) else {
+            panic!("expected UiNode::SpriteBatch");
+        };
+        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
+        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+    }
+
+    #[test]
+    fn sprite_batch_categories_declares_align_self_and_grid_placement_fields() {
+        let categories = sprite_batch_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        assert!(fields.iter().any(|f| f.key == "align-self"));
+        assert!(fields.iter().any(|f| f.key == "grid-column"));
+        assert!(fields.iter().any(|f| f.key == "grid-row"));
     }
 }
 
