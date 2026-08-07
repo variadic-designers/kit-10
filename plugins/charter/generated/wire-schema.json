@@ -423,6 +423,152 @@
         "inset"
       ]
     },
+    "Deform": {
+      "description": "The shared `p -> p'` deformation contract (`resources/foundation.md` Pillar C): one\nvocabulary consumed by text Stage C glyph placement, SDF domain warp (future Pillar E),\nMotionPath, DrawSVG, and MorphSVG, so none of them grows a private warp system. `None` on\nthe field that carries this (e.g. `TextData.deform`) means identity - existing scenes stay\nbyte-identical.\n\nOnly `ArclengthPath` is consumed anywhere today (Vellum's text-on-path, `text.md` Phase 2).\nThe other variants are the reserved shape of this contract for Pillar E\n(`resources/sdf3d.md`) and are not yet interpreted by any renderer - additive, inert until\ndriven, same posture as every other not-yet-consumed wire variant in this dialect.\n\nEach variant carries a Lipschitz tier note (`sdf3d.md` §1, §4): a surface warp preserves\nthe distance metric and a raymarcher can step through it normally; a space warp breaks the\nbound and must shrink its step size. That tier is part of a variant's contract, not an\nafterthought, even before Pillar E has a raymarcher to enforce it.",
+      "oneOf": [
+        {
+          "description": "A plain 2D affine, `[a, b, c, d, e, f]` (the standard SVG/Canvas row-major convention:\n`x' = a*x + c*y + e`, `y' = b*x + d*y + f`). Distance-preserving (surface-tier).",
+          "type": "object",
+          "properties": {
+            "Matrix": {
+              "type": "object",
+              "properties": {
+                "m": {
+                  "type": "array",
+                  "items": {
+                    "type": "number",
+                    "format": "float"
+                  },
+                  "maxItems": 6,
+                  "minItems": 6
+                }
+              },
+              "required": [
+                "m"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Matrix"
+          ]
+        },
+        {
+          "description": "Bind to an arc-length-parameterized path: `points` is a polyline in the deformed\nnode's own local coordinate space (same origin/units as `ShapeKind::Path`'s segments -\nthe node's own box), walked at constant speed by length rather than by raw parameter.\n`offset` is an arc-length offset (same units as `points`) added before parameterizing,\nso an animated/authored offset can slide content along the path without re-deriving\nit. Distance-preserving (surface-tier) off the path itself.",
+          "type": "object",
+          "properties": {
+            "ArclengthPath": {
+              "type": "object",
+              "properties": {
+                "offset": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "points": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "float"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2
+                  }
+                }
+              },
+              "required": [
+                "points",
+                "offset"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "ArclengthPath"
+          ]
+        },
+        {
+          "description": "2D -> 2D bound to a deformed quad (four corners), a la \"envelope distort\" /\nIllustrator's \"Make with Warp\". Reserved for Pillar E - shape only, unconsumed.",
+          "type": "object",
+          "properties": {
+            "Envelope": {
+              "type": "object",
+              "properties": {
+                "corners": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "number",
+                      "format": "float"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2
+                  },
+                  "maxItems": 4,
+                  "minItems": 4
+                }
+              },
+              "required": [
+                "corners"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Envelope"
+          ]
+        },
+        {
+          "description": "Project onto an SDF/mesh surface (`text.md` §7's \"text on a surface\", route a).\nReserved for Pillar E - shape only, unconsumed.",
+          "type": "object",
+          "properties": {
+            "SurfaceProjection": {
+              "type": "object",
+              "properties": {
+                "surface_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "surface_id"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "SurfaceProjection"
+          ]
+        },
+        {
+          "description": "A space warp (twist / bend / displace), `sdf3d.md` §4's domain-warp family. Breaks the\nLipschitz bound (space-tier) - a raymarch consumer must shrink its step size. Reserved\nfor Pillar E - shape only, unconsumed.",
+          "type": "object",
+          "properties": {
+            "DomainWarp": {
+              "type": "object",
+              "properties": {
+                "amount": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "kind": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "amount"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "DomainWarp"
+          ]
+        }
+      ]
+    },
     "Extent": {
       "description": "A box-model size dimension (mirrors taffy's `Dimension`). `fr` is deliberately absent -\nfractional-of-free-space is a container concern (`TrackSize::Fr` / flex grow), not a size a\nchild declares about itself.",
       "oneOf": [
@@ -1191,6 +1337,18 @@
         "corner_radius": {
           "type": "number",
           "format": "float"
+        },
+        "deform": {
+          "description": "The shared Pillar C deformation contract - only `Deform::ArclengthPath` (text-on-path)\nis interpreted today. `None` = identity, byte-identical to every scene before this\nfield existed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Deform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "font_family": {
           "type": "string"

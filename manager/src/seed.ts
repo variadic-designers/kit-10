@@ -806,6 +806,18 @@ export async function seedJuiceLandingPage(
 	const { boxKit, textKit, textView, boxView, imageKit, imageView, registerBundledAsset } =
 		makeSeedHelpers(api, proj.id);
 
+	// A polyline approximating a circle, in a text node's own local space (Deform::ArclengthPath's
+	// coordinate convention - see CLAUDE.md's text-on-path note): `n` points is plenty for a badge
+	// this small, since Vellum arc-length-samples the polyline rather than needing a true curve.
+	function circlePoints(cx: number, cy: number, r: number, n = 48): [number, number][] {
+		const pts: [number, number][] = [];
+		for (let i = 0; i <= n; i++) {
+			const a = (i / n) * Math.PI * 2;
+			pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+		}
+		return pts;
+	}
+
 	// --- Flavor axis: the Can kit's background is resolved per-instance below via setAxisArg,
 	// not baked per view -- three views compose the SAME kit and each picks a different Flavor.
 	const flavorAxis = (await api.createAxis(
@@ -948,6 +960,17 @@ export async function seedJuiceLandingPage(
 		'font-weight': '400',
 		color: 'oklch(85% 0.01 264)'
 	});
+	// Text-on-path (Deform::ArclengthPath) badge ring: a small circle, authored in this text
+	// node's own local space (circlePoints centers it on the node's own origin, not some outer
+	// box, since Text always Auto-sizes to its unwrapped straight-line run - see CLAUDE.md's
+	// text-on-path note on why the layout footprint and the bent glyphs diverge).
+	const badgeRingKit = await textKit('Badge Ring Text', {
+		'font-size': '8px',
+		'font-weight': '700',
+		color: 'oklch(30% 0.09 190)',
+		'text-path': JSON.stringify(circlePoints(0, 0, 38)),
+		'text-path-offset': '0'
+	});
 
 	// --- Layout kits ---
 	const pageKit = await boxKit('Page', {
@@ -1086,6 +1109,72 @@ export async function seedJuiceLandingPage(
 		height: 480
 	});
 
+	// --- SpriteBatch confetti band (resources/vellum-sprite-batch-plan.md): three flat white-on-
+	// transparent silhouettes, each `tint: true` so its actual color comes from the per-instance
+	// `color` (Oklab, not a CSS string - SpriteInstance is parsed straight off the wire, no
+	// parse_color pass) rather than the source pixels -- one PNG per sprite kind, reused at every
+	// scatter point and every flavor color.
+	const dropletAssetId = await registerBundledAsset({
+		name: 'sprite-droplet.png',
+		link: '/1x/stock/sprite-droplet.png',
+		mimeType: 'image/png',
+		width: 48,
+		height: 64
+	});
+	const citrusAssetId = await registerBundledAsset({
+		name: 'sprite-citrus.png',
+		link: '/1x/stock/sprite-citrus.png',
+		mimeType: 'image/png',
+		width: 40,
+		height: 40
+	});
+	const leafAssetId = await registerBundledAsset({
+		name: 'sprite-leaf.png',
+		link: '/1x/stock/sprite-leaf.png',
+		mimeType: 'image/png',
+		width: 56,
+		height: 30
+	});
+	// Oklab equivalents of the Flavor axis's own oklch() colors above (SpriteInstance.color has no
+	// CSS-string parsing step, so these are hand-converted: a = C*cos(H), b = C*sin(H)).
+	const confettiColors = [
+		{ l: 0.62, a: -0.138, b: -0.024, alpha: 1 }, // teal, matches the CTA/price accent
+		{ l: 0.86, a: -0.013, b: 0.149, alpha: 1 }, // gold, matches Pineapple
+		{ l: 0.45, a: 0.122, b: -0.146, alpha: 1 }, // deep purple, matches Grape
+		{ l: 0.93, a: -0.049, b: -0.009, alpha: 1 } // light teal, matches the Flavor Chip bg
+	];
+	const confettiKinds: Array<{ id: string | null; w: number; h: number }> = [
+		{ id: dropletAssetId, w: 9, h: 12 },
+		{ id: citrusAssetId, w: 10, h: 10 },
+		{ id: leafAssetId, w: 13, h: 7 }
+	];
+	const confettiSprites: Array<Record<string, unknown>> = [];
+	const CONFETTI_COUNT = 22;
+	for (let i = 0; i < CONFETTI_COUNT; i++) {
+		const kind = confettiKinds[i % confettiKinds.length]!;
+		if (!kind.id) continue;
+		const color = confettiColors[i % confettiColors.length]!;
+		const scale = 0.85 + ((i * 7) % 5) * 0.08;
+		const x = 18 + Math.round((i * 857) / CONFETTI_COUNT) + (((i % 3) - 1) * 10);
+		const y = 6 + ((i * 37) % 38);
+		confettiSprites.push({
+			position: [x, y],
+			size: [Math.round(kind.w * scale), Math.round(kind.h * scale)],
+			rotation: (((i * 53) % 360) * Math.PI) / 180,
+			sprite_id: kind.id,
+			color,
+			opacity: 0.72 + (i % 5) * 0.06,
+			tint: true
+		});
+	}
+	// No background of its own (SpriteBatchData carries no bg_color - it's inherently a
+	// transparent overlay), so it sits directly on the page's own cream background.
+	const confettiBandKit = await boxKit('Confetti Band', {
+		width: 'fill',
+		height: '54px',
+		sprites: JSON.stringify(confettiSprites)
+	});
+
 	// --- Leaf text views ---
 	const logo = await textView('Logo', h2Kit, 'TROPIKA');
 	const navLinkShop = await textView('Nav Link: Shop', navLinkKit, 'Shop');
@@ -1156,15 +1245,27 @@ export async function seedJuiceLandingPage(
 	const nav = await boxView('Nav Bar', navKit, [logo, navLinks]);
 
 	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
+	// Text-on-path seal: a circular badge under the CTA, real curved copy the way a canned drink's
+	// own label would actually stamp it (see badgeRingKit's own comment for the coordinate note).
+	const badgeRing = await textView(
+		'Badge Ring',
+		badgeRingKit,
+		"★ COLD-PRESSED · NO ADDED SUGAR · SINCE 2019 ★ COLD-PRESSED · "
+	);
 	const heroContent = await boxView('Hero Content', heroContentKit, [
 		heroHeading,
 		heroSubtitle,
-		heroCta
+		heroCta,
+		badgeRing
 	]);
 	const heroImg = await imageView('Hero Image', srcImageKit, splashAssetId ?? undefined);
 	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
 
 	const band = await boxView('Brand Statement', bandKit, [bandText]);
+	const confettiBand = await boxView('Confetti Band', confettiBandKit, [], {
+		charter: { primitive: 'sprite-batch' },
+		view_icon: 'fa-solid fa-shapes'
+	});
 
 	const pineapplePhoto = await imageView(
 		'Pineapple Photo',
@@ -1250,6 +1351,7 @@ export async function seedJuiceLandingPage(
 		nav,
 		hero,
 		band,
+		confettiBand,
 		flavorRow,
 		nutritionGrid,
 		chipCluster,
@@ -1322,6 +1424,12 @@ export async function seedGymLandingPage(
 	await api.createRenderEntry(planEliteSnip.id, 'border', 'oklch(80% 0.13 85)');
 	await api.createRenderEntry(planEliteSnip.id, 'background', 'oklch(16% 0.01 260)');
 	await api.createRenderEntry(planEliteSnip.id, 'padding', '32px');
+	// A static stand-in for what would eventually be an idle MotionPath highlight orbiting this
+	// one card (Deform is authored per-property today, not a standing "this node animates" bit -
+	// see resources/foundation-execution.md M6): a bolder gold border + squircle corner draws the
+	// eye without needing motion.
+	await api.createRenderEntry(planEliteSnip.id, 'border-width', '2.5px');
+	await api.createRenderEntry(planEliteSnip.id, 'border-radius-squircle', '1');
 
 	// --- Style kits ---
 	const h1Kit = await textKit('Heading', {
@@ -1488,21 +1596,75 @@ export async function seedGymLandingPage(
 		width: 'fill'
 	});
 	const featuresClusterKit = await boxKit('Features Cluster', { arrange: 'cluster', gap: '8px' });
+	// Explicit grid-template-areas, not the auto-fit `grid-cell-min` sugar every other seeded grid
+	// uses: the class schedule has one real hero (Strength) among five supporting sessions, and
+	// named areas are what let Strength claim a real 2x2 block instead of sitting in the same size
+	// tile as Mobility. Rows: [strength|strength|hiit|cycling] / [strength|strength|yoga|boxing] /
+	// [mobility x4] - Mobility spans the full width as a shorter recovery-track strip underneath.
 	const classGridKit = await boxKit('Class Grid', {
 		arrange: 'grid',
-		'grid-cell-min': '130px',
+		'grid-template-columns': '1fr 1fr 1fr 1fr',
+		'grid-template-rows': '1fr 1fr 0.6fr',
+		'grid-template-areas': '"strength strength hiit cycling" "strength strength yoga boxing" "mobility mobility mobility mobility"',
 		gap: '14px',
 		padding: '48px',
 		width: 'fill'
 	});
-	const classTileKit = await boxKit('Class Tile', {
-		arrange: 'stack',
-		'align-items': 'center',
-		gap: '10px',
-		padding: '18px 10px',
-		background: 'oklch(97% 0.01 260)',
-		'border-radius': '14px'
-	});
+	// A real per-instance property (grid-column/grid-row into the named areas above) can't be
+	// baked onto one shared kit the way boxKit's flat props do - it needs the same axis+layer
+	// pattern planCardKit uses just above, one value per tile. The "Class" axis is that grid-slot
+	// selector; Strength/Mobility additionally get their own visual treatment (Strength claims the
+	// hero tint, Mobility switches to a row layout for its wide strip) on the same conditioned
+	// layer, since both are genuinely tied to which slot the tile occupies.
+	const classAxis = (await api.createAxis(
+		proj.id,
+		'Class',
+		'Which class this tile represents, and which grid area it occupies',
+		'categorical'
+	))!;
+	const classTileKit = (await api.createKitInProject(proj.id, 'Class Tile'))!;
+	await api.consumeAxis(classTileKit.id, classAxis.id);
+	const classTileNull = (await api.createLayer(classTileKit.id))!;
+	const classTileNullSnip = (await api.createRenderSnippet(classTileNull.id))!;
+	await api.createRenderEntry(classTileNullSnip.id, 'arrange', 'stack');
+	await api.createRenderEntry(classTileNullSnip.id, 'align-items', 'center');
+	await api.createRenderEntry(classTileNullSnip.id, 'gap', '10px');
+	await api.createRenderEntry(classTileNullSnip.id, 'padding', '18px 10px');
+	await api.createRenderEntry(classTileNullSnip.id, 'background', 'oklch(97% 0.01 260)');
+	await api.createRenderEntry(classTileNullSnip.id, 'border-radius', '14px');
+
+	type ClassSlot = { slug: string; extra?: Record<string, string> };
+	const classSlots: ClassSlot[] = [
+		{
+			slug: 'strength',
+			extra: {
+				background: 'oklch(95% 0.03 35)',
+				padding: '22px 16px'
+			}
+		},
+		{ slug: 'hiit' },
+		{ slug: 'cycling' },
+		{ slug: 'yoga' },
+		{ slug: 'boxing' },
+		{
+			slug: 'mobility',
+			extra: {
+				'flex-direction': 'row',
+				'justify-content': 'flex-start',
+				gap: '14px'
+			}
+		}
+	];
+	for (const { slug, extra } of classSlots) {
+		const value = (await api.createAxisValue(classAxis.id, { type: 'literal', value: slug }))!;
+		const layer = (await api.createLayer(classTileKit.id))!;
+		await api.addAxisValueToLayer(layer.id, value.id);
+		const snip = (await api.createRenderSnippet(layer.id))!;
+		await api.createRenderEntry(snip.id, 'grid-column', `${slug}-start / ${slug}-end`);
+		await api.createRenderEntry(snip.id, 'grid-row', `${slug}-start / ${slug}-end`);
+		for (const [k, v] of Object.entries(extra ?? {})) await api.createRenderEntry(snip.id, k, v);
+	}
+
 	const classIconKit = await boxKit('Class Icon', {
 		width: '36px',
 		height: '36px',
@@ -1648,9 +1810,14 @@ export async function seedGymLandingPage(
 	const plansRow = await boxView('Plans Row', plansRowKit, [basicCard, proCard, eliteCard]);
 
 	const classTiles: string[] = [];
-	for (const labelId of classLabelViews) {
+	for (let i = 0; i < classNames.length; i++) {
 		const icon = await boxView('Class Icon', classIconKit, []);
-		classTiles.push(await boxView('Class Tile', classTileKit, [icon, labelId]));
+		const tile = await boxView('Class Tile', classTileKit, [icon, classLabelViews[i]!]);
+		await api.setAxisArg(tile, classTileKit.id, classAxis.id, {
+			type: 'literal',
+			value: classSlots[i]!.slug
+		});
+		classTiles.push(tile);
 	}
 	const classGrid = await boxView('Class Grid', classGridKit, classTiles);
 
@@ -1736,6 +1903,10 @@ export async function seedMerchLandingPage(
 	await api.createRenderEntry(tileNullSnip.id, 'border', 'oklch(85% 0 0)');
 	await api.createRenderEntry(tileNullSnip.id, 'border-radius', '4px');
 	await api.createRenderEntry(tileNullSnip.id, 'background', 'oklch(100% 0 0)');
+	// Squircle, quietly: the same superellipse-corner primitive Tropika reaches for loudly on its
+	// flavor cans, used here at a whisper - a few extra points of curve on an already-small 4px
+	// radius, restrained rather than a rounded-everything look, matching the brand's whole point.
+	await api.createRenderEntry(tileNullSnip.id, 'border-radius-squircle', '1');
 
 	const tileShirts = (await api.createLayer(productTileKit.id))!;
 	await api.addAxisValueToLayer(tileShirts.id, categoryShirts.id);
@@ -1746,6 +1917,28 @@ export async function seedMerchLandingPage(
 	await api.addAxisValueToLayer(tilePants.id, categoryPants.id);
 	const tilePantsSnip = (await api.createRenderSnippet(tilePants.id))!;
 	await api.createRenderEntry(tilePantsSnip.id, 'border', 'oklch(40% 0.05 250)');
+
+	// --- Grid Slot axis: a second axis on the SAME kit, independent of Category (border color) -
+	// this one exists purely to place each of the four shared-kit tiles into its own named area of
+	// the editorial grid below (see productGridKit). A lookbook page is a spread, not a catalog: the
+	// hero image claims real column/row space and the garments arrange around it, the way an art
+	// director lays out a magazine page rather than tiling everything evenly.
+	const slotAxis = (await api.createAxis(
+		proj.id,
+		'Grid Slot',
+		'Which named area of the editorial grid this tile occupies',
+		'categorical'
+	))!;
+	const productSlots = ['oxford', 'tee', 'trouser', 'denim'];
+	for (const slug of productSlots) {
+		const value = (await api.createAxisValue(slotAxis.id, { type: 'literal', value: slug }))!;
+		const layer = (await api.createLayer(productTileKit.id))!;
+		await api.addAxisValueToLayer(layer.id, value.id);
+		const snip = (await api.createRenderSnippet(layer.id))!;
+		await api.createRenderEntry(snip.id, 'grid-column', `${slug}-start / ${slug}-end`);
+		await api.createRenderEntry(snip.id, 'grid-row', `${slug}-start / ${slug}-end`);
+	}
+	await api.consumeAxis(productTileKit.id, slotAxis.id);
 
 	// --- Style kits ---
 	const h1Kit = await textKit('Heading', {
@@ -1874,12 +2067,27 @@ export async function seedMerchLandingPage(
 		background: 'oklch(100% 0 0)',
 		width: 'fill'
 	});
+	// Editorial grid: the lookbook photo spans the full left column across both rows (a real
+	// spread), with the four products arranged two-up beside it - see the Grid Slot axis above for
+	// how each shared-kit tile places itself, and lookbookCellKit below for the image's own slot.
 	const productGridKit = await boxKit('Product Grid', {
 		arrange: 'grid',
-		'grid-cell-min': '190px',
+		'grid-template-columns': '1.3fr 1fr 1fr',
+		'grid-template-rows': 'minmax(220px, auto) minmax(160px, auto)',
+		'grid-template-areas': '"lookbook oxford tee" "lookbook trouser denim"',
 		gap: '20px',
 		padding: '0px 64px 56px',
 		width: 'fill'
+	});
+	// The lookbook photo's own grid slot: unlike the four product tiles it's a singleton, so its
+	// placement is baked directly rather than routed through an axis. Deliberately no radius/
+	// squircle here - Img has no corner_radius of its own (only Box/Text do) and this cell has no
+	// padding, so a rounded box background would sit fully hidden behind the full-bleed photo. Full
+	// bleed is the right call for the hero spread anyway; the squircle refinement lives on the four
+	// product cards below, which have real padding for it to show through.
+	const lookbookCellKit = await boxKit('Lookbook Cell', {
+		'grid-column': 'lookbook-start / lookbook-end',
+		'grid-row': 'lookbook-start / lookbook-end'
 	});
 	const priceRowKit = await boxKit('Price Row', {
 		arrange: 'stack',
@@ -1905,7 +2113,10 @@ export async function seedMerchLandingPage(
 	// Real, freely-licensed photos, bundled locally rather than flat color swatches -- see the
 	// matching note in seedJuiceLandingPage above on why these are NOT hotlinked. Also replaces
 	// the four product tiles' plain color-swatch placeholders with a real photo per product.
-	const srcImageKit = await imageKit('Image Source', { width: '100%', height: '360px', fit: 'contain' });
+	// `height: 'fill'` (not a fixed px) now that this sits inside a grid cell whose height is
+	// computed from the row tracks rather than page flow; `cover` (not the old `contain`) so it
+	// reads as a full-bleed spread photo rather than a letterboxed thumbnail.
+	const srcImageKit = await imageKit('Image Source', { width: '100%', height: 'fill', fit: 'cover' });
 	const lookbookAssetId = await registerBundledAsset({
 		name: 'merch-lookbook.jpg',
 		link: '/1x/stock/merch-lookbook.jpg',
@@ -2026,6 +2237,7 @@ export async function seedMerchLandingPage(
 	const hero = await boxView('Hero Section', heroKit, [heroHeading, heroSubtitle, heroCta]);
 
 	const lookbookImg = await imageView('Lookbook Image', srcImageKit, lookbookAssetId ?? undefined);
+	const lookbookCell = await boxView('Lookbook Cell', lookbookCellKit, [lookbookImg]);
 
 	const shippingBoxFree = await boxView('Shipping Box: Free', shippingBoxKit, [shippingFree]);
 	const shippingBoxReturns = await boxView('Shipping Box: Returns', shippingBoxKit, [
@@ -2055,6 +2267,10 @@ export async function seedMerchLandingPage(
 		type: 'literal',
 		value: 'shirts'
 	});
+	await api.setAxisArg(oxfordTile, productTileKit.id, slotAxis.id, {
+		type: 'literal',
+		value: 'oxford'
+	});
 
 	const teePrices = await boxView('Tee Prices', priceRowKit, [teeOld, teeNew]);
 	const teePhoto = await imageView('Tee Photo', productPhotoKit, teePhotoAssetId ?? undefined);
@@ -2067,6 +2283,7 @@ export async function seedMerchLandingPage(
 		type: 'literal',
 		value: 'shirts'
 	});
+	await api.setAxisArg(teeTile, productTileKit.id, slotAxis.id, { type: 'literal', value: 'tee' });
 
 	const trouserPrices = await boxView('Trouser Prices', priceRowKit, [trouserOld, trouserNew]);
 	const trouserPhoto = await imageView(
@@ -2083,6 +2300,10 @@ export async function seedMerchLandingPage(
 		type: 'literal',
 		value: 'pants'
 	});
+	await api.setAxisArg(trouserTile, productTileKit.id, slotAxis.id, {
+		type: 'literal',
+		value: 'trouser'
+	});
 
 	const denimPrices = await boxView('Denim Prices', priceRowKit, [denimOld, denimNew]);
 	const denimPhoto = await imageView('Denim Photo', productPhotoKit, denimPhotoAssetId ?? undefined);
@@ -2095,8 +2316,13 @@ export async function seedMerchLandingPage(
 		type: 'literal',
 		value: 'pants'
 	});
+	await api.setAxisArg(denimTile, productTileKit.id, slotAxis.id, {
+		type: 'literal',
+		value: 'denim'
+	});
 
 	const productGrid = await boxView('Product Grid', productGridKit, [
+		lookbookCell,
 		oxfordTile,
 		teeTile,
 		trouserTile,
@@ -2120,7 +2346,6 @@ export async function seedMerchLandingPage(
 	await boxView('Landing Page', pageKit, [
 		nav,
 		hero,
-		lookbookImg,
 		shippingRow,
 		band,
 		productGrid,

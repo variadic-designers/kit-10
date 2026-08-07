@@ -568,6 +568,7 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `border_width`    | number             | ✓        |
 | `content`         | string             | ✓        |
 | `corner_radius`   | number             | ✓        |
+| `deform`          | Deform?            | -        |
 | `font_family`     | string             | ✓        |
 | `font_size`       | number             | ✓        |
 | `font_style`      | FontStyle          | ✓        |
@@ -659,6 +660,16 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Baseline"`
 | `offset_x`      | number     | ✓        |
 | `offset_y`      | number     | ✓        |
 | `spread_radius` | number     | ✓        |
+
+#### `Deform`
+
+One of:
+
+- `{ "Matrix": object }`
+- `{ "ArclengthPath": object }`
+- `{ "Envelope": object }`
+- `{ "SurfaceProjection": object }`
+- `{ "DomainWarp": object }`
 
 #### `Extent`
 
@@ -853,6 +864,7 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "text_align": "Left",
     "text_decoration": "None",
     "line_height": 21.0,
+    "deform": null,
     "selected": 0,
     "hovered": false
   }
@@ -862,7 +874,9 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
 `"None" | "Underline" | "LineThrough"` (Vellum enum-variant names verbatim).
 `line_height` is an absolute px value; `0.0` reads as "not provided" (Vellum falls back
 to its own ratio). Text nodes must always emit `width: "Auto", height: "Auto"` - Vellum
-measures text during layout.
+measures text during layout. `deform` is the shared Pillar C `Deform` contract (`null` =
+identity); only `Deform::ArclengthPath` (text-on-path) is interpreted today, authored via
+Charter's `text-path`/`text-path-offset` properties.
 
 **Image node:**
 ```json
