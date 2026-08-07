@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { readFile } from 'node:fs/promises';
 import { createTestDb, type TestContext } from '../test-helpers.js';
 import {
 	resolve,
@@ -6,7 +7,9 @@ import {
 	resolveManyViews,
 	resolveViewsFromRows,
 	fetchResolutionRows,
-	flattenKitResults
+	flattenKitResults,
+	type ResolvedKit,
+	type ResolvedProperty
 } from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
@@ -1351,5 +1354,38 @@ describe('range overlap matching', () => {
 			const flat = flattenKitResults(views.find((v) => v.viewId === view.id)!.resolvedKits);
 			expect(flat.get('src')!.value).toBe('/avatar.png');
 		});
+	});
+});
+
+// `flattenKitResults` (here) and Charter's `merge_kits` (plugins/charter/src/lib.rs) are two
+// independent implementations of the SAME rule, documented in CLAUDE.md as "must be kept in
+// lockstep by hand" with no automated cross-language enforcement -- this is that enforcement.
+// Both load ../../../fixtures/kit-flatten-golden.json and must agree with its `expected` block.
+// Unlike every other test in this file, this one bypasses the DB/resolver entirely and constructs
+// ResolvedKit[] directly -- it's a pure-function parity check on the merge algorithm itself, not
+// an integration test of resolution.
+describe('flattenKitResults cross-language parity (kit-flatten-golden.json)', () => {
+	it('agrees with the shared golden fixture Charter\'s merge_kits also asserts against', async () => {
+		const url = new URL('../../../fixtures/kit-flatten-golden.json', import.meta.url);
+		const raw = await readFile(url, 'utf-8');
+		const fixture = JSON.parse(raw) as {
+			kits: { kitId: string; kitName: string; properties: Record<string, ResolvedProperty> }[];
+			expected: Record<string, { value: string; kitId: string }>;
+		};
+
+		const kits: ResolvedKit[] = fixture.kits.map((k) => ({
+			kitId: k.kitId,
+			kitName: k.kitName,
+			properties: new Map(Object.entries(k.properties))
+		}));
+
+		const flat = flattenKitResults(kits);
+
+		for (const [property, expected] of Object.entries(fixture.expected)) {
+			const resolved = flat.get(property);
+			expect(resolved, `expected a resolved value for "${property}"`).toBeDefined();
+			expect(resolved!.value, `"${property}".value`).toBe(expected.value);
+			expect(resolved!.kitId, `"${property}".kitId`).toBe(expected.kitId);
+		}
 	});
 });

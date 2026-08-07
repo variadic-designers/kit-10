@@ -6029,3 +6029,45 @@ mod wire_schema_tests {
         );
     }
 }
+
+// `merge_kits` (this file) and manager's `flattenKitResults` (manager/src/resolve/resolve.ts)
+// are two independent implementations of the SAME rule - CLAUDE.md documents "keep in lockstep
+// by hand," with no automated enforcement prior to this test. Both load the same
+// ../../fixtures/kit-flatten-golden.json and must agree with its `expected` block; a future
+// divergence in either implementation now fails a test instead of silently drifting.
+#[cfg(test)]
+mod merge_kits_golden_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct GoldenExpectedEntry {
+        value: String,
+        kit_id: String,
+    }
+
+    #[derive(Deserialize)]
+    struct GoldenFixture {
+        kits: Vec<ResolvedKit>,
+        expected: std::collections::HashMap<String, GoldenExpectedEntry>,
+    }
+
+    #[test]
+    fn merge_kits_agrees_with_the_shared_golden_fixture_flatten_kit_results_also_asserts_against() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/kit-flatten-golden.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
+        let fixture: GoldenFixture = serde_json::from_str(&raw).expect("fixture must parse");
+
+        let merged = merge_kits(&fixture.kits);
+
+        for (property, expected) in &fixture.expected {
+            let resolved = merged
+                .get(property)
+                .unwrap_or_else(|| panic!("expected a resolved value for \"{property}\""));
+            assert_eq!(resolved.value, expected.value, "\"{property}\".value");
+            assert_eq!(resolved.kit_id, expected.kit_id, "\"{property}\".kit_id");
+        }
+    }
+}

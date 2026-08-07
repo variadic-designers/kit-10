@@ -1,0 +1,93 @@
+{
+	"_comment": "Cross-language golden fixture for kit-flattening (higher conditionCount wins outright regardless of kit order; later kit only breaks a genuine tie). Consumed by manager/src/resolve/resolve.test.ts (flattenKitResults) AND plugins/charter/src/lib.rs (merge_kits) - both must agree on `expected`. See CLAUDE.md's note on keeping the two in lockstep.",
+	"kits": [
+		{
+			"kitId": "kit-a",
+			"kitName": "Layout",
+			"properties": {
+				"color": {
+					"property": "color",
+					"value": "red",
+					"sourceLayerId": "layer-a1",
+					"kitId": "kit-a",
+					"isToken": false,
+					"tokenAlias": null,
+					"tokenId": null,
+					"conditionCount": 1,
+					"keys": [],
+					"conditionValues": [],
+					"viewRefs": null
+				},
+				"padding": {
+					"property": "padding",
+					"value": "10px",
+					"sourceLayerId": "layer-a2",
+					"kitId": "kit-a",
+					"isToken": false,
+					"tokenAlias": null,
+					"tokenId": null,
+					"conditionCount": 2,
+					"keys": [],
+					"conditionValues": [],
+					"viewRefs": null
+				}
+			}
+		},
+		{
+			"kitId": "kit-b",
+			"kitName": "Theme",
+			"properties": {
+				"color": {
+					"property": "color",
+					"value": "blue",
+					"sourceLayerId": "layer-b1",
+					"kitId": "kit-b",
+					"isToken": false,
+					"tokenAlias": null,
+					"tokenId": null,
+					"conditionCount": 1,
+					"keys": [],
+					"conditionValues": [],
+					"viewRefs": null
+				},
+				"background": {
+					"property": "background",
+					"value": "white",
+					"sourceLayerId": "layer-b2",
+					"kitId": "kit-b",
+					"isToken": false,
+					"tokenAlias": null,
+					"tokenId": null,
+					"conditionCount": 0,
+					"keys": [],
+					"conditionValues": [],
+					"viewRefs": null
+				}
+			}
+		},
+		{
+			"kitId": "kit-c",
+			"kitName": "Override",
+			"properties": {
+				"padding": {
+					"property": "padding",
+					"value": "5px",
+					"sourceLayerId": "layer-c1",
+					"kitId": "kit-c",
+					"isToken": false,
+					"tokenAlias": null,
+					"tokenId": null,
+					"conditionCount": 1,
+					"keys": [],
+					"conditionValues": [],
+					"viewRefs": null
+				}
+			}
+		}
+	],
+	"expected": {
+		"color": { "value": "blue", "kitId": "kit-b" },
+		"padding": { "value": "10px", "kitId": "kit-a" },
+		"background": { "value": "white", "kitId": "kit-b" }
+	}
+}
