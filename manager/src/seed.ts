@@ -1256,12 +1256,15 @@ export async function seedJuiceLandingPage(
 	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
 	// Text-on-path seal: a circular badge under the CTA, real curved copy the way a canned drink's
 	// own label would actually stamp it (see badgeRingKit's own comment for the coordinate note).
-	// "·" (already used mid-phrase, confirmed rendering correctly in-app), not "★" - the
-	// star drew as a missing-glyph tofu box, Inter doesn't ship it.
+	// "·" (already used mid-phrase, confirmed rendering correctly in-app), not "★" - the star drew
+	// as a missing-glyph tofu box, Inter doesn't ship it. Confirmed in-app: the earlier repeated-
+	// tail version overran the circle's own arc-length (Path::sample_at clamps past s=1, so the
+	// overflow silently bunched at the closing point instead of continuing around) - trimmed to
+	// one clean pass, sized to comfortably undershoot rather than risk the same overflow again.
 	const badgeRing = await textView(
 		'Badge Ring',
 		badgeRingKit,
-		'· COLD-PRESSED · NO ADDED SUGAR · SINCE 2019 · COLD-PRESSED · '
+		'· COLD-PRESSED · NO ADDED SUGAR · SINCE 2019 ·'
 	);
 	const badgeSlot = await boxView('Badge Slot', badgeSlotKit, [badgeRing]);
 	const heroContent = await boxView('Hero Content', heroContentKit, [
