@@ -258,10 +258,15 @@ instead of a hardcoded quad. Everything else is additive derivation.
   "purely additive." Follow-up fixes: per-glyph generation cache (perf), variable-font weight,
   and intersection-artifact error correction (`DistanceCheckMode::Always`, so interior stroke-
   join clashes on `e`/`t`/`D` get exact-checked, not just edge artifacts).
-- **Phase 2 - 2D placement stage + fill mesh + warp.** Per-glyph 2D transform (unlocks
-  **type on a path** - glyphs placed/rotated along a 2D path; pipeline stays 2D). Derive
-  a triangulated fill mesh; tessellated glyph mesh through Stage C → **envelope distort**
-  and **text-on-surface decal (route a)**.
+- **Phase 2 - 2D placement stage + fill mesh + warp. Type-on-path slice ✅ SHIPPED**
+  (`resources/foundation-execution.md` M5, 2026-08-07). Per-glyph 2D transform (unlocks
+  **type on a path** - glyphs placed/rotated along a 2D path; pipeline stays 2D), authored via
+  Charter's `text-path` property and consumed through `kit10-scene`'s shared `Deform` enum
+  (Pillar C) - `taf_can_do/src/text/mod.rs`'s `glyph_path_transform` bends each glyph's quad
+  individually via `kit10_motion::Path`'s arc-length sampling. Still open: derive a triangulated
+  fill mesh; tessellated glyph mesh through Stage C → **envelope distort** and **text-on-surface
+  decal (route a)** - neither needed the fill mesh, so type-on-path shipped as an independent
+  slice ahead of the rest of this phase.
 - **Phase 3 - Extrusion in the `Scene3d`/SDF scene (mesh route).** From the outline:
   cap + swept side walls + **beveled/rounded rim profiles**, rendered inside a `Scene3d`
   camera node (not the 2D pipeline). Genuine extruded 3D text with roundedness;
@@ -315,15 +320,16 @@ the phasing in §6:
    retired. Shipped as MTSDF rather than plain MSDF (see §6). Remaining polish is visual:
    intersection-artifact tuning (`DistanceCheckMode::Always`; `edge_coloring_simple`
    `sin_alpha` still at `0.03` vs msdfgen's `~sin(3.0)` default if speckles persist).
-3. **Spec the shared deformation-stage interface** - the `p→p'` contract that *both*
-   text (Stage C) and SDF geometry consume. Write it down before either side grows a
-   private warp system; it's what makes basic ↔ advanced text one system.
-4. **Type-on-path (Phase 2), 2D.** Per-glyph 2D transform along a path, on the MSDF
-   basic pipeline - no 3D required, immediately useful, and the first real placement
-   feature.
+3. **✅ Spec the shared deformation-stage interface** - the `p→p'` contract that *both*
+   text (Stage C) and SDF geometry consume. Shipped as `kit10-scene`'s `Deform` enum
+   (`resources/foundation.md` Pillar C, v0.2.6); only `ArclengthPath` is interpreted so far,
+   the rest (`Matrix`/`Envelope`/`SurfaceProjection`/`DomainWarp`) is the reserved shape for
+   Pillar E.
+4. **✅ Type-on-path (Phase 2), 2D.** Per-glyph 2D transform along a path, on the MTSDF
+   basic pipeline - shipped 2026-08-07 (`resources/foundation-execution.md` M5's remainder).
 
-Only after those four is there a decision to make about *which* feature (path, warp,
-extrude) to build first - and by then it's a derivation, not a rewrite.
+Only after those four is there a decision to make about *which* feature (warp, extrude,
+fill mesh) to build first - and by then it's a derivation, not a rewrite.
 
 ## 9. The two decisions that matter
 
