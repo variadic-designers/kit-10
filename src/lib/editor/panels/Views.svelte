@@ -125,10 +125,19 @@
 	// SpriteBatch were left with a silently empty Render panel until a kit got attached some
 	// other way, since nothing about the empty-categories problem is Box-specific. Same two-step
 	// "create view, then attach a kit" seed.ts already does for every primitive it seeds.
+	//
+	// A brand-new kit has zero LAYERS too, not just zero compositions - `commitFieldValue`
+	// (field-commit.ts) resolves its write target via `getNullLayerId`, which returns `undefined`
+	// (never creates) whenever a kit has no layers at all, so the very first field edit on a
+	// freshly provisioned kit would silently no-op with a "no source layer" console warning.
+	// `createLayerWithConditions(kitId, [])` is the exact-match find-or-create this codebase
+	// already uses for the Axes panel's "create layer" and the pipette write target - an empty
+	// condition set IS the null layer, so calling it with `[]` here find-or-creates it up front.
 	async function provisionKit(projectId: string, viewId: string, name: string) {
 		const kit = await api.createKitInProject(projectId, `${name} Kit`);
 		if (!kit) return;
 		await api.attachKitToComposition(kit.id, viewId);
+		await api.createLayerWithConditions(kit.id, []);
 	}
 
 	// Op dispatch - the manifest declares which ops exist + their label/icon; the editor switches

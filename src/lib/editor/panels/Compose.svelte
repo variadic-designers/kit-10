@@ -68,7 +68,15 @@
 				onClick: () => {
 					if (editorActivity.activeViewId && editorActivity.activeProjectId) {
 						api.createKitInProject(editorActivity.activeProjectId, 'Cool Kit').then((k) => {
-							if (k) attachKit(k.id);
+							if (!k) return;
+							// A brand-new kit has zero layers, so its first field edit would hit
+							// commitFieldValue's "no source layer" guard (getNullLayerId returns
+							// undefined for a kit with no layers at all, never creates one) -
+							// createLayerWithConditions(kitId, []) is the exact-match find-or-create
+							// this codebase already uses elsewhere (Axes panel "create layer", the
+							// pipette write target); an empty condition set IS the null layer.
+							api.createLayerWithConditions(k.id, []);
+							attachKit(k.id);
 						});
 					}
 				}
