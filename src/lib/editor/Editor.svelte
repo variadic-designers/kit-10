@@ -853,6 +853,67 @@
 			loadImageAsset(id);
 		}
 	});
+
+	// Sprite reload scan -- same structural shape as the image-reload scan above (Vellum's
+	// SpriteAtlas is just as push-based and just as memory-only-reset-on-reload as ImageCache),
+	// but with one real difference: `src` is a single asset id per kit, while `sprites` is a JSON
+	// array (a SpriteBatch's whole instance list) that can reference MANY distinct asset ids per
+	// kit, not a 1:1 property-to-asset-id mapping. A `sprite_id` is an ordinary `assets` row, same
+	// table/IndexedDB-cache/`assets.link` fallback mechanism images already use - no new
+	// resource-loading concept, per resources/vellum-sprite-batch-plan.md.
+	const attemptedSpriteIds = new Set<string>();
+
+	async function loadSpriteAsset(assetId: string): Promise<void> {
+		const vellum = getVellumInstance();
+		const editor = editorLoading;
+		if (!vellum || !editor) {
+			attemptedSpriteIds.delete(assetId); // retry once Vellum/the DB itself has initialized
+			return;
+		}
+		try {
+			let bytes = await assetBytes.get(assetId);
+			if (!bytes) {
+				const api = queryBuilder(editor.dialect);
+				const asset = await api.getAssetById(assetId);
+				if (!asset?.link) return; // genuinely missing/orphaned asset -- nothing to load
+				const res = await fetch(asset.link);
+				if (!res.ok) return;
+				bytes = new Uint8Array(await res.arrayBuffer());
+				await assetBytes.put(assetId, bytes);
+			}
+			vellum.load_sprite(assetId, bytes);
+			requestVellumRender();
+		} catch (err) {
+			console.warn(`[assets] failed to load sprite ${assetId} into vellum:`, err);
+		}
+	}
+
+	$effect(() => {
+		if (!pluginManager) return;
+
+		const ids = new Set<string>();
+		for (const view of resolvedViews) {
+			for (const kit of view.resolvedKits) {
+				const spritesRaw = kit.properties.get('sprites')?.value;
+				if (!spritesRaw) continue;
+				try {
+					const sprites = JSON.parse(spritesRaw) as Array<{ sprite_id?: string }>;
+					for (const s of sprites) {
+						if (s.sprite_id) ids.add(s.sprite_id);
+					}
+				} catch {
+					// Malformed JSON -- nothing to load, same "degrade silently" posture Charter's
+					// own build_sprite_batch_node already has for this property.
+				}
+			}
+		}
+
+		for (const id of ids) {
+			if (attemptedSpriteIds.has(id)) continue;
+			attemptedSpriteIds.add(id);
+			loadSpriteAsset(id);
+		}
+	});
 </script>
 
 <svelte:window onkeydown={onNavKey} />
