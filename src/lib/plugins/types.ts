@@ -226,6 +226,17 @@ export interface UiImgNode {
 	};
 }
 
+// Mirrors kit10-scene's `PathSegment` serde shape (externally tagged, same convention as
+// `ShapeKind` below) - one Bezier segment of a `ShapeKind::Path` contour, in the shape's own
+// local box space.
+export type PathSegment =
+	| { Line: { p0: [number, number]; p1: [number, number] } }
+	| { Quad: { p0: [number, number]; p1: [number, number]; p2: [number, number] } }
+	| { Cubic: { p0: [number, number]; p1: [number, number]; p2: [number, number]; p3: [number, number] } };
+
+// Mirrors kit10-scene's `FillRule` serde shape (bare-string unit variants).
+export type FillRule = 'Nonzero' | 'Odd' | 'Positive' | 'Negative';
+
 // Mirrors kit10-scene's `ShapeKind` serde shape: unit variants are bare strings, struct-like
 // variants are single-key objects - same externally-tagged convention `Extent` above uses.
 export type ShapeKind =
@@ -233,7 +244,8 @@ export type ShapeKind =
 	| 'Ellipse'
 	| 'Line'
 	| { Polygon: { sides: number } }
-	| { Star: { points: number; inner_ratio: number } };
+	| { Star: { points: number; inner_ratio: number } }
+	| { Path: { segments: PathSegment[]; fill_rule: FillRule; closed: boolean } };
 
 export interface UiShapeNode {
 	Shape: {
@@ -252,7 +264,33 @@ export interface UiShapeNode {
 	};
 }
 
-export type UiNode = UiBoxNode | UiTextNode | UiImgNode | UiShapeNode;
+// Mirrors kit10-scene's `SpriteInstance` serde shape - one stamped, positioned/rotated/tinted
+// quad within a `SpriteBatch`, sampling a shared texture atlas keyed by `sprite_id`.
+export interface SpriteInstance {
+	position: [number, number];
+	size: [number, number];
+	rotation: number;
+	sprite_id: string;
+	color: [number, number, number, number];
+	opacity: number;
+	tint: boolean;
+}
+
+export interface UiSpriteBatchNode {
+	SpriteBatch: {
+		parent_id: number | null;
+		width: Extent;
+		height: Extent;
+		min_width: Extent;
+		min_height: Extent;
+		max_width: Extent;
+		max_height: Extent;
+		sprites: SpriteInstance[];
+		opacity: number;
+	};
+}
+
+export type UiNode = UiBoxNode | UiTextNode | UiImgNode | UiShapeNode | UiSpriteBatchNode;
 
 // One weight-range + style a font family actually has. Assembled host-side (Editor.svelte)
 // from Fontavious's `family_facts` and handed to Charter in on_resolve's `fontFacts` map,

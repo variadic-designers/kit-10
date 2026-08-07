@@ -58,6 +58,7 @@ pub(crate) fn primitive_class_name(node: &UiNode) -> &'static str {
         UiNode::Text(_) => "text",
         UiNode::Img(_) => "img",
         UiNode::Shape(_) => "shape",
+        UiNode::SpriteBatch(_) => "sprite-batch",
     }
 }
 
@@ -161,9 +162,10 @@ pub(crate) fn view_primitive_is_box(nodes: &[UiNode], node_view_ids: &[String]) 
             UiNode::Text(_) => {
                 map.insert(view_id.clone(), false);
             }
-            // Shape doesn't route through the Kit-basis variants.rs path either -- same posture
-            // as the existing Img exclusion above (see this function's own doc comment).
-            UiNode::Img(_) | UiNode::Shape(_) => {}
+            // Shape/SpriteBatch don't route through the Kit-basis variants.rs path either --
+            // same posture as the existing Img exclusion above (see this function's own doc
+            // comment).
+            UiNode::Img(_) | UiNode::Shape(_) | UiNode::SpriteBatch(_) => {}
         }
     }
     map
@@ -247,6 +249,7 @@ pub(crate) fn parent_of(node: &UiNode) -> Option<usize> {
         UiNode::Text(d) => d.parent_id,
         UiNode::Img(d) => d.parent_id,
         UiNode::Shape(d) => d.parent_id,
+        UiNode::SpriteBatch(d) => d.parent_id,
     }
 }
 

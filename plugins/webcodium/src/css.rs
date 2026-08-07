@@ -546,6 +546,10 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
         // surface. No rule at all, same "nothing rather than something wrong" posture as an
         // unresolved Img above.
         UiNode::Shape(_) => return None,
+        // SpriteBatch (resources/vellum-sprite-batch-plan.md) has no CSS export path either --
+        // no cheap real-CSS equivalent for a GPU-instanced sprite sheet - same documented v1 gap
+        // posture as Shape immediately above.
+        UiNode::SpriteBatch(_) => return None,
         UiNode::Img(d) => {
             // No known URL for this image (see lib.rs's kit10_get_asset_links) -- no rule at
             // all, matching html.rs emitting no `<img>` tag for the same node. ImageSource::None/

@@ -134,6 +134,8 @@ fn render_html_node(
         // comment), so emitting a classed element for it here would just be an empty, unstyled
         // div -- staying silent is the honest behavior until Shape export is actually built.
         UiNode::Shape(_) => {}
+        // Same posture as Shape -- no CSS rule, so no markup either.
+        UiNode::SpriteBatch(_) => {}
     }
 }
 
