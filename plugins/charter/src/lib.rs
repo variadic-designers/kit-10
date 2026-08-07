@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use kit10_scene::{
     AlignValue, BoxData, BoxExtra, Extent, FillRule, FlexDir, FlexWrapValue, FontStyle,
     GridAutoFlow, GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition,
-    OklabColor, PathSegment, ShapeData, ShapeKind, TextAlign, TextData, TextDecorationKind,
-    TrackMax, TrackMin, TrackSize, UiNode,
+    OklabColor, PathSegment, ShapeData, ShapeKind, SpriteBatchData, SpriteInstance, TextAlign,
+    TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize, UiNode,
 };
 
 /// Map Charter's internal flex-direction string (as `resolve_flex_direction` produces it, always
@@ -420,6 +420,12 @@ const CREATABLE_PRIMITIVES: &[CreatablePrimitive] = &[
         item_label: "Add Shape",
         header_label: "Shape",
         icon: "fa-solid fa-shapes",
+    },
+    CreatablePrimitive {
+        kind: "sprite-batch",
+        item_label: "Add Sprite Batch",
+        header_label: "Sprite Batch",
+        icon: "fa-solid fa-icons",
     },
 ];
 
@@ -1966,6 +1972,76 @@ fn build_shape_node(
     })
 }
 
+// A batch of already-computed sprite instances - sized like Box/Shape (mirrors width/height/min/
+// max via compile_resize as a flex item), but always a leaf: no arrange/grid-container opinion,
+// no children (resources/vellum-sprite-batch-plan.md). Charter's ENTIRE opinion here is generic
+// plumbing - parse `sprites` JSON into the wire's own Vec<SpriteInstance> shape, same precedent
+// as parsing grid track lists or a Path's segments; it never computes what the list contains.
+fn build_sprite_batch_node(
+    props: &std::collections::HashMap<String, ResolvedProperty>,
+    parent_id: Option<usize>,
+    parent_main_horizontal: Option<bool>,
+    parent_align_items: Option<AlignValue>,
+) -> UiNode {
+    let width_str = get_prop(props, "width");
+    let height_str = get_prop(props, "height");
+    let width_kw = resize_keyword(width_str.as_deref());
+    let height_kw = resize_keyword(height_str.as_deref());
+    let base_width = parse_extent(width_str.as_deref());
+    let base_height = parse_extent(height_str.as_deref());
+    let base_min_width = parse_extent(get_prop(props, "min-width").as_deref());
+    let base_min_height = parse_extent(get_prop(props, "min-height").as_deref());
+    let max_width = parse_extent(get_prop(props, "max-width").as_deref());
+    let max_height = parse_extent(get_prop(props, "max-height").as_deref());
+
+    let rc = compile_resize(
+        width_kw,
+        height_kw,
+        base_width,
+        base_height,
+        base_min_width,
+        base_min_height,
+        parent_main_horizontal,
+        parent_align_items,
+    );
+
+    let mut extra = BoxExtra {
+        flex_grow: rc.flex_grow.unwrap_or(0.0),
+        flex_shrink: rc.flex_shrink,
+        flex_basis: rc.flex_basis,
+        align_self: rc.align_self,
+        ..BoxExtra::default()
+    };
+    if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
+        extra.align_self = Some(raw);
+    }
+
+    // `sprites` is the wire type's own natural JSON serialization (a brush-pen/particle/pattern
+    // tool's output), not a hand-typed shorthand - same posture and same reasoning as
+    // `parse_shape_kind`'s `segments` field for Path.
+    let sprites: Vec<SpriteInstance> = get_prop(props, "sprites")
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    let opacity = get_prop(props, "opacity")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .unwrap_or(1.0);
+
+    UiNode::SpriteBatch(SpriteBatchData {
+        parent_id,
+        width: rc.width,
+        height: rc.height,
+        min_width: rc.min_width,
+        min_height: rc.min_height,
+        max_width,
+        max_height,
+        sprites,
+        opacity,
+        extra,
+        selected: 0,
+        hovered: false,
+    })
+}
+
 fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>) -> &'static str {
     // An image view has a `src` property. Just having one doesn't preclude also having
     // text props (a label over an image), but the `src` presence makes it an image primitive.
@@ -2250,6 +2326,38 @@ fn shape_categories() -> Vec<FieldCategory> {
     ]
 }
 
+fn sprite_batch_categories() -> Vec<FieldCategory> {
+    vec![
+        FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                FieldDef::new("width", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-width", Some("Min")),
+                        max: FieldDef::new("max-width", Some("Max")),
+                    }),
+                FieldDef::new("height", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-height", Some("Min")),
+                        max: FieldDef::new("max-height", Some("Max")),
+                    }),
+            ],
+        },
+        FieldCategory {
+            name: "sprite-batch".to_string(),
+            fields: vec![
+                // Raw JSON (see `build_sprite_batch_node`'s doc comment) -- authored
+                // programmatically (a brush-pen/particle/pattern tool), not through a dedicated
+                // widget yet, same plain-text-fallback posture Path's `segments` field uses.
+                FieldDef::new("sprites", Some("Sprites")),
+                FieldDef::new("opacity", Some("Opacity")),
+            ],
+        },
+    ]
+}
+
 fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32; 4]) -> UiNode {
     UiNode::Box(BoxData {
         parent_id,
@@ -2518,6 +2626,19 @@ fn render_view_nodes(
         // A shape is a leaf, same as image - Phase 1 shapes don't contain child views (see
         // resources/shapes-drawing-plan.md's "Explicitly deferred" section). Any child views
         // assigned to a shape view are silently ignored.
+    } else if primitive == "sprite-batch" {
+        let mut node = build_sprite_batch_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
+        if let UiNode::SpriteBatch(sprite_batch_data) = &mut node {
+            sprite_batch_data.selected = selection;
+            sprite_batch_data.hovered = hovered;
+        }
+        viewport.push(node);
+        node_view_ids.push(view_id.to_string());
+        node_kit_ids.push(kit_id_for(kits));
+        node_occurrence_ids.push(occurrence_id.to_string());
+
+        // A SpriteBatch is a leaf, same as Shape/Img - no children. Any child views assigned to
+        // a sprite-batch view are silently ignored.
     } else {
         let box_idx = viewport.len();
         let mut node = build_box_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
@@ -2867,6 +2988,8 @@ fn build_categories(parsed: &OnResolveInput) -> Vec<FieldCategory> {
         image_categories()
     } else if primitive == "shape" {
         shape_categories()
+    } else if primitive == "sprite-batch" {
+        sprite_batch_categories()
     } else {
         box_categories()
     }
@@ -4742,6 +4865,88 @@ mod shape_kind_tests {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("kind".into(), prop("kind", "not-a-real-kind"));
         assert!(matches!(parse_shape_kind(&props), ShapeKind::Rect));
+    }
+}
+
+#[cfg(test)]
+mod sprite_batch_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn prop(name: &str, value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: name.to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    fn sample_sprite_json() -> &'static str {
+        r#"[{"position":[10.0,20.0],"size":[32.0,32.0],"rotation":0.0,"sprite_id":"brush-tip","color":{"l":1.0,"a":0.0,"b":0.0,"alpha":1.0},"opacity":1.0,"tint":true}]"#
+    }
+
+    #[test]
+    fn parses_sprites_from_json_and_defaults_opacity() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("sprites".into(), prop("sprites", sample_sprite_json()));
+        let node = build_sprite_batch_node(&props, None, None, None);
+        let UiNode::SpriteBatch(data) = &node else {
+            panic!("expected UiNode::SpriteBatch");
+        };
+        assert_eq!(data.sprites.len(), 1);
+        assert_eq!(data.sprites[0].sprite_id, "brush-tip");
+        assert!(data.sprites[0].tint);
+        // No `opacity` property set -- defaults to 1.0, same convention build_shape_node follows.
+        assert_eq!(data.opacity, 1.0);
+    }
+
+    #[test]
+    fn missing_or_malformed_sprites_json_degrades_to_an_empty_list_not_a_panic() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("sprites".into(), prop("sprites", "not json"));
+        let node = build_sprite_batch_node(&props, None, None, None);
+        let UiNode::SpriteBatch(data) = &node else {
+            panic!("expected UiNode::SpriteBatch");
+        };
+        assert!(data.sprites.is_empty());
+    }
+
+    #[test]
+    fn no_sprites_property_at_all_is_an_empty_batch_not_a_panic() {
+        let props: HashMap<String, ResolvedProperty> = HashMap::new();
+        let node = build_sprite_batch_node(&props, None, None, None);
+        let UiNode::SpriteBatch(data) = &node else {
+            panic!("expected UiNode::SpriteBatch");
+        };
+        assert!(data.sprites.is_empty());
+    }
+
+    // Regression guard for the camelCase-mismatch pitfall (CLAUDE.md): SpriteInstance/
+    // SpriteBatchData cross into the wire the same way ShapeData/PathSegment already do (no
+    // #[serde(rename_all = "camelCase")] anywhere in kit10-scene's wire types) -- asserting on
+    // the ACTUAL SERIALIZED JSON key names, not just Rust field names, is what would catch it if
+    // that ever silently changed.
+    #[test]
+    fn sprite_batch_node_serializes_with_snake_case_wire_keys_not_camel_case() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("sprites".into(), prop("sprites", sample_sprite_json()));
+        let node = build_sprite_batch_node(&props, None, None, None);
+        let json = serde_json::to_string(&node).unwrap();
+
+        for key in ["parent_id", "min_width", "min_height", "max_width", "max_height", "sprites"] {
+            assert!(json.contains(&format!("\"{key}\"")), "missing snake_case key '{key}' in {json}");
+        }
+        for key in ["sprite_id", "rotation", "position", "size", "color", "opacity", "tint"] {
+            assert!(json.contains(&format!("\"{key}\"")), "missing snake_case key '{key}' in {json}");
+        }
+        for camel in ["spriteId", "minWidth", "maxWidth", "parentId"] {
+            assert!(!json.contains(camel), "unexpected camelCase key '{camel}' in {json}");
+        }
     }
 }
 
