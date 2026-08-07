@@ -113,16 +113,19 @@
 
 	let viewEditing: Record<string, boolean> = $state({});
 
-	// A freshly created Box view starts with zero kit compositions, which means
-	// `resolved_kits` is empty for it: Charter's `build_categories` shows no Styles panel
-	// fields at all, and `applySelfDeclaredViewRefs` (manager/src/resolve/resolve.ts) has
-	// nowhere to attach a self-declared `children` token if the user tries to add a child to
-	// it. Auto-attaching a blank kit (same "New Kit" pattern Compose.svelte's `attachKit` uses:
-	// createKitInProject + attachKitToComposition) makes a new Box immediately functional -
-	// it gets real Styles panel fields and somewhere for the first `children` write to land.
-	// Text/Image are untouched: they don't declare a `children` field, so there's nothing to
-	// provision for them yet.
-	async function provisionBoxKit(projectId: string, viewId: string, name: string) {
+	// A freshly created view starts with zero kit compositions, which means `resolved_kits` is
+	// empty for it: Charter's `build_categories` shows NO Render panel fields at all regardless
+	// of primitive (it returns `[]` immediately whenever `resolved_kits.is_empty()`, before ever
+	// checking what primitive the view is), and, for a Box specifically,
+	// `applySelfDeclaredViewRefs` (manager/src/resolve/resolve.ts) has nowhere to attach a
+	// self-declared `children` token if the user tries to add a child to it. Auto-attaching a
+	// blank kit (same "New Kit" pattern Compose.svelte's `attachKit` uses: createKitInProject +
+	// attachKitToComposition) makes a newly created view immediately functional. This used to run
+	// only for Box (the `children`-specific need was the original motivation) - Text/Image/Shape/
+	// SpriteBatch were left with a silently empty Render panel until a kit got attached some
+	// other way, since nothing about the empty-categories problem is Box-specific. Same two-step
+	// "create view, then attach a kit" seed.ts already does for every primitive it seeds.
+	async function provisionKit(projectId: string, viewId: string, name: string) {
 		const kit = await api.createKitInProject(projectId, `${name} Kit`);
 		if (!kit) return;
 		await api.attachKitToComposition(kit.id, viewId);
@@ -132,7 +135,8 @@
 	// on `op.name` to actually execute. Adding a new op name requires editor support here, but the
 	// plugin still owns *availability* (which items get which ops in their context menu) - the
 	// editor never decides "Box should be deletable" on its own, the manifest's `ops` list does.
-	// `kind` is the op-specific payload (today only `add-child` uses it: "box"|"text"|"image").
+	// `kind` is the op-specific payload (today only `add-child` uses it: whatever kind string
+	// Charter's CREATABLE_PRIMITIVES declares - "box"|"text"|"image"|"shape"|"sprite-batch").
 	// `item` carries the parent's `write_alias` (used by `add-child` to attach the new view) and
 	// the row's `viewLocked`/`viewHidden` for `lock`/`hide` toggles.
 	async function dispatchOp(op: PanelOp, viewId: string, item: PanelItem | undefined) {
@@ -167,7 +171,7 @@
 				const created = await api.createViewInProject(projectId, `New ${kind}`);
 				if (!created) return;
 				// Primitive is a Charter hint, not a column - set it on `hints.charter.primitive`
-				// only for non-box kinds (Box is the default detection path). The editor merges
+				// for every non-box kind (Box is the default detection path). The editor merges
 				// sub-objects itself (see QueryView.updateViewHints in manager), so pass a full
 				// `{ charter: { primitive } }` object - not just `{ charter: { primitive: kind } }`
 				// (which would wipe any other charter hints). In practice a freshly-created view has
@@ -175,9 +179,10 @@
 				// common path minimal.
 				if (kind !== 'box') {
 					await api.updateViewHints(created.id, { charter: { primitive: kind } });
-				} else {
-					await provisionBoxKit(projectId, created.id, created.name);
 				}
+				// Every kind needs a kit attached, not just Box - see provisionKit's own doc
+				// comment (an empty Render panel isn't a Box-specific problem).
+				await provisionKit(projectId, created.id, created.name);
 				if (viewId) {
 					await api.addViewRef(projectId, viewId, childrenAlias(viewId), created.id);
 				}
@@ -280,8 +285,9 @@
 		};
 	}
 
-	// Panel-header context menu - built from the manifest's `header_ops` (today: the "create a
-	// top-level Box/Text/Image" trio). Same builder, just no parent view to attach to.
+	// Panel-header context menu - built from the manifest's `header_ops` (today: "create a
+	// top-level view" for every entry in Charter's CREATABLE_PRIMITIVES). Same builder, just no
+	// parent view to attach to.
 	let kitsContextMenu: ContextMenuContentGenerator = () => {
 		const ops = viewsPanelManifest?.header_ops ?? [];
 		return buildMenuFromOps(ops, async (op) => {
@@ -293,9 +299,8 @@
 				if (!created) return;
 				if (kind !== 'box') {
 					await api.updateViewHints(created.id, { charter: { primitive: kind } });
-				} else {
-					await provisionBoxKit(projectId, created.id, created.name);
 				}
+				await provisionKit(projectId, created.id, created.name);
 				selectView(created.id, created.name);
 			}
 		});
