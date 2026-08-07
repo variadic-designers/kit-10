@@ -16,7 +16,7 @@ schemars = { version = "1.2.1", optional = true }
 # The UI render dialect - the UiNode types Charter emits - lives here, not in Charter. Charter is now
 # just one interpreter conforming to this scene contract (VISION.md 1st Principle). Private repo, so
 # the SSH URL + .cargo/config.toml git-fetch-with-cli is how it authenticates.
-kit10-scene = { git = "ssh://git@github.com/Variadic-Designs/kit10-scene.git", tag = "v0.2.5" }
+kit10-scene = { git = "ssh://git@github.com/Variadic-Designs/kit10-scene.git", tag = "v0.2.6" }
 
 [profile.release]
 opt-level = "s"

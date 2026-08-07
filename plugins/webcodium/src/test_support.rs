@@ -54,6 +54,7 @@ pub(crate) fn test_text(parent_id: Option<usize>, content: &str) -> TextData {
         text_align: TextAlign::Left,
         text_decoration: TextDecorationKind::None,
         line_height: 0.0,
+        deform: None,
         selected: 0,
         hovered: false,
     }

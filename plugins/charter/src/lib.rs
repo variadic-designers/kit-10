@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 // Vellum both conform to), not in Charter. Charter builds and serializes these; it no longer owns
 // their definition.
 use kit10_scene::{
-    AlignValue, BoxData, BoxExtra, Extent, FillRule, FlexDir, FlexWrapValue, FontStyle,
+    AlignValue, BoxData, BoxExtra, Deform, Extent, FillRule, FlexDir, FlexWrapValue, FontStyle,
     GridAutoFlow, GridLine, GridTemplateArea, ImageSource, ImgData, JustifyValue, NodePosition,
     OklabColor, PathSegment, ShapeData, ShapeKind, SpriteBatchData, SpriteInstance, TextAlign,
     TextData, TextDecorationKind, TrackMax, TrackMin, TrackSize, UiNode,
@@ -1769,6 +1769,21 @@ fn compile_line_height(font_size: f32, raw: Option<&str>) -> f32 {
     font_size * ratio
 }
 
+// Parses `text-path` (Pillar C's text-on-path, `resources/foundation.md`/`text.md` §2) into a
+// `Deform::ArclengthPath`. The raw value is a JSON array of `[x, y]` pairs in the text node's own
+// box-local space (same origin/units convention as `ShapeKind::Path`'s segments) -- a plain
+// JSON-array text field, same "raw escape hatch" posture `grid-template-areas`/custom grid tracks
+// already use for a shape too structured for a dedicated widget. Fewer than 2 points can't define
+// a path (nothing to walk), so it's treated the same as unset/unparseable -- `None`, not an error;
+// this dialect never surfaces a magenta-marker-style failure for a structural (non-paint) property.
+fn parse_text_path(raw: Option<&str>) -> Option<Vec<[f32; 2]>> {
+    let points: Vec<[f32; 2]> = serde_json::from_str(raw?.trim()).ok()?;
+    if points.len() < 2 {
+        return None;
+    }
+    Some(points)
+}
+
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: usize,
@@ -1785,6 +1800,10 @@ fn build_text_node(
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, OklabColor::default());
+    let deform = parse_text_path(get_prop(props, "text-path").as_deref()).map(|points| Deform::ArclengthPath {
+        points,
+        offset: parse_px(get_prop(props, "text-path-offset").as_deref()),
+    });
 
     UiNode::Text(TextData {
         parent_id: Some(parent_id),
@@ -1811,6 +1830,7 @@ fn build_text_node(
         text_align,
         text_decoration,
         line_height,
+        deform,
         selected: 0,
         hovered: false,
     })
@@ -2224,6 +2244,18 @@ fn text_categories() -> Vec<FieldCategory> {
                 // inline in StyleField.svelte rather than a dedicated wrapper component.
                 FieldDef::new("text-align", Some("Align")).with_input_type("align"),
                 FieldDef::new("text-decoration", Some("Decor")).with_input_type("decoration"),
+            ],
+        },
+        // Pillar C's text-on-path (`resources/foundation.md`/`text.md` §2, M5's remainder). A raw
+        // JSON-array escape hatch, same posture as grid-template-areas/custom grid tracks -- no
+        // dedicated path-point-picker widget exists yet. See parse_text_path's own doc comment for
+        // the exact shape (`[[x, y], ...]`, box-local space) and why it's kept out of the main
+        // "text" category (a rare/advanced field, not one every text node needs surfaced).
+        FieldCategory {
+            name: "path".to_string(),
+            fields: vec![
+                FieldDef::new("text-path", Some("Points")),
+                FieldDef::new("text-path-offset", Some("Offset")),
             ],
         },
         // Paint properties a text node can carry directly (a highlighted/pill label) without
@@ -4430,6 +4462,83 @@ mod line_height_tests {
         let node = build_text_node(&props, 0);
         let json = serde_json::to_string(&node).unwrap();
         assert!(json.contains("\"line_height\":30"), "json was: {json}");
+    }
+}
+
+#[cfg(test)]
+mod text_path_tests {
+    use super::*;
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn parses_a_valid_point_array() {
+        let points = parse_text_path(Some("[[0,0],[10,20],[30,0]]"));
+        assert_eq!(points, Some(vec![[0.0, 0.0], [10.0, 20.0], [30.0, 0.0]]));
+    }
+
+    #[test]
+    fn fewer_than_two_points_is_treated_as_unset() {
+        assert_eq!(parse_text_path(Some("[[0,0]]")), None);
+        assert_eq!(parse_text_path(Some("[]")), None);
+    }
+
+    #[test]
+    fn malformed_or_missing_json_is_treated_as_unset_not_a_panic() {
+        assert_eq!(parse_text_path(Some("not json")), None);
+        assert_eq!(parse_text_path(Some("")), None);
+        assert_eq!(parse_text_path(None), None);
+    }
+
+    #[test]
+    fn build_text_node_emits_an_arclength_path_deform_when_text_path_is_set() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-path".to_string(), prop("[[0,0],[100,0]]"));
+        props.insert("text-path-offset".to_string(), prop("12px"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.deform, Some(Deform::ArclengthPath { points: vec![[0.0, 0.0], [100.0, 0.0]], offset: 12.0 }));
+    }
+
+    #[test]
+    fn build_text_node_leaves_deform_unset_when_text_path_is_absent() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        let node = build_text_node(&props, 0);
+        let UiNode::Text(t) = node else { panic!("expected Text") };
+        assert_eq!(t.deform, None);
+    }
+
+    #[test]
+    fn text_data_serializes_deform_as_snake_case_arclength_path() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("content".to_string(), prop("Hi"));
+        props.insert("text-path".to_string(), prop("[[0,0],[100,0]]"));
+        let node = build_text_node(&props, 0);
+        let json = serde_json::to_string(&node).unwrap();
+        assert!(json.contains("\"deform\":{\"ArclengthPath\""), "json was: {json}");
+    }
+
+    #[test]
+    fn text_categories_declares_the_path_fields_as_plain_text() {
+        let categories = text_categories();
+        let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
+        let points = fields.iter().find(|f| f.key == "text-path").expect("text-path field");
+        let offset = fields.iter().find(|f| f.key == "text-path-offset").expect("text-path-offset field");
+        assert_eq!(points.input_type, None);
+        assert_eq!(offset.input_type, None);
     }
 }
 
