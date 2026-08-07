@@ -961,15 +961,24 @@ export async function seedJuiceLandingPage(
 		color: 'oklch(85% 0.01 264)'
 	});
 	// Text-on-path (Deform::ArclengthPath) badge ring: a small circle, authored in this text
-	// node's own local space (circlePoints centers it on the node's own origin, not some outer
-	// box, since Text always Auto-sizes to its unwrapped straight-line run - see CLAUDE.md's
-	// text-on-path note on why the layout footprint and the bent glyphs diverge).
+	// node's own local space. Confirmed in-app (2026-08-07 screenshot) that a Text node's LAYOUT
+	// footprint is its unwrapped straight-line width - much wider than the bent circle - so an
+	// `align-items: center` parent centers that invisible wide box, not the visible circle,
+	// landing it well off to one side. `badgeSlotKit` below fixes this: a small FIXED-size (not
+	// Hug) wrapping Box with `align-self: flex-start` gives the text a deterministic local origin
+	// (the box's own top-left, itself flush against the container's own start edge, independent
+	// of the text's own measured width) - circlePoints is centered on THAT known point instead.
 	const badgeRingKit = await textKit('Badge Ring Text', {
 		'font-size': '8px',
 		'font-weight': '700',
 		color: 'oklch(30% 0.09 190)',
-		'text-path': JSON.stringify(circlePoints(0, 0, 38)),
+		'text-path': JSON.stringify(circlePoints(46, 46, 34)),
 		'text-path-offset': '0'
+	});
+	const badgeSlotKit = await boxKit('Badge Slot', {
+		width: '92px',
+		height: '92px',
+		'align-self': 'flex-start'
 	});
 
 	// --- Layout kits ---
@@ -1247,16 +1256,19 @@ export async function seedJuiceLandingPage(
 	const heroCta = await boxView('Hero CTA', ctaKit, [heroCtaLabel]);
 	// Text-on-path seal: a circular badge under the CTA, real curved copy the way a canned drink's
 	// own label would actually stamp it (see badgeRingKit's own comment for the coordinate note).
+	// "·" (already used mid-phrase, confirmed rendering correctly in-app), not "★" - the
+	// star drew as a missing-glyph tofu box, Inter doesn't ship it.
 	const badgeRing = await textView(
 		'Badge Ring',
 		badgeRingKit,
-		"★ COLD-PRESSED · NO ADDED SUGAR · SINCE 2019 ★ COLD-PRESSED · "
+		'· COLD-PRESSED · NO ADDED SUGAR · SINCE 2019 · COLD-PRESSED · '
 	);
+	const badgeSlot = await boxView('Badge Slot', badgeSlotKit, [badgeRing]);
 	const heroContent = await boxView('Hero Content', heroContentKit, [
 		heroHeading,
 		heroSubtitle,
 		heroCta,
-		badgeRing
+		badgeSlot
 	]);
 	const heroImg = await imageView('Hero Image', srcImageKit, splashAssetId ?? undefined);
 	const hero = await boxView('Hero Section', heroKit, [heroContent, heroImg]);
