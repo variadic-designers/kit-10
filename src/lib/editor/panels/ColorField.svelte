@@ -35,18 +35,23 @@
 	// (edit the shared token vs. write a literal) and the token badge.
 	const info = $derived(track(field.key));
 
-	// Phase 1 (see resources/oklch.md): real L/C/H/alpha sliders + a live swatch + a collapsible
-	// raw-text escape hatch for pasting a legacy hex/rgb/hsl value. Every commit writes back
-	// canonical `oklch(...)` -- editing a legacy value through this widget upgrades it on first
-	// touch (hex/rgb/hsl are accepted input, never re-authored). Gamut-mapping/fallback-visibility
-	// (Phase 2), oklch.com-style 2D graphs (Phase 3), and P3 awareness (Phase 4) are deliberately
-	// not built yet.
+	// Phase 1 (see resources/oklch.md): a lightness x chroma plane (drag both at once - that's
+	// the actual relationship a designer is reasoning about, not two independent numbers) plus
+	// gradient-filled hue/alpha rails, a live swatch, and a collapsible raw-text escape hatch for
+	// pasting a legacy hex/rgb/hsl value. Every commit writes back canonical `oklch(...)` --
+	// editing a legacy value through this widget upgrades it on first touch (hex/rgb/hsl are
+	// accepted input, never re-authored). Gamut-mapping/fallback-visibility (Phase 2),
+	// oklch.com-style 2D graphs (Phase 3), and P3 awareness (Phase 4) are deliberately not built
+	// yet - this stays a Phase 1 interaction/visual revamp, same wire contract as before.
 
 	const currentRaw = $derived(resolvedMap.get(field.key)?.value ?? null);
 
 	// A neutral, mid-lightness starting point when nothing is set yet or the stored value is
 	// unparseable -- lets a designer start dragging immediately rather than hitting a dead end.
 	const FALLBACK = { l: 0.5, c: 0, h: 0, alpha: 1 };
+	// Domain ceiling for the plane's chroma axis - mirrors the old chroma slider's own max, itself
+	// chosen because real, in-gamut OKLCH chroma rarely exceeds it (see resources/oklch.md).
+	const C_MAX = 0.37;
 
 	let l = $state(FALLBACK.l);
 	let c = $state(FALLBACK.c);
@@ -54,10 +59,15 @@
 	let alpha = $state(FALLBACK.alpha);
 	let rawText = $state('');
 	let rawInvalid = $state(false);
+	// Collapsed by default - a full plane+rails picker on every color row would make a Kit with
+	// several paint properties enormous. A plain toggle (not a nested <details>) so the picker
+	// body can be a full-width sibling BELOW the header row instead of constrained to whatever
+	// column width a flex item sharing that row with the label/token-badge/track-dot would get.
+	let expanded = $state(false);
 
 	// Resync local slider state whenever the resolved value changes underneath us (a different
 	// layer/axis selection, an external write, or the initial mount) -- never while the user is
-	// actively dragging a slider, since that's local-only until committed on `change`.
+	// actively dragging, since that's local-only until committed on pointerup/keydown.
 	let lastSyncedRaw: string | null | undefined = undefined;
 	$effect(() => {
 		if (currentRaw === lastSyncedRaw) return;
@@ -72,19 +82,150 @@
 	});
 
 	const swatch = $derived(formatOklch(l, c, h, alpha));
+	// The swatch's left half always shows the true color at full opacity - the right half shows
+	// it exactly as authored (with alpha) over a checkerboard, so transparency is legible without
+	// needing to guess how a partially-transparent left half would look against an arbitrary panel
+	// background.
+	const opaqueSwatch = $derived(formatOklch(l, c, h, 1));
 
 	// "No color set" is a distinct state from a real gray: the property has no render entry at all,
-	// so the sliders are sitting at FALLBACK (mid-gray) purely as a starting point, not because
-	// gray was authored. Surface it (dashed "+" swatch + muted sliders) instead of rendering an
+	// so the plane/rails are sitting at FALLBACK (mid-gray) purely as a starting point, not because
+	// gray was authored. Surface it (dashed "+" swatch + muted picker) instead of rendering an
 	// indistinguishable gray. A token-backed color always resolves to a value, so this is only ever
 	// true for literal, value-less colors -- never collides with the token badge. transparent /
 	// alpha-0 is a real value (non-null currentRaw), so it is NOT unset.
 	const isUnset = $derived(currentRaw === null);
 
+	// Plane background: N stacked horizontal gradient bands (lightness 1 at the top, 0 at the
+	// bottom), each spanning chroma 0..C_MAX at the CURRENT hue - a true 2D oklch gradient has no
+	// single CSS syntax, so this is the same "many linear-gradient layers" trick real OKLCH pickers
+	// (oklch.com included) use. A slight per-band height overlap avoids visible seams between rows.
+	const planeBackground = $derived.by(() => {
+		const rows = 14;
+		const layers: string[] = [];
+		for (let i = 0; i < rows; i++) {
+			const rowL = 1 - i / rows;
+			const from = formatOklch(rowL, 0, h, 1);
+			const to = formatOklch(rowL, C_MAX, h, 1);
+			const top = (i / rows) * 100;
+			const height = 100 / rows + 0.6;
+			layers.push(`linear-gradient(to right, ${from}, ${to}) 0 ${top}% / 100% ${height}% no-repeat`);
+		}
+		return layers.join(', ');
+	});
+
+	// Hue and alpha are vertical rails, top-to-bottom, sitting beside the plane rather than as
+	// full-width rows underneath it. Top = 0deg / fully opaque, matching the plane's own
+	// top = full-lightness convention.
+
+	// Hue rail: a fixed, vivid representative L/C regardless of the CURRENT color, so the rail
+	// stays legible/informative even when the current color is itself near-gray or near-black -
+	// the same choice most HSB-style pickers make for their own hue bar.
+	const HUE_RAIL_L = 0.75;
+	const HUE_RAIL_C = 0.19;
+	const hueBackground = $derived.by(() => {
+		const stops: string[] = [];
+		for (let i = 0; i <= 12; i++) {
+			stops.push(formatOklch(HUE_RAIL_L, HUE_RAIL_C, i * 30, 1));
+		}
+		return `linear-gradient(to bottom, ${stops.join(', ')})`;
+	});
+
+	// Alpha rail: the CURRENT color from fully opaque (top) to fully transparent (bottom) - alpha's
+	// whole meaning is "how much of THIS color shows", so unlike the hue rail this one must track
+	// l/c/h live.
+	const alphaBackground = $derived(
+		`linear-gradient(to bottom, ${formatOklch(l, c, h, 1)}, ${formatOklch(l, c, h, 0)})`
+	);
+
+	const planeThumbLeft = $derived(`${Math.min(Math.max(c / C_MAX, 0), 1) * 100}%`);
+	const planeThumbTop = $derived(`${(1 - Math.min(Math.max(l, 0), 1)) * 100}%`);
+	const hueThumbTop = $derived(`${(h / 360) * 100}%`);
+	const alphaThumbTop = $derived(`${(1 - alpha) * 100}%`);
+
 	function commit() {
-		// Token-aware: if this color is token-backed, editing the sliders edits the shared token
+		// Token-aware: if this color is token-backed, editing the picker edits the shared token
 		// (propagates to every use) rather than silently detaching to a one-off literal.
 		commitFieldValue(track(field.key), field.key, formatOklch(l, c, h, alpha), { onFieldUpdate, api });
+	}
+
+	// --- Plane + rail drag interaction ---
+	// Continuous local updates for live visual feedback while dragging; the actual write only
+	// happens once on pointerup (or once per keydown nudge) - mirrors the old range inputs' own
+	// `onchange`-only-on-release semantic, so a drag doesn't spam the DB/undo history with every
+	// intermediate position.
+	let planeEl: HTMLDivElement | undefined = $state();
+	let hueEl: HTMLDivElement | undefined = $state();
+	let alphaEl: HTMLDivElement | undefined = $state();
+
+	function beginDrag(getEl: () => HTMLElement | undefined, onMove: (x: number, y: number) => void) {
+		return (e: PointerEvent) => {
+			const el = getEl();
+			if (!el) return;
+			const rect = el.getBoundingClientRect();
+			const apply = (ev: PointerEvent) => {
+				const x = Math.min(Math.max((ev.clientX - rect.left) / rect.width, 0), 1);
+				const y = Math.min(Math.max((ev.clientY - rect.top) / rect.height, 0), 1);
+				onMove(x, y);
+			};
+			apply(e);
+			const onMoveWin = (ev: PointerEvent) => apply(ev);
+			const onUp = () => {
+				window.removeEventListener('pointermove', onMoveWin);
+				window.removeEventListener('pointerup', onUp);
+				commit();
+			};
+			window.addEventListener('pointermove', onMoveWin);
+			window.addEventListener('pointerup', onUp);
+		};
+	}
+
+	const handlePlanePointerDown = beginDrag(() => planeEl, (x, y) => {
+		c = x * C_MAX;
+		l = 1 - y;
+	});
+	// Hue and alpha are vertical rails now (top-to-bottom, alongside the plane rather than
+	// stacked full-width rows below it) - both read the drag's y, not x.
+	const handleHuePointerDown = beginDrag(() => hueEl, (_x, y) => {
+		h = y * 360;
+	});
+	const handleAlphaPointerDown = beginDrag(() => alphaEl, (_x, y) => {
+		alpha = 1 - y;
+	});
+
+	// Keyboard fallback for the three pointer-driven controls - Up/Down nudge by a small step
+	// (Left/Right too on the plane, since it's still the one 2D control), Shift for a coarser
+	// one. Each key press commits immediately (no separate "release" event exists for keyboard
+	// input), matching how this panel's other steppers (RadiusField's nudgeRadius, StyleField's
+	// spacing stepper) already commit per-press.
+	function handlePlaneKeydown(e: KeyboardEvent) {
+		const step = e.shiftKey ? 0.02 : 0.005;
+		const lStep = e.shiftKey ? 0.05 : 0.01;
+		if (e.key === 'ArrowLeft') c = Math.max(0, c - step);
+		else if (e.key === 'ArrowRight') c = Math.min(C_MAX, c + step);
+		else if (e.key === 'ArrowUp') l = Math.min(1, l + lStep);
+		else if (e.key === 'ArrowDown') l = Math.max(0, l - lStep);
+		else return;
+		e.preventDefault();
+		commit();
+	}
+
+	function handleHueKeydown(e: KeyboardEvent) {
+		const step = e.shiftKey ? 10 : 2;
+		if (e.key === 'ArrowUp') h = (h - step + 360) % 360;
+		else if (e.key === 'ArrowDown') h = (h + step) % 360;
+		else return;
+		e.preventDefault();
+		commit();
+	}
+
+	function handleAlphaKeydown(e: KeyboardEvent) {
+		const step = e.shiftKey ? 0.05 : 0.01;
+		if (e.key === 'ArrowUp') alpha = Math.min(1, alpha + step);
+		else if (e.key === 'ArrowDown') alpha = Math.max(0, alpha - step);
+		else return;
+		e.preventDefault();
+		commit();
 	}
 
 	function canDropColorToken(payload: { kind: string; valueType?: string }): boolean {
@@ -154,88 +295,114 @@
 		>
 			<i class="fa-solid {track(field.key).kitIcon}"></i>
 		</button>
-		{#if isUnset}
-			<span
-				class="color-field__swatch color-field__swatch--unset"
-				title="No color set - drag a slider or click to add"
-				aria-label="No color set"
+
+		<!-- The swatch itself is the ONLY disclosure trigger (not the whole header) so clicking the
+		     token badge's detach button or the track-color dot never also toggles the picker open.
+		     Sized like a normal Render-panel value control (flex-basis: 40%, matching StyleField's
+		     own __value), not a small icon box - left half is the true color, right half is the
+		     same color over a checkerboard so alpha is legible at a glance. -->
+		<button
+			class="color-field__swatch-btn"
+			type="button"
+			aria-expanded={expanded}
+			title={isUnset ? 'No color set - click to add' : expanded ? 'Collapse' : 'Click to edit'}
+			onclick={() => (expanded = !expanded)}
+		>
+			{#if isUnset}
+				<span class="color-field__swatch color-field__swatch--unset" aria-label="No color set">+</span>
+			{:else}
+				<span class="color-field__swatch" aria-hidden="true">
+					<span class="color-field__swatch-half" style="background: {opaqueSwatch}"></span>
+					<span class="color-field__swatch-half color-field__swatch-half--checker">
+						<span class="color-field__swatch-half-fill" style="background: {swatch}"></span>
+					</span>
+				</span>
+			{/if}
+		</button>
+	</div>
+
+	{#if expanded}
+		<div class="color-field__body">
+			<div
+				bind:this={planeEl}
+				class="color-field__plane"
+				style="background: {planeBackground}"
+				role="slider"
+				tabindex="0"
+				aria-label="Lightness and chroma"
+				aria-valuenow={Math.round(l * 100)}
+				aria-valuemin="0"
+				aria-valuemax="100"
+				aria-valuetext="L {Math.round(l * 100)}%, C {c.toFixed(3)}"
+				onpointerdown={handlePlanePointerDown}
+				onkeydown={handlePlaneKeydown}
 			>
-				<i class="fa-solid fa-plus"></i>
-			</span>
-		{:else}
-			<span class="color-field__swatch" style="background: {swatch}" aria-hidden="true"></span>
-		{/if}
-	</div>
+				<div class="color-field__plane-thumb" style="left: {planeThumbLeft}; top: {planeThumbTop};"></div>
+			</div>
 
-	<div class="color-field__sliders">
-		<label class="color-field__row">
-			<span class="color-field__row-label">L</span>
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.001"
-				bind:value={l}
-				onchange={commit}
-				aria-label="Lightness"
-			/>
-			<span class="color-field__row-value">{Math.round(l * 100)}%</span>
-		</label>
-		<label class="color-field__row">
-			<span class="color-field__row-label">C</span>
-			<input
-				type="range"
-				min="0"
-				max="0.37"
-				step="0.001"
-				bind:value={c}
-				onchange={commit}
-				aria-label="Chroma"
-			/>
-			<span class="color-field__row-value">{c.toFixed(3)}</span>
-		</label>
-		<label class="color-field__row">
-			<span class="color-field__row-label">H</span>
-			<input
-				type="range"
-				min="0"
-				max="360"
-				step="0.5"
-				bind:value={h}
-				onchange={commit}
-				aria-label="Hue"
-			/>
-			<span class="color-field__row-value">{Math.round(h)}°</span>
-		</label>
-		<label class="color-field__row">
-			<span class="color-field__row-label">A</span>
-			<input
-				type="range"
-				min="0"
-				max="1"
-				step="0.01"
-				bind:value={alpha}
-				onchange={commit}
-				aria-label="Alpha"
-			/>
-			<span class="color-field__row-value">{Math.round(alpha * 100)}%</span>
-		</label>
-	</div>
+			<!-- Hue + alpha as two narrow vertical rails beside the plane, not two more full-width
+			     rows below it - the plane's own height already sets this row's height, so the
+			     rails spend that height instead of adding to it. -->
+			<div class="color-field__rails">
+				<div class="color-field__strip">
+					<span class="color-field__strip-label">H</span>
+					<div
+						bind:this={hueEl}
+						class="color-field__strip-track"
+						style="background: {hueBackground}"
+						role="slider"
+						tabindex="0"
+						aria-label="Hue"
+						aria-orientation="vertical"
+						aria-valuenow={Math.round(h)}
+						aria-valuemin="0"
+						aria-valuemax="360"
+						onpointerdown={handleHuePointerDown}
+						onkeydown={handleHueKeydown}
+					>
+						<div class="color-field__strip-thumb" style="top: {hueThumbTop};"></div>
+					</div>
+					<span class="color-field__strip-val">{Math.round(h)}°</span>
+				</div>
 
-	<details class="color-field__raw">
-		<summary>Raw value</summary>
-		<input
-			type="text"
-			class="color-field__raw-input"
-			class:color-field__raw-input--invalid={rawInvalid}
-			bind:value={rawText}
-			placeholder="oklch(70% 0.15 30), #3b82f6, rgb(…), …"
-			onblur={commitRaw}
-			onkeydown={(e) => {
-				if (e.key === 'Enter') commitRaw();
-			}}
-		/>
-	</details>
+				<div class="color-field__strip">
+					<span class="color-field__strip-label">A</span>
+					<div
+						bind:this={alphaEl}
+						class="color-field__strip-track color-field__strip-track--checker"
+						role="slider"
+						tabindex="0"
+						aria-label="Alpha"
+						aria-orientation="vertical"
+						aria-valuenow={Math.round(alpha * 100)}
+						aria-valuemin="0"
+						aria-valuemax="100"
+						onpointerdown={handleAlphaPointerDown}
+						onkeydown={handleAlphaKeydown}
+					>
+						<div class="color-field__strip-track-fill" style="background: {alphaBackground}"></div>
+						<div class="color-field__strip-thumb" style="top: {alphaThumbTop};"></div>
+					</div>
+					<span class="color-field__strip-val">{Math.round(alpha * 100)}%</span>
+				</div>
+			</div>
+
+			<details class="color-field__raw">
+				<summary>Raw value</summary>
+				<input
+					type="text"
+					class="color-field__raw-input"
+					class:color-field__raw-input--invalid={rawInvalid}
+					bind:value={rawText}
+					placeholder="oklch(70% 0.15 30), #3b82f6, rgb(…), …"
+					onblur={commitRaw}
+					onkeydown={(e) => {
+						if (e.key === 'Enter') commitRaw();
+					}}
+				/>
+			</details>
+		</div>
+	{/if}
 </div>
 
 <style lang="scss">
@@ -286,82 +453,223 @@
 			text-transform: capitalize;
 		}
 
-		&__swatch {
-			flex: 0 0 auto;
-			width: 1.1em;
-			height: 1.1em;
+		// Sized like a normal Render-panel value control (StyleField's own option124__value uses
+		// the same flex-basis: 40%), not a small icon box - a color swatch reads at a glance far
+		// better with real width to show against.
+		&__swatch-btn {
+			all: unset;
+			cursor: pointer;
+			display: flex;
+			flex-basis: 40%;
+			flex-shrink: 1;
+			min-width: 2.4em;
+			height: 1.3em;
 			border-radius: 3px;
+			overflow: hidden;
 			border: 1px solid var(--color-panel-header-border);
+
+			&:focus-visible {
+				outline: 2px solid var(--color-primary);
+				outline-offset: 1px;
+			}
+		}
+
+		&__swatch {
+			display: flex;
+			width: 100%;
+			height: 100%;
 
 			// "No color set": no fill, dashed outline + a muted "+" -- the panel's own "add value"
 			// idiom (StyleField's option124__value--new), so an unset color never masquerades as a
 			// deliberately-authored gray.
 			&--unset {
-				display: inline-flex;
 				align-items: center;
 				justify-content: center;
 				background: transparent;
 				border-style: dashed;
 				color: var(--color-add-var-text);
-				font-size: 0.6em;
+				font-size: 0.8em;
 			}
 		}
 
-		// Mute the sliders while unset so their FALLBACK mid-gray positions don't read as an active
-		// gray. Opacity only -- never pointer-events:none, since dragging a slider is exactly how you
-		// add the color (commit() writes a real value, isUnset flips false, full styling returns).
-		&--unset &__sliders {
-			opacity: 0.5;
+		// Left half: the true color at full opacity. Right half: the color exactly as authored
+		// (with its real alpha) painted over a checkerboard, so transparency reads at a glance
+		// without needing the picker open.
+		&__swatch-half {
+			position: relative;
+			flex: 1;
+			height: 100%;
+
+			&--checker {
+				background-image:
+					linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
+					linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
+					linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
+					linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
+				background-size: 8px 8px;
+				background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+			}
 		}
 
-		&__sliders {
-			display: flex;
-			flex-direction: column;
-			gap: 2px;
-			padding-inline: $x-space-sm;
+		&__swatch-half-fill {
+			position: absolute;
+			inset: 0;
+		}
+
+		// Mute the picker while unset so FALLBACK's mid-gray positions don't read as an active
+		// gray. Opacity only -- never pointer-events:none, since dragging is exactly how you add
+		// the color (commit() writes a real value, isUnset flips false, full styling returns).
+		&--unset &__body {
+			opacity: 0.6;
+		}
+
+		// Plane on the left (near-square), hue+alpha as two narrow vertical rails on the right -
+		// the plane's own height sets the row height (auto-sized column), so the rails spend that
+		// height instead of adding two more full-width rows underneath (the previous layout).
+		&__body {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			align-items: stretch;
+			gap: $x-space-xs;
+			padding: calc($x-space-xs / 2) $x-space-sm $x-space-xs;
 			margin-top: calc($x-space-xs / 2);
 		}
 
-		&__row {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
+		&__plane {
+			position: relative;
+			width: 100%;
+			aspect-ratio: 1.2 / 1;
+			border-radius: 6px;
+			border: 1px solid var(--color-panel-header-border);
+			cursor: crosshair;
+			touch-action: none;
+			overflow: hidden;
+
+			&:focus-visible {
+				outline: 2px solid var(--color-primary);
+				outline-offset: 1px;
+			}
 		}
 
-		&__row-label {
+		&__plane-thumb {
+			position: absolute;
+			width: 13px;
+			height: 13px;
+			border-radius: 50%;
+			border: 2px solid var(--color-pure);
+			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+			transform: translate(-50%, -50%);
+			pointer-events: none;
+		}
+
+		// Two vertical strips side by side, each stretched (flex default align-items: stretch) to
+		// the rails container's own height, which in turn matches the plane's height via the grid
+		// row's align-items: stretch above.
+		&__rails {
+			display: flex;
+			flex-direction: row;
+			gap: $x-space-xs;
+			min-width: 0;
+		}
+
+		&__strip {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: calc($x-space-xs / 2);
+			min-width: 2.2em;
+		}
+
+		&__strip-label {
 			flex: 0 0 auto;
-			width: 1em;
 			font-size: $x-font-size-xs;
 			color: var(--color-add-var-text);
 			text-transform: uppercase;
 		}
 
-		&__row-value {
+		&__strip-track {
+			position: relative;
+			flex: 1;
+			width: 10px;
+			border-radius: 6px;
+			border: 1px solid var(--color-panel-header-border);
+			cursor: pointer;
+			touch-action: none;
+			overflow: hidden;
+
+			&:focus-visible {
+				outline: 2px solid var(--color-primary);
+				outline-offset: 1px;
+			}
+
+			// Alpha rail only - a checkerboard sits BEHIND the transparent-to-opaque gradient fill,
+			// same convention every other transparency UI (browser devtools, design tools) uses.
+			&--checker {
+				background-image:
+					linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
+					linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
+					linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
+					linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
+				background-size: 8px 8px;
+				background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+			}
+		}
+
+		&__strip-track-fill {
+			position: absolute;
+			inset: 0;
+		}
+
+		&__strip-thumb {
+			position: absolute;
+			left: 50%;
+			width: 13px;
+			height: 13px;
+			border-radius: 50%;
+			border: 2px solid var(--color-pure);
+			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+			transform: translate(-50%, -50%);
+			pointer-events: none;
+		}
+
+		// Fixed width (not just min-width) sized for the widest either rail ever shows ("360°",
+		// "100%") - letting this fluctuate with digit count (e.g. "86%" -> "100%") resizes the
+		// __rails auto grid column, which shrinks the plane's own 1fr column and, via its
+		// aspect-ratio, its height - a one-character value change must never move the plane.
+		&__strip-val {
 			flex: 0 0 auto;
-			min-width: 3em;
-			text-align: right;
+			width: 2.4em;
+			text-align: center;
 			font-size: $x-font-size-xs;
 			color: var(--color-add-var-text);
 			font-variant-numeric: tabular-nums;
 		}
 
-		input[type='range'] {
-			flex: 1;
-			min-width: 0;
-		}
-
 		&__raw {
-			padding-inline: $x-space-sm;
+			grid-column: 1 / -1;
 			margin-top: calc($x-space-xs / 2);
 			font-size: $x-font-size-xs;
 
 			summary {
 				cursor: pointer;
 				color: var(--color-add-var-text);
+				list-style: none;
+
+				&::-webkit-details-marker {
+					display: none;
+				}
 
 				&:hover {
 					color: var(--color-text);
 				}
+
+				&::before {
+					content: '▸ ';
+				}
+			}
+
+			&[open] summary::before {
+				content: '▾ ';
 			}
 		}
 
