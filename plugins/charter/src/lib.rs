@@ -1406,7 +1406,22 @@ fn compile_resize(
     let parent_cross_defaults_to_stretch =
         matches!(parent_align_items, None | Some(AlignValue::Stretch));
     out.align_self = match cross_kw {
-        Some(ResizeKw::Fill) => Some(AlignValue::Stretch),
+        Some(ResizeKw::Fill) => {
+            // Same "drop the automatic min-content floor" reasoning as the main-axis Fill branch
+            // above - this was missing here entirely. Invisible for ordinary text/button content
+            // (its min-content is just its longest unbreakable word, small), but an unconstrained
+            // Img's min-content IS its full intrinsic pixel size (a real CSS replaced-element
+            // rule) - left un-zeroed, taffy's automatic-minimum-size algorithm lets that pixel
+            // size win over the stretch this Fill was supposed to clamp the item to, forcing the
+            // item - and anything sized relative to it (e.g. a Grid track's `fr` share) - wider/
+            // taller than intended. Caught via a real image-in-a-Grid-cell overflow.
+            if main_is_width {
+                out.min_height = Extent::Px(0.0);
+            } else {
+                out.min_width = Extent::Px(0.0);
+            }
+            Some(AlignValue::Stretch)
+        }
         Some(ResizeKw::Hug) if parent_cross_defaults_to_stretch => Some(AlignValue::FlexStart),
         Some(ResizeKw::Hug) | None => None,
     };
@@ -5694,6 +5709,11 @@ mod resize_tests {
         assert_eq!(d.width, Extent::Auto);
         assert_eq!(d.extra.flex_grow, 0.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
+        // Same "drop the automatic min-content floor" the main-axis Fill branch already gets -
+        // a real, shipped bug (2026-08-09): left un-zeroed, an unconstrained child (e.g. an Img
+        // reporting its own full intrinsic pixel size as min-content) could force this box wider
+        // than the stretch it was supposed to be clamped to, regardless of align-self:stretch.
+        assert_eq!(d.min_width, Extent::Px(0.0));
     }
 
     #[test]
@@ -5738,6 +5758,8 @@ mod resize_tests {
         assert_eq!(d.extra.flex_grow, 1.0);
         assert_eq!(d.extra.align_self, Some(AlignValue::Stretch));
         assert_eq!(d.min_width, Extent::Px(0.0));
+        // height is the cross axis here (width is main, Some(true)) - must be zeroed too now.
+        assert_eq!(d.min_height, Extent::Px(0.0));
     }
 
     #[test]

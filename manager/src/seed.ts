@@ -1917,6 +1917,12 @@ export async function seedMerchLandingPage(
 	await api.createRenderEntry(tileNullSnip.id, 'border', 'oklch(85% 0 0)');
 	await api.createRenderEntry(tileNullSnip.id, 'border-radius', '4px');
 	await api.createRenderEntry(tileNullSnip.id, 'background', 'oklch(100% 0 0)');
+	// Explicit, like lookbookCellKit right below - every direct child of Product Grid should
+	// stretch to fill its own assigned cell rather than leaning on an unset width/height (the
+	// compile_resize cross-axis min-content bug fixed 2026-08-09 is what made this worth stating
+	// explicitly instead of relying on Grid's own implicit stretch default).
+	await api.createRenderEntry(tileNullSnip.id, 'width', 'fill');
+	await api.createRenderEntry(tileNullSnip.id, 'height', 'fill');
 	// Squircle, quietly: the same superellipse-corner primitive Tropika reaches for loudly on its
 	// flavor cans, used here at a whisper - a few extra points of curve on an already-small 4px
 	// radius, restrained rather than a rounded-everything look, matching the brand's whole point.
@@ -2098,8 +2104,19 @@ export async function seedMerchLandingPage(
 	// padding, so a rounded box background would sit fully hidden behind the full-bleed photo. Full
 	// bleed is the right call for the hero spread anyway; the squircle refinement lives on the four
 	// product cards below, which have real padding for it to show through.
+	//
+	// width/height: 'fill' explicit here, same as productTileKit below and every width:'fill' box
+	// elsewhere on this page - real CSS Grid's own default IS stretch-to-cell for an unset size,
+	// but this cell's only child is an Img with its own unconstrained content-driven intrinsic
+	// size (the bundled photo's real 900x675px), and an unset Box size here let that ambiguity
+	// reach all the way up through the grid's own track sizing instead of being clamped by the
+	// page's fixed 900px width (a real bug, fixed 2026-08-09 in compile_resize itself - this
+	// explicit declaration is now belt-and-suspenders, not load-bearing, but every Grid CELL in
+	// this codebase states its own sizing explicitly rather than leaning on an implicit default).
 	const lookbookCellKit = await boxKit('Lookbook Cell', {
-		place: 'lookbook'
+		place: 'lookbook',
+		width: 'fill',
+		height: 'fill'
 	});
 	const priceRowKit = await boxKit('Price Row', {
 		arrange: 'stack',
@@ -2127,8 +2144,12 @@ export async function seedMerchLandingPage(
 	// the four product tiles' plain color-swatch placeholders with a real photo per product.
 	// `height: 'fill'` (not a fixed px) now that this sits inside a grid cell whose height is
 	// computed from the row tracks rather than page flow; `cover` (not the old `contain`) so it
-	// reads as a full-bleed spread photo rather than a letterboxed thumbnail.
-	const srcImageKit = await imageKit('Image Source', { width: '100%', height: 'fill', fit: 'cover' });
+	// reads as a full-bleed spread photo rather than a letterboxed thumbnail. `width: 'fill'`, not
+	// a raw `'100%'` - a CSS percentage falls back to the element's own intrinsic size when its
+	// containing block is indefinite, which is exactly what let this photo's real 900x675px assert
+	// itself through the grid's own track sizing (see lookbookCellKit's doc comment above). Fill
+	// is Charter's own deterministic keyword, not a raw CSS percentage subject to that fallback.
+	const srcImageKit = await imageKit('Image Source', { width: 'fill', height: 'fill', fit: 'cover' });
 	const lookbookAssetId = await registerBundledAsset({
 		name: 'merch-lookbook.jpg',
 		link: '/1x/stock/merch-lookbook.jpg',

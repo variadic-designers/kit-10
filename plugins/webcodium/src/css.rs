@@ -567,6 +567,60 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
             if let Some(h) = extent_css(&d.height) {
                 props.push(format!("height: {h};"));
             }
+            // Img's own min/max + flex/grid-item sizing (`extra: BoxExtra`, plus the four Extent
+            // fields Img carries the same way Box does) - a real, shipped bug (2026-08-09): Img
+            // was hard-routed to this function specifically to preserve src/fit/object-position
+            // (see this function's own doc comment), but that routing meant it silently never got
+            // ANY of the Box arm's flex-item/grid-item CSS below - a `height: 'fill'` Img (Charter
+            // compiles this to flex-grow:1/min-height:0 on the main axis) rendered at its own
+            // min-content/intrinsic height in the real export instead of filling its flex/grid
+            // parent, even though the identical case worked correctly in Vellum (which reads
+            // `extra`/min/max directly, no CSS-text intermediary to drop them from).
+            if let Some(w) = extent_css(&d.min_width) {
+                props.push(format!("min-width: {w};"));
+            }
+            if let Some(h) = extent_css(&d.min_height) {
+                props.push(format!("min-height: {h};"));
+            }
+            if let Some(w) = extent_css(&d.max_width) {
+                props.push(format!("max-width: {w};"));
+            }
+            if let Some(h) = extent_css(&d.max_height) {
+                props.push(format!("max-height: {h};"));
+            }
+            let default_grid_line = (GridLine::default(), GridLine::default());
+            if d.extra.grid_column != default_grid_line {
+                props.push(format!(
+                    "grid-column: {} / {};",
+                    grid_line_css(&d.extra.grid_column.0),
+                    grid_line_css(&d.extra.grid_column.1)
+                ));
+            }
+            if d.extra.grid_row != default_grid_line {
+                props.push(format!(
+                    "grid-row: {} / {};",
+                    grid_line_css(&d.extra.grid_row.0),
+                    grid_line_css(&d.extra.grid_row.1)
+                ));
+            }
+            // Same "harmless to always emit" reasoning as the Box arm above - a real browser (like
+            // taffy) ignores flex-item properties when the parent isn't a flex container, and
+            // justify-self when it isn't a grid container.
+            if d.extra.flex_grow != 0.0 {
+                props.push(format!("flex-grow: {};", d.extra.flex_grow));
+            }
+            if let Some(s) = d.extra.flex_shrink {
+                props.push(format!("flex-shrink: {s};"));
+            }
+            if let Some(a) = &d.extra.align_self {
+                props.push(format!("align-self: {};", align_css(a)));
+            }
+            if let Some(j) = &d.extra.justify_self {
+                props.push(format!("justify-self: {};", align_css(j)));
+            }
+            if let Some(b) = &d.extra.flex_basis {
+                props.push(format!("flex-basis: {};", flex_basis_css(b)));
+            }
             // `fit`/`object_position` are already real CSS vocabulary -- `fit` is one of
             // "cover"/"contain"/"fill" (all valid `object-fit` keywords), and object_position's
             // 0..1 fractions convert directly to CSS's percentage syntax.
@@ -1344,6 +1398,35 @@ mod tests {
         assert!(props.contains(&"border: 2px solid oklab(50% 0 0 / 1);".to_string()));
         assert!(props.contains(&"border-radius: 6px;".to_string()));
         assert!(props.contains(&"opacity: 0.8;".to_string()));
+    }
+
+    // Regression (2026-08-09): Img was hard-routed to this function specifically to preserve
+    // src/fit/object-position (see this function's own doc comment on the Img arm), but that
+    // routing meant it silently never got any of the Box arm's flex-item/grid-item sizing CSS -
+    // a `height: 'fill'` Img (Charter compiles this to flex-grow:1/min-height:0 via
+    // compile_resize) rendered at its own intrinsic/min-content height in the real export instead
+    // of filling its flex parent, even though the identical case worked correctly in Vellum.
+    #[test]
+    fn img_with_fill_style_extra_emits_the_same_flex_item_css_a_box_would() {
+        let filled = kit10_scene::ImgData {
+            min_width: Extent::Px(0.0),
+            min_height: Extent::Px(0.0),
+            extra: kit10_scene::BoxExtra {
+                flex_grow: 1.0,
+                flex_shrink: Some(1.0),
+                flex_basis: Some(Extent::Px(0.0)),
+                align_self: Some(kit10_scene::AlignValue::Stretch),
+                ..kit10_scene::BoxExtra::default()
+            },
+            ..test_img()
+        };
+        let props = node_props(&UiNode::Img(filled), true).unwrap();
+        assert!(props.contains(&"min-width: 0px;".to_string()), "props were: {:?}", props);
+        assert!(props.contains(&"min-height: 0px;".to_string()), "props were: {:?}", props);
+        assert!(props.contains(&"flex-grow: 1;".to_string()), "props were: {:?}", props);
+        assert!(props.contains(&"flex-shrink: 1;".to_string()), "props were: {:?}", props);
+        assert!(props.contains(&"flex-basis: 0px;".to_string()), "props were: {:?}", props);
+        assert!(props.contains(&"align-self: stretch;".to_string()), "props were: {:?}", props);
     }
 
     // Regression test for the reported audit finding: a highlighted/pill Text label (background +

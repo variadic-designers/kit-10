@@ -19,9 +19,11 @@
 // width/height was originally cut alongside this for exactly that reason (compile_resize's real
 // flex-grow/shrink/basis math needs to know the parent's own main axis) -- but see
 // synthesize_resize below: the GROW half turned out not to need it after all, since flex-grow is
-// inherently main-axis-relative in real CSS regardless of flex-direction. flex-shrink/flex-basis/
-// min-width/min-height (Fill's "can shrink below content" half) remain genuinely axis-specific and
-// are still deferred -- see the plan doc's Phase 3.1 entry.
+// inherently main-axis-relative in real CSS regardless of flex-direction, and (2026-08-09)
+// min-width/min-height turned out not to need it either, since CSS's automatic-minimum-size
+// default applies per-property regardless of which axis is main. flex-shrink/flex-basis (Fill's
+// remaining "can shrink below content" half) remain genuinely axis-specific and are still
+// deferred -- see the plan doc's Phase 3.1 entry.
 //
 // `arrange` (Stack/Cluster/Split/Center/Grid) is NOT in that scope-cut category, despite being
 // Charter's own compiled preset -- `compile_arrange`/`resolve_flex_direction` need nothing from
@@ -419,14 +421,38 @@ pub(crate) fn synthesize_contested_rules(
 // render time -- no Charter round-trip (a hypothetical translate_properties host-fn) required
 // after all. `.entry(...).or_insert(...)` mirrors synthesize_arrange's own "only fires when never
 // explicitly set" rule -- an explicit raw `flex-grow` (the legacy item-level escape hatch) always
-// wins. Still deliberately NOT reproduced: flex-shrink/flex-basis/min-width/min-height, and Hug's
-// own flex-shrink:0 (Hug's flex-grow:0 already matches CSS's own default, so omitting it, as
-// today, is already correct) -- these remain axis-specific or otherwise out of this pass's scope.
+// wins. `min-width`/`min-height` (2026-08-09) turned out to need the identical "no axis lookup
+// needed" treatment, for a different reason than flex-grow's: real CSS's `auto` initial value for
+// either resolves to the item's own min-content size for BOTH Flex and Grid items alike (not just
+// whichever axis is "main"), and an unconstrained child (a real `<img>` with no explicit size)
+// resolving to its full intrinsic pixel size is exactly what let a Fill'd box overflow past its
+// own stretch-to-cell/stretch-to-parent size in a real browser export - the identical bug the
+// matching `compile_resize` fix closed for Vellum's own renderer, independently rediscovered here.
+// Still deliberately NOT reproduced: flex-shrink/flex-basis, and Hug's own flex-shrink:0 (Hug's
+// flex-grow:0 already matches CSS's own default, so omitting it, as today, is already correct) --
+// these remain genuinely axis-specific, out of this pass's scope.
 fn synthesize_resize(properties: &mut HashMap<String, String>) {
     let wants_grow =
         ["width", "height"].iter().any(|prop| properties.get(*prop).map(String::as_str) == Some("fill"));
     if wants_grow {
         properties.entry("flex-grow".to_string()).or_insert_with(|| "1".to_string());
+    }
+    // Real CSS (both Flexbox AND Grid - `min-width`/`min-height`'s `auto` initial value and its
+    // "resolves to min-content for a flex/grid item" special case apply identically to either
+    // layout mode) defaults every flex/grid ITEM's min-width/min-height to `auto`, which an
+    // unconstrained child (a real replaced element like `<img>` with no explicit size) resolves
+    // to ITS OWN full intrinsic pixel size - a real, shipped bug (2026-08-09, mirrors the
+    // identical compile_resize fix on the Vellum side): a Fill'd box holding an unconstrained
+    // image blew past its own stretch-to-cell/stretch-to-parent size in real browser exports,
+    // exactly reproducing the overflow the Charter-side fix closed for Vellum's own renderer.
+    // Unlike flex-grow (genuinely main-axis-relative, the reason this whole function was
+    // originally scoped down), min-width only ever needs `width:'fill'` and min-height only ever
+    // needs `height:'fill'` - no parent axis-direction context required either way.
+    if properties.get("width").map(String::as_str) == Some("fill") {
+        properties.entry("min-width".to_string()).or_insert_with(|| "0".to_string());
+    }
+    if properties.get("height").map(String::as_str) == Some("fill") {
+        properties.entry("min-height".to_string()).or_insert_with(|| "0".to_string());
     }
 }
 
@@ -775,6 +801,14 @@ const DIFFABLE_PROPERTIES: &[&str] = &[
     "flex-grow",
     "flex-shrink",
     "align-self",
+    // Needed for `synthesize_resize`'s Fill min-content-floor fix (2026-08-09) to actually reach
+    // the exported CSS, not just sit in the properties map - also closes a pre-existing,
+    // independent gap for the same two keys: a user-authored ResizeKeys min limit (Charter's own
+    // `min-width`/`min-height` FieldDefs) was never diffable here at all before this, so Path B
+    // silently dropped it from every export regardless of Fill. `max-width`/`max-height` are a
+    // separate, still-open gap - not touched here, scoped to what this fix actually needs.
+    "min-width",
+    "min-height",
     // Same "raw stored value is already valid CSS syntax as-is" reasoning as the grid-* keys
     // above, extended to the Grid-mastery expansion's 5 new BoxExtra fields: their raw property
     // strings (e.g. "\"a a\" \"b b\"", "column dense", "center", "space-between") are exactly what
@@ -832,7 +866,9 @@ fn format_value(property: &str, raw: &str) -> Option<String> {
         }
         "font-family" => Some(format!("\"{raw}\"")),
         "padding" => Some(raw.split_whitespace().map(as_px_if_bare_number).collect::<Vec<_>>().join(" ")),
-        "font-size" | "border-radius" | "gap" | "line-height" => Some(as_px_if_bare_number(raw)),
+        "font-size" | "border-radius" | "gap" | "line-height" | "min-width" | "min-height" => {
+            Some(as_px_if_bare_number(raw))
+        }
         "font-weight" => Some(format_font_weight(raw)),
         // "border"'s own color is already gated inside synthesize_border before this is ever
         // reached (its raw value there is the full "{width}px solid {color}" shorthand, not a bare
@@ -2307,7 +2343,8 @@ mod tests {
         // The revised scope: Fill's GROW half no longer needs the parent's own axis (flex-grow is
         // inherently main-axis-relative), so it's a real, emitted declaration now -- see
         // synthesize_resize's doc comment. The literal "width: fill;" itself must still never leak
-        // through (fill isn't a real CSS size value).
+        // through (fill isn't a real CSS size value). min-width: 0 (2026-08-09) drops the browser's
+        // own automatic-minimum-size floor, the same fix compile_resize got on the Vellum side.
         let shape = KitExportShape {
             kit_id: "card".to_string(),
             kit_name: "Card".to_string(),
@@ -2321,10 +2358,50 @@ mod tests {
         let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
         assert_eq!(
             base,
-            vec!["flex-grow: 1;".to_string(), "line-height: 24px;".to_string()],
+            vec![
+                "flex-grow: 1;".to_string(),
+                "line-height: 24px;".to_string(),
+                "min-width: 0px;".to_string()
+            ],
             "{:?}",
             base
         );
+    }
+
+    #[test]
+    fn fill_height_keyword_also_zeroes_min_height_not_min_width() {
+        let shape = KitExportShape {
+            kit_id: "cell".to_string(),
+            kit_name: "Cell".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("height", "fill")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(base.contains(&"min-height: 0px;".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d.starts_with("min-width:")), "{:?}", base);
+    }
+
+    #[test]
+    fn an_explicit_raw_min_width_wins_over_fills_own_zero_default() {
+        // Same "only fires when never explicitly set" rule as flex-grow's own escape hatch above -
+        // a user-authored ResizeKeys min limit must not be silently clobbered by Fill's default.
+        let shape = KitExportShape {
+            kit_id: "card".to_string(),
+            kit_name: "Card".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("width", "fill"), literal_entry("min-width", "120")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, false, &ProjectTokens::new());
+        assert!(base.contains(&"min-width: 120px;".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d == "min-width: 0px;"), "{:?}", base);
     }
 
     #[test]
