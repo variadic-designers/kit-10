@@ -934,6 +934,12 @@
           "maxItems": 2,
           "minItems": 2
         },
+        "opacity": {
+          "description": "Node-level multiplier, same meaning as `BoxData.opacity`/`ShapeData.opacity` - composes\nwith each instance's own `opacity` (see the dynamic-layer doc comments on those\nfields). Defaults to `1.0`, not `0.0` (a bare `#[serde(default)]` would make every\nalready-saved image invisible) - every other `ImgData` field below `object_position`\npredates this one and is `#[serde(default)]`-tolerant for exactly this reason.",
+          "type": "number",
+          "format": "float",
+          "default": 1.0
+        },
         "padding": {
           "description": "`Img`'s own paint properties, same shape as `TextData`'s (reuses the same\n`extract_paint_props`-style helper on the interpreter side) - a framed/highlighted\nimage doesn't need a wrapper Box any more than a highlighted text label does.",
           "type": "array",

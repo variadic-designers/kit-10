@@ -1972,6 +1972,9 @@ fn build_img_node(
     // does (primitive-parity gap: image_categories() already declared these FieldDefs, but
     // ImgData had no backing fields and this function never read them - dead panel wiring).
     let paint = extract_paint_props(props, OklabColor::default());
+    let opacity = get_prop(props, "opacity")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .unwrap_or(1.0);
 
     UiNode::Img(ImgData {
         parent_id,
@@ -1995,6 +1998,7 @@ fn build_img_node(
         border_width: paint.border_width,
         corner_radius: paint.corner_radius,
         squircle: paint.squircle,
+        opacity,
         extra,
         selected: 0,
         hovered: false,
@@ -2506,6 +2510,7 @@ fn image_categories() -> Vec<FieldCategory> {
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
+                FieldDef::new("opacity", Some("Opacity")),
             ],
         },
     ]
@@ -5219,6 +5224,13 @@ mod color_input_type_tests {
         assert_color_input_type(&fields, "background");
         assert_color_input_type(&fields, "border");
     }
+
+    #[test]
+    fn image_categories_declares_an_opacity_field() {
+        let categories = image_categories();
+        let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
+        assert!(fields.iter().any(|f| f.key == "opacity"), "image_categories should declare opacity");
+    }
 }
 
 #[cfg(test)]
@@ -5521,6 +5533,27 @@ mod extent_parse_tests {
         };
         assert!(!img.show_border);
         assert_eq!(img.bg_color, OklabColor::default());
+    }
+
+    // Mirrors build_shape_node's own opacity parse exactly (get_prop + plain f32 parse,
+    // unwrap_or(1.0)) - a primitive-parity gap, ImgData had no opacity field/parse at all before.
+    #[test]
+    fn build_img_node_reads_opacity_from_props() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("src".into(), prop("src", "logo"));
+        props.insert("opacity".into(), prop("opacity", "0.4"));
+        let UiNode::Img(img) = build_img_node(&props, None, None, None) else {
+            panic!("expected Img")
+        };
+        assert_eq!(img.opacity, 0.4);
+
+        // Unset falls back to fully opaque, same default every other primitive uses.
+        let mut unset_props: HashMap<String, ResolvedProperty> = HashMap::new();
+        unset_props.insert("src".into(), prop("src", "logo"));
+        let UiNode::Img(unset_img) = build_img_node(&unset_props, None, None, None) else {
+            panic!("expected Img")
+        };
+        assert_eq!(unset_img.opacity, 1.0);
     }
 
     #[test]

@@ -606,6 +606,7 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `min_height`      | Extent       | -        |
 | `min_width`       | Extent       | -        |
 | `object_position` | [number × 2] | -        |
+| `opacity`         | number       | -        |
 | `padding`         | [number × 4] | -        |
 | `parent_id`       | integer?     | -        |
 | `selected`        | integer      | -        |
@@ -941,6 +942,7 @@ grid-item/align-self/`position` participation Box has (container-only fields lik
     "border_width": 0.0,
     "corner_radius": 0.0,
     "squircle": false,
+    "opacity": 1.0,
     "extra": {
       "gap": 0.0,
       "align_items": null,
@@ -977,8 +979,9 @@ grid-item/align-self/`position` participation Box has (container-only fields lik
 `border_color`/`border_width`/`corner_radius`/`squircle` paint properties mirror Box's own
 (same defaults, same shorthand rules) - Img was previously missing real backing storage for
 these even though `image_categories()` already declared the Render-panel fields; they now
-work. `extra: BoxExtra` gives Img the same grid-item/align-self/`position` participation
-Box and Text have.
+work. `opacity` is a node-level multiplier, same meaning as Box/Text/Shape/SpriteBatch's own -
+Img was the last primitive missing it. `extra: BoxExtra` gives Img the same grid-item/align-self/
+`position` participation Box and Text have.
 
 **Shape node:**
 ```json
