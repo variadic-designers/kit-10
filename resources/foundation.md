@@ -32,8 +32,8 @@ Where each pillar lands:
 
 | Pillar | Foundation | Primary consumers |
 |---|---|---|
-| **A** | Dynamic per-frame layer (Vellum) | animato tweens, Flip transitions, content-tweens, node-drag (retrofit), live-preview |
-| **B** | Interpolation + easing (`kit10-motion`) | animato eases/tweens, layout-tween, state-diff, any crossfade |
+| **A** | Dynamic per-frame layer (Vellum) | anima tweens, Flip transitions, content-tweens, node-drag (retrofit), live-preview |
+| **B** | Interpolation + easing (`kit10-motion`) | anima eases/tweens, layout-tween, state-diff, any crossfade |
 | **C** | Shared deformation stage `p→p'` | text Stage C, SDF domain warp, MotionPath, DrawSVG, MorphSVG |
 | **D** | Interpolatable layout | Flip state-transitions, "layouts that tween" |
 | **E** | 3D / SDF (raymarch) | text Phases 3-4, MorphSVG, emboss / deboss / weld |
@@ -83,7 +83,7 @@ Design commitments:
   clock. Once the channel exists, `update_node_drag`'s bespoke rect-mutation + cache re-
   derivation becomes "write the channel, repaint."
 
-Consumers: animato tweens, Flip state-transitions (Pillar D), content-tweens, node-drag
+Consumers: anima tweens, Flip state-transitions (Pillar D), content-tweens, node-drag
 (retrofit), and any future live-preview / `on_field_preview` intermediary.
 
 ---

@@ -46,7 +46,7 @@ Three facts about the codebase reshape the sequencing:
    editor genuinely needs client-side math (GSAP-export preview, later).
 
 Scope: **substrate + proof-of-life** for Pillars A, B, D-a, C, F, each with a minimal
-end-to-end demo. Explicitly OUT: the animato authoring product (timeline PGlite model, scrubber
+end-to-end demo. Explicitly OUT: the anima authoring product (timeline PGlite model, scrubber
 UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF).
 
 ---
@@ -60,7 +60,7 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
   (translate/rotate/scale/opacity), and a path parameter.
 - Ease library: `power0..4 / sine / circ / expo / back(n) / elastic(a,p) / bounce / steps(n)`
   + config-arg parse + the **CustomEase bezier evaluator** the premium-ease family reduces to.
-- Tests: **numerical parity vs GSAP reference values** (the fidelity gate for animato export -
+- Tests: **numerical parity vs GSAP reference values** (the fidelity gate for anima export -
   capture a fixture of GSAP outputs, assert within epsilon), plus Extent/color lerp unit tests.
 - Done when `cargo test` is green. Nothing consumes it yet. Tag `v0.1.0`. Ideal first PR.
 
@@ -83,7 +83,7 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
 - A minimal Vellum-side tween runner: given `(node index, from, to, duration, ease-string)`,
   evaluate on the ticker via `kit10-motion` (M1), write the dynamic channel (M2). Triggered by
   a dev export (`debug_tween_node(...)`) or a temporary editor button - NOT the authoring UI.
-- This is animato Phase 0+1 combined: proves a node moves at 60fps with **no re-resolve**. The
+- This is anima Phase 0+1 combined: proves a node moves at 60fps with **no re-resolve**. The
   milestone that de-risks the whole substrate.
 - Verify: user drives it in-app, confirms smooth motion; log-check that no `on_resolve` fires
   during the tween.
@@ -121,8 +121,8 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
 ---
 
 ## Explicitly deferred (out of this execution)
-- animato authoring product: timeline/tween PGlite model, scrubber/playhead UI, GSAP exporter
-  (animato Phases 2-3) - the substrate makes them a thin follow-on.
+- anima authoring product: timeline/tween PGlite model, scrubber/playhead UI, GSAP exporter
+  (anima Phases 2-3) - the substrate makes them a thin follow-on.
 - TS mirror of `kit10-motion` (until the editor needs client-side math).
 - Content-reflow layout tweening.
 - Pillar E: Scene3d raymarch, extrusion, text-into-field, MorphSVG (gated on the `sdf3d.md`
@@ -171,6 +171,6 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
 ---
 
 *See also: [`foundation.md`](./foundation.md) (the pillars this executes),
-[`animations-transitions.md`](./animations-transitions.md) (animato phases M1/M3/M4 satisfy),
+[`animations-transitions.md`](./animations-transitions.md) (anima phases M1/M3/M4 satisfy),
 [`text.md`](./text.md) (Stage C / text-on-path, M5's first consumer),
 [`sdf3d.md`](./sdf3d.md) (the Lipschitz discipline M5 carries, and Pillar E's engine).*
