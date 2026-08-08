@@ -95,6 +95,11 @@ struct FieldDef {
     // second visible top-level row -- same side-channel shape as resize_keys' min/max.
     #[serde(rename = "radiusKeys", default)]
     radius_keys: Option<Box<RadiusKeys>>,
+    // Only set on inputType "position" fields. Declares the companion x/y offset property the
+    // Nudge/Anchor modes write, ridden as the same control's own contextual follow-on -- same
+    // side-channel shape as resize_keys' min/max.
+    #[serde(rename = "positionKeys", default)]
+    position_keys: Option<Box<PositionKeys>>,
 }
 
 impl FieldDef {
@@ -108,6 +113,7 @@ impl FieldDef {
             resize_keys: None,
             spacing_mode: None,
             radius_keys: None,
+            position_keys: None,
         }
     }
 
@@ -137,6 +143,11 @@ impl FieldDef {
 
     fn with_radius_keys(mut self, keys: RadiusKeys) -> Self {
         self.radius_keys = Some(Box::new(keys));
+        self
+    }
+
+    fn with_position_keys(mut self, keys: PositionKeys) -> Self {
+        self.position_keys = Some(Box::new(keys));
         self
     }
 }
@@ -207,6 +218,16 @@ struct ResizeKeys {
 #[serde(rename_all = "camelCase")]
 struct RadiusKeys {
     squircle: FieldDef,
+}
+
+// Declared only on the "position" FieldDef. `position` itself is a 3-way Flow/Nudge/Anchor
+// segmented control (Charter's own vocabulary - "relative"/"nudge"/"anchor", parsed by
+// parse_node_position); `offset` is the x/y pair it reveals once Nudge or Anchor is picked, same
+// contextual-follow-on side-channel shape as ResizeKeys' min/max.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PositionKeys {
+    offset: FieldDef,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -1592,7 +1613,7 @@ fn build_box_node(
         // concern (gap / justify-content), not a per-child opinion. The field stays in the wire
         // struct (Vellum + other plugins may use it) but Charter always emits the default 0.
         margin: 0.0,
-        position: NodePosition::default(),
+        position: parse_node_position(props),
         // grid-template-columns/rows, grid-auto-rows/columns, grid-template-areas, grid-auto-flow,
         // justify-items, align-content are this box's own Grid-CONTAINER opinions (ArrangeKeys'
         // `grid_advanced`/friendly-control set) -- meaningful only while `arrange` is actually
@@ -1784,6 +1805,27 @@ fn parse_text_path(raw: Option<&str>) -> Option<Vec<[f32; 2]>> {
     Some(points)
 }
 
+// "dx dy" space-separated pair, same parsing shape as object-position's "0.5 0.5" - malformed or
+// absent input is never an error, just the identity offset (0, 0), matching parse_text_path's own
+// "fewer than 2 points is unset, not an error" posture.
+fn parse_offset_pair(s: Option<&str>) -> (f32, f32) {
+    let Some(s) = s else { return (0.0, 0.0) };
+    let mut parts = s.split_whitespace().filter_map(|p| p.parse::<f32>().ok());
+    (parts.next().unwrap_or(0.0), parts.next().unwrap_or(0.0))
+}
+
+// `position`: Charter's own keyword vocabulary (`"relative"` default | `"nudge"` | `"anchor"`),
+// never the bare CSS `"absolute"` - that stays the drag-and-drop-only, view-level-hint mechanism
+// (`hints.vellum.position`, see absolute_box). `position-offset` backs both Nudge and Anchor.
+fn parse_node_position(props: &std::collections::HashMap<String, ResolvedProperty>) -> NodePosition {
+    let (dx, dy) = parse_offset_pair(get_prop(props, "position-offset").as_deref());
+    match get_prop(props, "position").as_deref() {
+        Some("nudge") => NodePosition::Nudged { dx, dy },
+        Some("anchor") => NodePosition::Anchored { dx, dy },
+        _ => NodePosition::Relative,
+    }
+}
+
 fn build_text_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: usize,
@@ -1804,6 +1846,25 @@ fn build_text_node(
         points,
         offset: parse_px(get_prop(props, "text-path-offset").as_deref()),
     });
+
+    // Flex/grid-item participation (align-self/grid-column/grid-row/position) - closes the
+    // primitive-parity gap where a bare Text label couldn't be a grid item or set align-self
+    // without a wrapper Box. No flex_grow/shrink/basis here (unlike Box/Shape/SpriteBatch) since
+    // those come from compile_resize, and Text's own width/height are hardcoded Auto below - see
+    // this function's own width/height fields for why Text never runs compile_resize at all.
+    let mut extra = BoxExtra {
+        grid_column: get_prop(props, "grid-column")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        grid_row: get_prop(props, "grid-row")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        position: parse_node_position(props),
+        ..BoxExtra::default()
+    };
+    if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
+        extra.align_self = Some(raw);
+    }
 
     UiNode::Text(TextData {
         parent_id: Some(parent_id),
@@ -1831,6 +1892,7 @@ fn build_text_node(
         text_decoration,
         line_height,
         deform,
+        extra,
         selected: 0,
         hovered: false,
     })
@@ -1839,6 +1901,8 @@ fn build_text_node(
 fn build_img_node(
     props: &std::collections::HashMap<String, ResolvedProperty>,
     parent_id: Option<usize>,
+    parent_main_horizontal: Option<bool>,
+    parent_align_items: Option<AlignValue>,
 ) -> UiNode {
     let src = get_prop(props, "src").unwrap_or_default();
     // Normalize to the three fits vellum understands; anything else falls back to cover (vellum's
@@ -1861,10 +1925,62 @@ fn build_img_node(
         ]
     };
 
+    // Real Fixed/Hug/Fill sizing (compile_resize) + min/max, same treatment Box/Shape/SpriteBatch
+    // already get - previously Img read width/height directly via parse_extent with no
+    // compile_resize call at all and no min/max support (a primitive-parity gap).
+    let width_str = get_prop(props, "width");
+    let height_str = get_prop(props, "height");
+    let width_kw = resize_keyword(width_str.as_deref());
+    let height_kw = resize_keyword(height_str.as_deref());
+    let base_width = parse_extent(width_str.as_deref());
+    let base_height = parse_extent(height_str.as_deref());
+    let base_min_width = parse_extent(get_prop(props, "min-width").as_deref());
+    let base_min_height = parse_extent(get_prop(props, "min-height").as_deref());
+    let max_width = parse_extent(get_prop(props, "max-width").as_deref());
+    let max_height = parse_extent(get_prop(props, "max-height").as_deref());
+    let rc = compile_resize(
+        width_kw,
+        height_kw,
+        base_width,
+        base_height,
+        base_min_width,
+        base_min_height,
+        parent_main_horizontal,
+        parent_align_items,
+    );
+
+    let mut extra = BoxExtra {
+        flex_grow: rc.flex_grow.unwrap_or(0.0),
+        flex_shrink: rc.flex_shrink,
+        flex_basis: rc.flex_basis,
+        align_self: rc.align_self,
+        grid_column: get_prop(props, "grid-column")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        grid_row: get_prop(props, "grid-row")
+            .map(|s| parse_grid_line_pair(&s))
+            .unwrap_or_default(),
+        position: parse_node_position(props),
+        ..BoxExtra::default()
+    };
+    if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
+        extra.align_self = Some(raw);
+    }
+
+    // Img's own paint properties, same shape and same shared helper Text already uses - a
+    // framed/highlighted image doesn't need a wrapper Box any more than a highlighted text label
+    // does (primitive-parity gap: image_categories() already declared these FieldDefs, but
+    // ImgData had no backing fields and this function never read them - dead panel wiring).
+    let paint = extract_paint_props(props, OklabColor::default());
+
     UiNode::Img(ImgData {
         parent_id,
-        width: parse_extent(get_prop(props, "width").as_deref()),
-        height: parse_extent(get_prop(props, "height").as_deref()),
+        width: rc.width,
+        height: rc.height,
+        min_width: rc.min_width,
+        min_height: rc.min_height,
+        max_width,
+        max_height,
         source: if src.is_empty() {
             ImageSource::None
         } else {
@@ -1872,6 +1988,14 @@ fn build_img_node(
         },
         fit,
         object_position: pos,
+        padding: paint.padding,
+        bg_color: paint.bg_color,
+        show_border: paint.show_border,
+        border_color: paint.border_color,
+        border_width: paint.border_width,
+        corner_radius: paint.corner_radius,
+        squircle: paint.squircle,
+        extra,
         selected: 0,
         hovered: false,
     })
@@ -1967,6 +2091,7 @@ fn build_shape_node(
         grid_row: get_prop(props, "grid-row")
             .map(|s| parse_grid_line_pair(&s))
             .unwrap_or_default(),
+        position: parse_node_position(props),
         ..BoxExtra::default()
     };
     // An explicit raw align-self always wins over compile_resize's Hug default -- same
@@ -2048,6 +2173,7 @@ fn build_sprite_batch_node(
         grid_row: get_prop(props, "grid-row")
             .map(|s| parse_grid_line_pair(&s))
             .unwrap_or_default(),
+        position: parse_node_position(props),
         ..BoxExtra::default()
     };
     if let Some(raw) = parse_align(get_prop(props, "align-self").as_deref()) {
@@ -2108,7 +2234,16 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
     // direct cosmic-text auto-measurement vs. Box's auto-size-to-children) for a property that
     // has nothing to do with layout structure. `width`/`height` stay box-forcing because
     // build_text_node always emits width:0/height:0 regardless -- an explicit size can only
-    // ever take effect on a Box.
+    // ever take effect on a Box. `min-*`/`max-*` stay box-forcing too for the same reason (Text
+    // has no min/max fields of its own to clamp - unlike Img, whose size Charter genuinely
+    // resolves - see build_text_node's own doc comment on why Text deliberately has no min/max).
+    //
+    // `grid-column`/`grid-row` were REMOVED from this list (composability audit finding): they
+    // are CHILD placement properties, meaningful based on the PARENT's arrangement, not signals
+    // that THIS node itself arranges children - now that Text/Img carry `extra: BoxExtra`, a
+    // property like `grid-column` alone on a text label has somewhere real to go (Charter reads
+    // it into the Text's own `extra`) and must not force a Box promotion, exactly the same
+    // reasoning that already excluded background/border/padding above.
     let has_box_props = props.contains_key("width")
         || props.contains_key("height")
         || props.contains_key("min-width")
@@ -2124,8 +2259,6 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
         || props.contains_key("grid-cell-min")
         || props.contains_key("grid-auto-columns")
         || props.contains_key("grid-auto-rows")
-        || props.contains_key("grid-column")
-        || props.contains_key("grid-row")
         || props.contains_key("grid-template-areas");
 
     if has_text_props && !has_box_props {
@@ -2185,6 +2318,20 @@ fn arrange_field() -> FieldDef {
         })
 }
 
+// Shared "position" FieldDef, declared identically on every primitive that carries `extra:
+// BoxExtra` (Box/Text/Img/Shape/SpriteBatch, since the primitive-parity gap closed) -- one
+// definition, not five hand-copies, same reasoning `arrange_field()` above already established.
+// A 3-way Flow/Nudge/Anchor control; Nudge/Anchor reveal `position-offset` as a contextual x/y
+// follow-on. Deliberately never exposes "absolute" here -- world-space placement stays the
+// drag-and-drop-only, view-level-hint mechanism (`hints.vellum.position`).
+fn position_field() -> FieldDef {
+    FieldDef::new("position", Some("Position"))
+        .with_input_type("position")
+        .with_position_keys(PositionKeys {
+            offset: FieldDef::new("position-offset", Some("Offset")),
+        })
+}
+
 fn box_categories() -> Vec<FieldCategory> {
     vec![
         FieldCategory {
@@ -2208,6 +2355,7 @@ fn box_categories() -> Vec<FieldCategory> {
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
+                position_field(),
             ],
         },
         FieldCategory {
@@ -2264,6 +2412,19 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("text-decoration", Some("Decor")).with_input_type("decoration"),
             ],
         },
+        // Flex/grid-item participation, now that Text carries `extra: BoxExtra` - closes the
+        // primitive-parity gap where a bare Text label couldn't be a grid item or set align-self
+        // without a wrapper Box. No width/height/resize here - Text's own size is always Auto
+        // (Vellum measures it), never authorable, unlike Box/Shape/SpriteBatch/Img.
+        FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                FieldDef::new("align-self", Some("Align")).with_input_type("align"),
+                FieldDef::new("grid-column", Some("Col Span")),
+                FieldDef::new("grid-row", Some("Row Span")),
+                position_field(),
+            ],
+        },
         // Pillar C's text-on-path (`resources/foundation.md`/`text.md` §2, M5's remainder). A raw
         // JSON-array escape hatch, same posture as grid-template-areas/custom grid tracks -- no
         // dedicated path-point-picker widget exists yet. See parse_text_path's own doc comment for
@@ -2308,10 +2469,33 @@ fn image_categories() -> Vec<FieldCategory> {
             ],
         },
         FieldCategory {
+            name: "layout".to_string(),
+            fields: vec![
+                // Real Fixed/Hug/Fill sizing (compile_resize) + min/max, same treatment Box/
+                // Shape/SpriteBatch already get - previously these were plain (no inputType, no
+                // min/max) since build_img_node read width/height directly with no compile_resize
+                // call at all (a primitive-parity gap).
+                FieldDef::new("width", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-width", Some("Min")),
+                        max: FieldDef::new("max-width", Some("Max")),
+                    }),
+                FieldDef::new("height", None)
+                    .with_input_type("resize")
+                    .with_resize_keys(ResizeKeys {
+                        min: FieldDef::new("min-height", Some("Min")),
+                        max: FieldDef::new("max-height", Some("Max")),
+                    }),
+                FieldDef::new("align-self", Some("Align")).with_input_type("align"),
+                FieldDef::new("grid-column", Some("Col Span")),
+                FieldDef::new("grid-row", Some("Row Span")),
+                position_field(),
+            ],
+        },
+        FieldCategory {
             name: "box".to_string(),
             fields: vec![
-                FieldDef::new("width", None),
-                FieldDef::new("height", None),
                 FieldDef::new("background", Some("Fill")).with_input_type("color"),
                 FieldDef::new("border", None).with_input_type("color"),
                 FieldDef::new("border-radius", Some("Radius"))
@@ -2357,6 +2541,7 @@ fn shape_categories() -> Vec<FieldCategory> {
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
                 FieldDef::new("grid-column", Some("Col Span")),
                 FieldDef::new("grid-row", Some("Row Span")),
+                position_field(),
             ],
         },
         FieldCategory {
@@ -2404,6 +2589,7 @@ fn sprite_batch_categories() -> Vec<FieldCategory> {
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
                 FieldDef::new("grid-column", Some("Col Span")),
                 FieldDef::new("grid-row", Some("Row Span")),
+                position_field(),
             ],
         },
         FieldCategory {
@@ -2661,7 +2847,7 @@ fn render_view_nodes(
             }
         }
     } else if primitive == "image" {
-        let mut node = build_img_node(&merged, content_parent);
+        let mut node = build_img_node(&merged, content_parent, parent_main_horizontal, parent_align_items);
         if let UiNode::Img(img_data) = &mut node {
             img_data.selected = selection;
             img_data.hovered = hovered;
@@ -3434,6 +3620,106 @@ mod position_wire_tests {
             );
         } else {
             panic!("expected a Box node");
+        }
+    }
+
+    fn prop(value: &str) -> ResolvedProperty {
+        ResolvedProperty {
+            property: "x".to_string(),
+            value: value.to_string(),
+            source_layer_id: "layer".to_string(),
+            kit_id: "kit".to_string(),
+            is_token: false,
+            token_alias: None,
+            condition_count: 0,
+            view_refs: None,
+        }
+    }
+
+    #[test]
+    fn parse_offset_pair_reads_dx_dy() {
+        assert_eq!(parse_offset_pair(Some("10 -5")), (10.0, -5.0));
+    }
+
+    #[test]
+    fn parse_offset_pair_malformed_or_absent_falls_back_to_zero_zero() {
+        assert_eq!(parse_offset_pair(None), (0.0, 0.0));
+        assert_eq!(parse_offset_pair(Some("")), (0.0, 0.0));
+        assert_eq!(parse_offset_pair(Some("not numbers")), (0.0, 0.0));
+        // A single number still yields a defined (partial) result, not a panic.
+        assert_eq!(parse_offset_pair(Some("7")), (7.0, 0.0));
+    }
+
+    #[test]
+    fn parse_node_position_reads_relative_nudge_and_anchor() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        assert_eq!(parse_node_position(&props), NodePosition::Relative);
+
+        props.insert("position".to_string(), prop("nudge"));
+        props.insert("position-offset".to_string(), prop("10 20"));
+        assert_eq!(parse_node_position(&props), NodePosition::Nudged { dx: 10.0, dy: 20.0 });
+
+        props.insert("position".to_string(), prop("anchor"));
+        assert_eq!(parse_node_position(&props), NodePosition::Anchored { dx: 10.0, dy: 20.0 });
+
+        // Unrecognized keyword degrades to Relative, same fallback posture as parse_arrange etc.
+        props.insert("position".to_string(), prop("bogus"));
+        assert_eq!(parse_node_position(&props), NodePosition::Relative);
+    }
+
+    #[test]
+    fn build_box_node_reads_position_and_offset_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("position".to_string(), prop("anchor"));
+        props.insert("position-offset".to_string(), prop("4 8"));
+        let UiNode::Box(data) = build_box_node(&props, None, None, None) else {
+            panic!("expected UiNode::Box");
+        };
+        assert_eq!(data.extra.position, NodePosition::Anchored { dx: 4.0, dy: 8.0 });
+    }
+
+    #[test]
+    fn build_text_node_reads_position_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("position".to_string(), prop("nudge"));
+        props.insert("position-offset".to_string(), prop("1 2"));
+        let UiNode::Text(data) = build_text_node(&props, 0) else {
+            panic!("expected UiNode::Text");
+        };
+        assert_eq!(data.extra.position, NodePosition::Nudged { dx: 1.0, dy: 2.0 });
+    }
+
+    #[test]
+    fn build_text_node_reads_align_self_and_grid_placement_from_props() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("align-self".to_string(), prop("center"));
+        props.insert("grid-column".to_string(), prop("2"));
+        props.insert("grid-row".to_string(), prop("span 2"));
+        let UiNode::Text(data) = build_text_node(&props, 0) else {
+            panic!("expected UiNode::Text");
+        };
+        assert_eq!(data.extra.align_self, Some(AlignValue::Center));
+        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
+        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+    }
+
+    #[test]
+    fn every_extra_carrying_primitive_declares_a_position_field_with_populated_position_keys() {
+        for categories in [
+            box_categories(),
+            text_categories(),
+            image_categories(),
+            shape_categories(),
+            sprite_batch_categories(),
+        ] {
+            let fields: Vec<FieldDef> = categories.into_iter().flat_map(|c| c.fields).collect();
+            let position = fields
+                .into_iter()
+                .find(|f| f.key == "position")
+                .expect("every extra-carrying primitive should declare a position field");
+            assert_eq!(position.input_type.as_deref(), Some("position"));
+            let keys = position.position_keys.expect("position field must carry positionKeys");
+            assert_eq!(keys.offset.key, "position-offset");
         }
     }
 }
@@ -5166,7 +5452,7 @@ mod extent_parse_tests {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("src".into(), prop("src", "logo"));
         props.insert("fit".into(), prop("fit", "contain"));
-        let UiNode::Img(img) = build_img_node(&props, None) else {
+        let UiNode::Img(img) = build_img_node(&props, None, None, None) else {
             panic!("expected Img")
         };
         // The wire field must be the `fit` string vellum reads -- not a `cover` bool that vellum
@@ -5177,10 +5463,64 @@ mod extent_parse_tests {
         let mut p2: HashMap<String, ResolvedProperty> = HashMap::new();
         p2.insert("src".into(), prop("src", "logo"));
         p2.insert("fit".into(), prop("fit", "bogus"));
-        let UiNode::Img(img2) = build_img_node(&p2, None) else {
+        let UiNode::Img(img2) = build_img_node(&p2, None, None, None) else {
             panic!("expected Img")
         };
         assert_eq!(img2.fit, "cover");
+    }
+
+    // Primitive-parity fix: build_img_node previously read width/height directly via parse_extent
+    // with no compile_resize call at all, so Fixed/Hug/Fill keywords and min/max were both
+    // unsupported for Img specifically (unlike Box/Shape/SpriteBatch).
+    #[test]
+    fn build_img_node_wires_min_max_and_resize_keywords() {
+        // A plain (Fixed) width, so min/max apply as an ordinary clamp with no Fill-driven
+        // override (Fill deliberately forces min to 0 on the main axis - a separate, already
+        // load-bearing compile_resize rule, not something this test is re-proving).
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("width".into(), prop("width", "200px"));
+        props.insert("min-width".into(), prop("min-width", "40px"));
+        props.insert("max-width".into(), prop("max-width", "300px"));
+        let UiNode::Img(img) = build_img_node(&props, None, None, None) else {
+            panic!("expected Img")
+        };
+        assert_eq!(img.min_width, Extent::Px(40.0));
+        assert_eq!(img.max_width, Extent::Px(300.0));
+
+        // "fill" on the main axis (parent_main_horizontal: true) compiles to flex-grow via
+        // compile_resize, the same as it does for Box/Shape/SpriteBatch.
+        let mut fill_props: HashMap<String, ResolvedProperty> = HashMap::new();
+        fill_props.insert("width".into(), prop("width", "fill"));
+        let UiNode::Img(fill_img) = build_img_node(&fill_props, None, Some(true), None) else {
+            panic!("expected Img")
+        };
+        assert_eq!(fill_img.extra.flex_grow, 1.0);
+    }
+
+    #[test]
+    fn build_img_node_renders_its_own_background_and_border() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("src".into(), prop("src", "logo"));
+        props.insert("background".into(), prop("background", "#eeeeee"));
+        props.insert("border".into(), prop("border", "#ff0000"));
+        props.insert("border-radius".into(), prop("border-radius", "8px"));
+        let UiNode::Img(img) = build_img_node(&props, None, None, None) else {
+            panic!("expected Img")
+        };
+        assert!(img.show_border);
+        assert_eq!(img.corner_radius, 8.0);
+        assert_ne!(img.bg_color, OklabColor::default());
+    }
+
+    #[test]
+    fn build_img_node_with_no_paint_stays_fully_transparent() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("src".into(), prop("src", "logo"));
+        let UiNode::Img(img) = build_img_node(&props, None, None, None) else {
+            panic!("expected Img")
+        };
+        assert!(!img.show_border);
+        assert_eq!(img.bg_color, OklabColor::default());
     }
 
     #[test]
@@ -5837,15 +6177,32 @@ mod arrange_tests {
     }
 
     #[test]
-    fn grid_auto_columns_and_grid_column_also_force_box_detection() {
+    fn grid_auto_columns_and_grid_template_areas_also_force_box_detection() {
         // Pre-existing gap: only grid-template-*/grid-cell-min counted as box-forcing, so a node
-        // with ONLY grid-auto-columns/grid-column/etc set (and no other box signal) was
-        // misdetected as text. Now closed for every grid-advanced key.
-        for key in ["grid-auto-columns", "grid-auto-rows", "grid-column", "grid-row", "grid-template-areas"] {
+        // with ONLY grid-auto-columns/grid-template-areas/etc set (and no other box signal) was
+        // misdetected as text. Now closed for every grid-CONTAINER key (grid-column/grid-row are
+        // deliberately NOT in this list - see the next test).
+        for key in ["grid-auto-columns", "grid-auto-rows", "grid-template-areas"] {
             let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
             props.insert("color".to_string(), prop("color", "#111111"));
             props.insert(key.to_string(), prop(key, "1"));
             assert_eq!(detect_primitive(&props), "box", "{key} should force box detection");
+        }
+    }
+
+    // Composability audit finding: grid-column/grid-row are CHILD placement properties (which
+    // parent slot this node occupies), not a signal that the node itself arranges children -
+    // once Text/Img gained `extra: BoxExtra` they have somewhere real to put these, exactly the
+    // same reasoning that already excludes background/border/padding from has_box_props. Before
+    // this fix, a text label with only `font-size` + `grid-column` was silently force-promoted to
+    // a Box, defeating the whole point of Text carrying grid placement at all.
+    #[test]
+    fn grid_column_and_row_alone_do_not_force_box_detection() {
+        for key in ["grid-column", "grid-row"] {
+            let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+            props.insert("font-size".to_string(), prop("font-size", "14px"));
+            props.insert(key.to_string(), prop(key, "2"));
+            assert_eq!(detect_primitive(&props), "text", "{key} alone should stay text");
         }
     }
 

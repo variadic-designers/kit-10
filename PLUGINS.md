@@ -569,6 +569,7 @@ examples in the sections below are illustrative. `Required: -` means the field i
 | `content`         | string             | ✓        |
 | `corner_radius`   | number             | ✓        |
 | `deform`          | Deform?            | -        |
+| `extra`           | BoxExtra           | -        |
 | `font_family`     | string             | ✓        |
 | `font_size`       | number             | ✓        |
 | `font_style`      | FontStyle          | ✓        |
@@ -591,13 +592,25 @@ examples in the sections below are illustrative. `Required: -` means the field i
 
 | Field             | Type         | Required |
 | ----------------- | ------------ | -------- |
+| `bg_color`        | OklabColor   | -        |
+| `border_color`    | OklabColor   | -        |
+| `border_width`    | number       | -        |
+| `corner_radius`   | number       | -        |
+| `extra`           | BoxExtra     | -        |
 | `fit`             | string       | -        |
 | `height`          | Extent       | ✓        |
 | `hovered`         | boolean      | -        |
+| `max_height`      | Extent       | -        |
+| `max_width`       | Extent       | -        |
+| `min_height`      | Extent       | -        |
+| `min_width`       | Extent       | -        |
 | `object_position` | [number × 2] | -        |
+| `padding`         | [number × 4] | -        |
 | `parent_id`       | integer?     | -        |
 | `selected`        | integer      | -        |
+| `show_border`     | boolean      | -        |
 | `source`          | ImageSource  | ✓        |
+| `squircle`        | boolean      | -        |
 | `width`           | Extent       | ✓        |
 
 #### `ShapeData`
@@ -736,7 +749,9 @@ One of: `"Start"`, `"End"`, `"FlexStart"`, `"FlexEnd"`, `"Center"`, `"Stretch"`,
 One of:
 
 - `"Relative"`
+- `{ "Nudged": object }`
 - `{ "Absolute": object }`
+- `{ "Anchored": object }`
 
 #### `OklabColor`
 
@@ -865,6 +880,29 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "text_decoration": "None",
     "line_height": 21.0,
     "deform": null,
+    "extra": {
+      "gap": 0.0,
+      "align_items": null,
+      "justify_content": null,
+      "flex_wrap": "NoWrap",
+      "flex_grow": 0.0,
+      "flex_shrink": null,
+      "align_self": null,
+      "flex_basis": null,
+      "margin": 0.0,
+      "position": "Relative",
+      "grid_template_columns": [],
+      "grid_template_rows": [],
+      "grid_auto_rows": [],
+      "grid_auto_columns": [],
+      "grid_column": ["Auto", "Auto"],
+      "grid_row": ["Auto", "Auto"],
+      "grid_template_areas": [],
+      "grid_auto_flow": "Row",
+      "justify_items": null,
+      "align_content": null,
+      "justify_self": null
+    },
     "selected": 0,
     "hovered": false
   }
@@ -876,7 +914,10 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
 to its own ratio). Text nodes must always emit `width: "Auto", height: "Auto"` - Vellum
 measures text during layout. `deform` is the shared Pillar C `Deform` contract (`null` =
 identity); only `Deform::ArclengthPath` (text-on-path) is interpreted today, authored via
-Charter's `text-path`/`text-path-offset` properties.
+Charter's `text-path`/`text-path-offset` properties. `extra: BoxExtra` gives Text the same
+grid-item/align-self/`position` participation Box has (container-only fields like
+`grid_template_columns` are always empty on a leaf); see `NodePosition` below for what
+`Nudged`/`Absolute`/`Anchored` mean.
 
 **Image node:**
 ```json
@@ -885,9 +926,43 @@ Charter's `text-path`/`text-path-offset` properties.
     "parent_id": 0,
     "width": "Auto",
     "height": { "Px": 200.0 },
+    "min_width": "Auto",
+    "min_height": "Auto",
+    "max_width": "Auto",
+    "max_height": "Auto",
     "source": { "Url": "https://..." },
     "fit": "cover",
     "object_position": [0.5, 0.5],
+    "padding": [0.0, 0.0, 0.0, 0.0],
+    "bg_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 0.0 },
+    "show_border": false,
+    "border_color": { "l": 0.0, "a": 0.0, "b": 0.0, "alpha": 1.0 },
+    "border_width": 0.0,
+    "corner_radius": 0.0,
+    "squircle": false,
+    "extra": {
+      "gap": 0.0,
+      "align_items": null,
+      "justify_content": null,
+      "flex_wrap": "NoWrap",
+      "flex_grow": 0.0,
+      "flex_shrink": null,
+      "align_self": null,
+      "flex_basis": null,
+      "margin": 0.0,
+      "position": "Relative",
+      "grid_template_columns": [],
+      "grid_template_rows": [],
+      "grid_auto_rows": [],
+      "grid_auto_columns": [],
+      "grid_column": ["Auto", "Auto"],
+      "grid_row": ["Auto", "Auto"],
+      "grid_template_areas": [],
+      "grid_auto_flow": "Row",
+      "justify_items": null,
+      "align_content": null,
+      "justify_self": null
+    },
     "selected": 0,
     "hovered": false
   }
@@ -896,6 +971,13 @@ Charter's `text-path`/`text-path-offset` properties.
 `fit` is `"cover"` | `"contain"` | `"fill"` (object-fit); `cover` clips to the node box. (An earlier `cover: bool` field was wrong - Vellum reads `fit`.)
 
 `source` is one of: `"None"`, `{ "Url": "..." }`, `{ "Bytes": [u8 array] }`, or `{ "Ref": "..." }` (an asset reference).
+
+`min_width`/`min_height`/`max_width`/`max_height` and the `padding`/`bg_color`/`show_border`/
+`border_color`/`border_width`/`corner_radius`/`squircle` paint properties mirror Box's own
+(same defaults, same shorthand rules) - Img was previously missing real backing storage for
+these even though `image_categories()` already declared the Render-panel fields; they now
+work. `extra: BoxExtra` gives Img the same grid-item/align-self/`position` participation
+Box and Text have.
 
 **Shape node:**
 ```json

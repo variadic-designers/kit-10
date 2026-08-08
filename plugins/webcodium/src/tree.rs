@@ -269,7 +269,9 @@ pub(crate) fn root_position(nodes: &[UiNode], root: usize) -> Option<(f32, f32)>
     let UiNode::Box(d) = nodes.get(parent_idx)? else { return None };
     match d.extra.position {
         NodePosition::Absolute { x, y } => Some((x, y)),
-        NodePosition::Relative => None,
+        NodePosition::Relative | NodePosition::Nudged { .. } | NodePosition::Anchored { .. } => {
+            None
+        }
     }
 }
 
@@ -543,16 +545,12 @@ mod tests {
     fn view_primitive_is_box_maps_box_and_text_views_excludes_img() {
         let nodes = vec![
             UiNode::Box(crate::test_support::test_box(None)),
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: None,
-                width: kit10_scene::Extent::Px(1.0),
-                height: kit10_scene::Extent::Px(1.0),
-                source: kit10_scene::ImageSource::None,
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
+            UiNode::Img(crate::test_support::test_img(
+                None,
+                kit10_scene::Extent::Px(1.0),
+                kit10_scene::Extent::Px(1.0),
+                kit10_scene::ImageSource::None,
+            )),
         ];
         let node_view_ids = vec!["view-box".to_string(), "view-img".to_string()];
         let map = view_primitive_is_box(&nodes, &node_view_ids);
@@ -624,16 +622,12 @@ mod tests {
     }
 
     fn test_img(source: kit10_scene::ImageSource) -> UiNode {
-        UiNode::Img(kit10_scene::ImgData {
-            parent_id: None,
-            width: kit10_scene::Extent::Px(100.0),
-            height: kit10_scene::Extent::Px(100.0),
+        UiNode::Img(crate::test_support::test_img(
+            None,
+            kit10_scene::Extent::Px(100.0),
+            kit10_scene::Extent::Px(100.0),
             source,
-            fit: "cover".to_string(),
-            object_position: [0.5, 0.5],
-            selected: 0,
-            hovered: false,
-        })
+        ))
     }
 
     #[test]

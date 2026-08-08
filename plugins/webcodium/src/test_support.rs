@@ -3,8 +3,8 @@
 // module. Only compiled under #[cfg(test)] (see lib.rs's module declaration).
 
 use kit10_scene::{
-    BoxData, BoxExtra, Extent, FlexDir, FontStyle, OklabColor, TextAlign, TextData,
-    TextDecorationKind, UiNode,
+    BoxData, BoxExtra, Extent, FlexDir, FontStyle, ImageSource, ImgData, OklabColor, TextAlign,
+    TextData, TextDecorationKind, UiNode,
 };
 
 pub(crate) fn test_box(parent_id: Option<usize>) -> BoxData {
@@ -55,6 +55,37 @@ pub(crate) fn test_text(parent_id: Option<usize>, content: &str) -> TextData {
         text_decoration: TextDecorationKind::None,
         line_height: 0.0,
         deform: None,
+        extra: BoxExtra::default(),
+        selected: 0,
+        hovered: false,
+    }
+}
+
+pub(crate) fn test_img(
+    parent_id: Option<usize>,
+    width: Extent,
+    height: Extent,
+    source: ImageSource,
+) -> ImgData {
+    ImgData {
+        parent_id,
+        width,
+        height,
+        min_width: Extent::Auto,
+        min_height: Extent::Auto,
+        max_width: Extent::Auto,
+        max_height: Extent::Auto,
+        source,
+        fit: "cover".to_string(),
+        object_position: [0.5, 0.5],
+        padding: [0.0, 0.0, 0.0, 0.0],
+        bg_color: OklabColor { l: 0.0, a: 0.0, b: 0.0, alpha: 0.0 },
+        show_border: false,
+        border_color: OklabColor { l: 0.0, a: 0.0, b: 0.0, alpha: 0.0 },
+        border_width: 0.0,
+        corner_radius: 0.0,
+        squircle: false,
+        extra: BoxExtra::default(),
         selected: 0,
         hovered: false,
     }

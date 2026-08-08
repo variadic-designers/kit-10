@@ -717,7 +717,7 @@ fn fetch_project_tokens(project_id: &str) -> variants::ProjectTokens {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{test_box, test_text, view_fixture};
+    use crate::test_support::{test_box, test_img, test_text, view_fixture};
 
     // Renders the whole tree unfiltered -- roots are every node with no parent, matching what
     // tree::resolve_export_roots would produce if every view were selected (see the
@@ -791,16 +791,12 @@ mod tests {
     fn skips_img_nodes_in_both_outputs() {
         let nodes = vec![
             UiNode::Box(test_box(None)),
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: Some(0),
-                width: kit10_scene::Extent::Px(100.0),
-                height: kit10_scene::Extent::Px(100.0),
-                source: kit10_scene::ImageSource::None,
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
+            UiNode::Img(test_img(
+                Some(0),
+                kit10_scene::Extent::Px(100.0),
+                kit10_scene::Extent::Px(100.0),
+                kit10_scene::ImageSource::None,
+            )),
         ];
 
         let (html, css) = render_all(&nodes, &vec![String::new(); nodes.len()]);
@@ -812,16 +808,12 @@ mod tests {
     fn img_with_a_resolved_asset_link_renders_a_real_img_tag_and_css_rule() {
         let nodes = vec![
             UiNode::Box(test_box(None)),
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: Some(0),
-                width: kit10_scene::Extent::Px(360.0),
-                height: kit10_scene::Extent::Px(280.0),
-                source: kit10_scene::ImageSource::Ref("asset-1".to_string()),
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
+            UiNode::Img(test_img(
+                Some(0),
+                kit10_scene::Extent::Px(360.0),
+                kit10_scene::Extent::Px(280.0),
+                kit10_scene::ImageSource::Ref("asset-1".to_string()),
+            )),
         ];
         let node_view_ids = vec![String::new(); nodes.len()];
         let node_kit_ids = vec![String::new(); nodes.len()];
@@ -990,36 +982,24 @@ mod tests {
     #[test]
     fn distinct_img_asset_ids_dedupes_and_ignores_none_and_bytes_sources() {
         let nodes = vec![
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: None,
-                width: kit10_scene::Extent::Auto,
-                height: kit10_scene::Extent::Auto,
-                source: kit10_scene::ImageSource::Ref("a".to_string()),
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: None,
-                width: kit10_scene::Extent::Auto,
-                height: kit10_scene::Extent::Auto,
-                source: kit10_scene::ImageSource::None,
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
-            UiNode::Img(kit10_scene::ImgData {
-                parent_id: None,
-                width: kit10_scene::Extent::Auto,
-                height: kit10_scene::Extent::Auto,
-                source: kit10_scene::ImageSource::Ref("a".to_string()),
-                fit: "cover".to_string(),
-                object_position: [0.5, 0.5],
-                selected: 0,
-                hovered: false,
-            }),
+            UiNode::Img(test_img(
+                None,
+                kit10_scene::Extent::Auto,
+                kit10_scene::Extent::Auto,
+                kit10_scene::ImageSource::Ref("a".to_string()),
+            )),
+            UiNode::Img(test_img(
+                None,
+                kit10_scene::Extent::Auto,
+                kit10_scene::Extent::Auto,
+                kit10_scene::ImageSource::None,
+            )),
+            UiNode::Img(test_img(
+                None,
+                kit10_scene::Extent::Auto,
+                kit10_scene::Extent::Auto,
+                kit10_scene::ImageSource::Ref("a".to_string()),
+            )),
         ];
         assert_eq!(distinct_img_asset_ids(&nodes), vec!["a".to_string()]);
     }

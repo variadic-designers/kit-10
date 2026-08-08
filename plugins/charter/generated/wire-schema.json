@@ -831,6 +831,67 @@
       "description": "An image.",
       "type": "object",
       "properties": {
+        "bg_color": {
+          "$ref": "#/$defs/OklabColor",
+          "default": {
+            "a": 0.0,
+            "alpha": 0.0,
+            "b": 0.0,
+            "l": 0.0
+          }
+        },
+        "border_color": {
+          "$ref": "#/$defs/OklabColor",
+          "default": {
+            "a": 0.0,
+            "alpha": 0.0,
+            "b": 0.0,
+            "l": 0.0
+          }
+        },
+        "border_width": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "corner_radius": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
+        "extra": {
+          "description": "Flex/grid-item participation, same as `TextData.extra` - see its own doc comment.\nUnlike Text, Img's min/max above ARE meaningful (Img reads its authored width/height\nfor real), so this one gets the full sizing treatment.",
+          "$ref": "#/$defs/BoxExtra",
+          "default": {
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "flex_basis": null,
+            "flex_grow": 0.0,
+            "flex_shrink": null,
+            "flex_wrap": "NoWrap",
+            "gap": 0.0,
+            "grid_auto_columns": [],
+            "grid_auto_flow": "Row",
+            "grid_auto_rows": [],
+            "grid_column": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_row": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_template_areas": [],
+            "grid_template_columns": [],
+            "grid_template_rows": [],
+            "justify_content": null,
+            "justify_items": null,
+            "justify_self": null,
+            "margin": 0.0,
+            "position": "Relative"
+          }
+        },
         "fit": {
           "description": "object-fit: `\"cover\"` | `\"contain\"` | `\"fill\"`.",
           "type": "string",
@@ -842,6 +903,22 @@
         "hovered": {
           "type": "boolean",
           "default": false
+        },
+        "max_height": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "max_width": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "min_height": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
+        },
+        "min_width": {
+          "$ref": "#/$defs/Extent",
+          "default": "Auto"
         },
         "object_position": {
           "description": "object-position as `(x, y)` fractions in `0..=1`.",
@@ -856,6 +933,22 @@
           },
           "maxItems": 2,
           "minItems": 2
+        },
+        "padding": {
+          "description": "`Img`'s own paint properties, same shape as `TextData`'s (reuses the same\n`extract_paint_props`-style helper on the interpreter side) - a framed/highlighted\nimage doesn't need a wrapper Box any more than a highlighted text label does.",
+          "type": "array",
+          "default": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 4,
+          "minItems": 4
         },
         "parent_id": {
           "type": [
@@ -872,8 +965,17 @@
           "maximum": 255,
           "minimum": 0
         },
+        "show_border": {
+          "type": "boolean",
+          "default": false
+        },
         "source": {
           "$ref": "#/$defs/ImageSource"
+        },
+        "squircle": {
+          "description": "Same superellipse-corner toggle as `BoxData.squircle`/`TextData.squircle`.",
+          "type": "boolean",
+          "default": false
         },
         "width": {
           "$ref": "#/$defs/Extent"
@@ -901,12 +1003,38 @@
       ]
     },
     "NodePosition": {
-      "description": "CSS `position`, with `inset` folded into `Absolute` (only meaningful there). `Relative`\nparticipates in normal flow; `Absolute { x, y }` floats the node at a world-space offset.",
+      "description": "CSS `position`, with `inset` folded into the offset-carrying variants (only meaningful\nthere). `Relative` participates in normal flow, unshifted - the default.\n\n`Nudged { dx, dy }` is the CSS `position: relative; top/left` analog: stays a full\nparticipant of the parent's flex/grid flow (siblings and the parent's own auto-sizing are\ncomputed as if this node were unshifted), but its final PAINTED rect - and its whole\nsubtree's - is translated by `(dx, dy)`. Pure post-layout, paint-time offset; never touches\na renderer's real layout-engine `Position`/`inset` machinery, same discipline as the other\ntwo offset variants below.\n\n`Absolute { x, y }` floats the node at a world-space offset, unrelated to any parent - see\nthe renderer's own docs (e.g. taf_can_do's TECHNICAL.md) for why placement is decoupled\nfrom sizing here (a real CSS `Position::Absolute` couples \"leave flow\" with shrink-to-fit\nsizing, which collapses text to zero width). Root-only by construction in every consumer\ntoday (an interpreter only ever sets this on a view nothing else's composition references).\n\n`Anchored { dx, dy }` is a parent-relative sibling of `Absolute`: also leaves the immediate\nparent's flex/grid flow (consumes no sibling space, sized independently via ordinary\nauto-sizing - never a real Position::Absolute either), but resolves against that PARENT's\nown resolved rect instead of world space (`parent.position + (dx, dy)`). The \"badge pinned\nto a card's corner\" case `Absolute` can't express, since `Absolute` has no parent\nrelationship at all. A renderer resolves `Anchored` only after its recorded parent's own\nrect is known; a node whose PARENT is itself `Anchored` conservatively falls back to\n`Relative` (no concrete use case yet for chained anchoring - see the renderer's own docs).",
       "oneOf": [
         {
           "type": "string",
           "enum": [
             "Relative"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Nudged": {
+              "type": "object",
+              "properties": {
+                "dx": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "dy": {
+                  "type": "number",
+                  "format": "float"
+                }
+              },
+              "required": [
+                "dx",
+                "dy"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Nudged"
           ]
         },
         {
@@ -933,6 +1061,32 @@
           "additionalProperties": false,
           "required": [
             "Absolute"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "Anchored": {
+              "type": "object",
+              "properties": {
+                "dx": {
+                  "type": "number",
+                  "format": "float"
+                },
+                "dy": {
+                  "type": "number",
+                  "format": "float"
+                }
+              },
+              "required": [
+                "dx",
+                "dy"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "Anchored"
           ]
         }
       ]
@@ -1349,6 +1503,39 @@
             }
           ],
           "default": null
+        },
+        "extra": {
+          "description": "Flex/grid-item participation (align-self, grid-column/row, margin, position) - lets a\nText node be a real grid item or set align-self without a wrapper Box. Deliberately no\nmin/max width/height companion fields the way `BoxData`/`ShapeData`/`SpriteBatchData`\nhave: Text's width/height are hardcoded `Auto` regardless of authored props (the\nrenderer measures it), so a min/max clamp would have no effect - don't add one without\nalso giving Text real sizing to clamp.",
+          "$ref": "#/$defs/BoxExtra",
+          "default": {
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "flex_basis": null,
+            "flex_grow": 0.0,
+            "flex_shrink": null,
+            "flex_wrap": "NoWrap",
+            "gap": 0.0,
+            "grid_auto_columns": [],
+            "grid_auto_flow": "Row",
+            "grid_auto_rows": [],
+            "grid_column": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_row": [
+              "Auto",
+              "Auto"
+            ],
+            "grid_template_areas": [],
+            "grid_template_columns": [],
+            "grid_template_rows": [],
+            "justify_content": null,
+            "justify_items": null,
+            "justify_self": null,
+            "margin": 0.0,
+            "position": "Relative"
+          }
         },
         "font_family": {
           "type": "string"
