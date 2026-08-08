@@ -289,14 +289,17 @@ pub(crate) fn render_font_faces(links: &[crate::ResolvedFontLink]) -> String {
 // WGSL/Rust-Charter/Rust-WebCodium boundary for it.
 pub(crate) const SQUIRCLE_AREA_MATCH_SCALE: f64 = 0.58306;
 
-// Shared by Box and Text -- both carry padding/background/border/border-radius/opacity
+// Shared by Box, Text, and Img -- all three carry padding/background/border/border-radius/opacity
 // identically on the wire (mirrors Charter's own `extract_paint_props`, which is shared by
-// `build_box_node`/`build_text_node` for exactly this reason: real CSS text can have a
-// background, a border, and padding without stopping being text -- a highlighted/pill label --
-// and Vellum's `node_rect` draws these for `Text` exactly like it does for `Box`). Previously only
-// the `Box` match arm in `node_props` emitted these, so a highlighted/bordered/padded Text label
-// silently lost all four in export while rendering correctly in the editor canvas -- a real,
-// found-via-audit bug (2026-07-27), not a hypothetical.
+// `build_box_node`/`build_text_node`/`build_img_node` for exactly this reason: real CSS text can
+// have a background, a border, and padding without stopping being text -- a highlighted/pill
+// label -- and Vellum's `node_rect` draws these for `Text`/`Img` exactly like it does for `Box`).
+// Previously only the `Box` match arm in `node_props` emitted these, so a highlighted/bordered/
+// padded Text label silently lost all four in export while rendering correctly in the editor
+// canvas -- a real, found-via-audit bug (2026-07-27). Img's own paint fields shipped later
+// (2026-08-08) and had the identical gap the moment they existed -- `node_props`' Img arm only
+// ever emitted width/height/object-fit/object-position, never routing through this helper at all
+// until fixed the same day.
 #[allow(clippy::too_many_arguments)]
 fn paint_props(
     padding: [f32; 4],
@@ -572,6 +575,21 @@ fn node_props(node: &UiNode, has_resolved_img_src: bool) -> Option<Vec<String>> 
                 "object-position: {}% {}%;",
                 d.object_position[0] * 100.0,
                 d.object_position[1] * 100.0
+            ));
+            // Img now carries the same padding/background/border/border-radius/opacity fields
+            // Box/Text do (a primitive-parity gap closed on the Charter/Vellum side earlier this
+            // session) -- route through the SAME shared paint_props helper, same "found via
+            // audit, closed the same way Text's own version of this gap was" precedent this
+            // helper's own doc comment already documents for Text.
+            props.extend(paint_props(
+                d.padding,
+                &d.bg_color,
+                d.show_border,
+                &d.border_color,
+                d.border_width,
+                d.corner_radius,
+                d.squircle,
+                d.opacity,
             ));
         }
     }
@@ -1283,6 +1301,7 @@ mod tests {
             border_width: 0.0,
             corner_radius: 0.0,
             squircle: false,
+            opacity: 1.0,
             extra: kit10_scene::BoxExtra::default(),
             selected: 0,
             hovered: false,
@@ -1301,6 +1320,30 @@ mod tests {
         assert!(props.contains(&"height: 280px;".to_string()));
         assert!(props.contains(&"object-fit: contain;".to_string()));
         assert!(props.contains(&"object-position: 0% 100%;".to_string()));
+    }
+
+    // Regression: Img's node_props arm never routed through the shared paint_props helper at all
+    // (only width/height/object-fit/object-position), so a framed/highlighted/faded image
+    // silently lost all five paint properties in export despite rendering correctly in the editor
+    // canvas - the exact same class of bug the Text version of this test already guards against.
+    #[test]
+    fn img_with_a_highlight_and_reduced_opacity_keeps_background_border_padding_radius_and_opacity() {
+        let highlighted = kit10_scene::ImgData {
+            padding: [4.0, 8.0, 4.0, 8.0],
+            bg_color: kit10_scene::OklabColor { l: 0.9, a: 0.02, b: -0.01, alpha: 1.0 },
+            show_border: true,
+            border_color: kit10_scene::OklabColor { l: 0.5, a: 0.0, b: 0.0, alpha: 1.0 },
+            border_width: 2.0,
+            corner_radius: 6.0,
+            opacity: 0.8,
+            ..test_img()
+        };
+        let props = node_props(&UiNode::Img(highlighted), true).unwrap();
+        assert!(props.contains(&"padding: 4px 8px 4px 8px;".to_string()), "props were: {:?}", props);
+        assert!(props.iter().any(|p| p.starts_with("background:")));
+        assert!(props.contains(&"border: 2px solid oklab(50% 0 0 / 1);".to_string()));
+        assert!(props.contains(&"border-radius: 6px;".to_string()));
+        assert!(props.contains(&"opacity: 0.8;".to_string()));
     }
 
     // Regression test for the reported audit finding: a highlighted/pill Text label (background +

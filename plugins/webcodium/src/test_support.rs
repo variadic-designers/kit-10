@@ -85,6 +85,7 @@ pub(crate) fn test_img(
         border_width: 0.0,
         corner_radius: 0.0,
         squircle: false,
+        opacity: 1.0,
         extra: BoxExtra::default(),
         selected: 0,
         hovered: false,
