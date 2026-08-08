@@ -70,7 +70,13 @@ export type InputType =
 	// visible row backed by two properties (the px value, plus a boolean squircle flag via
 	// `radiusKeys`) -- never a second top-level row. See RadiusField.
 	// @doc: Numeric radius stepper with an inline circle/squircle corner-style toggle.
-	| 'radius';
+	| 'radius'
+	// Flow/Nudge/Anchor segmented control, writing Charter's own `position` keyword vocabulary
+	// (never bare CSS `absolute` -- world-space placement stays the drag-and-drop-only
+	// `hints.vellum.position` mechanism). Nudge/Anchor reveal an x/y `position-offset` follow-on
+	// via `positionKeys`, same contextual-reveal grammar as `resize`'s min/max. See PositionField.
+	// @doc: Flow / Nudge / Anchor segmented control, with a contextual x/y offset via `positionKeys`.
+	| 'position';
 
 // Names which utility plugin + functions serve suggestions for a field -- the editor never
 // hardcodes a specific plugin (e.g. Fontavious) or property key. See VISION.md's 1st Principle.
@@ -114,6 +120,14 @@ export interface RadiusKeys {
 	squircle: FieldDef;
 }
 
+// Declared only on the "position" FieldDef -- the companion x/y offset property, revealed as an
+// inline follow-on exactly when the mode is Nudge or Anchor (Relative ignores it entirely, same
+// as Charter's own parse_node_position). Mirrors Charter's PositionKeys struct exactly (camelCase,
+// see plugins/charter/src/lib.rs).
+export interface PositionKeys {
+	offset: FieldDef;
+}
+
 export interface FieldDef {
 	key: string;
 	displayText?: string;
@@ -124,6 +138,7 @@ export interface FieldDef {
 	arrangeKeys?: ArrangeKeys;
 	resizeKeys?: ResizeKeys;
 	radiusKeys?: RadiusKeys;
+	positionKeys?: PositionKeys;
 	// Only meaningful when inputType is "spacing". "scalar" (gap, cell-min -- one number) vs.
 	// "box" (padding -- CSS 1/2/3/4-value shorthand with a 1<->4 expand/collapse affordance).
 	spacingMode?: 'scalar' | 'box';

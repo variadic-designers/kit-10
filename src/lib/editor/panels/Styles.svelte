@@ -5,6 +5,7 @@
 	import ArrangeField from './ArrangeField.svelte';
 	import ResizeField from './ResizeField.svelte';
 	import RadiusField from './RadiusField.svelte';
+	import PositionField from './PositionField.svelte';
 	import WeightField from './WeightField.svelte';
 	import ColorField from './ColorField.svelte';
 	import { flattenKitResults, type Api, type ResolvedKit, type ResolvedProperty } from 'manager';
@@ -384,6 +385,15 @@
 									<RadiusField
 										{field}
 										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
+										{axisNameById}
+										{track}
+										{resolvedMap}
+										{api}
+										{onFieldUpdate}
+									/>
+								{:else if field.inputType === 'position' && field.positionKeys}
+									<PositionField
+										{field}
 										{axisNameById}
 										{track}
 										{resolvedMap}
