@@ -208,12 +208,15 @@ conceptual analog existing only inside the renderer (see Backlog #3).
 Ranked by rough severity × effort. Only the genuine-gap/currently-unfixed findings above - the
 deliberate-subset and faithful verdicts are documented architectural decisions, not backlog items.
 
-1. **Paint order not z-sorted** (Vellum, medium effort). Real visual bug once views overlap; the
-   just-shipped `Anchored` positioning makes overlap a more reachable authoring pattern than before
-   (a badge pinned to a parent's corner is exactly the kind of composition likely to overlap
-   siblings), so this is now more likely to surface than when it was first flagged. Fix needs
-   either interleaved per-node draws (loses the current per-primitive-type batching) or a depth
-   buffer - a real engineering tradeoff, not a quick patch.
+1. **~~Paint order not z-sorted~~ - SHIPPED 2026-08-08.** `draw_scene_content` now submits one
+   draw call per contiguous same-kind run in true tree/paint order (`build_paint_runs`,
+   `taf_can_do/src/render/mod.rs`), instead of one pass per primitive type. Went with interleaved
+   draws, not a depth buffer - real per-node opacity/alpha means a depth test alone doesn't fix
+   out-of-order alpha blending, only correct submission order does. One honest cost found while
+   benchmarking: the common "Box wraps one Text label" shape gets zero run-merging benefit (`2N`
+   draw calls for N labeled elements, same as the fully-fragmented worst case) - merging only pays
+   off with 3+ consecutive same-kind layers (real nested containers). See CLAUDE.md's updated
+   paint-order note and `bench.rs`'s `bench_paint_runs` for the measured spectrum.
 
 2. **Accessibility/semantic export** (large, scope undecided). Zero ARIA/semantic-HTML concept
    anywhere in the data model or exporter. Largest and least-scoped item on this list - would need
