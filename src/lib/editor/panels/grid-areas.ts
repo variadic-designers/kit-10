@@ -78,6 +78,18 @@ export function removeArea(existing: Area[], name: string): Area[] {
 	return existing.filter((a) => a.name !== name);
 }
 
+// Pulled out of Editor.svelte's view-tree/flatten plumbing so it's unit-testable as a pure
+// function: given the PARENT occurrence's own flattened resolved-property map (or null when there
+// is no parent), decide whether that parent is a Grid and, if so, which named areas it has
+// painted. `null` means "no placement UI to show" (no parent, or parent isn't a Grid) -- distinct
+// from `[]` ("parent is a Grid, nothing painted yet"), since a Grid parent with zero areas still
+// wants its child to see "you're in a grid," just with no names to pick from yet.
+export function areaNamesFromParentMap(parentMap: Map<string, { value: string }> | null): string[] | null {
+	if (!parentMap) return null;
+	if (parentMap.get('arrange')?.value !== 'grid') return null;
+	return parseAreas(parentMap.get('grid-template-areas')?.value ?? '').map((a) => a.name);
+}
+
 export function renameArea(existing: Area[], oldName: string, newName: string): Area[] {
 	if (!newName || newName === oldName) return existing;
 	return existing

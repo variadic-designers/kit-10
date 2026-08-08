@@ -73,8 +73,9 @@ describe('seed functions', () => {
 		const hints = confettiSpriteBatchView!.hints as any;
 		expect(hints?.charter?.primitive).toBe('sprite-batch');
 
-		// Forge: Class axis has all 6 values, and each conditioned layer's grid-column/row matches
-		// the area name convention build_text_node/taffy expect (`<name>-start / <name>-end`).
+		// Forge: Class axis has all 6 values, and each conditioned layer's place names the slot
+		// it occupies directly (resolve_place desugars it into the same `<name>-start / <name>-end`
+		// NamedLine pair on both axes Charter-side).
 		const classAxis = await ctx.db
 			.selectFrom('axes')
 			.where('project_id', '=', forge!.id)
@@ -89,12 +90,12 @@ describe('seed functions', () => {
 			.execute();
 		expect(classAxisValues.length).toBe(6);
 
-		const gridColumnEntries = await ctx.db
+		const placeEntries = await ctx.db
 			.selectFrom('render_entries')
-			.where('property', '=', 'grid-column')
+			.where('property', '=', 'place')
 			.select(['value'])
 			.execute();
-		const forgeMobility = gridColumnEntries.find((e) => e.value === 'mobility-start / mobility-end');
+		const forgeMobility = placeEntries.find((e) => e.value === 'mobility');
 		expect(forgeMobility).toBeDefined();
 
 		const gridAreasEntry = await ctx.db

@@ -1,6 +1,125 @@
 # Grid child placement - let a child declare which named area it sits in
 
-Status: **DRAFT, not started.** Researched and planned 2026-08-03; execution deferred.
+Status: **SHIPPED 2026-08-08, in three passes.** Pass 1 shipped the raw `grid-area: <name>` string
+field. Pass 2 (same day) shipped the parent-aware "Position in parent" dropdown this doc originally
+researched - the doc's own "Why" complaint (a Stack/Cluster child inside a Grid parent had no
+visible path to place itself) is now fixed. Pass 3 (same day, direct user feedback) then removed
+the raw line/span placement mechanism ENTIRELY and renamed the field to `place` - see all three
+reconciliation notes below for exactly what landed vs. what this doc's 2026-08-03 draft originally
+proposed.
+
+## Pass 1 (2026-08-08): the raw string field, no dropdown yet
+
+The user first asked for the plain-string version ("just the string"), not the full parent-aware
+dropdown below. Delivered as a genuinely new Charter-side property instead of this doc's original
+finding #1 approach (writing `<name>-start / <name>-end` text directly into the existing
+`grid-column`/`grid-row` fields via editor-side pattern-matching helpers):
+
+- **`grid-area: <name>`** is a real property, parsed by `resolve_grid_axis`
+  (`plugins/charter/src/lib.rs`) into the identical `NamedLine("<name>-start", 1)`/
+  `NamedLine("<name>-end", 1)` pair on both `grid_column` and `grid_row` - same underlying
+  named-line pipeline this doc's research already confirmed was wired end-to-end, just entered
+  through one dedicated field instead of two raw line-pair fields holding lookalike text.
+- Surfaced as a plain `FieldDef::new("grid-area", Some("Area"))` alongside `grid-column`/
+  `grid-row` in every `extra`-carrying primitive's field list - at this point still nested inside
+  the same "Custom tracks" disclosure gated on the CHILD's own arrange tab, i.e. the doc's core
+  complaint was not yet fixed (fixed in Pass 2, same day).
+- No editor/TS changes in this pass - no dropdown, no parent-lookup plumbing.
+
+## Pass 2 (2026-08-08): parent awareness + child awareness of named areas
+
+The user then explicitly asked for both halves this doc originally scoped: "we need parent
+awareness at this point. we also need child awareness on available grid areas." Delivered close to
+this doc's original "Planned approach", with two real deviations surfaced by fresh Explore-agent
+verification before implementation:
+
+- **Writes through `grid-area` directly**, not the two raw `grid-column`/`grid-row` strings step 1
+  originally proposed - Pass 1 made that simpler, since the name is now stored as itself rather
+  than needing to be pattern-matched back out of `<name>-start / <name>-end` text. This also means
+  `areaNameFromPlacement`/`placementForArea` (this doc's originally-proposed helpers) were never
+  needed - `grid-areas.ts` instead gained one new pure helper, `areaNamesFromParentMap(parentMap)`,
+  which just decides "is this parent a Grid, and if so what are its area names."
+- **A real correctness fix was required first**: `resolve_grid_axis` checked `grid-area` by
+  presence, not emptiness, so a naive "clear to auto-placed" write of `""` would have produced a
+  broken `NamedLine("-start")` that silently defeated the `grid-column`/`grid-row` fallback.
+  Hardened (empty/whitespace now treated as absent, mirroring `parse_grid_line`'s own
+  `s.is_empty()` philosophy) with a regression test before the dropdown's clear path was wired up.
+  The dropdown's "(auto-placed)" option goes through a genuine field removal
+  (`field-commit.ts`'s new `clearFieldValue`, wrapping `api.removePropertyFromLayer`) rather than
+  writing an empty string either way, since presence-vs-emptiness bugs of this shape are easy to
+  reintroduce elsewhere.
+- **`Editor.svelte`'s `buildViewTree` call was hoisted into one shared `$derived`** (`viewTree`) -
+  previously computed fresh inline inside the keyboard-nav handler only; the new
+  `parentGridAreaNames` derived needed the same tree, so both now share one build per reactive tick
+  instead of computing it twice.
+- Everything else matches the original plan: `parentGridAreaNames: string[] | null` threaded
+  `Editor.svelte` -> `Styles.svelte` -> `ArrangeField.svelte`; a new "Position in parent" section
+  in `ArrangeField.svelte` rendered as a sibling BEFORE the `activeKind` tab branching (so it shows
+  regardless of the child's own arrangement); `grid-column`/`grid-row`/`grid-area`/`justify-self`
+  relocated out of the Custom-tracks disclosure into this new section's own raw-entry sub-disclosure
+  (filtered out of `gridAdvanced` there to avoid double-rendering for a grid-in-grid child). **This
+  raw-entry sub-disclosure was removed again in Pass 3, two messages later** - see below.
+
+## Pass 3 (2026-08-08): drop the raw line/span escape hatch entirely, rename to `place`
+
+User feedback, verbatim: "i don't like children being able to define columns and row extents on
+where they can sit, i only want them to get a name on where they can sit. none of these
+thing-start / thing-end they should just be place:thing." A deliberate scope NARROWING, not an
+addition - the dropdown from Pass 2 already covered the actual use case; the raw fallback
+underneath it (added "for power users" without being asked) is exactly what got pushed back on.
+
+- **The property itself is renamed `grid-area` -> `place`.** Not just a label change: `place` is
+  now the ONLY way to place a child, so `resolve_grid_axis` (which used to check `place`... no,
+  `grid-area`, THEN fall back to parsing raw `grid-column`/`grid-row` text) collapses into
+  `resolve_place`, which checks `place` alone and returns `(Auto, Auto)` when unset - no fallback
+  branch, because there is nothing left to fall back to.
+- **`parse_grid_line`/`parse_grid_line_pair` (the general CSS line/span/named-line parser) are
+  deleted from Charter entirely**, along with their own unit tests - nothing calls them anymore.
+  The `GridLine` enum itself (kit10-scene, shared with Vellum/taffy) is untouched - `place` still
+  produces `GridLine::NamedLine`, same wire shape as always; only the AUTHORING path that could
+  produce `GridLine::Line`/`Span`/`NamedSpan` from a Charter-parsed raw property is gone.
+- **`place` is not declared as a `FieldDef` anywhere.** `grid-column`/`grid-row`/`grid-area`'s
+  three-line `FieldDef` triple is deleted outright (not replaced) from all 5 primitives'
+  `grid_advanced` lists - `place` is a bespoke property the Render panel's dropdown reads/writes
+  by literal string key (`track('place')`/`resolvedMap.get('place')`), same pattern the dropdown
+  already used for `grid-area` in Pass 2, needing no FieldDef backing since nothing renders it via
+  the generic `fieldRow` snippet anymore.
+- **`ArrangeField.svelte`'s "Position in parent" section loses its raw-entry sub-disclosure
+  entirely** - the dropdown IS the whole UI now. `PLACEMENT_KEYS`/`placementFields`/
+  `gridAdvancedWithoutPlacement` (Pass 2's filtering machinery) are all deleted; "Custom tracks"
+  reverts to rendering `arrangeKeys.gridAdvanced` unfiltered, which naturally un-relocates
+  `justify-self` back to its original home (it was never part of the user's complaint - alignment
+  within a cell is orthogonal to which cell a child is in - so it stays put rather than getting a
+  new home of its own).
+- **`seed.ts`'s three grid demos (Forge's Class Grid, Meridian's Grid Slot axis + `lookbookCellKit`)
+  were migrated from the old `grid-column`/`grid-row: "<name>-start / <name>-end"` two-line pattern
+  to `place: "<name>"`** - these predated `place` (authored 2026-08-07, before any of this
+  session's grid-child-placement work) using literal text that happened to match the naming
+  convention `resolve_grid_axis` would later formalize. `seed.test.ts`'s one literal-value
+  assertion updated to match (`property = 'place'`, `value = 'mobility'` instead of
+  `property = 'grid-column'`, `value = 'mobility-start / mobility-end'`).
+- **A real gap was caught and explicitly NOT silently patched, then fixed as its own step**:
+  WebCodium's Path B (`plugins/webcodium/src/variants.rs`) exports a grid child's placement from
+  raw, uncompiled kit properties via a hardcoded `DIFFABLE_PROPERTIES` whitelist - it already
+  listed `grid-column`/`grid-row` (valid real CSS, safe to pass through literally) but had no
+  entry for `place` (not a real CSS property at all - real CSS's own shorthand is `grid-area`).
+  Flagged to the user before making the seed.ts change (per "stop if we missed something");
+  fixed once the user confirmed. Naively whitelisting `place` would have emitted invalid CSS
+  (`place: header;` isn't real CSS - `place-*` properties in real CSS are unrelated
+  align+justify shorthands). **SHIPPED**: `place` added to `DIFFABLE_PROPERTIES`, `grid-column`/
+  `grid-row` removed from it (Charter no longer authors either, so keeping them diffable would
+  have let Path B silently export a declaration Path A no longer honors), and a new
+  `css_property_name(property)` translation applied at the exact point
+  `declarations_for_with_tokens` builds the final declaration string - `place: <name>` now emits
+  real `grid-area: <name>;`, the property lookup itself (`DIFFABLE_PROPERTIES`/`format_value`/
+  `token_vars`) still keyed by Charter's own `place` name throughout. Covered by 3 new tests: base
+  declarations, variant-rule declarations (an axis-conditioned layer, mirroring seed.ts's actual
+  usage), and a regression proving `grid-column`/`grid-row` now correctly fall through to the
+  "unsupported" comment instead of silently passing through. `webcodium.wasm` rebuilt and
+  deployed.
+
+Known accepted limitations from the original plan still apply unchanged (see below) - neither pass
+touched them.
 
 ## Why
 

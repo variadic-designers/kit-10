@@ -179,10 +179,13 @@ struct ArrangeKeys {
     // Stack/Cluster/Split/Center's "Advanced flex" disclosure: raw flex-direction/align-items/
     // justify-content/flex-wrap/display fields, still real panel controls, one click away.
     advanced: Vec<FieldDef>,
-    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-column/grid-row/
-    // grid-template-areas/justify-self text fields -- the CSS-Grid sublanguage the friendly
-    // controls below replace as the *default* surface, not as a capability. Stays available
-    // underneath them, same "advanced, not first contact" stance as `advanced` above.
+    // Grid's "Custom tracks" disclosure: raw grid-template-*/grid-auto-*/grid-template-areas/
+    // justify-self text fields -- the CSS-Grid sublanguage the friendly controls below replace as
+    // the *default* surface, not as a capability. Stays available underneath them, same
+    // "advanced, not first contact" stance as `advanced` above. Deliberately does NOT include
+    // `place` (a child's own placement within a Grid PARENT) - that's a bare name only, surfaced
+    // exclusively via the Render panel's own "Position in parent" dropdown
+    // (`src/lib/editor/panels/ArrangeField.svelte`), never a raw text escape hatch here.
     grid_advanced: Vec<FieldDef>,
     // Grid's own friendly controls -- full FieldDefs (same `inputType`-tagged shape `gap`/
     // `cell_min` already are) for the track-list builder, area painter, and alignment/flow
@@ -1078,44 +1081,27 @@ fn split_respecting_parens(s: &str) -> Vec<&str> {
     tokens
 }
 
-fn parse_grid_line(s: &str) -> GridLine {
-    let s = s.trim();
-    if s == "auto" || s.is_empty() {
-        return GridLine::Auto;
+// `place: <name>` is the ONLY way a child places itself within a Grid parent - a bare area name,
+// never an explicit line/span (real CSS's `grid-column`/`grid-row` escape hatch is deliberately
+// NOT exposed as a child-placement mechanism here - a design choice, not a v1 scope cut: a child
+// only ever gets a NAME for where it sits, nothing about explicit column/row extents). Desugars to
+// the SAME NamedLine pair on both axes (`<name>-start`/`<name>-end`), mirroring taffy's own
+// auto-derivation of those line names from the parent's `grid-template-areas`
+// (compute/grid/types/named.rs, resolved independently per axis), so no parent state needs
+// threading down to resolve this at all. An empty/whitespace-only value is treated as ABSENT
+// (auto-placed), not a real area name - what makes clearing the field back to "unset" safe.
+fn resolve_place(props: &std::collections::HashMap<String, ResolvedProperty>) -> (GridLine, GridLine) {
+    let Some(name) = get_prop(props, "place") else {
+        return Default::default();
+    };
+    let name = name.trim();
+    if name.is_empty() {
+        return Default::default();
     }
-    if let Some(rest) = s.strip_prefix("span") {
-        let rest = rest.trim();
-        if let Ok(n) = rest.parse::<u16>() {
-            return GridLine::Span(n);
-        }
-        if !rest.is_empty() {
-            // `span <name>` or `span <n> <name>` -- a named span, count defaults to 1.
-            let mut parts = rest.split_whitespace();
-            let first = parts.next().unwrap_or("");
-            return match first.parse::<u16>() {
-                Ok(n) => GridLine::NamedSpan(parts.next().unwrap_or(first).to_string(), n),
-                Err(_) => GridLine::NamedSpan(first.to_string(), 1),
-            };
-        }
-        return GridLine::Span(1);
-    }
-    if let Ok(n) = s.parse::<i16>() {
-        return GridLine::Line(n);
-    }
-    // `<name>` or `<name> <n>` -- a named line reference, nth occurrence defaults to 1.
-    let mut parts = s.split_whitespace();
-    let first = parts.next().unwrap_or(s);
-    match parts.next().and_then(|n| n.parse::<i16>().ok()) {
-        Some(n) => GridLine::NamedLine(first.to_string(), n),
-        None => GridLine::NamedLine(first.to_string(), 1),
-    }
-}
-
-fn parse_grid_line_pair(s: &str) -> (GridLine, GridLine) {
-    let mut parts = s.splitn(2, '/');
-    let start = parse_grid_line(parts.next().unwrap_or("auto"));
-    let end = parse_grid_line(parts.next().unwrap_or("auto"));
-    (start, end)
+    (
+        GridLine::NamedLine(format!("{name}-start"), 1),
+        GridLine::NamedLine(format!("{name}-end"), 1),
+    )
 }
 
 fn parse_auto_flow(s: &str) -> GridAutoFlow {
@@ -1133,9 +1119,9 @@ fn parse_auto_flow(s: &str) -> GridAutoFlow {
 // value always round-trips as genuine, spec-correct CSS (never a bespoke internal format). `.` is
 // CSS's null-cell token (never a real area). Computes each name's bounding box across every cell
 // it appears in rather than validating strict rectangularity -- forgiving of hand-typed input in
-// the raw "Custom tracks" escape hatch, same fallback-not-error philosophy as `parse_track`/
-// `parse_grid_line` elsewhere in this file; the painter itself can only ever produce valid
-// rectangles by construction.
+// the raw "Custom tracks" escape hatch, same fallback-not-error philosophy as `parse_track`
+// elsewhere in this file; the painter itself can only ever produce valid rectangles by
+// construction.
 fn parse_grid_template_areas(s: &str) -> Vec<GridTemplateArea> {
     let rows: Vec<Vec<&str>> = s
         .split('"')
@@ -1653,16 +1639,12 @@ fn build_box_node(
         } else {
             Vec::new()
         },
-        // grid-column/grid-row/justify-self are CHILD placement properties: meaningful based on
-        // whether this box's PARENT is a Grid, entirely independent of this box's own arrange kind
-        // (see resources/grid-child-placement-plan.md). Deliberately NOT gated on arrange_kind --
-        // a Stack/Cluster child sitting inside a Grid parent still needs these to place itself.
-        grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
-        grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
+        // place/justify-self are CHILD placement properties: meaningful based on whether this
+        // box's PARENT is a Grid, entirely independent of this box's own arrange kind (see
+        // resources/grid-child-placement-plan.md). Deliberately NOT gated on arrange_kind -- a
+        // Stack/Cluster child sitting inside a Grid parent still needs these to place itself.
+        grid_column: resolve_place(props),
+        grid_row: resolve_place(props),
         grid_template_areas: if arrange_kind == ArrangeKind::Grid {
             get_prop(props, "grid-template-areas")
                 .map(|s| parse_grid_template_areas(&s))
@@ -1853,18 +1835,14 @@ fn build_text_node(
         offset: parse_px(get_prop(props, "text-path-offset").as_deref()),
     });
 
-    // Flex/grid-item participation (align-self/grid-column/grid-row/position) - closes the
+    // Flex/grid-item participation (align-self/place/position) - closes the
     // primitive-parity gap where a bare Text label couldn't be a grid item or set align-self
     // without a wrapper Box. No flex_grow/shrink/basis here (unlike Box/Shape/SpriteBatch) since
     // those come from compile_resize, and Text's own width/height are hardcoded Auto below - see
     // this function's own width/height fields for why Text never runs compile_resize at all.
     let mut extra = BoxExtra {
-        grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
-        grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
+        grid_column: resolve_place(props),
+        grid_row: resolve_place(props),
         position: parse_node_position(props),
         ..BoxExtra::default()
     };
@@ -1960,12 +1938,8 @@ fn build_img_node(
         flex_shrink: rc.flex_shrink,
         flex_basis: rc.flex_basis,
         align_self: rc.align_self,
-        grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
-        grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
+        grid_column: resolve_place(props),
+        grid_row: resolve_place(props),
         position: parse_node_position(props),
         ..BoxExtra::default()
     };
@@ -2092,15 +2066,11 @@ fn build_shape_node(
         flex_shrink: rc.flex_shrink,
         flex_basis: rc.flex_basis,
         align_self: rc.align_self,
-        // grid-column/grid-row are CHILD placement properties, meaningful based on whether this
-        // shape's PARENT is a Grid, independent of the shape's own leaf status -- same posture as
-        // build_box_node's own grid_column/grid_row (see the comment there).
-        grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
-        grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
+        // place is a CHILD placement property, meaningful based on whether this shape's PARENT is
+        // a Grid, independent of the shape's own leaf status -- same posture as build_box_node's
+        // own grid_column/grid_row (see the comment there).
+        grid_column: resolve_place(props),
+        grid_row: resolve_place(props),
         position: parse_node_position(props),
         ..BoxExtra::default()
     };
@@ -2174,15 +2144,11 @@ fn build_sprite_batch_node(
         flex_shrink: rc.flex_shrink,
         flex_basis: rc.flex_basis,
         align_self: rc.align_self,
-        // grid-column/grid-row are CHILD placement properties, meaningful based on whether this
-        // batch's PARENT is a Grid, independent of its own leaf status -- same posture as
-        // build_box_node's own grid_column/grid_row (see the comment there).
-        grid_column: get_prop(props, "grid-column")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
-        grid_row: get_prop(props, "grid-row")
-            .map(|s| parse_grid_line_pair(&s))
-            .unwrap_or_default(),
+        // place is a CHILD placement property, meaningful based on whether this batch's PARENT is
+        // a Grid, independent of its own leaf status -- same posture as build_box_node's own
+        // grid_column/grid_row (see the comment there).
+        grid_column: resolve_place(props),
+        grid_row: resolve_place(props),
         position: parse_node_position(props),
         ..BoxExtra::default()
     };
@@ -2248,12 +2214,17 @@ fn detect_primitive(props: &std::collections::HashMap<String, ResolvedProperty>)
     // has no min/max fields of its own to clamp - unlike Img, whose size Charter genuinely
     // resolves - see build_text_node's own doc comment on why Text deliberately has no min/max).
     //
-    // `grid-column`/`grid-row` were REMOVED from this list (composability audit finding): they
-    // are CHILD placement properties, meaningful based on the PARENT's arrangement, not signals
-    // that THIS node itself arranges children - now that Text/Img carry `extra: BoxExtra`, a
-    // property like `grid-column` alone on a text label has somewhere real to go (Charter reads
-    // it into the Text's own `extra`) and must not force a Box promotion, exactly the same
-    // reasoning that already excluded background/border/padding above.
+    // `grid-column`/`grid-row` were REMOVED from this list (composability audit finding) back
+    // when they were still an authorable child-placement mechanism: they are CHILD placement
+    // properties, meaningful based on the PARENT's arrangement, not signals that THIS node itself
+    // arranges children - now that Text/Img carry `extra: BoxExtra`, a property like that alone on
+    // a text label has somewhere real to go and must not force a Box promotion, exactly the same
+    // reasoning that already excluded background/border/padding above. `place` (the single-string
+    // named-area field `resolve_place` desugars into the `grid_column`/`grid_row` wire fields) is
+    // the same class of CHILD placement property and was never added here for the identical
+    // reason - it's the ONLY child-placement property left now (see resolve_place's own doc
+    // comment for why the raw line/span escape hatch itself was removed entirely, not just kept
+    // out of this list).
     let has_box_props = props.contains_key("width")
         || props.contains_key("height")
         || props.contains_key("min-width")
@@ -2308,8 +2279,6 @@ fn arrange_field() -> FieldDef {
                 FieldDef::new("grid-template-rows", Some("Rows")),
                 FieldDef::new("grid-auto-columns", Some("Auto Cols")),
                 FieldDef::new("grid-auto-rows", Some("Auto Rows")),
-                FieldDef::new("grid-column", Some("Col Span")),
-                FieldDef::new("grid-row", Some("Row Span")),
                 FieldDef::new("grid-template-areas", Some("Areas")),
                 FieldDef::new("justify-self", Some("Justify Self")),
             ],
@@ -2431,8 +2400,6 @@ fn text_categories() -> Vec<FieldCategory> {
             name: "layout".to_string(),
             fields: vec![
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
-                FieldDef::new("grid-column", Some("Col Span")),
-                FieldDef::new("grid-row", Some("Row Span")),
                 position_field(),
             ],
         },
@@ -2500,8 +2467,6 @@ fn image_categories() -> Vec<FieldCategory> {
                         max: FieldDef::new("max-height", Some("Max")),
                     }),
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
-                FieldDef::new("grid-column", Some("Col Span")),
-                FieldDef::new("grid-row", Some("Row Span")),
                 position_field(),
             ],
         },
@@ -2552,8 +2517,6 @@ fn shape_categories() -> Vec<FieldCategory> {
                 // was missing (a composability audit finding: the wire capacity existed but was
                 // only reachable by hand-authoring a raw render entry, never through the UI).
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
-                FieldDef::new("grid-column", Some("Col Span")),
-                FieldDef::new("grid-row", Some("Row Span")),
                 position_field(),
             ],
         },
@@ -2600,8 +2563,6 @@ fn sprite_batch_categories() -> Vec<FieldCategory> {
                 // build_sprite_batch_node already reads all three into `extra` - only the panel
                 // exposure was missing (same composability audit finding as Shape's own, above).
                 FieldDef::new("align-self", Some("Align")).with_input_type("align"),
-                FieldDef::new("grid-column", Some("Col Span")),
-                FieldDef::new("grid-row", Some("Row Span")),
                 position_field(),
             ],
         },
@@ -3703,17 +3664,62 @@ mod position_wire_tests {
     }
 
     #[test]
-    fn build_text_node_reads_align_self_and_grid_placement_from_props() {
+    fn build_text_node_reads_align_self_and_place_from_props() {
         let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
         props.insert("align-self".to_string(), prop("center"));
-        props.insert("grid-column".to_string(), prop("2"));
-        props.insert("grid-row".to_string(), prop("span 2"));
+        props.insert("place".to_string(), prop("hero"));
         let UiNode::Text(data) = build_text_node(&props, 0) else {
             panic!("expected UiNode::Text");
         };
         assert_eq!(data.extra.align_self, Some(AlignValue::Center));
-        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
-        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+        assert!(matches!(&data.extra.grid_column.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
+        assert!(matches!(&data.extra.grid_row.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
+    }
+
+    #[test]
+    fn place_desugars_to_the_same_named_line_pair_on_both_axes() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("place".to_string(), prop("header"));
+        let UiNode::Box(data) = build_box_node(&props, None, None, None) else {
+            panic!("expected UiNode::Box");
+        };
+        assert_eq!(
+            data.extra.grid_column,
+            (
+                GridLine::NamedLine("header-start".to_string(), 1),
+                GridLine::NamedLine("header-end".to_string(), 1),
+            )
+        );
+        assert_eq!(
+            data.extra.grid_row,
+            (
+                GridLine::NamedLine("header-start".to_string(), 1),
+                GridLine::NamedLine("header-end".to_string(), 1),
+            )
+        );
+    }
+
+    #[test]
+    fn place_empty_string_resolves_to_auto_placed_not_a_broken_named_line() {
+        // A cleared "(auto-placed)" write (or a hand-blanked field) must not leave a broken
+        // NamedLine("-start")/("-end") behind - empty is treated as fully absent.
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("place".to_string(), prop(""));
+        let UiNode::Box(data) = build_box_node(&props, None, None, None) else {
+            panic!("expected UiNode::Box");
+        };
+        assert_eq!(data.extra.grid_column, (GridLine::Auto, GridLine::Auto));
+        assert_eq!(data.extra.grid_row, (GridLine::Auto, GridLine::Auto));
+    }
+
+    #[test]
+    fn place_unset_resolves_to_auto_placed() {
+        let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        let UiNode::Box(data) = build_box_node(&props, None, None, None) else {
+            panic!("expected UiNode::Box");
+        };
+        assert_eq!(data.extra.grid_column, (GridLine::Auto, GridLine::Auto));
+        assert_eq!(data.extra.grid_row, (GridLine::Auto, GridLine::Auto));
     }
 
     #[test]
@@ -5326,25 +5332,27 @@ mod shape_kind_tests {
     }
 
     #[test]
-    fn build_shape_node_reads_grid_column_and_row_from_props() {
+    fn build_shape_node_reads_place_from_props() {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
         props.insert("kind".into(), prop("kind", "rect"));
-        props.insert("grid-column".into(), prop("grid-column", "2"));
-        props.insert("grid-row".into(), prop("grid-row", "span 2"));
+        props.insert("place".into(), prop("place", "hero"));
         let UiNode::Shape(data) = build_shape_node(&props, None, None, None) else {
             panic!("expected UiNode::Shape");
         };
-        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
-        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+        assert!(matches!(&data.extra.grid_column.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
+        assert!(matches!(&data.extra.grid_row.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
     }
 
     #[test]
-    fn shape_categories_declares_align_self_and_grid_placement_fields() {
+    fn shape_categories_declares_an_align_self_field_but_no_raw_grid_placement_fields() {
         let categories = shape_categories();
         let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
         assert!(fields.iter().any(|f| f.key == "align-self"));
-        assert!(fields.iter().any(|f| f.key == "grid-column"));
-        assert!(fields.iter().any(|f| f.key == "grid-row"));
+        // `place` is deliberately NOT a declared FieldDef - it's surfaced only via the Render
+        // panel's own "Position in parent" dropdown, never a raw text escape hatch.
+        assert!(!fields.iter().any(|f| f.key == "grid-column"));
+        assert!(!fields.iter().any(|f| f.key == "grid-row"));
+        assert!(!fields.iter().any(|f| f.key == "place"));
     }
 }
 
@@ -5430,24 +5438,24 @@ mod sprite_batch_tests {
     }
 
     #[test]
-    fn build_sprite_batch_node_reads_grid_column_and_row_from_props() {
+    fn build_sprite_batch_node_reads_place_from_props() {
         let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
-        props.insert("grid-column".into(), prop("grid-column", "2"));
-        props.insert("grid-row".into(), prop("grid-row", "span 2"));
+        props.insert("place".into(), prop("place", "hero"));
         let UiNode::SpriteBatch(data) = build_sprite_batch_node(&props, None, None, None) else {
             panic!("expected UiNode::SpriteBatch");
         };
-        assert!(matches!(data.extra.grid_column.0, GridLine::Line(2)));
-        assert!(matches!(data.extra.grid_row.0, GridLine::Span(2)));
+        assert!(matches!(&data.extra.grid_column.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
+        assert!(matches!(&data.extra.grid_row.0, GridLine::NamedLine(name, 1) if name == "hero-start"));
     }
 
     #[test]
-    fn sprite_batch_categories_declares_align_self_and_grid_placement_fields() {
+    fn sprite_batch_categories_declares_an_align_self_field_but_no_raw_grid_placement_fields() {
         let categories = sprite_batch_categories();
         let fields: Vec<&FieldDef> = categories.iter().flat_map(|c| &c.fields).collect();
         assert!(fields.iter().any(|f| f.key == "align-self"));
-        assert!(fields.iter().any(|f| f.key == "grid-column"));
-        assert!(fields.iter().any(|f| f.key == "grid-row"));
+        assert!(!fields.iter().any(|f| f.key == "grid-column"));
+        assert!(!fields.iter().any(|f| f.key == "grid-row"));
+        assert!(!fields.iter().any(|f| f.key == "place"));
     }
 }
 
@@ -6270,8 +6278,9 @@ mod arrange_tests {
     fn grid_auto_columns_and_grid_template_areas_also_force_box_detection() {
         // Pre-existing gap: only grid-template-*/grid-cell-min counted as box-forcing, so a node
         // with ONLY grid-auto-columns/grid-template-areas/etc set (and no other box signal) was
-        // misdetected as text. Now closed for every grid-CONTAINER key (grid-column/grid-row are
-        // deliberately NOT in this list - see the next test).
+        // misdetected as text. Now closed for every grid-CONTAINER key (`place`, the one
+        // remaining CHILD placement property, is deliberately NOT in this list - see the next
+        // test).
         for key in ["grid-auto-columns", "grid-auto-rows", "grid-template-areas"] {
             let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
             props.insert("color".to_string(), prop("color", "#111111"));
@@ -6280,20 +6289,18 @@ mod arrange_tests {
         }
     }
 
-    // Composability audit finding: grid-column/grid-row are CHILD placement properties (which
-    // parent slot this node occupies), not a signal that the node itself arranges children -
-    // once Text/Img gained `extra: BoxExtra` they have somewhere real to put these, exactly the
-    // same reasoning that already excludes background/border/padding from has_box_props. Before
-    // this fix, a text label with only `font-size` + `grid-column` was silently force-promoted to
+    // Composability audit finding: `place` is a CHILD placement property (which parent slot this
+    // node occupies), not a signal that the node itself arranges children - once Text/Img gained
+    // `extra: BoxExtra` they have somewhere real to put it, exactly the same reasoning that
+    // already excludes background/border/padding from has_box_props. Before this class of fix, a
+    // text label with only `font-size` + a grid-placement property was silently force-promoted to
     // a Box, defeating the whole point of Text carrying grid placement at all.
     #[test]
-    fn grid_column_and_row_alone_do_not_force_box_detection() {
-        for key in ["grid-column", "grid-row"] {
-            let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
-            props.insert("font-size".to_string(), prop("font-size", "14px"));
-            props.insert(key.to_string(), prop(key, "2"));
-            assert_eq!(detect_primitive(&props), "text", "{key} alone should stay text");
-        }
+    fn place_alone_does_not_force_box_detection() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("font-size".to_string(), prop("font-size", "14px"));
+        props.insert("place".to_string(), prop("place", "hero"));
+        assert_eq!(detect_primitive(&props), "text", "place alone should stay text");
     }
 
     // --- parse_track: new track shapes ---
@@ -6355,19 +6362,6 @@ mod arrange_tests {
                 TrackSize::FitContent(200.0),
             ]
         );
-    }
-
-    // --- parse_grid_line: named lines ---
-
-    #[test]
-    fn parse_grid_line_handles_named_lines_and_named_spans() {
-        assert_eq!(parse_grid_line("sidebar-start"), GridLine::NamedLine("sidebar-start".to_string(), 1));
-        assert_eq!(parse_grid_line("sidebar 2"), GridLine::NamedLine("sidebar".to_string(), 2));
-        assert_eq!(parse_grid_line("span content"), GridLine::NamedSpan("content".to_string(), 1));
-        assert_eq!(parse_grid_line("span 2 content"), GridLine::NamedSpan("content".to_string(), 2));
-        // Numeric forms still resolve exactly as before.
-        assert_eq!(parse_grid_line("3"), GridLine::Line(3));
-        assert_eq!(parse_grid_line("span 2"), GridLine::Span(2));
     }
 
     // --- parse_grid_template_areas ---
@@ -6458,16 +6452,17 @@ mod arrange_tests {
 
     #[test]
     fn switching_arrange_away_from_grid_still_honors_child_placement_props() {
-        // grid-column/grid-row/justify-self are the CHILD's own placement within a Grid PARENT,
-        // independent of this box's own arrange kind -- must NOT be gated the same way.
-        let d = box_with(&[
-            ("arrange", "stack"),
-            ("grid-column", "2"),
-            ("grid-row", "span 2"),
-            ("justify-self", "end"),
-        ]);
-        assert_eq!(d.extra.grid_column, (GridLine::Line(2), GridLine::Auto));
-        assert_eq!(d.extra.grid_row, (GridLine::Span(2), GridLine::Auto));
+        // place/justify-self are the CHILD's own placement within a Grid PARENT, independent of
+        // this box's own arrange kind -- must NOT be gated the same way.
+        let d = box_with(&[("arrange", "stack"), ("place", "sidebar"), ("justify-self", "end")]);
+        assert_eq!(
+            d.extra.grid_column,
+            (GridLine::NamedLine("sidebar-start".to_string(), 1), GridLine::NamedLine("sidebar-end".to_string(), 1))
+        );
+        assert_eq!(
+            d.extra.grid_row,
+            (GridLine::NamedLine("sidebar-start".to_string(), 1), GridLine::NamedLine("sidebar-end".to_string(), 1))
+        );
         assert_eq!(d.extra.justify_self, Some(AlignValue::End));
     }
 

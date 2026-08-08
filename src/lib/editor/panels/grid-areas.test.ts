@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { parseAreas, serializeAreas, paintArea, removeArea, renameArea } from './grid-areas.js';
+import {
+	parseAreas,
+	serializeAreas,
+	paintArea,
+	removeArea,
+	renameArea,
+	areaNamesFromParentMap
+} from './grid-areas.js';
 
 describe('parseAreas', () => {
 	it('resolves named regions to line coordinates', () => {
@@ -66,5 +73,29 @@ describe('removeArea / renameArea', () => {
 
 	it('renameArea onto an existing name merges (drops the old target)', () => {
 		expect(renameArea(areas, 'a', 'b').map((x) => x.name)).toEqual(['b']);
+	});
+});
+
+describe('areaNamesFromParentMap', () => {
+	it('returns null when there is no parent map', () => {
+		expect(areaNamesFromParentMap(null)).toBeNull();
+	});
+
+	it('returns null when the parent is not arranged as a grid', () => {
+		const parentMap = new Map([['arrange', { value: 'stack' }]]);
+		expect(areaNamesFromParentMap(parentMap)).toBeNull();
+	});
+
+	it('returns an empty list when the parent is a grid with no painted areas', () => {
+		const parentMap = new Map([['arrange', { value: 'grid' }]]);
+		expect(areaNamesFromParentMap(parentMap)).toEqual([]);
+	});
+
+	it('returns the painted area names when the parent is a grid', () => {
+		const parentMap = new Map([
+			['arrange', { value: 'grid' }],
+			['grid-template-areas', { value: '"header header" "sidebar main"' }]
+		]);
+		expect(areaNamesFromParentMap(parentMap)).toEqual(['header', 'main', 'sidebar']);
 	});
 });

@@ -26,6 +26,11 @@
 		api: Api;
 		selection: EditorSelection;
 		resolvedKits: ResolvedKit[] | null;
+		// Named grid areas the ACTIVE selection's parent occurrence offers (null = parent isn't a
+		// Grid, or there is no parent) - threaded straight to ArrangeField's "Position in parent"
+		// section, computed in Editor.svelte (has the view-tree/resolvedViews plumbing this panel
+		// doesn't).
+		parentGridAreaNames?: string[] | null;
 		// The Compose/Axes panels' own live-selected kit (editorActivity.activeKitId) -- the source
 		// of truth for which kit an unset property gets painted onto. See the activeKitId derived
 		// below for why this can't come from selection.selectedKitIndex.
@@ -43,6 +48,7 @@
 		api,
 		selection,
 		resolvedKits,
+		parentGridAreaNames = null,
 		editorActiveKitId,
 		fieldCategories,
 		activeProjectId,
@@ -368,6 +374,7 @@
 										projectId={activeProjectId}
 										{onFieldUpdate}
 										{callUtilityPlugin}
+										{parentGridAreaNames}
 									/>
 								{:else if field.inputType === 'resize' && field.resizeKeys}
 									<ResizeField

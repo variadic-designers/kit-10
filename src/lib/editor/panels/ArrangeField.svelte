@@ -5,7 +5,7 @@
 	import GridAreaPainter from './GridAreaPainter.svelte';
 	import { layerDotColor } from './layer-color.ts';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
-	import { commitFieldValue } from './field-commit.ts';
+	import { commitFieldValue, clearFieldValue } from './field-commit.ts';
 	import { parseTrackList } from './grid-tracks.ts';
 	import type { Api, ResolvedProperty } from 'manager';
 	import type { ArrangeKeys, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
@@ -35,6 +35,11 @@
 		projectId?: string | null;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 		callUtilityPlugin?: (name: string, fn: string, payload: string) => Promise<unknown>;
+		// Named areas the ACTIVE selection's PARENT occurrence offers (null = parent isn't a Grid,
+		// or there is no parent). Drives "Position in parent" below - deliberately independent of
+		// activeKind (this box's OWN arrangement), since a Stack/Cluster/Split/Center child can sit
+		// inside a Grid parent just as easily as a Grid child can.
+		parentGridAreaNames?: string[] | null;
 	};
 
 	let {
@@ -46,7 +51,8 @@
 		api,
 		projectId,
 		onFieldUpdate,
-		callUtilityPlugin
+		callUtilityPlugin,
+		parentGridAreaNames = null
 	}: ArrangeFieldProps = $props();
 
 	const arrangeKeys = $derived(field.arrangeKeys as ArrangeKeys);
@@ -164,6 +170,24 @@
 
 	const ALIGN_OPTIONS = ['start', 'end', 'flex-start', 'flex-end', 'center', 'stretch'];
 	const JUSTIFY_OPTIONS = [...ALIGN_OPTIONS, 'space-between', 'space-evenly', 'space-around'];
+
+	// `place` is a CHILD placement property - meaningful based on the PARENT's arrangement,
+	// entirely independent of this box's own activeKind. Surfaced ONLY here, in an always-visible
+	// "Position in parent" dropdown - deliberately a bare name, never a raw line/span escape
+	// hatch (Charter doesn't even declare `place` as a FieldDef; see resources/
+	// grid-child-placement-plan.md and resolve_place's own doc comment in lib.rs).
+	const currentPlace = $derived(resolvedMap.get('place')?.value ?? '');
+
+	function writePlace(name: string) {
+		if (name) {
+			commitFieldValue(track('place'), 'place', name, { onFieldUpdate, api });
+		} else {
+			// "(auto-placed)" must fully clear the property, not write an empty string -
+			// resolve_place checks `place` by presence, and an empty-but-present value would
+			// (pre-hardening) or could still confusingly linger as a real render entry.
+			void clearFieldValue(track('place'), 'place', api);
+		}
+	}
 </script>
 
 {#snippet fieldRow(fd: FieldDef, tooltip?: string)}
@@ -220,6 +244,28 @@
 			</button>
 		{/each}
 	</div>
+
+	{#if parentGridAreaNames !== null}
+		<div class="arrange-field__parent-position">
+			<div class="arrange-field__row">
+				<span
+					class="arrange-field__row-label"
+					title="Which named area of the PARENT grid this child occupies - shown regardless of this box's own arrangement"
+					>Position in parent</span
+				>
+				<select
+					class="arrange-field__select"
+					value={currentPlace}
+					onchange={(e) => writePlace((e.currentTarget as HTMLSelectElement).value)}
+				>
+					<option value="">(auto-placed)</option>
+					{#each parentGridAreaNames as name (name)}
+						<option value={name}>{name}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+	{/if}
 
 	<div class="arrange-field__submenu">
 		{#if activeKind === 'stack'}
@@ -549,6 +595,17 @@
 			flex-direction: column;
 			gap: 1px;
 			margin-top: calc($x-space-xs / 2);
+		}
+
+		// Sits between the tabs and the activeKind submenu, not inside either - visually set off
+		// with a divider so it reads as "about the PARENT", not another tab-specific option.
+		&__parent-position {
+			display: flex;
+			flex-direction: column;
+			gap: 1px;
+			margin-top: calc($x-space-xs / 2);
+			padding-top: calc($x-space-xs / 2);
+			border-top: 1px solid var(--color-panel-header-border);
 		}
 
 		&__row {

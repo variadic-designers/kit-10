@@ -772,8 +772,6 @@ const DIFFABLE_PROPERTIES: &[&str] = &[
     "grid-template-rows",
     "grid-auto-rows",
     "grid-auto-columns",
-    "grid-column",
-    "grid-row",
     "flex-grow",
     "flex-shrink",
     "align-self",
@@ -786,7 +784,26 @@ const DIFFABLE_PROPERTIES: &[&str] = &[
     "justify-items",
     "align-content",
     "justify-self",
+    // A child's own placement within a Grid PARENT (2026-08-08) - a bare area name, e.g. "header".
+    // Charter's own property is `place`, not real CSS (which has no such property), specifically
+    // so a child never gets access to explicit line/span authoring the way `grid-column`/
+    // `grid-row` used to allow - see resolve_place's doc comment in plugins/charter/src/lib.rs.
+    // `grid-column`/`grid-row` were REMOVED from this list the same day: Charter no longer reads
+    // either as a child-placement property at all (resolve_place has no fallback branch), so
+    // keeping them diffable here would silently export a declaration Path A no longer honors -
+    // exporting `place`'s value verbatim as a real `place: <name>;` declaration would itself be
+    // INVALID CSS (no such property exists), so it's translated to real `grid-area: <name>;` at
+    // the point the declaration string is actually built - see css_property_name below.
+    "place",
 ];
+
+// Charter's own internal property key, translated to the REAL CSS property name to emit - the
+// identity mapping for every property except `place` (see DIFFABLE_PROPERTIES' doc comment above
+// for why `place` itself is never valid CSS to emit verbatim). Keep this a single, obvious
+// exception rather than a general lookup table until a second case actually exists.
+fn css_property_name(property: &str) -> &str {
+    if property == "place" { "grid-area" } else { property }
+}
 
 // Charter's own raw-property parsers (parse_px et al.) treat a bare number as an implicit px
 // value -- mirrored here so "16" formats as "16px", not the CSS-invalid bare "16".
@@ -875,9 +892,10 @@ fn declarations_for_with_tokens(
             "background" | "color" => is_recognized_color(value),
             _ => true,
         });
+        let css_name = css_property_name(property);
         match var_name {
-            Some(name) => declarations.push(format!("{property}: var(--{name});")),
-            None => declarations.push(format!("{property}: {formatted};")),
+            Some(name) => declarations.push(format!("{css_name}: var(--{name});")),
+            None => declarations.push(format!("{css_name}: {formatted};")),
         }
     }
     declarations
@@ -1952,7 +1970,7 @@ mod tests {
     }
 
     #[test]
-    fn grid_auto_and_line_placement_properties_pass_through_as_real_declarations() {
+    fn grid_auto_properties_pass_through_as_real_declarations() {
         let shape = KitExportShape {
             kit_id: "cell".to_string(),
             kit_name: "Cell".to_string(),
@@ -1963,16 +1981,90 @@ mod tests {
                 entries: vec![
                     literal_entry("grid-auto-rows", "100px"),
                     literal_entry("grid-auto-columns", "minmax(100px, 1fr)"),
-                    literal_entry("grid-column", "span 2"),
-                    literal_entry("grid-row", "1 / 3"),
                 ],
             }],
         };
         let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
         assert!(base.contains(&"grid-auto-rows: 100px;".to_string()), "{:?}", base);
         assert!(base.contains(&"grid-auto-columns: minmax(100px, 1fr);".to_string()), "{:?}", base);
-        assert!(base.contains(&"grid-column: span 2;".to_string()), "{:?}", base);
-        assert!(base.contains(&"grid-row: 1 / 3;".to_string()), "{:?}", base);
+    }
+
+    #[test]
+    fn place_translates_to_a_real_grid_area_declaration() {
+        // `place` (2026-08-08) is Charter's own internal property name, never valid CSS on its
+        // own - it must be translated to real CSS's `grid-area` at the point the declaration
+        // string is built (see css_property_name), not passed through verbatim like every other
+        // DIFFABLE_PROPERTIES entry.
+        let shape = KitExportShape {
+            kit_id: "cell".to_string(),
+            kit_name: "Cell".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("place", "header")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(base.contains(&"grid-area: header;".to_string()), "{:?}", base);
+        assert!(!base.iter().any(|d| d.starts_with("place:")), "{:?}", base);
+    }
+
+    #[test]
+    fn grid_column_and_row_are_no_longer_diffable_since_charter_never_authors_them() {
+        // Charter removed grid-column/grid-row as an authorable child-placement mechanism
+        // (2026-08-08, same day as `place`) - resolve_place has no fallback branch to them
+        // anymore, so a stray literal with either name in stored data must not silently export as
+        // if it were still honored (Path A/Path B parity: Path A ignores it entirely too).
+        let shape = KitExportShape {
+            kit_id: "cell".to_string(),
+            kit_name: "Cell".to_string(),
+            axes: vec![],
+            layers: vec![ExportLayer {
+                layer_id: "base".to_string(),
+                conditions: vec![],
+                entries: vec![literal_entry("grid-column", "span 2"), literal_entry("grid-row", "1 / 3")],
+            }],
+        };
+        let base = synthesize_base_declarations_with_tokens(&shape, true, &ProjectTokens::new());
+        assert!(base.iter().any(|d| d.contains("unsupported dynamic-compiled property: grid-column")));
+        assert!(base.iter().any(|d| d.contains("unsupported dynamic-compiled property: grid-row")));
+    }
+
+    #[test]
+    fn place_on_a_conditioned_layer_also_translates_to_grid_area_in_variant_rules() {
+        // Mirrors seed.ts's real usage: a per-item `place` value set on an axis-conditioned layer
+        // (Forge's Class axis, Meridian's Grid Slot axis), not just a kit's unconditioned base -
+        // the variant-rule path shares declarations_for_with_tokens with the base-declarations
+        // path, so this exercises that the translation isn't accidentally base-only.
+        let shape = KitExportShape {
+            kit_id: "tile".to_string(),
+            kit_name: "Tile".to_string(),
+            axes: vec![AxisExportMeta {
+                axis_id: "slot".to_string(),
+                axis_name: Some("slot".to_string()),
+                kind: Some("categorical".to_string()),
+                variant_kind: "static".to_string(),
+                excluded_from_export: false,
+                default_value: Some(literal("hero")),
+                priority_index: 0,
+                values: vec![
+                    ExportAxisValue { axis_value_id: "v1".to_string(), value: literal("hero"), priority_index: 0 },
+                    ExportAxisValue { axis_value_id: "v2".to_string(), value: literal("aside"), priority_index: 1000 },
+                ],
+            }],
+            layers: vec![
+                ExportLayer { layer_id: "base".to_string(), conditions: vec![], entries: vec![] },
+                ExportLayer {
+                    layer_id: "aside".to_string(),
+                    conditions: vec![condition("slot", "aside")],
+                    entries: vec![literal_entry("place", "aside")],
+                },
+            ],
+        };
+        let rules = synthesize_variant_rules_with_tokens(&shape, true, &ProjectTokens::new());
+        let aside = rules.iter().find(|r| r.suffixes == vec!["--slot-aside"]).unwrap();
+        assert_eq!(aside.declarations, vec!["grid-area: aside;".to_string()]);
     }
 
     #[test]

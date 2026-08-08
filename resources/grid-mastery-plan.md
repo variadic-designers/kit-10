@@ -109,11 +109,16 @@ vocabulary and Charter's parsing/field surface.
 
 - **True drag-to-reorder** for the track list (currently up/down buttons - functional, not as
   fluid).
-- **A dedicated per-item span control** (a friendly stepper for `grid-column`/`grid-row` on a Grid
-  child) - needs new "is my parent a grid" context `ArrangeField` doesn't have yet; the raw
-  `grid-column`/`grid-row` fields in "Custom tracks" are the only way to set spans today.
-  Once a child is placed via `grid-area`, a named-area dropdown (populated from the painted area
-  names) should replace raw span entry for that child - not built yet.
+- ~~A dedicated per-item span control~~ **SHIPPED 2026-08-08** - `ArrangeField.svelte`'s
+  "Position in parent" section (`resources/grid-child-placement-plan.md`'s Pass 2) gives the
+  "is my parent a grid" context that was missing, sourced from `Editor.svelte`'s new
+  `parentGridAreaNames` derived (`parentOf` + `flattenKitResults` + `grid-areas.ts`'s new
+  `areaNamesFromParentMap`). A named-area dropdown backed by `place: <name>` now renders
+  regardless of the child's own arrange tab. Pass 3 (same day, user feedback) then removed the
+  raw line/span escape hatch entirely - `grid-column`/`grid-row` are no longer authorable
+  properties at all (their parser was deleted from Charter), so the dropdown is the whole UI, no
+  raw-entry fallback. `justify-self` was never part of this - it stayed in "Custom tracks" the
+  entire time, since it's alignment-within-cell, not "where the cell is."
 - **Named-line declaration** - the wire vocabulary and item placement exist, but nothing lets a
   user actually DECLARE a name against a track position yet (would need a new `BoxExtra` field
   mirroring taffy's `grid_template_column_names`/`row_names`, plus Charter parsing of the real

@@ -287,7 +287,8 @@
 	import { selectView as selectViewShared } from './selection.js';
 	import { keybinds, matchKey, isTextEntryTarget } from './keybinds.js';
 	import { panelVisibility, updatePanelVisibility } from './panel-visibility.js';
-	import { buildViewTree, navigate, type NavDirection, type ViewOccurrence } from './view-tree.js';
+	import { buildViewTree, navigate, parentOf, type NavDirection, type ViewOccurrence } from './view-tree.js';
+	import { areaNamesFromParentMap } from './panels/grid-areas.js';
 	import StylesPanel from './panels/Styles.svelte';
 	import TokensPanel from './panels/Variables.svelte';
 	import AxesPanel from './panels/Axes.svelte';
@@ -305,6 +306,7 @@
 		resolveViewsFromRows as resolveViewsFromRowsManager,
 		resolveViewCascade,
 		rowsKey,
+		flattenKitResults,
 		type CascadeKit,
 		type OverriddenOccurrence
 	} from 'manager';
@@ -424,6 +426,29 @@
 	// rootViewIds), so drag eligibility doesn't require yet another editor-computed prop.
 	const compositionKeys = $derived(viewsPanelManifest?.composition_field_keys ?? []);
 
+	// Hoisted so both the keyboard-nav handler below and parentGridAreaNames (Render panel's
+	// grid-placement "Position in parent" UI) share one tree build per reactive tick instead of
+	// each recomputing their own full walk of the composition graph.
+	const viewTree = $derived(buildViewTree(resolvedViews, compositionKeys, overriddenOccurrences));
+
+	// Which named grid areas the ACTIVE selection's PARENT occurrence offers, or null if that
+	// parent isn't a Grid (or there is no parent) - lets the Render panel surface "Position in
+	// parent" placement UI regardless of what the child's OWN arrange tab is set to, closing the
+	// gap `resources/grid-child-placement-plan.md` documents (the grid-area field otherwise only
+	// renders when the CHILD itself is arranged as Grid, which is a different, unrelated axis).
+	const parentGridAreaNames = $derived.by(() => {
+		if (!editorActivity.activeViewId) return null;
+		const current: ViewOccurrence = {
+			viewId: editorActivity.activeViewId,
+			occurrenceKey: selection.selectedOccurrencePrimary ?? editorActivity.activeViewId
+		};
+		const parentOcc = parentOf(current, viewTree);
+		if (!parentOcc) return null;
+		const parentView = resolvedViews.find((v) => v.viewId === parentOcc.viewId);
+		if (!parentView) return null;
+		return areaNamesFromParentMap(flattenKitResults(parentView.resolvedKits));
+	});
+
 	// Keyboard navigation of the View composition tree ([ parent, ] child, ↑/↓ siblings). Lives here
 	// (Editor is always mounted) rather than in the Views panel (which can be collapsed), and reuses
 	// the same `buildViewTree` graph math the panel uses + the shared `selectView` funnel, so the
@@ -450,9 +475,8 @@
 		else if (matchKey(e, binds['nav.nextSibling'])) dir = 'next';
 		if (!dir) return;
 
-		const tree = buildViewTree(resolvedViews, compositionKeys, overriddenOccurrences);
 		const roots: ViewOccurrence[] = resolvedViews
-			.filter((v) => !tree.referencedViewIds.has(v.viewId))
+			.filter((v) => !viewTree.referencedViewIds.has(v.viewId))
 			.map((v) => ({ viewId: v.viewId, occurrenceKey: v.viewId }));
 		const current: ViewOccurrence | null = editorActivity.activeViewId
 			? {
@@ -460,7 +484,7 @@
 					occurrenceKey: selection.selectedOccurrencePrimary ?? editorActivity.activeViewId
 				}
 			: null;
-		const target = navigate(current, dir, tree, roots);
+		const target = navigate(current, dir, viewTree, roots);
 		if (!target) return;
 		e.preventDefault();
 		selectViewShared(editorActivity, selection, target.viewId, target.occurrenceKey);
@@ -999,6 +1023,7 @@
 		<StylesPanel
 			{api}
 			{resolvedKits}
+			{parentGridAreaNames}
 			{selection}
 			editorActiveKitId={editorActivity.activeKitId}
 			fieldCategories={pluginManager?.fieldCategories}

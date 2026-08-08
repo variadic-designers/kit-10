@@ -87,3 +87,17 @@ export function detachToken(
 	if (!onFieldUpdate || !target.sourceLayerId) return;
 	onFieldUpdate({ layerId: target.sourceLayerId, property, value: currentValue });
 }
+
+/**
+ * Clear a literal property back to fully unset (removes its render entry) rather than committing
+ * an empty-string value - some parsers treat presence, not truthiness, as "set" (e.g. Charter's
+ * `grid-area`), so a `""` write can silently resolve to something worse than never having written
+ * it at all. Mirrors Styles.svelte's own `removeProperty` (the `property.remove` keybind's write
+ * path); routed through here too so every commit-adjacent write in the Render panel goes through
+ * this one file. Not meaningful for a token-backed property (the token itself isn't touched) - a
+ * caller with a token-backed target should offer `detachToken` instead, not this.
+ */
+export async function clearFieldValue(target: CommitTarget, property: string, api?: Api): Promise<void> {
+	if (!api || !target.sourceLayerId) return;
+	await api.removePropertyFromLayer(target.sourceLayerId, property);
+}

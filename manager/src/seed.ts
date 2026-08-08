@@ -1625,9 +1625,9 @@ export async function seedGymLandingPage(
 		padding: '48px',
 		width: 'fill'
 	});
-	// A real per-instance property (grid-column/grid-row into the named areas above) can't be
-	// baked onto one shared kit the way boxKit's flat props do - it needs the same axis+layer
-	// pattern planCardKit uses just above, one value per tile. The "Class" axis is that grid-slot
+	// A real per-instance property (place, into the named areas above) can't be baked onto one
+	// shared kit the way boxKit's flat props do - it needs the same axis+layer pattern
+	// planCardKit uses just above, one value per tile. The "Class" axis is that grid-slot
 	// selector; Strength/Mobility additionally get their own visual treatment (Strength claims the
 	// hero tint, Mobility switches to a row layout for its wide strip) on the same conditioned
 	// layer, since both are genuinely tied to which slot the tile occupies.
@@ -1675,8 +1675,7 @@ export async function seedGymLandingPage(
 		const layer = (await api.createLayer(classTileKit.id))!;
 		await api.addAxisValueToLayer(layer.id, value.id);
 		const snip = (await api.createRenderSnippet(layer.id))!;
-		await api.createRenderEntry(snip.id, 'grid-column', `${slug}-start / ${slug}-end`);
-		await api.createRenderEntry(snip.id, 'grid-row', `${slug}-start / ${slug}-end`);
+		await api.createRenderEntry(snip.id, 'place', slug);
 		for (const [k, v] of Object.entries(extra ?? {})) await api.createRenderEntry(snip.id, k, v);
 	}
 
@@ -1950,8 +1949,7 @@ export async function seedMerchLandingPage(
 		const layer = (await api.createLayer(productTileKit.id))!;
 		await api.addAxisValueToLayer(layer.id, value.id);
 		const snip = (await api.createRenderSnippet(layer.id))!;
-		await api.createRenderEntry(snip.id, 'grid-column', `${slug}-start / ${slug}-end`);
-		await api.createRenderEntry(snip.id, 'grid-row', `${slug}-start / ${slug}-end`);
+		await api.createRenderEntry(snip.id, 'place', slug);
 	}
 	await api.consumeAxis(productTileKit.id, slotAxis.id);
 
@@ -2101,8 +2099,7 @@ export async function seedMerchLandingPage(
 	// bleed is the right call for the hero spread anyway; the squircle refinement lives on the four
 	// product cards below, which have real padding for it to show through.
 	const lookbookCellKit = await boxKit('Lookbook Cell', {
-		'grid-column': 'lookbook-start / lookbook-end',
-		'grid-row': 'lookbook-start / lookbook-end'
+		place: 'lookbook'
 	});
 	const priceRowKit = await boxKit('Price Row', {
 		arrange: 'stack',
