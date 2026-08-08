@@ -1556,6 +1556,9 @@ fn build_box_node(
     parent_align_items: Option<AlignValue>,
 ) -> UiNode {
     let paint = extract_paint_props(props, OklabColor::default());
+    let opacity = get_prop(props, "opacity")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .unwrap_or(1.0);
     let width_str = get_prop(props, "width");
     let height_str = get_prop(props, "height");
     let width_kw = resize_keyword(width_str.as_deref());
@@ -1732,7 +1735,7 @@ fn build_box_node(
         border_width: paint.border_width,
         corner_radius: paint.corner_radius,
         squircle: paint.squircle,
-        opacity: 1.0,
+        opacity,
         shadow: None,
         extra,
         selected: 0,
@@ -1842,6 +1845,9 @@ fn build_text_node(
     // A text node with no declared fill stays fully transparent -- same default as a Box now
     // (both `[0.0; 4]`); no `background` means transparent, matching CSS.
     let paint = extract_paint_props(props, OklabColor::default());
+    let opacity = get_prop(props, "opacity")
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .unwrap_or(1.0);
     let deform = parse_text_path(get_prop(props, "text-path").as_deref()).map(|points| Deform::ArclengthPath {
         points,
         offset: parse_px(get_prop(props, "text-path-offset").as_deref()),
@@ -1877,7 +1883,7 @@ fn build_text_node(
         border_width: paint.border_width,
         corner_radius: paint.corner_radius,
         squircle: paint.squircle,
-        opacity: 1.0,
+        opacity,
         content,
         font_size: resolved_font_size,
         font_family,
@@ -2373,6 +2379,7 @@ fn box_categories() -> Vec<FieldCategory> {
                         squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
                     }),
                 FieldDef::new("outline", None),
+                FieldDef::new("opacity", Some("Opacity")),
             ],
         },
         // A Box's only "contents" are its child views -- it never renders inline text of its own
@@ -2457,6 +2464,7 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("padding", Some("Padding"))
                     .with_input_type("spacing")
                     .with_spacing_mode("box"),
+                FieldDef::new("opacity", Some("Opacity")),
             ],
         },
     ]
@@ -5231,6 +5239,20 @@ mod color_input_type_tests {
         let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
         assert!(fields.iter().any(|f| f.key == "opacity"), "image_categories should declare opacity");
     }
+
+    #[test]
+    fn box_categories_declares_an_opacity_field() {
+        let categories = box_categories();
+        let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
+        assert!(fields.iter().any(|f| f.key == "opacity"), "box_categories should declare opacity");
+    }
+
+    #[test]
+    fn text_categories_declares_an_opacity_field() {
+        let categories = text_categories();
+        let fields: Vec<FieldDef> = categories.iter().flat_map(|c| c.fields.clone()).collect();
+        assert!(fields.iter().any(|f| f.key == "opacity"), "text_categories should declare opacity");
+    }
 }
 
 #[cfg(test)]
@@ -5569,6 +5591,41 @@ mod extent_parse_tests {
         assert_eq!(b.min_width, Extent::Px(80.0));
         // Charter never emits margin -- its opinion.
         assert_eq!(b.extra.margin, 0.0);
+    }
+
+    // Mirrors build_shape_node's/build_img_node's own opacity parse exactly. Box/Text both
+    // already carried the wire opacity field, but build_box_node/build_text_node hardcoded 1.0
+    // and never read the property at all - a primitive-parity gap closed the same day as Img's.
+    #[test]
+    fn build_box_node_reads_opacity_from_props() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("opacity".into(), prop("opacity", "0.4"));
+        let UiNode::Box(b) = build_box_node(&props, None, None, None) else {
+            panic!("expected Box")
+        };
+        assert_eq!(b.opacity, 0.4);
+
+        let unset: HashMap<String, ResolvedProperty> = HashMap::new();
+        let UiNode::Box(unset_b) = build_box_node(&unset, None, None, None) else {
+            panic!("expected Box")
+        };
+        assert_eq!(unset_b.opacity, 1.0);
+    }
+
+    #[test]
+    fn build_text_node_reads_opacity_from_props() {
+        let mut props: HashMap<String, ResolvedProperty> = HashMap::new();
+        props.insert("opacity".into(), prop("opacity", "0.4"));
+        let UiNode::Text(t) = build_text_node(&props, 0) else {
+            panic!("expected Text")
+        };
+        assert_eq!(t.opacity, 0.4);
+
+        let unset: HashMap<String, ResolvedProperty> = HashMap::new();
+        let UiNode::Text(unset_t) = build_text_node(&unset, 0) else {
+            panic!("expected Text")
+        };
+        assert_eq!(unset_t.opacity, 1.0);
     }
 }
 
