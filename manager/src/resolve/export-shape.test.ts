@@ -201,6 +201,44 @@ describe('fetchViewAxisArgs', () => {
 		const result = await fetchViewAxisArgs(ctx.db, ['00000000-0000-0000-0000-000000000000']);
 		expect(result).toEqual([]);
 	});
+
+	it('resolves a linked (drag-to-lock) axis arg to its live source value', async () => {
+		const s = await seedViewWithAxisArg();
+		const linkedView = (await ctx.api.createViewInProject(s.proj.id, 'Linked CTA'))!;
+		await ctx.api.attachKitToComposition(s.kit.id, linkedView.id);
+		await ctx.api.setAxisArg(linkedView.id, s.kit.id, s.themeAxis.id, {
+			type: 'linked',
+			view_id: s.view.id,
+			kit_id: s.kit.id
+		});
+
+		// The link's own source view (s.view) isn't itself in the requested viewIds, exercising the
+		// project-wide fetch a link can reach outside the requested set.
+		const result = await fetchViewAxisArgs(ctx.db, [linkedView.id]);
+		expect(result).toEqual([
+			{
+				viewId: linkedView.id,
+				kitId: s.kit.id,
+				axisId: s.themeAxis.id,
+				value: { type: 'literal', value: 'secondary' }
+			}
+		]);
+	});
+
+	it('drops a linked axis arg whose source kit is no longer composed there (dangling link)', async () => {
+		const s = await seedViewWithAxisArg();
+		const linkedView = (await ctx.api.createViewInProject(s.proj.id, 'Linked CTA'))!;
+		await ctx.api.attachKitToComposition(s.kit.id, linkedView.id);
+		await ctx.api.setAxisArg(linkedView.id, s.kit.id, s.themeAxis.id, {
+			type: 'linked',
+			view_id: s.view.id,
+			kit_id: s.kit.id
+		});
+		await ctx.api.detachKitFromComposition(s.kit.id, s.view.id);
+
+		const result = await fetchViewAxisArgs(ctx.db, [linkedView.id]);
+		expect(result).toEqual([]);
+	});
 });
 
 describe('fetchViewCompositions', () => {

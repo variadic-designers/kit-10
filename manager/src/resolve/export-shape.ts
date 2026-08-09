@@ -1,4 +1,5 @@
 import type { ArgValue, AxisValueType, SchemaDialect, TokenValue } from '../schema.js';
+import { resolveAllLinkedArgs } from './resolve.js';
 
 // Unresolved, axis-args-independent per-Kit export shape for WebCodium's Kit-basis export
 // (resources/webcodium-export-plan.md, Phase 3). This is deliberately NOT part of the hot
@@ -71,27 +72,64 @@ export interface ViewAxisArgRow {
 // Flat rows, not pre-nested into a Map -- mirrors this file's own conditionRows/entryRows
 // convention (let the Rust side reassemble whatever shape it needs) rather than picking a nesting
 // order here that may not match every caller.
+//
+// A view's own axis_args cell can be 'linked' (drag-to-lock -- see schema.ts's ArgLinked doc
+// comment), which re-reads another (view, kit)'s own axis pick live rather than storing a literal.
+// That link target can be ANY view in the project, not just one of the requested `viewIds` (e.g. a
+// nav view links its theme axis to a page-level source view that isn't itself being exported), so
+// this can't resolve 'linked' with a query scoped to `viewIds` alone -- it needs the resolver to
+// see the whole project's axis_args/compositions, exactly the same "project-wide fetch, then
+// resolveAllLinkedArgs" shape resolveOne's slow path already uses (see resolve.ts, the axisArgsRows/
+// projectCompositionsRows fetch). Returned rows are filtered back down to just the requested
+// `viewIds` and are always already resolved -- a 'linked' value is never returned here, only
+// whatever it ultimately resolves to (or the row is simply absent if the chain terminates unset).
 export async function fetchViewAxisArgs(
 	db: SchemaDialect,
 	viewIds: string[]
 ): Promise<ViewAxisArgRow[]> {
 	if (viewIds.length === 0) return [];
 
-	const rows = await db
-		.selectFrom('axis_args')
-		.where('axis_args.view_id', 'in', viewIds)
-		.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+	const requestedViews = await db
+		.selectFrom('views')
+		.where('views.id', 'in', viewIds)
+		.select(['views.id', 'views.project_id'])
 		.execute();
+	const projectIds = [...new Set(requestedViews.map((v) => v.project_id))];
+	if (projectIds.length === 0) return [];
 
-	const result: ViewAxisArgRow[] = [];
-	for (const row of rows) {
+	const [axisArgsRows, compositionRows] = await Promise.all([
+		db
+			.selectFrom('axis_args')
+			.innerJoin('views', 'views.id', 'axis_args.view_id')
+			.where('views.project_id', 'in', projectIds)
+			.select(['axis_args.view_id', 'axis_args.kit_id', 'axis_args.axis_id', 'axis_args.value'])
+			.execute(),
+		db
+			.selectFrom('compositions')
+			.innerJoin('views', 'views.id', 'compositions.view_id')
+			.where('views.project_id', 'in', projectIds)
+			.select(['compositions.view_id', 'compositions.kit_id'])
+			.execute()
+	]);
+
+	const argsByViewKit = new Map<string, Record<string, ArgValue>>();
+	for (const row of axisArgsRows) {
 		if (!row.value) continue;
-		result.push({
-			viewId: row.view_id,
-			kitId: row.kit_id,
-			axisId: row.axis_id,
-			value: row.value as unknown as ArgValue
-		});
+		const key = `${row.view_id}::${row.kit_id}`;
+		if (!argsByViewKit.has(key)) argsByViewKit.set(key, {});
+		argsByViewKit.get(key)![row.axis_id] = row.value as unknown as ArgValue;
+	}
+	const validCompositions = new Set(compositionRows.map((c) => `${c.view_id}::${c.kit_id}`));
+	const resolvedArgsByViewKit = resolveAllLinkedArgs(argsByViewKit, validCompositions);
+
+	const requestedViewIds = new Set(viewIds);
+	const result: ViewAxisArgRow[] = [];
+	for (const [key, resolved] of resolvedArgsByViewKit) {
+		const [viewId, kitId] = key.split('::') as [string, string];
+		if (!requestedViewIds.has(viewId)) continue;
+		for (const [axisId, value] of Object.entries(resolved)) {
+			result.push({ viewId, kitId, axisId, value });
+		}
 	}
 	return result;
 }

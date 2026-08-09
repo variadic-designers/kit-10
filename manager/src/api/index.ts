@@ -6,7 +6,8 @@ import {
 	type PluginKind,
 	type PluginActivation,
 	type PluginManifest,
-	type AxisValueType
+	type AxisValueType,
+	type ArgValue
 } from '../schema.js';
 import { sql, type SelectQueryBuilder } from 'kysely';
 import {
@@ -49,6 +50,29 @@ function remapRenderEntryValue(
 	} catch {
 		return value;
 	}
+}
+
+// Same situation as TokenValue.view_id, for an axis_args cell's own value when it's `type: 'linked'`
+// (drag-to-lock, schema.ts's ArgLinked) -- its view_id/kit_id point at ANOTHER (view, kit) pair the
+// same way axis_args' own view_id/kit_id columns do, but that pair lives inside the jsonb `value`
+// blob, not a real FK, so it needs the identical manual remap. Left un-remapped, an imported linked
+// axis arg silently points at the source project's (now nonexistent) view/kit -- resolveLinkedArg
+// already treats a dangling link as "unset" (see resolve.ts), so this doesn't corrupt anything, it
+// just silently drops the override on every import, exactly the kind of data loss remapTokenValue
+// exists to prevent for the structurally identical `view`-typed token case.
+function remapArgValue(
+	value: ArgValue | null,
+	viewIdMap: Map<string, string>,
+	kitIdMap: Map<string, string>
+): ArgValue | null {
+	if (value && value.type === 'linked') {
+		return {
+			...value,
+			view_id: viewIdMap.get(value.view_id) ?? value.view_id,
+			kit_id: kitIdMap.get(value.kit_id) ?? value.kit_id
+		};
+	}
+	return value;
 }
 
 // Fails fast with a specific, readable message before importProjectData touches the DB at all --
@@ -1515,6 +1539,11 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			// "matches nothing" the way an ORM might paper over. A brand-new project (no kits
 			// or views yet) hits this on literally every query below, so each one that's keyed
 			// off a possibly-empty id list short-circuits to [] instead of round-tripping.
+			// Each `IN` branch below must be individually guarded, not just their conjunction --
+			// a project with views but no kits yet (or vice versa) still has ONE empty id list,
+			// which hits the exact same empty-`IN` syntax error the comment above describes even
+			// though the OTHER list is non-empty (a real, reproduced case: a fresh view created
+			// before any kit exists).
 			const compositions =
 				kitIds.length === 0 && viewIds.length === 0
 					? []
@@ -1522,10 +1551,12 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							.selectFrom('compositions')
 							.selectAll()
 							.where((eb) =>
-								eb.or([
-									eb('compositions.kit_id', 'in', kitIds),
-									eb('compositions.view_id', 'in', viewIds)
-								])
+								eb.or(
+									[
+										kitIds.length > 0 ? eb('compositions.kit_id', 'in', kitIds) : null,
+										viewIds.length > 0 ? eb('compositions.view_id', 'in', viewIds) : null
+									].filter((c) => c !== null)
+								)
 							)
 							.execute();
 
@@ -1713,7 +1744,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							id: axisValueIdMap.get(av.id)!,
 							axis_id: axisIdMap.get(av.axis_id)!,
 							hints: (av.hints ?? {}) as any,
-							value: av.value
+							value: av.value,
+							priority_index: av.priority_index
 						}))
 					)
 					.execute();
@@ -1783,7 +1815,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							view_id: viewIdMap.get(aa.view_id)!,
 							kit_id: kitIdMap.get(aa.kit_id)!,
 							axis_id: axisIdMap.get(aa.axis_id)!,
-							value: aa.value
+							value: remapArgValue(aa.value, viewIdMap, kitIdMap) as any
 						}))
 					)
 					.execute();
@@ -1839,7 +1871,15 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							value: remapTokenValue(t.value, viewIdMap) as any,
 							hints: (t.hints ?? {}) as any,
 							kit_id: t.kit_id ? (kitIdMap.get(t.kit_id) ?? null) : null,
-							view_id: t.view_id ? (viewIdMap.get(t.view_id) ?? null) : null
+							view_id: t.view_id ? (viewIdMap.get(t.view_id) ?? null) : null,
+							// A `view`-typed token's priority_index is the ONLY thing that orders same-
+							// composition_alias rows (resolve.ts's applyScopeTokenRows sorts by
+							// priority_index, tie-breaking on id) -- every imported token gets a fresh
+							// random id, so omitting this (leaving every row at the column's `0` default)
+							// scrambles every multi-child composition (Views panel tree, `children`) into
+							// random order on every import. Harmless to also carry for scalar tokens (it's
+							// simply unused there).
+							priority_index: t.priority_index
 						}))
 					)
 					.execute();

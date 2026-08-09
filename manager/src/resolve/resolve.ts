@@ -1228,9 +1228,11 @@ export function resolveLinkedArg(
 
 // Bulk convenience over resolveLinkedArg: resolves every key already present in a raw argsByViewKit
 // map, dropping any axis whose chain terminates unset, so every downstream consumer (the per-view
-// baseline loop below, and mergeAxisOverrides) reads an already-resolved map and never has to know
-// 'linked' exists at all.
-function resolveAllLinkedArgs(
+// baseline loop below, mergeAxisOverrides, and export-shape.ts's fetchViewAxisArgs) reads an
+// already-resolved map and never has to know 'linked' exists at all. Exported so the WebCodium
+// export path can resolve 'linked' axis_args (drag-to-link) the same way the live resolve path
+// already does, instead of reimplementing this walk a second time.
+export function resolveAllLinkedArgs(
 	argsByViewKit: Map<string, Record<string, ArgValue>>,
 	validCompositions: Set<string>
 ): Map<string, Record<string, ArgValue>> {

@@ -1487,6 +1487,99 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(originalChildrenToken.value.view_id).toBe(childView.id);
 	});
 
+	it('preserves multi-child composition order (view-ref priority_index) across export/import', async () => {
+		// Regression test: importProjectData used to omit `priority_index` from the tokens insert
+		// entirely, so every imported `view`-typed token silently fell back to the column's `0`
+		// default regardless of its original position. resolve.ts's applyScopeTokenRows (the code
+		// that actually orders same-composition_alias rows into a parent's child list, e.g. the
+		// Views panel tree) tie-breaks same-priority_index rows by `id.localeCompare` -- and every
+		// imported token gets a brand-new random UUID, so with every row tied at 0 the tie-break
+		// reshuffled every multi-child composition into effectively random order on every single
+		// import. A real project's whole view tree (nested several levels deep, each level's own
+		// children independently reshuffled) reads as "every view laid out flat" once none of the
+		// levels line up with what was authored.
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'parent-source'))!;
+		const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+		const childA = (await ctx.api.createViewInProject(proj.id, 'ChildA'))!;
+		const childB = (await ctx.api.createViewInProject(proj.id, 'ChildB'))!;
+		const childC = (await ctx.api.createViewInProject(proj.id, 'ChildC'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+		await ctx.api.attachKitToComposition(kit.id, parent.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childA.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childB.id);
+		await ctx.api.addViewRef(proj.id, parent.id, 'children', childC.id);
+
+		const exported = await ctx.api.exportProject(proj.id);
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		const reimported = await ctx.api.exportProject(imported.id);
+
+		const nameById = new Map(reimported.views.map((v: any) => [v.id, v.name]));
+		// Mirrors resolve.ts's applyScopeTokenRows tie-break exactly (priority_index asc, then
+		// id.localeCompare) -- this is what actually determines display/child order in the app,
+		// not whatever order a bare SELECT happens to return.
+		const childTokens = reimported.tokens
+			.filter((t: any) => t.composition_alias === 'children')
+			.sort((a: any, b: any) => a.priority_index - b.priority_index || a.id.localeCompare(b.id));
+		expect(childTokens.map((t: any) => t.priority_index)).toEqual([0, 1, 2]);
+		expect(childTokens.map((t: any) => nameById.get(t.value.view_id))).toEqual([
+			'ChildA',
+			'ChildB',
+			'ChildC'
+		]);
+	});
+
+	it('remaps a linked (drag-to-lock) axis_args value to the new project ids, not the source project\'s', async () => {
+		// Regression test: axis_args.value can be `{type: 'linked', view_id, kit_id}` (drag-to-lock,
+		// schema.ts's ArgLinked) referencing ANOTHER view+kit's own axis pick -- structurally the same
+		// "id inside a jsonb blob" problem remapTokenValue already solves for `view`-typed tokens, but
+		// this one was never remapped, so an imported linked axis arg silently pointed at the source
+		// project's (now nonexistent) view/kit.
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'linked-source'))!;
+		const sourceView = (await ctx.api.createViewInProject(proj.id, 'Source'))!;
+		const linkedView = (await ctx.api.createViewInProject(proj.id, 'Linked'))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		await ctx.api.attachKitToComposition(kit.id, sourceView.id);
+		await ctx.api.attachKitToComposition(kit.id, linkedView.id);
+		await ctx.api.setAxisArg(sourceView.id, kit.id, axis.id, { type: 'literal', value: 'dark' });
+		await ctx.api.setAxisArg(linkedView.id, kit.id, axis.id, {
+			type: 'linked',
+			view_id: sourceView.id,
+			kit_id: kit.id
+		});
+
+		const exported = await ctx.api.exportProject(proj.id);
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		const reimported = await ctx.api.exportProject(imported.id);
+
+		const newSourceViewId = reimported.views.find((v: any) => v.name === 'Source')!.id;
+		const newKitId = reimported.kits.find((k: any) => k.name === 'Button')!.id;
+		const linkedArg = reimported.axisArgs.find((aa: any) => aa.value?.type === 'linked');
+		expect(linkedArg.value.view_id).toBe(newSourceViewId);
+		expect(linkedArg.value.view_id).not.toBe(sourceView.id);
+		expect(linkedArg.value.kit_id).toBe(newKitId);
+		expect(linkedArg.value.kit_id).not.toBe(kit.id);
+	});
+
+	it('exports a project with views but no kits yet without an empty-IN syntax error', async () => {
+		// Regression test: the compositions query's guard only skipped the whole query when BOTH
+		// kitIds and viewIds were empty, but it ORs two independent `IN` clauses -- a project with
+		// views already created but no kit yet (a real, reachable state, e.g. right after adding the
+		// first view) still hit `compositions.kit_id IN ()`, a hard Postgres syntax error, not
+		// "matches nothing."
+		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'views-no-kits'))!;
+		await ctx.api.createViewInProject(proj.id, 'Lonely View');
+
+		const exported = await ctx.api.exportProject(proj.id);
+		expect(exported.views).toHaveLength(1);
+		expect(exported.compositions).toEqual([]);
+	});
+
 	it('importProjectData warns instead of failing when the source interpreter is not installed', async () => {
 		const wsId = (await ctx.api.getAllWorkspaces().executeTakeFirstOrThrow()).workspaceId;
 		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'source'))!;

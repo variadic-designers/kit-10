@@ -1389,3 +1389,89 @@ describe('flattenKitResults cross-language parity (kit-flatten-golden.json)', ()
 		}
 	});
 });
+
+describe('export/import round trip at the resolution layer', () => {
+	let ctx: TestContext;
+
+	beforeEach(async () => {
+		ctx = await createTestDb();
+	});
+
+	afterEach(async () => {
+		await ctx.pg.close();
+	});
+
+	// Regression test for a reported "every view is laid out flat, hierarchy gone entirely" bug
+	// after Tenner export -> import. Exercises the exact mechanism seed.ts's own buildComposedView
+	// uses for real projects (addViewRef, not a raw array-valued token -- see seed.ts's own comment
+	// on that), through the FULL resolution layer (resolveManyViews + flattenKitResults), not just
+	// raw exported row shapes -- so this catches a break in the actual parent/child linkage a broken
+	// import would produce (every view becoming an unreferenced "root"), not just a reordering.
+	it('a two-level tree built via addViewRef keeps its exact shape (roots and per-parent children) after import', async () => {
+		const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+		const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Nested Source'))!;
+		const boxKit = (await ctx.api.createKitInProject(proj.id, 'Box'))!;
+
+		const root = (await ctx.api.createViewInProject(proj.id, 'Root'))!;
+		await ctx.api.attachKitToComposition(boxKit.id, root.id);
+		const navBar = (await ctx.api.createViewInProject(proj.id, 'NavBar'))!;
+		await ctx.api.attachKitToComposition(boxKit.id, navBar.id);
+		const hero = (await ctx.api.createViewInProject(proj.id, 'Hero'))!;
+		await ctx.api.attachKitToComposition(boxKit.id, hero.id);
+		const wordmark = (await ctx.api.createViewInProject(proj.id, 'Wordmark'))!;
+		const navLink = (await ctx.api.createViewInProject(proj.id, 'NavLink'))!;
+		const heroHeading = (await ctx.api.createViewInProject(proj.id, 'HeroHeading'))!;
+
+		await ctx.api.addViewRef(proj.id, root.id, 'children', navBar.id);
+		await ctx.api.addViewRef(proj.id, root.id, 'children', hero.id);
+		await ctx.api.addViewRef(proj.id, navBar.id, 'children', wordmark.id);
+		await ctx.api.addViewRef(proj.id, navBar.id, 'children', navLink.id);
+		await ctx.api.addViewRef(proj.id, hero.id, 'children', heroHeading.id);
+
+		function summarize(
+			views: Awaited<ReturnType<typeof resolveManyViews>>,
+			nameById: Map<string, string>
+		) {
+			const childrenByName = new Map<string, string[]>();
+			const referenced = new Set<string>();
+			for (const v of views) {
+				const flat = flattenKitResults(v.resolvedKits);
+				const refs = flat.get('children')?.viewRefs ?? [];
+				childrenByName.set(
+					nameById.get(v.viewId)!,
+					refs.map((r) => nameById.get(r.viewId)!)
+				);
+				for (const r of refs) referenced.add(r.viewId);
+			}
+			const roots = views.filter((v) => !referenced.has(v.viewId)).map((v) => nameById.get(v.viewId)!);
+			return { childrenByName, roots };
+		}
+
+		const sourceNameById = new Map([
+			[root.id, 'Root'],
+			[navBar.id, 'NavBar'],
+			[hero.id, 'Hero'],
+			[wordmark.id, 'Wordmark'],
+			[navLink.id, 'NavLink'],
+			[heroHeading.id, 'HeroHeading']
+		]);
+		const before = summarize(await resolveManyViews(ctx.db, proj.id), sourceNameById);
+		expect(before.roots).toEqual(['Root']);
+		expect(before.childrenByName.get('Root')).toEqual(['NavBar', 'Hero']);
+		expect(before.childrenByName.get('NavBar')).toEqual(['Wordmark', 'NavLink']);
+		expect(before.childrenByName.get('Hero')).toEqual(['HeroHeading']);
+
+		const exported = await ctx.api.exportProject(proj.id);
+		const imported = (await ctx.api.importProjectData(ws.workspaceId, exported))!;
+		const reexported = await ctx.api.exportProject(imported.id);
+		const newNameById = new Map<string, string>(
+			reexported.views.map((v: any) => [v.id as string, v.name as string])
+		);
+
+		const after = summarize(await resolveManyViews(ctx.db, imported.id), newNameById);
+		expect(after.roots).toEqual(before.roots);
+		expect(after.childrenByName.get('Root')).toEqual(before.childrenByName.get('Root'));
+		expect(after.childrenByName.get('NavBar')).toEqual(before.childrenByName.get('NavBar'));
+		expect(after.childrenByName.get('Hero')).toEqual(before.childrenByName.get('Hero'));
+	});
+});
