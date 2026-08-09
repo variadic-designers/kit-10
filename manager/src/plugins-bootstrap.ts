@@ -33,10 +33,26 @@ const TENNER_MANIFEST: PluginManifest = {
 				fn: 'export_project',
 				fileExtension: 'yaml',
 				mimeType: 'text/yaml',
-				target: 'yaml'
+				target: 'yaml',
+				// Same underlying YAML dump, gzip-compressed then base64-encoded by export_project_gz
+				// -- a normalized-DB-shaped export (small repeated enum strings/ids across many rows)
+				// compresses very well with no format changes needed.
+				compressedVariant: {
+					fn: 'export_project_gz',
+					fileExtension: 'yaml.gz',
+					mimeType: 'application/gzip'
+				}
 			}
 		],
-		imports: [{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' }]
+		imports: [
+			{ label: 'Import Raw with Tenner', fn: 'import_project', accept: '.yaml,.yml' },
+			{
+				label: 'Import Raw with Tenner (Compressed)',
+				fn: 'import_project_gz',
+				accept: '.gz',
+				binary: true
+			}
+		]
 	},
 	capabilities: { hostFns: ['kit10_get_project_export', 'kit10_import_project_data'] }
 };

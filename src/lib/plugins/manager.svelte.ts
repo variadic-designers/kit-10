@@ -19,6 +19,7 @@ import type {
 	WriteRenderEntryResult
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
+import { base64ToBytes } from '../base64.js';
 import { getCachedFont, putCachedFont } from './font-cache.js';
 import { buildInterpreterOutputPayload } from './interpreter-output.js';
 import { get } from 'svelte/store';
@@ -66,13 +67,6 @@ function serializeOverriddenOccurrences(occurrences: OverriddenOccurrence[]) {
 		viewId: o.viewId,
 		resolvedKits: serializeResolvedKits(o.resolvedKits) ?? []
 	}));
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-	const binaryStr = atob(b64);
-	const bytes = new Uint8Array(binaryStr.length);
-	for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-	return bytes;
 }
 
 // A stored asset `link` may be a plain relative static path (manager/src/seed.ts's
@@ -340,14 +334,11 @@ export function createPluginManager(api: Api) {
 						const outRows: { view_id: string; kit_id: string; axis_id: string; value: string }[] =
 							[];
 						for (const r of rows) {
-							// Drops 'range' (existing, deliberate) and now also 'linked' (post drag-to-lock
-							// axis feature) the same way -- a LOCKED axis has an effective, currently-
-							// resolved value that this filter silently treats as if it doesn't exist,
-							// exporting the default/unconditioned variant instead. Safe (no panic, same
-							// degrade-gracefully posture already documented for 'range'), but it IS a real
-							// static-export correctness gap specifically for locked axes -- resolving
-							// 'linked' before this filter (host-fn or Rust side) is real, separable
-							// follow-up work, not done here.
+							// api.getViewAxisArgs already resolves 'linked' (drag-to-lock) cells to their
+							// live source value via fetchViewAxisArgs's resolveAllLinkedArgs call -- a row
+							// reaching here is never itself 'linked'. 'range' is still dropped: range axis
+							// values are out of v1's CSS-variant-matching scope (see
+							// variants::matches_condition on the Rust side), same as before.
 							if (r.value.type !== 'literal') continue;
 							outRows.push({
 								view_id: r.viewId,

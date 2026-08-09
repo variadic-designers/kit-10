@@ -1,7 +1,21 @@
-// Triggers a browser download of in-memory text -- shared by Project.svelte's export submenu and
-// Export.svelte's per-target Export button so the blob/object-URL dance exists in one place.
-export function downloadText(text: string, filename: string, mimeType: string) {
-	const blob = new Blob([text], { type: mimeType });
+import { base64ToBytes } from './base64.js';
+
+// Triggers a browser download of in-memory content -- shared by Project.svelte's export submenu
+// and Export.svelte's per-target Export button so the blob/object-URL dance exists in one place.
+// `encoding: 'base64'` is for a plugin_fn's compressed-export output (see ExportCapability's
+// `compressedVariant` doc comment) -- Extism plugin_fn results are String-typed, so real binary
+// bytes travel as base64 text and need decoding back to bytes before the Blob is built, or the
+// downloaded file would just be the base64 TEXT itself rather than the actual gzip bytes it names.
+export function downloadText(
+	text: string,
+	filename: string,
+	mimeType: string,
+	encoding: 'text' | 'base64' = 'text'
+) {
+	const blob =
+		encoding === 'base64'
+			? new Blob([base64ToBytes(text).buffer as ArrayBuffer], { type: mimeType })
+			: new Blob([text], { type: mimeType });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
@@ -41,11 +55,12 @@ export async function downloadExportResult(
 	resultText: string,
 	multiFile: boolean | undefined,
 	fallbackFilename: string,
-	fallbackMimeType: string
+	fallbackMimeType: string,
+	encoding: 'text' | 'base64' = 'text'
 ): Promise<void> {
 	const files = resolveDownloadFiles(resultText, multiFile, fallbackFilename, fallbackMimeType);
 	for (const [i, file] of files.entries()) {
 		if (i > 0) await new Promise((r) => setTimeout(r, 150));
-		downloadText(file.content, file.filename, file.mimeType);
+		downloadText(file.content, file.filename, file.mimeType, encoding);
 	}
 }

@@ -19,6 +19,7 @@
 	} from '$lib/plugins/project-import-providers.js';
 	import { resolveExportProfile, type ExportProfile } from '$lib/plugins/export-profile.js';
 	import { downloadExportResult } from '$lib/download.js';
+	import { bytesToBase64 } from '$lib/base64.js';
 
 	const {
 		editorReady,
@@ -99,15 +100,21 @@
 			const file = input.files?.[0];
 			if (!file) return;
 
-			file
-				.text()
-				.then((text) =>
-					callUtilityPlugin?.(
-						provider.id,
-						provider.fn,
-						JSON.stringify({ workspace_id: workspaceId, text })
+			// `binary` (see ImportCapability's doc comment) is the counterpart of Export's
+			// `compressedVariant` -- a compressed import's file is real gzip bytes, not YAML
+			// text, so it has to travel as base64 in a `data_base64` field rather than the
+			// plain `text` field every other importer uses.
+			const payload = provider.binary
+				? file.arrayBuffer().then((buf) =>
+						JSON.stringify({
+							workspace_id: workspaceId,
+							data_base64: bytesToBase64(new Uint8Array(buf))
+						})
 					)
-				)
+				: file.text().then((text) => JSON.stringify({ workspace_id: workspaceId, text }));
+
+			payload
+				.then((json) => callUtilityPlugin?.(provider.id, provider.fn, json))
 				.then((result) => {
 					if (!result) return;
 					const project = JSON.parse((result as { text(): string }).text()) as {

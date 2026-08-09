@@ -76,27 +76,32 @@
 		});
 	}
 
+	// Per-target "Compressed" checkbox state (see ExportCapability.compressedVariant) -- keyed by
+	// target rather than provider id, matching how `groups`/`chooseProvider` are already keyed;
+	// unset/false is the common case (today, only Tenner's `yaml` target declares a variant at
+	// all), so a plain object default is enough, no need to seed every known target up front.
+	let compressed: Record<string, boolean> = $state({});
+
 	function runExport(group: ExportTargetGroup) {
 		const provider = group.effective;
 		if (!provider || !projectId) return;
+		const useCompressed = compressed[group.target] && !!provider.compressedVariant;
+		const variant = useCompressed ? provider.compressedVariant! : provider;
 		const name = projectName ?? 'export';
 		const viewIds = flaggedViewsFor(group).map((v) => v.viewId);
 		callUtilityPlugin
-			?.(
-				provider.id,
-				provider.fn,
-				JSON.stringify({ project_id: projectId, view_ids: viewIds })
-			)
+			?.(provider.id, variant.fn, JSON.stringify({ project_id: projectId, view_ids: viewIds }))
 			.then((result) => {
 				const text = (result as { text(): string }).text();
 				return downloadExportResult(
 					text,
 					provider.multiFile,
-					`${name}.${provider.fileExtension}`,
-					provider.mimeType
+					`${name}.${variant.fileExtension}`,
+					variant.mimeType,
+					useCompressed ? 'base64' : 'text'
 				);
 			})
-			.catch((err) => console.error(`[${provider.id}] ${provider.fn} failed:`, err));
+			.catch((err) => console.error(`[${provider.id}] ${variant.fn} failed:`, err));
 	}
 
 	// This panel doesn't create/delete anything of its own (unlike Project/Plugins) -- its
@@ -145,6 +150,13 @@
 									</label>
 								{/each}
 							</div>
+						{/if}
+
+						{#if group.effective?.compressedVariant}
+							<label class="export-target__compressed">
+								<input type="checkbox" bind:checked={compressed[group.target]} />
+								Compressed
+							</label>
 						{/if}
 
 						<button
@@ -217,6 +229,16 @@
 			gap: $x-space-xs;
 			font-size: $x-font-size-xs;
 			color: var(--color-text-muted);
+		}
+
+		&__compressed {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			@include fonts-stack('Satoshi-Light', sans);
+			font-size: $x-font-size-xs;
+			color: var(--color-text-muted);
+			cursor: pointer;
 		}
 
 		&__run {

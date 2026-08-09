@@ -109,12 +109,31 @@ export interface ExportCapability {
 	// readout are even offered for this provider -- flagging individual views for a
 	// project-basis exporter would be misleading, since the flag would never change its output.
 	viewScoped?: boolean;
+	// A compressed counterpart of this same export, sharing everything else about it (label,
+	// target, viewScoped) -- when present, the Export panel shows a "Compressed" checkbox next to
+	// this row rather than a whole separate entry. Checking it calls `compressedVariant.fn`
+	// instead of `fn` and downloads using `compressedVariant`'s own fileExtension/mimeType,
+	// treating the plugin's returned string as base64-encoded binary (gzip bytes) rather than
+	// literal text -- Extism plugin_fn results are String-typed, so real binary has to travel as
+	// base64 (see Tenner's export_project_gz doc comment for the Rust-side half of this). Optional/
+	// additive: absent means this export has no compressed option, same posture as `multiFile`/
+	// `viewScoped`.
+	compressedVariant?: {
+		fn: string;
+		fileExtension: string;
+		mimeType: string;
+	};
 }
 
 export interface ImportCapability {
 	label: string;
 	fn: string;
 	accept: string;
+	// When true, the file the user picks is read as raw bytes (base64-encoded into a `data_base64`
+	// field) rather than as text (a plain `text` field) -- the counterpart of ExportCapability's
+	// `compressedVariant`, for importing a gzip-compressed export back in. Absent/false = today's
+	// text behavior, unchanged.
+	binary?: boolean;
 }
 
 // What a plugin REQUESTS from the host -- the grantable surface today is host functions
