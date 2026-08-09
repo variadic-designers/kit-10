@@ -1,6 +1,6 @@
 <script lang="ts">
+	import FieldRow from './FieldRow.svelte';
 	import { commitFieldValue } from './field-commit.ts';
-	import { layerDotColor } from './layer-color.ts';
 	import type { Api, ResolvedProperty } from 'manager';
 	import type { FieldDef, FieldUpdate, PositionKeys } from '$lib/plugins/types.js';
 
@@ -20,7 +20,6 @@
 
 	type PositionFieldProps = {
 		field: FieldDef; // must carry a populated positionKeys (see box_categories' position field)
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
@@ -31,6 +30,7 @@
 	let { field, axisNameById = {}, track, resolvedMap, api, onFieldUpdate }: PositionFieldProps =
 		$props();
 
+	const info = $derived(track(field.key));
 	const positionKeys = $derived(field.positionKeys as PositionKeys);
 
 	// Mirrors Charter's own parse_node_position default: absent/unrecognized reads as "relative".
@@ -42,6 +42,14 @@
 				? 'anchor'
 				: 'relative'
 	);
+
+	// Flow's icon must read as visually distinct from Nudge's - both used to be near-identical
+	// 4-way arrow glyphs at this size, indistinguishable at a glance.
+	const MODE_META: Record<PositionMode, { icon: string; label: string }> = {
+		relative: { icon: 'fa-stream', label: 'Flow' },
+		nudge: { icon: 'fa-up-down-left-right', label: 'Nudge' },
+		anchor: { icon: 'fa-thumbtack', label: 'Anchor' }
+	};
 
 	// The offset is only ever read by Charter when the mode is Nudge/Anchor (parse_node_position
 	// discards it under Relative) -- unlike ResizeField's min/max, there's no "already set, keep
@@ -61,18 +69,6 @@
 	const dy = $derived(offsetParts[1] ?? 0);
 
 	const OFFSET_STEP = 4;
-
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions
-			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
-			.join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
 
 	function writeMode(next: PositionMode) {
 		commitFieldValue(track(field.key), field.key, next, { onFieldUpdate, api });
@@ -154,59 +150,60 @@
 	</div>
 {/snippet}
 
-<div class="position-field">
-	<div class="position-field__header">
-		<span class="position-field__label">{field.displayText ?? field.key}</span>
-		<button
-			class="position-field__track"
-			style="--track-color: {trackColor(track(field.key).keys)}"
-			aria-label="Position source"
-			title={trackTitle(track(field.key).conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-	</div>
+<FieldRow
+	label={field.displayText ?? field.key}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	{axisNameById}
+	trackAriaLabel="Position source"
+>
+	{#snippet valueSlot()}
+		<span class="position-field__current">
+			<i class="fa-solid {MODE_META[mode].icon}"></i>
+			{MODE_META[mode].label}
+		</span>
+	{/snippet}
 
-	<div class="position-field__row">
-		<div class="seg-control" role="group" aria-label="Position mode">
-			<button
-				type="button"
-				class="seg-control__btn"
-				class:seg-control__btn--sel={mode === 'relative'}
-				title="Flow (default)"
-				onclick={() => writeMode('relative')}
-			>
-				<i class="fa-solid fa-arrows-up-down-left-right"></i>
-			</button>
-			<button
-				type="button"
-				class="seg-control__btn"
-				class:seg-control__btn--sel={mode === 'nudge'}
-				title="Nudge - paint-time offset, still in flow"
-				onclick={() => writeMode('nudge')}
-			>
-				<i class="fa-solid fa-up-down-left-right"></i>
-			</button>
-			<button
-				type="button"
-				class="seg-control__btn"
-				class:seg-control__btn--sel={mode === 'anchor'}
-				title="Anchor - pinned to the parent's own box, out of flow"
-				onclick={() => writeMode('anchor')}
-			>
-				<i class="fa-solid fa-thumbtack"></i>
-			</button>
+	{#snippet body()}
+		<div class="position-field__row">
+			<div class="seg-control" role="group" aria-label="Position mode">
+				<button
+					type="button"
+					class="seg-control__btn"
+					class:seg-control__btn--sel={mode === 'relative'}
+					title="Flow (default)"
+					onclick={() => writeMode('relative')}
+				>
+					<i class="fa-solid fa-stream"></i>
+				</button>
+				<button
+					type="button"
+					class="seg-control__btn"
+					class:seg-control__btn--sel={mode === 'nudge'}
+					title="Nudge - paint-time offset, still in flow"
+					onclick={() => writeMode('nudge')}
+				>
+					<i class="fa-solid fa-up-down-left-right"></i>
+				</button>
+				<button
+					type="button"
+					class="seg-control__btn"
+					class:seg-control__btn--sel={mode === 'anchor'}
+					title="Anchor - pinned to the parent's own box, out of flow"
+					onclick={() => writeMode('anchor')}
+				>
+					<i class="fa-solid fa-thumbtack"></i>
+				</button>
+			</div>
 		</div>
-	</div>
 
-	{#if showOffset}
-		<div class="position-field__offsets">
-			{@render offsetStepper('dx', 'X', dx)}
-			{@render offsetStepper('dy', 'Y', dy)}
-		</div>
-	{/if}
-</div>
+		{#if showOffset}
+			<div class="position-field__offsets">
+				{@render offsetStepper('dx', 'X', dx)}
+				{@render offsetStepper('dy', 'Y', dy)}
+			</div>
+		{/if}
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -217,51 +214,29 @@
 		cursor: pointer;
 	}
 
-	.position-field {
+	.position-field__current {
+		display: inline-flex;
+		align-items: center;
+		gap: calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
+
+	.position-field__row {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		padding-block: $x-space-xs;
+	}
+
+	// Inline follow-on directly beneath the mode row -- same fixed-slot grammar as ResizeField's
+	// limits, inset to mark it as belonging to the row above. Each stepper row carries its own
+	// padding-block (see .position-stepper) rather than a gap between them, so it reads as the
+	// same row height as everything else.
+	.position-field__offsets {
 		display: flex;
 		flex-direction: column;
-		gap: calc($x-space-xs / 2);
-		padding-block: calc($x-space-xs / 2);
-
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
-		}
-
-		&__label {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			text-transform: capitalize;
-		}
-
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
-		}
-
-		&__row {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-		}
-
-		// Inline follow-on directly beneath the mode row -- same fixed-slot grammar as
-		// ResizeField's limits, inset to mark it as belonging to the row above.
-		&__offsets {
-			display: flex;
-			flex-direction: column;
-			gap: 1px;
-			padding-inline-start: calc($x-space-sm * 2);
-		}
+		padding-inline-start: $x-space-sm;
 	}
 
 	.seg-control {
@@ -293,9 +268,10 @@
 	}
 
 	.position-stepper {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
 		gap: calc($x-space-xs / 2);
+		padding-block: $x-space-xs;
 
 		&__label {
 			font-size: $x-font-size-xs;

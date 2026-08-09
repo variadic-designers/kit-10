@@ -21,6 +21,21 @@ export function layerDotColor(axisIds: string[], active: boolean): string {
 	return `oklch(${L} ${C} ${hue})`;
 }
 
+// Describes which Layer a property is sourced from - shared by every Render-panel field row
+// (FieldRow.svelte) so a hover tooltip reads identically everywhere. `axisNameById` is optional:
+// omitting it (or a miss) falls back to the raw axisId, same as every call site did before this
+// was centralized.
+export function trackTitle(
+	conditions: { axisId: string; value: string }[],
+	axisNameById: Record<string, string> = {}
+): string {
+	if (conditions.length === 0) return 'Base layer · always applies';
+	const parts = conditions
+		.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
+		.join(', ');
+	return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
+}
+
 // Shape-by-position system used to give each Kit a distinct icon (Styles.svelte, Axes.svelte).
 export const SHAPE_ICONS = [
 	'fa-circle',

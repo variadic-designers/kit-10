@@ -1,4 +1,5 @@
 <script lang="ts">
+	import FieldRow from './FieldRow.svelte';
 	import { commitFieldValue } from './field-commit.ts';
 	import {
 		parseTrackList,
@@ -35,6 +36,7 @@
 
 	let { field, label, track, resolvedMap, api, onFieldUpdate }: GridTracksFieldProps = $props();
 
+	const info = $derived(track(field.key));
 	const rawValue = $derived(resolvedMap.get(field.key)?.value ?? '');
 	const tracks = $derived(parseTrackList(rawValue));
 
@@ -75,82 +77,81 @@
 	}
 </script>
 
-<div class="grid-tracks">
-	<div class="grid-tracks__header">
-		<span class="grid-tracks__label">{label}</span>
-		<button
-			class="grid-tracks__track"
-			style="--track-color: transparent"
-			aria-label="Track source"
-			title={track(field.key).conditionValues.length
-				? 'Conditioned'
-				: 'Base layer · always applies'}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-	</div>
+<FieldRow
+	{label}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	trackAriaLabel="Track source"
+>
+	{#snippet valueSlot()}
+		<span class="grid-tracks__summary">
+			{tracks.length === 0 ? 'auto' : `${tracks.length} track${tracks.length === 1 ? '' : 's'}`}
+		</span>
+	{/snippet}
 
-	{#if tracks.length === 0}
-		<div class="grid-tracks__empty">No explicit tracks - using the responsive default above.</div>
-	{:else}
-		<ul class="grid-tracks__list">
-			{#each tracks as t, i (i)}
-				<li class="grid-tracks__row">
-					<div class="grid-tracks__reorder">
-						<button
-							type="button"
-							disabled={i === 0}
-							title="Move earlier"
-							onclick={() => moveTrack(i, -1)}
-						>
-							<i class="fa-solid fa-chevron-up"></i>
-						</button>
-						<button
-							type="button"
-							disabled={i === tracks.length - 1}
-							title="Move later"
-							onclick={() => moveTrack(i, 1)}
-						>
-							<i class="fa-solid fa-chevron-down"></i>
-						</button>
-					</div>
-					<select
-						class="grid-tracks__kind"
-						value={t.kind}
-						title={TRACK_KIND_META.find((m) => m.kind === t.kind)?.tooltip}
-						onchange={(e) => setKind(i, (e.currentTarget as HTMLSelectElement).value as TrackKind)}
-					>
-						{#each TRACK_KIND_META as meta (meta.kind)}
-							<option value={meta.kind}>{meta.label}</option>
-						{/each}
-					</select>
-					{#if kindHasValue(t.kind)}
-						<input
-							class="grid-tracks__value"
-							type="number"
-							value={t.value}
-							onchange={(e) => setValue(i, parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
-						/>
-					{/if}
-					<button
-						class="grid-tracks__remove"
-						type="button"
-						title="Remove track"
-						onclick={() => removeTrack(i)}
-					>
-						<i class="fa-solid fa-xmark"></i>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	{/if}
+	{#snippet body()}
+		<div class="grid-tracks">
+			{#if tracks.length === 0}
+				<div class="grid-tracks__empty">No explicit tracks - using the responsive default above.</div>
+			{:else}
+				<ul class="grid-tracks__list">
+					{#each tracks as t, i (i)}
+						<li class="grid-tracks__row">
+							<div class="grid-tracks__reorder">
+								<button
+									type="button"
+									disabled={i === 0}
+									title="Move earlier"
+									onclick={() => moveTrack(i, -1)}
+								>
+									<i class="fa-solid fa-chevron-up"></i>
+								</button>
+								<button
+									type="button"
+									disabled={i === tracks.length - 1}
+									title="Move later"
+									onclick={() => moveTrack(i, 1)}
+								>
+									<i class="fa-solid fa-chevron-down"></i>
+								</button>
+							</div>
+							<select
+								class="grid-tracks__kind"
+								value={t.kind}
+								title={TRACK_KIND_META.find((m) => m.kind === t.kind)?.tooltip}
+								onchange={(e) => setKind(i, (e.currentTarget as HTMLSelectElement).value as TrackKind)}
+							>
+								{#each TRACK_KIND_META as meta (meta.kind)}
+									<option value={meta.kind}>{meta.label}</option>
+								{/each}
+							</select>
+							{#if kindHasValue(t.kind)}
+								<input
+									class="grid-tracks__value"
+									type="number"
+									value={t.value}
+									onchange={(e) => setValue(i, parseFloat((e.currentTarget as HTMLInputElement).value) || 0)}
+								/>
+							{/if}
+							<button
+								class="grid-tracks__remove"
+								type="button"
+								title="Remove track"
+								onclick={() => removeTrack(i)}
+							>
+								<i class="fa-solid fa-xmark"></i>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 
-	<button class="grid-tracks__add" type="button" onclick={addTrack}>
-		<i class="fa-solid fa-plus"></i>
-		<span>Add track</span>
-	</button>
-</div>
+			<button class="grid-tracks__add" type="button" onclick={addTrack}>
+				<i class="fa-solid fa-plus"></i>
+				<span>Add track</span>
+			</button>
+		</div>
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -160,28 +161,15 @@
 		cursor: pointer;
 	}
 
+	.grid-tracks__summary {
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
+
 	.grid-tracks {
 		display: flex;
 		flex-direction: column;
 		gap: calc($x-space-xs / 2);
-		padding-inline: $x-space-sm;
-		padding-block: calc($x-space-xs / 2);
-
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			font-size: $x-font-size-sm;
-			opacity: 0.85;
-		}
-
-		&__label {
-			flex: 1;
-		}
-
-		&__track {
-			font-size: $x-font-size-sm;
-		}
 
 		&__empty {
 			font-size: $x-font-size-xs;

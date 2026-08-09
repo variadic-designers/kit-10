@@ -20,7 +20,6 @@
 
 	type ResizeFieldProps = {
 		field: FieldDef; // must carry a populated resizeKeys (see box_categories' width/height fields)
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
@@ -32,7 +31,6 @@
 
 	let {
 		field,
-		position = 'mid',
 		axisNameById = {},
 		track,
 		resolvedMap,
@@ -86,7 +84,6 @@
 		displayText={field.displayText ?? field.key}
 		key={field.key}
 		value={resolvedMap.get(field.key)?.value}
-		{position}
 		{axisNameById}
 		inputType={field.inputType}
 		spacingMode={field.spacingMode}

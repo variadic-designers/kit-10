@@ -1,9 +1,9 @@
 <script lang="ts">
+	import FieldRow from './FieldRow.svelte';
 	import StyleField from './StyleField.svelte';
 	import GridSizePicker from './GridSizePicker.svelte';
 	import GridTracksField from './GridTracksField.svelte';
 	import GridAreaPainter from './GridAreaPainter.svelte';
-	import { layerDotColor } from './layer-color.ts';
 	import { resolveSuggestionSource } from '$lib/plugins/suggestion-providers.js';
 	import { commitFieldValue, clearFieldValue } from './field-commit.ts';
 	import { parseTrackList } from './grid-tracks.ts';
@@ -27,7 +27,6 @@
 
 	type ArrangeFieldProps = {
 		field: FieldDef; // must carry a populated arrangeKeys (see box_categories' arrange field)
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
@@ -44,7 +43,6 @@
 
 	let {
 		field,
-		position = 'mid',
 		axisNameById = {},
 		track,
 		resolvedMap,
@@ -100,17 +98,8 @@
 		return v === 'cluster' || v === 'split' || v === 'center' || v === 'grid' ? v : 'stack';
 	});
 
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions
-			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
-			.join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
+	const info = $derived(track(field.key));
+	const activeTab = $derived(TABS.find((t) => t.kind === activeKind)!);
 
 	function selectTab(kind: ArrangeKind) {
 		if (kind === activeKind) return;
@@ -132,6 +121,33 @@
 		});
 	}
 
+	// Stack's own friendly Justify/Wrap controls - same "selector, not free text" grammar as
+	// Direction above, promoted out of the raw "Advanced flex" disclosure so the two most-reached-
+	// for flex properties after direction/gap are one click away, not two. Icon set reuses the
+	// exact align-left/center/right/justify vocabulary StyleField's own inputType:"align" control
+	// already established, rather than inventing a second one for the same shape of choice.
+	const STACK_JUSTIFY_OPTIONS: { v: string; icon: string; title: string }[] = [
+		{ v: 'flex-start', icon: 'fa-align-left', title: 'Start' },
+		{ v: 'center', icon: 'fa-align-center', title: 'Center' },
+		{ v: 'flex-end', icon: 'fa-align-right', title: 'End' },
+		{ v: 'space-between', icon: 'fa-align-justify', title: 'Space between' }
+	];
+	const rawJustify = $derived(resolvedMap.get('justify-content')?.value ?? 'flex-start');
+
+	function writeJustify(v: string) {
+		if (rawJustify === v) return;
+		commitFieldValue(track('justify-content'), 'justify-content', v, { onFieldUpdate, api });
+	}
+
+	const rawWrap = $derived(resolvedMap.get('flex-wrap')?.value);
+	const wrapsToNextLine = $derived(rawWrap === 'wrap' || rawWrap === 'wrap-reverse');
+
+	function writeWrap(wrap: boolean) {
+		const v = wrap ? 'wrap' : 'nowrap';
+		if ((rawWrap ?? 'nowrap') === v) return;
+		commitFieldValue(track('flex-wrap'), 'flex-wrap', v, { onFieldUpdate, api });
+	}
+
 	function anyFieldHasValue(fields: FieldDef[]): boolean {
 		return fields.some((fd) => !!resolvedMap.get(fd.key)?.value);
 	}
@@ -141,12 +157,22 @@
 	// property in two visible widgets at once, with the raw one adding nothing the friendly one
 	// can't already do. Drop it only for the tabs that actually offer that friendly control;
 	// Cluster/Center have no direction follow-on, so it stays their only way to touch it. Filtered
-	// by directionKey (Charter-declared data), never by the literal string "flex-direction".
-	const advancedFields = $derived(
-		activeKind === 'stack' || activeKind === 'split'
-			? arrangeKeys.advanced.filter((fd) => fd.key !== arrangeKeys.directionKey)
-			: arrangeKeys.advanced
-	);
+	// by directionKey (Charter-declared data), never by the literal string "flex-direction". Stack
+	// additionally drops justify-content/flex-wrap now that it has its own friendly controls too.
+	const advancedFields = $derived.by(() => {
+		if (activeKind === 'stack') {
+			return arrangeKeys.advanced.filter(
+				(fd) =>
+					fd.key !== arrangeKeys.directionKey &&
+					fd.key !== 'justify-content' &&
+					fd.key !== 'flex-wrap'
+			);
+		}
+		if (activeKind === 'split') {
+			return arrangeKeys.advanced.filter((fd) => fd.key !== arrangeKeys.directionKey);
+		}
+		return arrangeKeys.advanced;
+	});
 
 	// Grid's own track counts, for the area painter's grid to always match what's actually defined.
 	const columnCount = $derived(
@@ -208,24 +234,20 @@
 	/>
 {/snippet}
 
-<div
-	class="arrange-field"
-	class:arrange-field--top={position === 'top'}
-	class:arrange-field--bottom={position === 'bottom'}
+<FieldRow
+	label={field.displayText ?? field.key}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	{axisNameById}
+	trackAriaLabel="Arrangement source"
 >
-	<div class="arrange-field__header">
-		<span class="arrange-field__label">{field.displayText ?? field.key}</span>
-		<button
-			class="arrange-field__track"
-			style="--track-color: {trackColor(track(field.key).keys)}"
-			aria-label="Arrangement source"
-			title={trackTitle(track(field.key).conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-	</div>
+	{#snippet valueSlot()}
+		<span class="arrange-field__current">
+			<i class={activeTab.icon}></i>
+			{activeTab.label}
+		</span>
+	{/snippet}
 
+	{#snippet body()}
 	<div class="arrange-field__tabs" role="tablist" aria-label="Arrangement pattern">
 		{#each TABS as tab (tab.kind)}
 			<button
@@ -291,6 +313,49 @@
 						onclick={() => writeDirection('row')}
 					>
 						<i class="fa-solid fa-arrow-right"></i>
+					</button>
+				</div>
+			</div>
+			<div class="arrange-field__row">
+				<span class="arrange-field__row-label" title="How children distribute along the main axis"
+					>Justify</span
+				>
+				<div class="arrange-seg" role="group" aria-label="Justify">
+					{#each STACK_JUSTIFY_OPTIONS as opt (opt.v)}
+						<button
+							type="button"
+							class="arrange-seg__btn"
+							class:arrange-seg__btn--sel={rawJustify === opt.v}
+							title={opt.title}
+							onclick={() => writeJustify(opt.v)}
+						>
+							<i class="fa-solid {opt.icon}"></i>
+						</button>
+					{/each}
+				</div>
+			</div>
+			<div class="arrange-field__row">
+				<span class="arrange-field__row-label" title="Whether overflowing children wrap onto a new line"
+					>Wrap</span
+				>
+				<div class="arrange-seg" role="group" aria-label="Wrap">
+					<button
+						type="button"
+						class="arrange-seg__btn"
+						class:arrange-seg__btn--sel={!wrapsToNextLine}
+						title="No wrap - stays on one line"
+						onclick={() => writeWrap(false)}
+					>
+						<i class="fa-solid fa-minus"></i>
+					</button>
+					<button
+						type="button"
+						class="arrange-seg__btn"
+						class:arrange-seg__btn--sel={wrapsToNextLine}
+						title="Wrap - overflow moves to a new line"
+						onclick={() => writeWrap(true)}
+					>
+						<i class="fa-solid fa-grip-lines"></i>
 					</button>
 				</div>
 			</div>
@@ -489,7 +554,8 @@
 			</details>
 		{/if}
 	</div>
-</div>
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -498,138 +564,107 @@
 		all: unset;
 	}
 
-	.arrange-field {
+	.arrange-field__current {
+		display: inline-flex;
+		align-items: center;
+		gap: calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
+
+	// A deliberate grid, not a wrapping row: three equal columns -- every pattern cell as
+	// wide as the Grid cell -- with the 2x2 block (Stack/Cluster over Split/Center) on the
+	// left and Grid itself spanning both rows on the right, so the tab that MAKES grids
+	// visually IS one big grid cell, and nothing rag-wraps at panel width.
+	.arrange-field__tabs {
+		display: grid;
+		grid-template-columns: 2fr 2fr 2fr;
+		grid-template-areas:
+			'stack cluster grid'
+			'split center grid';
+		gap: 2px;
+	}
+
+	.arrange-field__tab {
 		display: flex;
-		flex-direction: column;
-		user-select: none;
-		padding-block: calc($x-space-xs / 2);
+		align-items: center;
+		justify-content: center;
+		gap: calc($x-space-xs / 2);
+		min-width: 0;
+		padding: calc($x-space-xs / 2) calc($x-space-xs / 2);
+		border-radius: 2px;
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+		cursor: pointer;
+		background: var(--color-panel-header-fill);
 
-		@include layout-respond('md') {
-			font-size: $x-font-size-sm;
-			letter-spacing: 1px;
-		}
-
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
-		}
-
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
-		}
-
-		&__label {
-			flex: 1;
-			min-width: 0;
+		span {
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
-			text-transform: capitalize;
 		}
 
-		// A deliberate grid, not a wrapping row: three equal columns -- every pattern cell as
-		// wide as the Grid cell -- with the 2x2 block (Stack/Cluster over Split/Center) on the
-		// left and Grid itself spanning both rows on the right, so the tab that MAKES grids
-		// visually IS one big grid cell, and nothing rag-wraps at panel width.
-		&__tabs {
-			display: grid;
-			grid-template-columns: 2fr 2fr 2fr;
-			grid-template-areas:
-				'stack cluster grid'
-				'split center grid';
-			gap: 2px;
-			padding-inline: $x-space-sm;
-			margin-top: calc($x-space-xs / 2);
-		}
-
-		&__tab {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			gap: calc($x-space-xs / 2);
-			min-width: 0;
-			padding: calc($x-space-xs / 2) calc($x-space-xs / 2);
-			border-radius: 2px;
-			font-size: $x-font-size-xs;
-			color: var(--color-add-var-text);
-			cursor: pointer;
-			background: var(--color-panel-header-fill);
-
-			span {
-				overflow: hidden;
-				text-overflow: ellipsis;
-				white-space: nowrap;
-			}
-
-			&:hover {
-				background: var(--color-surface-alt);
-				color: var(--color-text);
-			}
-
-			&--sel,
-			&--sel:hover {
-				background: var(--color-primary);
-				color: var(--color-pure);
-			}
-
-			// The 2x2 Grid cell: icon above label, roomier icon -- it has two rows of height.
-			&--big {
-				flex-direction: column;
-				gap: calc($x-space-xs / 2);
-
-				i {
-					font-size: $x-font-size-md;
-				}
-			}
-		}
-
-		// Fixed slot directly beneath the tab row -- inline panel content, never a popover/menu.
-		&__submenu {
-			display: flex;
-			flex-direction: column;
-			gap: 1px;
-			margin-top: calc($x-space-xs / 2);
-		}
-
-		// Sits between the tabs and the activeKind submenu, not inside either - visually set off
-		// with a divider so it reads as "about the PARENT", not another tab-specific option.
-		&__parent-position {
-			display: flex;
-			flex-direction: column;
-			gap: 1px;
-			margin-top: calc($x-space-xs / 2);
-			padding-top: calc($x-space-xs / 2);
-			border-top: 1px solid var(--color-panel-header-border);
-		}
-
-		&__row {
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			padding-inline: $x-space-sm;
-			padding-block: calc($x-space-xs / 2);
-			font-size: $x-font-size-sm;
-		}
-
-		&__row-label {
-			opacity: 0.75;
-		}
-
-		&__select {
-			background: var(--color-panel-header-fill);
-			border: none;
-			border-radius: 2px;
+		&:hover {
+			background: var(--color-surface-alt);
 			color: var(--color-text);
-			font-size: $x-font-size-xs;
-			padding: calc($x-space-xs / 2) $x-space-xs;
-			cursor: pointer;
 		}
+
+		&--sel,
+		&--sel:hover {
+			background: var(--color-primary);
+			color: var(--color-pure);
+		}
+
+		// The 2x2 Grid cell: icon above label, roomier icon -- it has two rows of height.
+		&--big {
+			flex-direction: column;
+			gap: calc($x-space-xs / 2);
+
+			i {
+				font-size: $x-font-size-md;
+			}
+		}
+	}
+
+	// Fixed slot directly beneath the tab row -- inline panel content, never a popover/menu.
+	.arrange-field__submenu {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		margin-top: calc($x-space-xs / 2);
+	}
+
+	// Sits between the tabs and the activeKind submenu, not inside either - visually set off
+	// with a divider so it reads as "about the PARENT", not another tab-specific option.
+	.arrange-field__parent-position {
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		margin-top: calc($x-space-xs / 2);
+		padding-top: calc($x-space-xs / 2);
+		border-top: 1px solid var(--color-panel-header-border);
+	}
+
+	.arrange-field__row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-block: calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+	}
+
+	.arrange-field__row-label {
+		opacity: 0.75;
+	}
+
+	.arrange-field__select {
+		background: var(--color-panel-header-fill);
+		border: none;
+		border-radius: 2px;
+		color: var(--color-text);
+		font-size: $x-font-size-xs;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		cursor: pointer;
 	}
 
 	.arrange-seg {

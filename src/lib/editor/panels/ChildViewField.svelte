@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { layerDotColor } from './layer-color.ts';
+	import FieldRow from './FieldRow.svelte';
 	import { clampToViewport } from '$lib/components/contextMenuStore.js';
 	import type { Api } from 'manager';
 	import type { FieldUpdate } from '$lib/plugins/types.js';
@@ -26,10 +26,8 @@
 		kitIcon?: string;
 		keys?: string[];
 		conditionValues?: { axisId: string; value: string }[];
-		tokenId?: string | null;
 		childRefs?: ChildViewRef[];
 		candidateViews?: ChildViewCandidate[];
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		api?: Api;
 		projectId?: string | null;
@@ -46,10 +44,8 @@
 		kitIcon = 'fa-circle',
 		keys = [],
 		conditionValues = [],
-		tokenId,
 		childRefs = [],
 		candidateViews = [],
-		position = 'mid',
 		axisNameById = {},
 		api,
 		projectId,
@@ -57,18 +53,6 @@
 		onFieldUpdate,
 		onSelectView
 	}: ChildViewFieldProps = $props();
-
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions
-			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
-			.join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
 
 	// Unlike an ordinary style property, `children` is inherently per-view-instance data -- two
 	// views composing the same kit essentially always want their own distinct child list, which
@@ -172,97 +156,86 @@
 
 <svelte:window onclick={handleWindowClick} onresize={() => open && positionPanel()} />
 
-<div
-	class="child-field"
-	class:child-field--top={position === 'top'}
-	class:child-field--bottom={position === 'bottom'}
+<FieldRow
+	label={displayText ?? key}
+	track={{ kitIcon, keys, conditionValues }}
+	{axisNameById}
+	trackEmpty={childRefs.length === 0}
+	trackAriaLabel="View-scoped token"
 >
-	<!-- Header row: the property label + the layer/scope track dot, mirroring a StyleField's
-	     label + track so `children` reads as the same kind of field, just one that expands into
-	     per-view rows below instead of a single value box. -->
-	<div class="child-field__header">
-		<button
-			class="child-field__track"
-			style="--track-color: {trackColor(keys)}"
-			class:child-field__track--empty={childRefs.length === 0}
-			aria-label="View-scoped token"
-			title={trackTitle(conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {kitIcon}"></i>
-		</button>
-		<span class="child-field__label">{displayText ?? key}</span>
-		<span class="child-field__count">{childRefs.length || ''}</span>
-	</div>
+	{#snippet valueSlot()}
+		<span class="child-field__count">{childRefs.length || 'none'}</span>
+	{/snippet}
 
-	<!-- One row per referenced child view (name + remove), then a `+` add row. Empty state is
-	     just the `+` row under the header. -->
-	<ul class="child-field__list">
-		{#each childRows as row (row.tokenId)}
-			<li class="child-field__row">
-				<button
-					type="button"
-					class="child-field__select"
-					title="Go to {row.name}"
-					disabled={!onSelectView || row.name === '?'}
-					onclick={() => onSelectView?.(row.id)}
-				>
-					<i class="fa-regular fa-window-maximize child-field__row-icon"></i>
-					<span
-						class="child-field__row-name"
-						class:child-field__row-name--missing={row.name === '?'}>{row.name}</span
+	{#snippet body()}
+		<!-- One row per referenced child view (name + remove), then a `+` add row. -->
+		<ul class="child-field__list">
+			{#each childRows as row (row.tokenId)}
+				<li class="child-field__row">
+					<button
+						type="button"
+						class="child-field__select"
+						title="Go to {row.name}"
+						disabled={!onSelectView || row.name === '?'}
+						onclick={() => onSelectView?.(row.id)}
 					>
-				</button>
+						<i class="fa-regular fa-window-maximize child-field__row-icon"></i>
+						<span
+							class="child-field__row-name"
+							class:child-field__row-name--missing={row.name === '?'}>{row.name}</span
+						>
+					</button>
+					<button
+						type="button"
+						class="child-field__remove"
+						aria-label="Remove {row.name}"
+						title="Remove"
+						onclick={() => removeChild(row)}
+					>
+						<i class="fa-solid fa-xmark"></i>
+					</button>
+				</li>
+			{/each}
+
+			<li class="child-field__add-row">
 				<button
 					type="button"
-					class="child-field__remove"
-					aria-label="Remove {row.name}"
-					title="Remove"
-					onclick={() => removeChild(row)}
+					class="child-field__add"
+					bind:this={triggerRef}
+					onclick={openPicker}
 				>
-					<i class="fa-solid fa-xmark"></i>
+					<i class="fa-solid fa-plus"></i>
+					<span>Add view</span>
 				</button>
 			</li>
-		{/each}
+		</ul>
 
-		<li class="child-field__add-row">
-			<button
-				type="button"
-				class="child-field__add"
-				bind:this={triggerRef}
-				onclick={openPicker}
-			>
-				<i class="fa-solid fa-plus"></i>
-				<span>Add view</span>
-			</button>
-		</li>
-	</ul>
-
-	{#if open}
-		<div class="child-view-panel" style={panelStyle} bind:this={panelRef}>
-			{#if addableViews.length === 0}
-				<div class="child-view-panel__status">
-					{candidateViews.length === 0 ? 'No other views in this project' : 'All views already added'}
-				</div>
-			{:else}
-				<ul class="child-view-panel__list">
-					{#each addableViews as candidate (candidate.viewId)}
-						<li>
-							<button
-								type="button"
-								class="child-view-panel__row"
-								onclick={() => addChild(candidate.viewId)}
-							>
-								<i class="fa-solid fa-plus child-view-panel__add-icon"></i>
-								<span class="child-view-panel__name">{candidate.viewName}</span>
-							</button>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	{/if}
-</div>
+		{#if open}
+			<div class="child-view-panel" style={panelStyle} bind:this={panelRef}>
+				{#if addableViews.length === 0}
+					<div class="child-view-panel__status">
+						{candidateViews.length === 0 ? 'No other views in this project' : 'All views already added'}
+					</div>
+				{:else}
+					<ul class="child-view-panel__list">
+						{#each addableViews as candidate (candidate.viewId)}
+							<li>
+								<button
+									type="button"
+									class="child-view-panel__row"
+									onclick={() => addChild(candidate.viewId)}
+								>
+									<i class="fa-solid fa-plus child-view-panel__add-icon"></i>
+									<span class="child-view-panel__name">{candidate.viewName}</span>
+								</button>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		{/if}
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -271,151 +244,104 @@
 		all: unset;
 	}
 
-	.child-field {
+	.child-field__count {
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
+
+	.child-field__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
 		display: flex;
 		flex-direction: column;
-		user-select: none;
-		position: relative;
-		padding-block: calc($x-space-xs / 2);
+		gap: 1px;
+	}
 
-		@include layout-respond('md') {
-			font-size: $x-font-size-sm;
-			letter-spacing: 1px;
+	.child-field__row {
+		display: flex;
+		align-items: center;
+		border-radius: 1px;
+		background: var(--color-panel-header-fill);
+		font-size: $x-font-size-sm;
+
+		&:hover {
+			background: var(--color-surface-alt);
+		}
+	}
+
+	// The name is a button that navigates the editor to that child view (onSelectView).
+	.child-field__select {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		flex: 1;
+		min-width: 0;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		cursor: pointer;
+		text-align: left;
+		color: var(--color-text);
+
+		&:disabled {
+			cursor: default;
 		}
 
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
+		&:hover:not(:disabled) {
+			color: var(--color-primary);
 		}
+	}
 
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
+	.child-field__row-icon {
+		flex: 0 0 auto;
+		font-size: $x-font-size-xs;
+		opacity: 0.6;
+	}
 
-			&--empty {
-				color: var(--color-surface-alt);
-			}
-		}
+	.child-field__row-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 
-		&__label {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			text-transform: capitalize;
-		}
-
-		&__count {
-			flex: 0 0 auto;
-			font-size: $x-font-size-sm;
-			opacity: 0.6;
-		}
-
-		&__list {
-			list-style: none;
-			margin: 0;
-			padding: 0;
-			display: flex;
-			flex-direction: column;
-			// The rows are indented past the header's track dot so they read as nested under the
-			// "Children" label, one line per referenced view (see project-view-array-display-revamp).
-			padding-left: calc($x-space-sm + $x-space-md);
-			padding-right: $x-space-sm;
-			margin-top: calc($x-space-xs / 2);
-			gap: 1px;
-		}
-
-		&__row {
-			display: flex;
-			align-items: center;
-			border-radius: 1px;
-			background: var(--color-panel-header-fill);
-			font-size: $x-font-size-sm;
-
-			&:hover {
-				background: var(--color-surface-alt);
-			}
-		}
-
-		// The name is a button that navigates the editor to that child view (onSelectView).
-		&__select {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			flex: 1;
-			min-width: 0;
-			padding: calc($x-space-xs / 2) $x-space-xs;
-			cursor: pointer;
-			text-align: left;
-			color: var(--color-text);
-
-			&:disabled {
-				cursor: default;
-			}
-
-			&:hover:not(:disabled) {
-				color: var(--color-primary);
-			}
-		}
-
-		&__row-icon {
-			flex: 0 0 auto;
-			font-size: $x-font-size-xs;
-			opacity: 0.6;
-		}
-
-		&__row-name {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-
-			&--missing {
-				opacity: 0.5;
-				font-style: italic;
-			}
-		}
-
-		&__remove {
-			flex: 0 0 auto;
-			cursor: pointer;
-			padding-inline: calc($x-space-xs / 2);
+		&--missing {
 			opacity: 0.5;
+			font-style: italic;
+		}
+	}
+
+	.child-field__remove {
+		flex: 0 0 auto;
+		cursor: pointer;
+		padding-inline: calc($x-space-xs / 2);
+		opacity: 0.5;
+		color: var(--color-text);
+
+		&:hover {
+			opacity: 1;
+			color: var(--color-danger, var(--color-text));
+		}
+	}
+
+	.child-field__add-row {
+		display: flex;
+	}
+
+	.child-field__add {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		width: 100%;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		cursor: pointer;
+		border-radius: 1px;
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+		border: 1px dashed var(--color-panel-header-border);
+
+		&:hover {
+			background: var(--color-surface-alt);
 			color: var(--color-text);
-
-			&:hover {
-				opacity: 1;
-				color: var(--color-danger, var(--color-text));
-			}
-		}
-
-		&__add-row {
-			display: flex;
-		}
-
-		&__add {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			width: 100%;
-			padding: calc($x-space-xs / 2) $x-space-xs;
-			cursor: pointer;
-			border-radius: 1px;
-			font-size: $x-font-size-sm;
-			color: var(--color-add-var-text);
-			border: 1px dashed var(--color-panel-header-border);
-
-			&:hover {
-				background: var(--color-surface-alt);
-				color: var(--color-text);
-			}
 		}
 	}
 

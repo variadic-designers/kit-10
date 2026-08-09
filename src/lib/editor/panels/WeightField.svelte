@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { layerDotColor } from './layer-color.ts';
+	import FieldRow from './FieldRow.svelte';
 	import { factsForFamily, resolveFontWeight } from '$lib/plugins/font-weight.js';
-	import { dropZone } from '../dnd.svelte.ts';
 	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
-	import TokenBadge from './TokenBadge.svelte';
 	import type { FamilyFacts, FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 	import type { Api, ResolvedProperty } from 'manager';
 
@@ -22,7 +20,6 @@
 
 	type WeightFieldProps = {
 		field: FieldDef;
-		position?: 'top' | 'bottom' | 'mid';
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
 		// family -> weight ranges, from Editor.svelte's font-facts channel (see CLAUDE.md's
@@ -33,15 +30,8 @@
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
-	let {
-		field,
-		position = 'mid',
-		track,
-		resolvedMap,
-		fontFacts = {},
-		api,
-		onFieldUpdate
-	}: WeightFieldProps = $props();
+	let { field, track, resolvedMap, fontFacts = {}, api, onFieldUpdate }: WeightFieldProps =
+		$props();
 
 	const info = $derived(track(field.key));
 
@@ -89,16 +79,6 @@
 		);
 	});
 
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions.map((c) => `${c.axisId}: ${c.value}`).join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
-
 	function selectWeight(weight: number) {
 		// Compare against what's on screen: clicking the already-rendered weight is a no-op even
 		// when the raw stored value differs (e.g. stored 600 rendering as 700 -- clicking 700
@@ -127,46 +107,38 @@
 	}
 </script>
 
-<div
-	class="weight-field"
-	class:weight-field--top={position === 'top'}
-	class:weight-field--bottom={position === 'bottom'}
+<FieldRow
+	label={field.displayText ?? field.key}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	isToken={info.isToken}
+	tokenAlias={info.tokenAlias}
+	tokenValue={resolvedMap.get(field.key)?.value ?? null}
+	onDetachToken={detach}
+	canDropToken={canDropWeightToken}
+	onDropToken={handleWeightTokenDrop}
 >
-	<div
-		class="weight-field__header"
-		use:dropZone={{ accepts: 'token', canDrop: canDropWeightToken, onDrop: handleWeightTokenDrop }}
-	>
-		<span class="weight-field__label">{field.displayText ?? field.key}</span>
-		{#if info.isToken}
-			<TokenBadge alias={info.tokenAlias} value={resolvedMap.get(field.key)?.value ?? null} onDetach={detach} />
-		{/if}
-		<button
-			class="weight-field__track"
-			style="--track-color: {trackColor(track(field.key).keys)}"
-			aria-label="Weight source"
-			title={trackTitle(track(field.key).conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-	</div>
+	{#snippet valueSlot()}
+		<span class="weight-field__current">{displayWeight}</span>
+	{/snippet}
 
-	<div class="weight-field__options" role="group" aria-label="Font weight">
-		{#each availableWeights as opt (opt.weight)}
-			<button
-				type="button"
-				class="weight-field__btn"
-				class:weight-field__btn--sel={displayWeight === opt.weight}
-				title={displayWeight === opt.weight && currentWeight !== opt.weight
-					? `${opt.label} (${opt.weight}) - ${currentFamily} has no ${currentWeight}, showing nearest`
-					: `${opt.label} (${opt.weight})`}
-				onclick={() => selectWeight(opt.weight)}
-			>
-				{opt.weight}
-			</button>
-		{/each}
-	</div>
-</div>
+	{#snippet body()}
+		<div class="weight-field__options" role="group" aria-label="Font weight">
+			{#each availableWeights as opt (opt.weight)}
+				<button
+					type="button"
+					class="weight-field__btn"
+					class:weight-field__btn--sel={displayWeight === opt.weight}
+					title={displayWeight === opt.weight && currentWeight !== opt.weight
+						? `${opt.label} (${opt.weight}) - ${currentFamily} has no ${currentWeight}, showing nearest`
+						: `${opt.label} (${opt.weight})`}
+					onclick={() => selectWeight(opt.weight)}
+				>
+					{opt.weight}
+				</button>
+			{/each}
+		</div>
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -175,78 +147,43 @@
 		all: unset;
 	}
 
-	.weight-field {
+	.weight-field__current {
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
+
+	// A wrapping row, not a fixed grid -- the option count varies with the resolved family's
+	// facts (a static two-weight family shows 2 buttons, a full variable family shows 9). The row
+	// itself carries the shared padding-block rhythm; only the chips' own horizontal gap remains
+	// a `gap` (that's inline spacing between chips, not vertical row-to-row rhythm).
+	.weight-field__options {
 		display: flex;
-		flex-direction: column;
-		user-select: none;
-		padding-block: calc($x-space-xs / 2);
+		flex-wrap: wrap;
+		gap: 2px;
+		padding-block: $x-space-xs;
+	}
 
-		@include layout-respond('md') {
-			font-size: $x-font-size-sm;
-			letter-spacing: 1px;
+	.weight-field__btn {
+		cursor: pointer;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 2.4em;
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		border-radius: 2px;
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+		background: var(--color-panel-header-fill);
+
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
 		}
 
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
-
-			&:global(.dnd-over) {
-				outline: 1px dashed var(--color-primary);
-				outline-offset: -1px;
-			}
-		}
-
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
-		}
-
-		&__label {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			text-transform: capitalize;
-		}
-
-		// A wrapping row, not a fixed grid -- the option count varies with the resolved family's
-		// facts (a static two-weight family shows 2 buttons, a full variable family shows 9).
-		&__options {
-			display: flex;
-			flex-wrap: wrap;
-			gap: 2px;
-			padding-inline: $x-space-sm;
-			margin-top: calc($x-space-xs / 2);
-		}
-
-		&__btn {
-			cursor: pointer;
-			display: inline-flex;
-			align-items: center;
-			justify-content: center;
-			min-width: 2.4em;
-			padding: calc($x-space-xs / 2) $x-space-xs;
-			border-radius: 2px;
-			font-size: $x-font-size-xs;
-			color: var(--color-add-var-text);
-			background: var(--color-panel-header-fill);
-
-			&:hover {
-				background: var(--color-surface-alt);
-				color: var(--color-text);
-			}
-
-			&--sel,
-			&--sel:hover {
-				background: var(--color-primary);
-				color: var(--color-pure);
-			}
+		&--sel,
+		&--sel:hover {
+			background: var(--color-primary);
+			color: var(--color-pure);
 		}
 	}
 </style>

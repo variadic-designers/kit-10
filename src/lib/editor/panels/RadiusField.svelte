@@ -1,6 +1,6 @@
 <script lang="ts">
+	import FieldRow from './FieldRow.svelte';
 	import { commitFieldValue } from './field-commit.ts';
-	import { layerDotColor } from './layer-color.ts';
 	import type { Api, ResolvedProperty } from 'manager';
 	import type { FieldDef, FieldUpdate, RadiusKeys } from '$lib/plugins/types.js';
 
@@ -20,7 +20,6 @@
 
 	type RadiusFieldProps = {
 		field: FieldDef; // must carry a populated radiusKeys (see box_categories' border-radius field)
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
@@ -31,23 +30,12 @@
 	let { field, axisNameById = {}, track, resolvedMap, api, onFieldUpdate }: RadiusFieldProps =
 		$props();
 
+	const info = $derived(track(field.key));
 	const radiusKeys = $derived(field.radiusKeys as RadiusKeys);
 	const RADIUS_STEP = 2;
 
 	const radiusValue = $derived(parseFloat(resolvedMap.get(field.key)?.value ?? '0') || 0);
 	const isSquircle = $derived(resolvedMap.get(radiusKeys.squircle.key)?.value === '1');
-
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions
-			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
-			.join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
 
 	function nudgeRadius(delta: number) {
 		const next = Math.max(0, radiusValue + delta);
@@ -64,53 +52,55 @@
 	}
 </script>
 
-<div class="radius-field">
-	<div class="radius-field__header">
-		<span class="radius-field__label">{field.displayText ?? field.key}</span>
-		<button
-			class="radius-field__track"
-			style="--track-color: {trackColor(track(field.key).keys)}"
-			aria-label="Radius source"
-			title={trackTitle(track(field.key).conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-	</div>
+<FieldRow
+	label={field.displayText ?? field.key}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	{axisNameById}
+	trackAriaLabel="Radius source"
+>
+	{#snippet valueSlot()}
+		<span class="radius-field__current">
+			{radiusValue}px
+			<i class="fa-solid {isSquircle ? 'fa-shapes' : 'fa-square-full'}" title={isSquircle ? 'Squircle' : 'Circular'}
+			></i>
+		</span>
+	{/snippet}
 
-	<div class="radius-field__row">
-		<div class="radius-stepper">
+	{#snippet body()}
+		<div class="radius-field__row">
+			<div class="radius-stepper">
+				<button
+					type="button"
+					class="radius-stepper__btn"
+					title="Decrease"
+					onclick={() => nudgeRadius(-RADIUS_STEP)}
+				>
+					<i class="fa-solid fa-minus"></i>
+				</button>
+				<span class="radius-stepper__value">{radiusValue}</span>
+				<button
+					type="button"
+					class="radius-stepper__btn"
+					title="Increase"
+					onclick={() => nudgeRadius(RADIUS_STEP)}
+				>
+					<i class="fa-solid fa-plus"></i>
+				</button>
+			</div>
+
 			<button
 				type="button"
-				class="radius-stepper__btn"
-				title="Decrease"
-				onclick={() => nudgeRadius(-RADIUS_STEP)}
+				class="radius-toggle"
+				class:radius-toggle--sel={isSquircle}
+				title={isSquircle ? 'Squircle corners (click for circular)' : 'Circular corners (click for squircle)'}
+				aria-pressed={isSquircle}
+				onclick={toggleSquircle}
 			>
-				<i class="fa-solid fa-minus"></i>
-			</button>
-			<span class="radius-stepper__value">{radiusValue}</span>
-			<button
-				type="button"
-				class="radius-stepper__btn"
-				title="Increase"
-				onclick={() => nudgeRadius(RADIUS_STEP)}
-			>
-				<i class="fa-solid fa-plus"></i>
+				<i class="fa-solid {isSquircle ? 'fa-shapes' : 'fa-square-full'}"></i>
 			</button>
 		</div>
-
-		<button
-			type="button"
-			class="radius-toggle"
-			class:radius-toggle--sel={isSquircle}
-			title={isSquircle ? 'Squircle corners (click for circular)' : 'Circular corners (click for squircle)'}
-			aria-pressed={isSquircle}
-			onclick={toggleSquircle}
-		>
-			<i class="fa-solid {isSquircle ? 'fa-shapes' : 'fa-square-full'}"></i>
-		</button>
-	</div>
-</div>
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -120,42 +110,19 @@
 		cursor: pointer;
 	}
 
-	.radius-field {
-		display: flex;
-		flex-direction: column;
+	.radius-field__current {
+		display: inline-flex;
+		align-items: center;
 		gap: calc($x-space-xs / 2);
-		padding-block: calc($x-space-xs / 2);
+		font-size: $x-font-size-sm;
+		color: var(--color-add-var-text);
+	}
 
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
-		}
-
-		&__label {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			text-transform: capitalize;
-		}
-
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
-		}
-
-		&__row {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-		}
+	.radius-field__row {
+		display: flex;
+		align-items: center;
+		gap: $x-space-xs;
+		padding-block: $x-space-xs;
 	}
 
 	.radius-stepper {

@@ -2381,7 +2381,11 @@ fn text_categories() -> Vec<FieldCategory> {
         FieldCategory {
             name: "text".to_string(),
             fields: vec![
-                FieldDef::new("content", Some("Content")),
+                // "text" gets Content a real multiline body in the Render panel (StyleField) -
+                // collapsed shows the token alias when bound, or a truncated single line
+                // otherwise; expanded reveals a textarea. Every other bare/no-inputType field
+                // stays the plain single-line default; this is the one deliberately opted in.
+                FieldDef::new("content", Some("Content")).with_input_type("text"),
                 FieldDef::new("color", Some("Fill")).with_input_type("color"),
                 FieldDef::new("font-family", Some("Family")).with_input_type("font"),
                 FieldDef::new("font-size", Some("Size")),

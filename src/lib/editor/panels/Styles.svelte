@@ -234,8 +234,8 @@
 	// (the same track dot the render rows use to show which layer a value comes from) paints it onto
 	// the current target. Delegated + capture-phase so one handler covers every field component's own
 	// track without editing each; a plain click with nothing held falls through to normal editing.
-	const TRACK_SELECTOR =
-		'.option124__track, .weight-field__track, .color-field__track, .arrange-field__track';
+	// Every field row shares FieldRow's one track-dot implementation now, so this is a single class.
+	const TRACK_SELECTOR = '.field-row__track';
 	function fieldClick(e: MouseEvent) {
 		const el = e.target as HTMLElement;
 		const slot = el.closest('.field-slot') as HTMLElement | null;
@@ -341,7 +341,7 @@
 
 						<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 						<div class="style-section__content" onclickcapture={fieldClick}>
-							{#each fields as field, i}
+							{#each fields as field}
 								<div
 									class="field-slot"
 									class:field-slot--paintable={!!held && held.ready}
@@ -355,7 +355,6 @@
 										key={field.key}
 										childRefs={resolvedMap.get(field.key)?.viewRefs ?? []}
 										{candidateViews}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										{api}
 										projectId={activeProjectId}
@@ -366,7 +365,6 @@
 								{:else if field.inputType === 'arrange'}
 									<ArrangeField
 										{field}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										{track}
 										{resolvedMap}
@@ -379,7 +377,6 @@
 								{:else if field.inputType === 'resize' && field.resizeKeys}
 									<ResizeField
 										{field}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										{track}
 										{resolvedMap}
@@ -391,7 +388,6 @@
 								{:else if field.inputType === 'radius' && field.radiusKeys}
 									<RadiusField
 										{field}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										{track}
 										{resolvedMap}
@@ -410,7 +406,6 @@
 								{:else if field.inputType === 'weight'}
 									<WeightField
 										{field}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{track}
 										{resolvedMap}
 										{fontFacts}
@@ -420,7 +415,6 @@
 								{:else if field.inputType === 'color'}
 									<ColorField
 										{field}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{track}
 										{resolvedMap}
 										{api}
@@ -432,7 +426,6 @@
 										displayText={field.displayText ?? field.key}
 										key={field.key}
 										value={resolvedMap.get(field.key)?.value}
-										position={i === 0 ? 'top' : i === fields.length - 1 ? 'bottom' : 'mid'}
 										{axisNameById}
 										inputType={field.inputType}
 										spacingMode={field.spacingMode}
@@ -534,10 +527,9 @@
 
 		// While a layer is held, the property's track shape becomes the paint target: it glows in the
 		// held layer's color and takes a crosshair, so the same dot that indicates a value's source
-		// layer is what you click to move the value onto the held one. Track classes live inside child
-		// field components, hence :global().
-		&--paintable
-			:global(:is(.option124__track, .weight-field__track, .color-field__track, .arrange-field__track)) {
+		// layer is what you click to move the value onto the held one. FieldRow owns the one shared
+		// track-dot implementation now, hence :global().
+		&--paintable :global(.field-row__track) {
 			cursor: crosshair;
 			outline: 2px solid color-mix(in oklch, var(--held) 55%, transparent);
 			outline-offset: 1px;
@@ -545,8 +537,7 @@
 			transition: scale 120ms ease-out;
 		}
 
-		&--paintable
-			:global(:is(.option124__track, .weight-field__track, .color-field__track, .arrange-field__track)):hover {
+		&--paintable :global(.field-row__track):hover {
 			outline-color: var(--held);
 			background: color-mix(in oklch, var(--held) 22%, transparent);
 			scale: 1.2;

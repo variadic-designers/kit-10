@@ -1,11 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
-	import { layerDotColor } from './layer-color.ts';
+	import FieldRow from './FieldRow.svelte';
 	import SuggestField from '$lib/components/SuggestField.svelte';
-	import TokenBadge from './TokenBadge.svelte';
 	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
-	import { dropZone } from '../dnd.svelte.ts';
 	import { getVellumInstance, requestVellumRender } from '../vellum-instance.js';
 	import { assetRegister } from '../assetStore.ts';
 	import type { Api } from 'manager';
@@ -24,7 +22,6 @@
 		tokenId?: string | null;
 		value?: string | null;
 		highlighted?: boolean;
-		position?: 'top' | 'bottom' | 'mid';
 		axisNameById?: Record<string, string>;
 		inputType?: InputType;
 		suggestionsFrom?: SuggestionSource;
@@ -60,7 +57,6 @@
 		tokenId,
 		value,
 		highlighted = $bindable(false),
-		position = 'mid',
 		axisNameById = {},
 		inputType,
 		suggestionsFrom,
@@ -125,23 +121,6 @@
 		];
 	};
 
-	// Matches the Axes panel's layer-combo coloring: same axis key-set, same hue. A property is
-	// always shown here as the currently winning value, so it's always "active".
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	// Describes which Layer this property is sourced from - same axis key-set the Axes panel's
-	// combo dot for this Layer would show, with the actual matched value per axis (not just which
-	// axes), so hovering here tells you exactly what to go look for there.
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions
-			.map((c) => `${axisNameById[c.axisId] ?? c.axisId}: ${c.value}`)
-			.join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
-
 	const editValue = $state({
 		now: false,
 		content: ''
@@ -165,6 +144,22 @@
 		editValue.now = false;
 		editValue.content = '';
 	}
+
+	// --- Multiline text (inputType === 'text', e.g. Content): the value box expands into a real
+	// textarea instead of a single-line edit-in-place input. Drives FieldRow's own expand/collapse
+	// (bound below); reuses editValue as the edit buffer so the commit path (confirmUpdateStyle)
+	// stays the same one every other inputType already uses.
+	let textExpanded = $state(false);
+
+	$effect(() => {
+		if (inputType !== 'text') return;
+		if (textExpanded) {
+			editValue.now = true;
+			editValue.content = value ?? '';
+		} else {
+			editValue.now = false;
+		}
+	});
 
 	// Same inline-edit-input pattern as editValue above, but prompts for an alias instead of a
 	// value: the property's current `value` becomes the new project-scoped token's value, and the
@@ -445,281 +440,253 @@
 	}
 </script>
 
-<div
-	class="option124"
-	class:option124--top={position === 'top'}
-	class:option124--bottom={position === 'bottom'}
-	class:option124--mid={position !== 'top' && position !== 'bottom'}
-	class:option124--token={isToken}
-	use:dropZone={{ accepts: 'token', canDrop: canDropToken, onDrop: handleTokenDrop }}
->
-	<button
-		class="option124__style-name"
-		class:option124__style-name--highlighted={highlighted}
-		use:contextMenu={menu}
-		title={labelTooltip}
-		onclick={() => {
-			highlighted = !highlighted;
+{#snippet textBody()}
+	<textarea
+		class="style-textarea"
+		bind:value={editValue.content}
+		placeholder="Add value"
+		rows="4"
+		onblur={() => confirmUpdateStyle()}
+		onkeydown={(e: KeyboardEvent) => {
+			if (e.key === 'Escape') {
+				cancelEditing();
+				textExpanded = false;
+			}
 		}}
-		draggable={highlighted}
-	>
-		{displayText ?? key}
-	</button>
+	></textarea>
+{/snippet}
 
-	{#if isToken}
+<FieldRow
+	label={displayText ?? key}
+	track={{ kitIcon, keys, conditionValues }}
+	{axisNameById}
+	trackEmpty={!isToken && !value}
+	isToken={!!isToken && !tokenizeState.now}
+	tokenAlias={tokenAlias ?? null}
+	tokenValue={value ?? null}
+	onDetachToken={detach}
+	{canDropToken}
+	onDropToken={handleTokenDrop}
+	body={inputType === 'text' ? textBody : undefined}
+	bind:expanded={textExpanded}
+>
+	{#snippet labelSnippet()}
 		<button
-			class="option124__track"
-			style="--track-color: {trackColor(keys)}"
-			aria-label="Tokenized property"
-			title={trackTitle(conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {kitIcon}"></i>
-		</button>
-	{:else}
-		<button
-			class="option124__track"
-			style="--track-color: {trackColor(keys)}"
-			class:option124__track--empty={!value}
-			aria-label="Literal property"
-			title={trackTitle(conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {kitIcon}"></i>
-		</button>
-	{/if}
-
-	<!-- One shared token badge for EVERY inputType (spacing/resize/align/decoration/plain/...),
-	     not just the plain fallback branch below -- so a token-backed value reads as a token no
-	     matter which widget renders it. Hidden mid-tokenize (isToken is false while converting a
-	     literal). -->
-	{#if isToken && !tokenizeState.now}
-		<TokenBadge alias={tokenAlias ?? null} value={value ?? null} onDetach={detach} />
-	{/if}
-
-	{#if tokenizeState.now}
-		<input
-			type="text"
-			title="Token alias"
-			bind:this={tokenizeInputRef}
-			bind:value={tokenizeState.alias}
-			placeholder="alias"
-			class="option124__value option124__value--edit"
-			onblur={() => cancelTokenizing()}
-			onkeydown={(e: KeyboardEvent) => {
-				if (e.key === 'Enter') {
-					confirmTokenize();
-				} else if (e.key === 'Escape') {
-					cancelTokenizing();
-				}
+			class="style-label"
+			class:style-label--highlighted={highlighted}
+			use:contextMenu={menu}
+			title={labelTooltip}
+			onclick={() => {
+				highlighted = !highlighted;
 			}}
-		/>
-	{:else if inputType === 'resize'}
-		<div class="option124__value option124__value--resize">
-			<div class="seg-control" role="group" aria-label="Resizing mode">
-				<button
-					type="button"
-					class="seg-control__btn"
-					class:seg-control__btn--sel={resizeMode === 'fixed'}
-					title="Fixed size"
-					onclick={() => selectFixed()}
-				>
-					<i class="fa-solid fa-ruler"></i>
-				</button>
-				<button
-					type="button"
-					class="seg-control__btn"
-					class:seg-control__btn--sel={resizeMode === 'hug'}
-					title="Hug contents"
-					onclick={() => writeValue('hug')}
-				>
-					<i class="fa-solid fa-compress"></i>
-				</button>
-				<button
-					type="button"
-					class="seg-control__btn"
-					class:seg-control__btn--sel={resizeMode === 'fill'}
-					title="Fill container"
-					onclick={() => writeValue('fill')}
-				>
-					<i class="fa-solid fa-arrows-left-right-to-line"></i>
-				</button>
-			</div>
-			{#if resizeMode === 'fixed' || editValue.now}
-				{#if editValue.now}
-					<input
-						type="text"
-						title="Fixed size (e.g. 200px or 50%)"
-						bind:this={inputRef}
-						bind:value={editValue.content}
-						placeholder={value ?? '200px'}
-						class="resize-fixed"
-						onblur={() => cancelEditing()}
-						onkeydown={(e: KeyboardEvent) => {
-							if (e.key === 'Enter') {
-								confirmUpdateStyle();
-							} else if (e.key === 'Escape') {
-								cancelEditing();
-							}
-						}}
-					/>
-				{:else}
-					<button class="resize-fixed" type="button" onclick={() => startEditing()}>
-						{value}
-					</button>
-				{/if}
-			{/if}
-		</div>
-	{:else if inputType === 'align'}
-		<div class="option124__value option124__value--resize">
-			<div class="seg-control" role="group" aria-label="Text align">
-				{#each [{ v: 'left', icon: 'fa-align-left', title: 'Left' }, { v: 'center', icon: 'fa-align-center', title: 'Center' }, { v: 'right', icon: 'fa-align-right', title: 'Right' }, { v: 'justify', icon: 'fa-align-justify', title: 'Justify' }] as opt (opt.v)}
+			draggable={highlighted}
+		>
+			{displayText ?? key}
+		</button>
+	{/snippet}
+
+	{#snippet valueSlot()}
+		{#if tokenizeState.now}
+			<input
+				type="text"
+				title="Token alias"
+				bind:this={tokenizeInputRef}
+				bind:value={tokenizeState.alias}
+				placeholder="alias"
+				class="style-value style-value--edit"
+				onblur={() => cancelTokenizing()}
+				onkeydown={(e: KeyboardEvent) => {
+					if (e.key === 'Enter') {
+						confirmTokenize();
+					} else if (e.key === 'Escape') {
+						cancelTokenizing();
+					}
+				}}
+			/>
+		{:else if inputType === 'text'}
+			<!-- Collapsed preview only - editing happens in the expanded textarea (textBody). A
+			     token-backed value shows the variable name here (short, and TokenBadge already
+			     names it in the header) rather than repeating the potentially-long raw text,
+			     which used to crowd the label out entirely on a long value. -->
+			<span class="style-value style-value--preview">
+				{isToken ? (tokenAlias ?? 'token') : value || 'Add value'}
+			</span>
+		{:else if inputType === 'resize'}
+			<div class="style-value style-value--resize">
+				<div class="seg-control" role="group" aria-label="Resizing mode">
 					<button
 						type="button"
 						class="seg-control__btn"
-						class:seg-control__btn--sel={(value ?? 'left') === opt.v}
-						title={opt.title}
-						onclick={() => writeValue(opt.v)}
+						class:seg-control__btn--sel={resizeMode === 'fixed'}
+						title="Fixed size"
+						onclick={() => selectFixed()}
 					>
-						<i class="fa-solid {opt.icon}"></i>
+						<i class="fa-solid fa-ruler"></i>
 					</button>
-				{/each}
-			</div>
-		</div>
-	{:else if inputType === 'decoration'}
-		<div class="option124__value option124__value--resize">
-			<div class="seg-control" role="group" aria-label="Text decoration">
-				{#each [{ v: 'none', icon: 'fa-slash', title: 'None' }, { v: 'underline', icon: 'fa-underline', title: 'Underline' }, { v: 'line-through', icon: 'fa-strikethrough', title: 'Line-through' }] as opt (opt.v)}
 					<button
 						type="button"
 						class="seg-control__btn"
-						class:seg-control__btn--sel={(value ?? 'none') === opt.v}
-						title={opt.title}
-						onclick={() => writeValue(opt.v)}
+						class:seg-control__btn--sel={resizeMode === 'hug'}
+						title="Hug contents"
+						onclick={() => writeValue('hug')}
 					>
-						<i class="fa-solid {opt.icon}"></i>
+						<i class="fa-solid fa-compress"></i>
 					</button>
-				{/each}
-			</div>
-		</div>
-	{:else if inputType === 'spacing'}
-		{#snippet spacingStepper(slot: SpacingSlot, num: number)}
-			<div class="spacing-stepper">
-				<button
-					type="button"
-					class="spacing-stepper__btn"
-					title="Decrease"
-					onclick={() => nudgeSpacing(slot, -SPACING_STEP)}
-				>
-					<i class="fa-solid fa-minus"></i>
-				</button>
-				{#if spacingEditingSlot === slot}
-					<input
-						type="text"
-						inputmode="numeric"
-						bind:this={spacingInputRef}
-						bind:value={spacingEditContent}
-						class="spacing-stepper__value spacing-stepper__value--edit"
-						onblur={() => confirmEditingSpacingSlot()}
-						onkeydown={(e: KeyboardEvent) => {
-							if (e.key === 'Enter') {
-								confirmEditingSpacingSlot();
-							} else if (e.key === 'Escape') {
-								cancelEditingSpacingSlot();
-							}
-						}}
-					/>
-				{:else}
 					<button
 						type="button"
-						class="spacing-stepper__value"
-						onclick={() => startEditingSpacingSlot(slot)}
+						class="seg-control__btn"
+						class:seg-control__btn--sel={resizeMode === 'fill'}
+						title="Fill container"
+						onclick={() => writeValue('fill')}
 					>
-						{num}
+						<i class="fa-solid fa-arrows-left-right-to-line"></i>
 					</button>
+				</div>
+				{#if resizeMode === 'fixed' || editValue.now}
+					{#if editValue.now}
+						<input
+							type="text"
+							title="Fixed size (e.g. 200px or 50%)"
+							bind:this={inputRef}
+							bind:value={editValue.content}
+							placeholder={value ?? '200px'}
+							class="resize-fixed"
+							onblur={() => cancelEditing()}
+							onkeydown={(e: KeyboardEvent) => {
+								if (e.key === 'Enter') {
+									confirmUpdateStyle();
+								} else if (e.key === 'Escape') {
+									cancelEditing();
+								}
+							}}
+						/>
+					{:else}
+						<button class="resize-fixed" type="button" onclick={() => startEditing()}>
+							{value}
+						</button>
+					{/if}
 				{/if}
-				<button
-					type="button"
-					class="spacing-stepper__btn"
-					title="Increase"
-					onclick={() => nudgeSpacing(slot, SPACING_STEP)}
-				>
-					<i class="fa-solid fa-plus"></i>
-				</button>
 			</div>
-		{/snippet}
-		<div class="option124__value option124__value--spacing">
-			{#if spacingLevel === 4}
-				<div class="spacing-box" role="group" aria-label="{displayText} per side">
-					{#each spacingSides as [label, idx] (idx)}
-						<div class="spacing-box__side">
-							<span class="spacing-box__label">{label}</span>
-							{@render spacingStepper(idx, spacingTRBL[idx])}
-						</div>
+		{:else if inputType === 'align'}
+			<div class="style-value style-value--resize">
+				<div class="seg-control" role="group" aria-label="Text align">
+					{#each [{ v: 'left', icon: 'fa-align-left', title: 'Left' }, { v: 'center', icon: 'fa-align-center', title: 'Center' }, { v: 'right', icon: 'fa-align-right', title: 'Right' }, { v: 'justify', icon: 'fa-align-justify', title: 'Justify' }] as opt (opt.v)}
+						<button
+							type="button"
+							class="seg-control__btn"
+							class:seg-control__btn--sel={(value ?? 'left') === opt.v}
+							title={opt.title}
+							onclick={() => writeValue(opt.v)}
+						>
+							<i class="fa-solid {opt.icon}"></i>
+						</button>
 					{/each}
+				</div>
+			</div>
+		{:else if inputType === 'decoration'}
+			<div class="style-value style-value--resize">
+				<div class="seg-control" role="group" aria-label="Text decoration">
+					{#each [{ v: 'none', icon: 'fa-slash', title: 'None' }, { v: 'underline', icon: 'fa-underline', title: 'Underline' }, { v: 'line-through', icon: 'fa-strikethrough', title: 'Line-through' }] as opt (opt.v)}
+						<button
+							type="button"
+							class="seg-control__btn"
+							class:seg-control__btn--sel={(value ?? 'none') === opt.v}
+							title={opt.title}
+							onclick={() => writeValue(opt.v)}
+						>
+							<i class="fa-solid {opt.icon}"></i>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{:else if inputType === 'spacing'}
+			{#snippet spacingStepper(slot: SpacingSlot, num: number)}
+				<div class="spacing-stepper">
 					<button
 						type="button"
-						class="spacing-toggle"
-						title="Merge to Block/Inline"
-						onclick={() => collapseBoxToBlockInline()}
+						class="spacing-stepper__btn"
+						title="Decrease"
+						onclick={() => nudgeSpacing(slot, -SPACING_STEP)}
 					>
-						<i class="fa-solid fa-compress"></i>
+						<i class="fa-solid fa-minus"></i>
+					</button>
+					{#if spacingEditingSlot === slot}
+						<input
+							type="text"
+							inputmode="numeric"
+							bind:this={spacingInputRef}
+							bind:value={spacingEditContent}
+							class="spacing-stepper__value spacing-stepper__value--edit"
+							onblur={() => confirmEditingSpacingSlot()}
+							onkeydown={(e: KeyboardEvent) => {
+								if (e.key === 'Enter') {
+									confirmEditingSpacingSlot();
+								} else if (e.key === 'Escape') {
+									cancelEditingSpacingSlot();
+								}
+							}}
+						/>
+					{:else}
+						<button
+							type="button"
+							class="spacing-stepper__value"
+							onclick={() => startEditingSpacingSlot(slot)}
+						>
+							{num}
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="spacing-stepper__btn"
+						title="Increase"
+						onclick={() => nudgeSpacing(slot, SPACING_STEP)}
+					>
+						<i class="fa-solid fa-plus"></i>
 					</button>
 				</div>
-			{:else if spacingLevel === 3}
-				<div class="spacing-box" role="group" aria-label="{displayText} block split, inline merged">
-					<div class="spacing-box__side">
-						<span class="spacing-box__label">T</span>
-						{@render spacingStepper(0, spacingTRBL[0])}
-					</div>
-					<div class="spacing-box__side">
-						<span class="spacing-box__label">B</span>
-						{@render spacingStepper(2, spacingTRBL[2])}
-					</div>
-					<button
-						type="button"
-						class="spacing-toggle"
-						title="Merge Top/Bottom"
-						onclick={() => mergeBlockBack()}
-					>
-						<i class="fa-solid fa-compress"></i>
-					</button>
-					<div class="spacing-box__side">
-						<span class="spacing-box__label" title="Inline (left/right)">
-							<i class="fa-solid fa-arrows-left-right"></i>
-						</span>
-						{@render spacingStepper('inline', spacingInline)}
-					</div>
-					<button
-						type="button"
-						class="spacing-toggle"
-						title="Split Left/Right"
-						onclick={() => splitInline()}
-					>
-						<i class="fa-solid fa-expand"></i>
-					</button>
-				</div>
-			{:else if spacingLevel === 2}
-				<div class="spacing-box" role="group" aria-label="{displayText} block/inline">
-					<div class="spacing-box__side">
-						<span class="spacing-box__label" title="Block (top/bottom)">
-							<i class="fa-solid fa-arrows-up-down"></i>
-						</span>
-						{@render spacingStepper('block', spacingBlock)}
+			{/snippet}
+			<div class="style-value style-value--spacing">
+				{#if spacingLevel === 4}
+					<div class="spacing-box" role="group" aria-label="{displayText} per side">
+						{#each spacingSides as [label, idx] (idx)}
+							<div class="spacing-box__side">
+								<span class="spacing-box__label">{label}</span>
+								{@render spacingStepper(idx, spacingTRBL[idx])}
+							</div>
+						{/each}
 						<button
 							type="button"
 							class="spacing-toggle"
-							title="Split Top/Bottom"
-							onclick={() => splitBlock()}
+							title="Merge to Block/Inline"
+							onclick={() => collapseBoxToBlockInline()}
 						>
-							<i class="fa-solid fa-expand"></i>
+							<i class="fa-solid fa-compress"></i>
 						</button>
 					</div>
-					<div class="spacing-box__side">
-						<span class="spacing-box__label" title="Inline (left/right)">
-							<i class="fa-solid fa-arrows-left-right"></i>
-						</span>
-						{@render spacingStepper('inline', spacingInline)}
+				{:else if spacingLevel === 3}
+					<div class="spacing-box" role="group" aria-label="{displayText} block split, inline merged">
+						<div class="spacing-box__side">
+							<span class="spacing-box__label">T</span>
+							{@render spacingStepper(0, spacingTRBL[0])}
+						</div>
+						<div class="spacing-box__side">
+							<span class="spacing-box__label">B</span>
+							{@render spacingStepper(2, spacingTRBL[2])}
+						</div>
+						<button
+							type="button"
+							class="spacing-toggle"
+							title="Merge Top/Bottom"
+							onclick={() => mergeBlockBack()}
+						>
+							<i class="fa-solid fa-compress"></i>
+						</button>
+						<div class="spacing-box__side">
+							<span class="spacing-box__label" title="Inline (left/right)">
+								<i class="fa-solid fa-arrows-left-right"></i>
+							</span>
+							{@render spacingStepper('inline', spacingInline)}
+						</div>
 						<button
 							type="button"
 							class="spacing-toggle"
@@ -729,107 +696,138 @@
 							<i class="fa-solid fa-expand"></i>
 						</button>
 					</div>
-					<button
-						type="button"
-						class="spacing-toggle"
-						title="Collapse to one value"
-						onclick={() => collapseBlockInlineToScalar()}
-					>
-						<i class="fa-solid fa-compress"></i>
-					</button>
-				</div>
-			{:else}
-				{@render spacingStepper('scalar', spacingScalar)}
-				{#if spacingMode === 'box'}
-					<button
-						type="button"
-						class="spacing-toggle"
-						title="Expand to Block/Inline"
-						onclick={() => expandScalarToBlockInline()}
-					>
-						<i class="fa-solid fa-expand"></i>
-					</button>
+				{:else if spacingLevel === 2}
+					<div class="spacing-box" role="group" aria-label="{displayText} block/inline">
+						<div class="spacing-box__side">
+							<span class="spacing-box__label" title="Block (top/bottom)">
+								<i class="fa-solid fa-arrows-up-down"></i>
+							</span>
+							{@render spacingStepper('block', spacingBlock)}
+							<button
+								type="button"
+								class="spacing-toggle"
+								title="Split Top/Bottom"
+								onclick={() => splitBlock()}
+							>
+								<i class="fa-solid fa-expand"></i>
+							</button>
+						</div>
+						<div class="spacing-box__side">
+							<span class="spacing-box__label" title="Inline (left/right)">
+								<i class="fa-solid fa-arrows-left-right"></i>
+							</span>
+							{@render spacingStepper('inline', spacingInline)}
+							<button
+								type="button"
+								class="spacing-toggle"
+								title="Split Left/Right"
+								onclick={() => splitInline()}
+							>
+								<i class="fa-solid fa-expand"></i>
+							</button>
+						</div>
+						<button
+							type="button"
+							class="spacing-toggle"
+							title="Collapse to one value"
+							onclick={() => collapseBlockInlineToScalar()}
+						>
+							<i class="fa-solid fa-compress"></i>
+						</button>
+					</div>
+				{:else}
+					{@render spacingStepper('scalar', spacingScalar)}
+					{#if spacingMode === 'box'}
+						<button
+							type="button"
+							class="spacing-toggle"
+							title="Expand to Block/Inline"
+							onclick={() => expandScalarToBlockInline()}
+						>
+							<i class="fa-solid fa-expand"></i>
+						</button>
+					{/if}
 				{/if}
-			{/if}
-		</div>
-	{:else if inputType === 'asset'}
-		<div class="option124__value">
-			<SuggestField
-				{value}
-				localSearch={(q) => {
-					const list = $assetRegister;
-					if (!q) return list.map((a) => ({ value: a.id, label: a.name }));
-					const lower = q.toLowerCase();
-					return list
-						.filter((a) => a.name.toLowerCase().includes(lower))
-						.map((a) => ({ value: a.id, label: a.name }));
+			</div>
+		{:else if inputType === 'asset'}
+			<div class="style-value">
+				<SuggestField
+					{value}
+					localSearch={(q) => {
+						const list = $assetRegister;
+						if (!q) return list.map((a) => ({ value: a.id, label: a.name }));
+						const lower = q.toLowerCase();
+						return list
+							.filter((a) => a.name.toLowerCase().includes(lower))
+							.map((a) => ({ value: a.id, label: a.name }));
+					}}
+					onPick={(picked, _fetched) => confirmSuggestionPick(picked)}
+				/>
+			</div>
+		{:else if suggestionsFrom && !isToken}
+			<div class="style-value" class:style-value--font={inputType === 'font'}>
+				<SuggestField
+					{value}
+					pluginName={suggestionsFrom.plugin}
+					searchFn={suggestionsFrom.searchFn}
+					fetchFn={suggestionsFrom.fetchFn}
+					{callUtilityPlugin}
+					isLoaded={inputType === 'font'
+						? (v) => getVellumInstance()?.is_font_loaded(v) ?? false
+						: undefined}
+					onPick={(picked, fetched) => confirmSuggestionPick(picked, fetched)}
+				/>
+				{#if inputType === 'font' && value && currentFontStatus}
+					{#if currentFontStatus.state === 'loading'}
+						<i class="fa-solid fa-spinner fa-spin field-status field-status--loading" title="Loading {value}…"
+						></i>
+					{:else if currentFontStatus.state === 'error'}
+						<i
+							class="fa-solid fa-triangle-exclamation field-status field-status--error"
+							title="{value} failed to load: {currentFontStatus.detail ?? 'unknown error'}"
+						></i>
+					{/if}
+				{/if}
+			</div>
+		{:else if editValue.now}
+			<input
+				type="text"
+				title="Edit Value"
+				bind:this={inputRef}
+				bind:value={editValue.content}
+				placeholder={value ?? ''}
+				class="style-value style-value--edit"
+				onblur={() => cancelEditing()}
+				onkeydown={(e: KeyboardEvent) => {
+					if (e.key === 'Enter') {
+						confirmUpdateStyle();
+					} else if (e.key === 'Escape') {
+						cancelEditing();
+					}
 				}}
-				onPick={(picked, _fetched) => confirmSuggestionPick(picked)}
+				use:contextMenu={menu}
 			/>
-		</div>
-	{:else if suggestionsFrom && !isToken}
-		<div class="option124__value" class:option124__value--font={inputType === 'font'}>
-			<SuggestField
-				{value}
-				pluginName={suggestionsFrom.plugin}
-				searchFn={suggestionsFrom.searchFn}
-				fetchFn={suggestionsFrom.fetchFn}
-				{callUtilityPlugin}
-				isLoaded={inputType === 'font'
-					? (v) => getVellumInstance()?.is_font_loaded(v) ?? false
-					: undefined}
-				onPick={(picked, fetched) => confirmSuggestionPick(picked, fetched)}
-			/>
-			{#if inputType === 'font' && value && currentFontStatus}
-				{#if currentFontStatus.state === 'loading'}
-					<i class="fa-solid fa-spinner fa-spin field-status field-status--loading" title="Loading {value}…"
-					></i>
-				{:else if currentFontStatus.state === 'error'}
-					<i
-						class="fa-solid fa-triangle-exclamation field-status field-status--error"
-						title="{value} failed to load: {currentFontStatus.detail ?? 'unknown error'}"
-					></i>
+		{:else}
+			<button
+				title={isToken ? `${tokenAlias}: ${value ?? ''} (click to edit the token value)` : (value ?? 'Add value')}
+				class="style-value"
+				class:style-value--new={!value && !isToken}
+				class:style-value--token={isToken}
+				onclick={() => startEditing()}
+				use:contextMenu={menu}
+			>
+				<!-- The token alias now lives in the shared TokenBadge in FieldRow's header; this box
+				     shows the resolved scalar value for token-backed rows too, so a designer sees BOTH
+				     the token name (badge) and what it currently resolves to (here). -->
+				{#if value}
+					<span>{value}</span>
+				{:else}
+					+
 				{/if}
-			{/if}
-		</div>
-	{:else if editValue.now}
-		<input
-			type="text"
-			title="Edit Value"
-			bind:this={inputRef}
-			bind:value={editValue.content}
-			placeholder={value ?? ''}
-			class="option124__value option124__value--edit"
-			onblur={() => cancelEditing()}
-			onkeydown={(e: KeyboardEvent) => {
-				if (e.key === 'Enter') {
-					confirmUpdateStyle();
-				} else if (e.key === 'Escape') {
-					cancelEditing();
-				}
-			}}
-			use:contextMenu={menu}
-		/>
-	{:else}
-		<button
-			title={isToken ? `${tokenAlias}: ${value ?? ''} (click to edit the token value)` : (value ?? 'Add value')}
-			class="option124__value"
-			class:option124__value--new={!value && !isToken}
-			class:option124__value--token={isToken}
-			onclick={() => startEditing()}
-			use:contextMenu={menu}
-		>
-			<!-- The token alias now lives in the shared TokenBadge above; this box shows the
-			     resolved scalar value for token-backed rows too, so a designer sees BOTH the
-			     token name (badge) and what it currently resolves to (here). -->
-			{#if value}
-				<span>{value}</span>
-			{:else}
-				+
-			{/if}
-		</button>
-	{/if}
-</div>
+			</button>
+		{/if}
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
@@ -839,187 +837,137 @@
 		all: unset;
 	}
 
-	.option124 {
-		display: flex;
-		// Rows may wrap to a second line rather than cramming everything into one: a token-backed
-		// row (see &--token below) always drops its value control to its own full-width line so the
-		// label + source dot + token badge have room; any other over-tight row (long label + wide
-		// composite control) wraps gracefully instead of overflowing the panel. Wide, roomy rows
-		// stay single-line untouched.
-		flex-wrap: wrap;
-		row-gap: calc($x-space-xs / 2);
-		justify-content: space-between;
-		align-items: stretch;
-		user-select: none;
-		font-weight: 600;
-		padding-inline: $x-space-sm;
+	.style-label {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		padding-inline: calc($x-space-xs / 2);
+		text-transform: capitalize;
 
-		@include layout-respond('md') {
-			font-size: $x-font-size-sm;
-			letter-spacing: 1px;
-			gap: $x-space-xs;
+		@include layout-respond('lg') {
+			padding-left: $x-space-xs;
 		}
 
-		@include layout-respond-max('xl') {
-			font-size: $x-font-size-sm;
+		&:hover {
+			background: var(--color-panel-header-fill);
 		}
 
-		// Token-backed rows are deliberately two lines: label + source dot + token badge on line 1,
-		// the value control full-width on line 2. A flat rule, not a pixel threshold -- "slap a
-		// token, get a second line for its value" -- so it's predictable in any panel width and
-		// nothing gets stuffed into one line (font-weight/color/spacing/… all benefit identically).
-		&--token .option124__value {
-			flex-basis: 100%;
+		&--highlighted {
+			background: var(--color-surface-alt);
+		}
+	}
+
+	.style-value {
+		all: unset;
+		display: block;
+		width: 100%;
+		padding: calc($x-space-xs / 2) $x-space-sm;
+		text-align: left;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		position: relative;
+		border-radius: 1px;
+		color: var(--color-add-var-text);
+		font-size: $x-font-size-sm;
+		background: var(--color-panel-header-fill);
+
+		&--token {
+			color: var(--color-primary);
 		}
 
-		&:global(.dnd-over) {
-			outline: 1px dashed var(--color-primary);
-			outline-offset: -1px;
-
-			:global(.option124__value) {
-				background: var(--color-surface-alt);
-			}
+		&::placeholder {
+			font-size: $x-font-size-md;
 		}
 
-		&__track {
+		&--new {
+			cursor: pointer;
 			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-
-			&:focus {
-				filter: saturate(1.2);
-			}
-
-			&--empty {
-				color: var(--color-surface-alt);
-			}
-
-			@include layout-respond-max('lg') {
-				font-size: $x-font-size-md;
-			}
 		}
 
-		&__style-name {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			padding-inline: calc($x-space-xs / 2);
-			text-transform: capitalize;
-
-			@include layout-respond('lg') {
-				padding-left: $x-space-xs;
-			}
-
-			&:hover {
-				background: var(--color-panel-header-fill);
-			}
-
-			&--highlighted {
-				background: var(--color-surface-alt);
-			}
-		}
-
-		&__value {
+		// The collapsed preview for a multiline (inputType: 'text') field - lives inside FieldRow's
+		// own value-button now, which already supplies padding/hover/cursor, so this strips all of
+		// that back down to plain inline text.
+		&--preview {
 			all: unset;
-			padding: calc($x-space-xs / 2) $x-space-sm;
-			text-align: left;
-			flex-basis: 40%;
-			flex-shrink: 1;
+			display: block;
 			min-width: 0;
 			overflow: hidden;
 			text-overflow: ellipsis;
 			white-space: nowrap;
-			position: relative;
-			border-radius: 1px;
 			color: var(--color-add-var-text);
 			font-size: $x-font-size-sm;
-			background: var(--color-panel-header-fill);
+		}
 
-			&--token {
-				color: var(--color-primary);
-			}
+		&:hover {
+			background: var(--color-surface-alt);
+			color: var(--color-text);
+		}
 
-			&--dragged-over {
-				background: var(--color-surface-alt);
-			}
-
-			&::placeholder {
-				font-size: $x-font-size-md;
-			}
-
-			&--new {
-				cursor: pointer;
-				text-align: center;
-			}
+		&--edit {
+			background: var(--color-pure);
 
 			&:hover {
-				background: var(--color-surface-alt);
-				color: var(--color-text);
-			}
-
-			&--edit {
 				background: var(--color-pure);
+				color: var(--color-primary);
+			}
+		}
 
-				&:hover {
-					background: var(--color-pure);
-					color: var(--color-primary);
-				}
+		// Font field container: SuggestField's picker button plus an optional loading/error status
+		// glyph laid out beside it (see FontLoadStatus).
+		&--font {
+			display: flex;
+			align-items: center;
+			gap: 0;
+			padding: 0;
+			background: transparent;
+			overflow: visible;
+
+			&:hover {
+				background: transparent;
 			}
 
-			// Resize control container: lay out the segmented control + optional fixed input
-			// horizontally, and drop the plain-value button's own padding/hover/background.
-			// Unlike plain value boxes this is a composite (3 segments + a value input) whose
-			// intrinsic width exceeds the standard 40% value column -- allow it to grow, or the
-			// Fixed value renders clipped off the panel's right edge.
-			// Font field container: SuggestField's picker button plus an optional loading/error
-			// status glyph laid out beside it (see FontLoadStatus).
-			&--font {
-				display: flex;
-				align-items: center;
-				gap: 0;
-				padding: 0;
-				background: transparent;
-				overflow: visible;
-
-				&:hover {
-					background: transparent;
-				}
-
-				:global(.suggest-field) {
-					flex: 1;
-					min-width: 0;
-				}
+			:global(.suggest-field) {
+				flex: 1;
+				min-width: 0;
 			}
+		}
 
-			&--resize {
-				display: flex;
-				align-items: center;
-				gap: $x-space-xs;
-				padding: 0;
-				flex-grow: 1;
+		// Resize control container: lay out the segmented control + optional fixed input
+		// horizontally, and drop the plain-value button's own padding/hover/background. Unlike
+		// plain value boxes this is a composite (3 segments + a value input) whose intrinsic width
+		// can exceed the standard value column -- allow it to grow, or the Fixed value renders
+		// clipped off the panel's right edge.
+		&--resize {
+			display: flex;
+			align-items: center;
+			gap: $x-space-xs;
+			padding: 0;
+			width: auto;
+			background: transparent;
+			overflow: visible;
+
+			&:hover {
 				background: transparent;
-				overflow: visible;
-
-				&:hover {
-					background: transparent;
-				}
 			}
+		}
 
-			// Spacing control container: same drop-padding/background treatment as resize, since
-			// it's also a composite of small buttons rather than one plain value box.
-			&--spacing {
-				display: flex;
-				align-items: center;
-				gap: $x-space-xs;
-				padding: 0;
+		// Spacing control container: same drop-padding/background treatment as resize, since it's
+		// also a composite of small buttons rather than one plain value box.
+		&--spacing {
+			display: flex;
+			align-items: center;
+			gap: $x-space-xs;
+			padding: 0;
+			width: auto;
+			background: transparent;
+			overflow: visible;
+
+			&:hover {
 				background: transparent;
-				overflow: visible;
-
-				&:hover {
-					background: transparent;
-				}
 			}
 		}
 	}
@@ -1168,5 +1116,21 @@
 		&--error {
 			color: var(--color-error, oklch(63.7% 0.2078 25.3));
 		}
+	}
+
+	// The expanded body for a multiline (inputType: 'text') field - a real textarea, not the
+	// single-line edit-in-place input every other plain field uses.
+	.style-textarea {
+		all: unset;
+		display: block;
+		box-sizing: border-box;
+		width: 100%;
+		padding: $x-space-xs;
+		border-radius: 2px;
+		background: var(--color-pure);
+		color: var(--color-text);
+		font-size: $x-font-size-sm;
+		resize: vertical;
+		min-height: 5em;
 	}
 </style>

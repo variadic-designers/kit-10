@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { layerDotColor } from './layer-color.ts';
+	import FieldRow from './FieldRow.svelte';
 	import { parseCssColorToOklch, formatOklch } from '$lib/color/oklch.js';
-	import { dropZone } from '../dnd.svelte.ts';
 	import { commitFieldValue, attachToken, detachToken } from './field-commit.ts';
-	import TokenBadge from './TokenBadge.svelte';
 	import type { FieldDef, FieldUpdate } from '$lib/plugins/types.js';
 	import type { Api, ResolvedProperty } from 'manager';
 
@@ -22,14 +20,13 @@
 
 	type ColorFieldProps = {
 		field: FieldDef;
-		position?: 'top' | 'bottom' | 'mid';
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
 		api?: Api;
 		onFieldUpdate?: (update: FieldUpdate) => void;
 	};
 
-	let { field, position = 'mid', track, resolvedMap, api, onFieldUpdate }: ColorFieldProps = $props();
+	let { field, track, resolvedMap, api, onFieldUpdate }: ColorFieldProps = $props();
 
 	// Token/layer facts for this field's key, re-derived reactively. Drives both the write path
 	// (edit the shared token vs. write a literal) and the token badge.
@@ -59,11 +56,6 @@
 	let alpha = $state(FALLBACK.alpha);
 	let rawText = $state('');
 	let rawInvalid = $state(false);
-	// Collapsed by default - a full plane+rails picker on every color row would make a Kit with
-	// several paint properties enormous. A plain toggle (not a nested <details>) so the picker
-	// body can be a full-width sibling BELOW the header row instead of constrained to whatever
-	// column width a flex item sharing that row with the label/token-badge/track-dot would get.
-	let expanded = $state(false);
 
 	// Resync local slider state whenever the resolved value changes underneath us (a different
 	// layer/axis selection, an external write, or the initial mount) -- never while the user is
@@ -260,69 +252,37 @@
 		alpha = parsed.alpha;
 		commit();
 	}
-
-	function trackColor(axisIds: string[]): string {
-		return layerDotColor(axisIds, true);
-	}
-
-	function trackTitle(conditions: { axisId: string; value: string }[]): string {
-		if (conditions.length === 0) return 'Base layer · always applies';
-		const parts = conditions.map((c) => `${c.axisId}: ${c.value}`).join(', ');
-		return `${parts} · ${conditions.length} condition${conditions.length === 1 ? '' : 's'}`;
-	}
 </script>
 
-<div
-	class="color-field"
-	class:color-field--top={position === 'top'}
-	class:color-field--bottom={position === 'bottom'}
-	class:color-field--unset={isUnset}
+<FieldRow
+	label={field.displayText ?? field.key}
+	track={{ kitIcon: info.kitIcon, keys: info.keys, conditionValues: info.conditionValues }}
+	trackAriaLabel="Color source"
+	isToken={info.isToken}
+	tokenAlias={info.tokenAlias}
+	tokenValue={currentRaw}
+	onDetachToken={detach}
+	canDropToken={canDropColorToken}
+	onDropToken={handleColorTokenDrop}
+	expanded={false}
 >
-	<div
-		class="color-field__header"
-		use:dropZone={{ accepts: 'token', canDrop: canDropColorToken, onDrop: handleColorTokenDrop }}
-	>
-		<span class="color-field__label">{field.displayText ?? field.key}</span>
-		{#if info.isToken}
-			<TokenBadge alias={info.tokenAlias} value={currentRaw} onDetach={detach} />
-		{/if}
-		<button
-			class="color-field__track"
-			style="--track-color: {trackColor(track(field.key).keys)}"
-			aria-label="Color source"
-			title={trackTitle(track(field.key).conditionValues)}
-			type="button"
-		>
-			<i class="fa-solid {track(field.key).kitIcon}"></i>
-		</button>
-
-		<!-- The swatch itself is the ONLY disclosure trigger (not the whole header) so clicking the
-		     token badge's detach button or the track-color dot never also toggles the picker open.
-		     Sized like a normal Render-panel value control (flex-basis: 40%, matching StyleField's
-		     own __value), not a small icon box - left half is the true color, right half is the
-		     same color over a checkerboard so alpha is legible at a glance. -->
-		<button
-			class="color-field__swatch-btn"
-			type="button"
-			aria-expanded={expanded}
-			title={isUnset ? 'No color set - click to add' : expanded ? 'Collapse' : 'Click to edit'}
-			onclick={() => (expanded = !expanded)}
-		>
-			{#if isUnset}
-				<span class="color-field__swatch color-field__swatch--unset" aria-label="No color set">+</span>
-			{:else}
-				<span class="color-field__swatch" aria-hidden="true">
-					<span class="color-field__swatch-half" style="background: {opaqueSwatch}"></span>
-					<span class="color-field__swatch-half color-field__swatch-half--checker">
-						<span class="color-field__swatch-half-fill" style="background: {swatch}"></span>
-					</span>
+	{#snippet valueSlot()}
+		<!-- FieldRow's own value box IS the disclosure trigger now - this swatch is a passive
+		     visual, not a nested button. -->
+		{#if isUnset}
+			<span class="color-field__swatch color-field__swatch--unset" aria-label="No color set">+</span>
+		{:else}
+			<span class="color-field__swatch" aria-hidden="true" title={isUnset ? 'No color set - click to add' : 'Click to edit'}>
+				<span class="color-field__swatch-half" style="background: {opaqueSwatch}"></span>
+				<span class="color-field__swatch-half color-field__swatch-half--checker">
+					<span class="color-field__swatch-half-fill" style="background: {swatch}"></span>
 				</span>
-			{/if}
-		</button>
-	</div>
+			</span>
+		{/if}
+	{/snippet}
 
-	{#if expanded}
-		<div class="color-field__body">
+	{#snippet body()}
+		<div class="color-field__body" class:color-field__body--unset={isUnset}>
 			<div
 				bind:this={planeEl}
 				class="color-field__plane"
@@ -402,291 +362,229 @@
 				/>
 			</details>
 		</div>
-	{/if}
-</div>
+	{/snippet}
+</FieldRow>
 
 <style lang="scss">
 	@use '_index' as *;
 
-	button {
-		all: unset;
+	// Sized like a normal Render-panel value control (FieldRow's value slot is flex-basis: 40%),
+	// not a small icon box - a color swatch reads at a glance far better with real width to show
+	// against. FieldRow's own value box supplies the interactive/focus chrome now; this is just
+	// the visual.
+	.color-field__swatch {
+		display: flex;
+		width: 100%;
+		min-width: 2.4em;
+		height: 1.3em;
+		border-radius: 3px;
+		overflow: hidden;
+		border: 1px solid var(--color-panel-header-border);
+
+		// "No color set": no fill, dashed outline + a muted "+" -- the panel's own "add value"
+		// idiom, so an unset color never masquerades as a deliberately-authored gray.
+		&--unset {
+			align-items: center;
+			justify-content: center;
+			background: transparent;
+			border-style: dashed;
+			color: var(--color-add-var-text);
+			font-size: 0.8em;
+		}
 	}
 
-	.color-field {
-		display: flex;
-		flex-direction: column;
-		padding-block: calc($x-space-xs / 2);
+	// Left half: the true color at full opacity. Right half: the color exactly as authored
+	// (with its real alpha) painted over a checkerboard, so transparency reads at a glance
+	// without needing the picker open.
+	.color-field__swatch-half {
+		position: relative;
+		flex: 1;
+		height: 100%;
 
-		@include layout-respond('md') {
-			font-size: $x-font-size-sm;
-			letter-spacing: 1px;
+		&--checker {
+			background-image:
+				linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
+				linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
+				linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
+				linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
+			background-size: 8px 8px;
+			background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 		}
+	}
 
-		&__header {
-			display: flex;
-			align-items: center;
-			gap: $x-space-xs;
-			padding-inline: $x-space-sm;
-			font-weight: 600;
+	.color-field__swatch-half-fill {
+		position: absolute;
+		inset: 0;
+	}
 
-			// dnd-over is applied at runtime by the dnd controller (dropping a token onto the field)
-			// -- :global() so Svelte's scoped-CSS pass doesn't prune it as unused.
-			&:global(.dnd-over) {
-				outline: 1px dashed var(--color-primary);
-				outline-offset: -1px;
-			}
-		}
-
-		&__track {
-			text-align: center;
-			font-size: $x-font-size-sm;
-			color: var(--track-color, var(--color-text));
-			flex: 0 0 auto;
-		}
-
-		&__label {
-			flex: 1;
-			min-width: 0;
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-			text-transform: capitalize;
-		}
-
-		// Sized like a normal Render-panel value control (StyleField's own option124__value uses
-		// the same flex-basis: 40%), not a small icon box - a color swatch reads at a glance far
-		// better with real width to show against.
-		&__swatch-btn {
-			all: unset;
-			cursor: pointer;
-			display: flex;
-			flex-basis: 40%;
-			flex-shrink: 1;
-			min-width: 2.4em;
-			height: 1.3em;
-			border-radius: 3px;
-			overflow: hidden;
-			border: 1px solid var(--color-panel-header-border);
-
-			&:focus-visible {
-				outline: 2px solid var(--color-primary);
-				outline-offset: 1px;
-			}
-		}
-
-		&__swatch {
-			display: flex;
-			width: 100%;
-			height: 100%;
-
-			// "No color set": no fill, dashed outline + a muted "+" -- the panel's own "add value"
-			// idiom (StyleField's option124__value--new), so an unset color never masquerades as a
-			// deliberately-authored gray.
-			&--unset {
-				align-items: center;
-				justify-content: center;
-				background: transparent;
-				border-style: dashed;
-				color: var(--color-add-var-text);
-				font-size: 0.8em;
-			}
-		}
-
-		// Left half: the true color at full opacity. Right half: the color exactly as authored
-		// (with its real alpha) painted over a checkerboard, so transparency reads at a glance
-		// without needing the picker open.
-		&__swatch-half {
-			position: relative;
-			flex: 1;
-			height: 100%;
-
-			&--checker {
-				background-image:
-					linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
-					linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
-					linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
-					linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
-				background-size: 8px 8px;
-				background-position: 0 0, 0 4px, 4px -4px, -4px 0;
-			}
-		}
-
-		&__swatch-half-fill {
-			position: absolute;
-			inset: 0;
-		}
+	// Plane on the left (near-square), hue+alpha as two narrow vertical rails on the right -
+	// the plane's own height sets the row height (auto-sized column), so the rails spend that
+	// height instead of adding two more full-width rows underneath (the previous layout).
+	.color-field__body {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		align-items: stretch;
+		gap: $x-space-xs;
 
 		// Mute the picker while unset so FALLBACK's mid-gray positions don't read as an active
 		// gray. Opacity only -- never pointer-events:none, since dragging is exactly how you add
 		// the color (commit() writes a real value, isUnset flips false, full styling returns).
-		&--unset &__body {
+		&--unset {
 			opacity: 0.6;
 		}
+	}
 
-		// Plane on the left (near-square), hue+alpha as two narrow vertical rails on the right -
-		// the plane's own height sets the row height (auto-sized column), so the rails spend that
-		// height instead of adding two more full-width rows underneath (the previous layout).
-		&__body {
-			display: grid;
-			grid-template-columns: 1fr auto;
-			align-items: stretch;
-			gap: $x-space-xs;
-			padding: calc($x-space-xs / 2) $x-space-sm $x-space-xs;
-			margin-top: calc($x-space-xs / 2);
+	.color-field__plane {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 1.2 / 1;
+		border-radius: 6px;
+		border: 1px solid var(--color-panel-header-border);
+		cursor: crosshair;
+		touch-action: none;
+		overflow: hidden;
+
+		&:focus-visible {
+			outline: 2px solid var(--color-primary);
+			outline-offset: 1px;
+		}
+	}
+
+	.color-field__plane-thumb {
+		position: absolute;
+		width: 13px;
+		height: 13px;
+		border-radius: 50%;
+		border: 2px solid var(--color-pure);
+		box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
+
+	// Two vertical strips side by side, each stretched (flex default align-items: stretch) to
+	// the rails container's own height, which in turn matches the plane's height via the grid
+	// row's align-items: stretch above.
+	.color-field__rails {
+		display: flex;
+		flex-direction: row;
+		gap: $x-space-xs;
+		min-width: 0;
+	}
+
+	.color-field__strip {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: calc($x-space-xs / 2);
+		min-width: 2.2em;
+	}
+
+	.color-field__strip-label {
+		flex: 0 0 auto;
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+		text-transform: uppercase;
+	}
+
+	.color-field__strip-track {
+		position: relative;
+		flex: 1;
+		width: 10px;
+		border-radius: 6px;
+		border: 1px solid var(--color-panel-header-border);
+		cursor: pointer;
+		touch-action: none;
+		overflow: hidden;
+
+		&:focus-visible {
+			outline: 2px solid var(--color-primary);
+			outline-offset: 1px;
 		}
 
-		&__plane {
-			position: relative;
-			width: 100%;
-			aspect-ratio: 1.2 / 1;
-			border-radius: 6px;
-			border: 1px solid var(--color-panel-header-border);
-			cursor: crosshair;
-			touch-action: none;
-			overflow: hidden;
-
-			&:focus-visible {
-				outline: 2px solid var(--color-primary);
-				outline-offset: 1px;
-			}
+		// Alpha rail only - a checkerboard sits BEHIND the transparent-to-opaque gradient fill,
+		// same convention every other transparency UI (browser devtools, design tools) uses.
+		&--checker {
+			background-image:
+				linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
+				linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
+				linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
+				linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
+			background-size: 8px 8px;
+			background-position: 0 0, 0 4px, 4px -4px, -4px 0;
 		}
+	}
 
-		&__plane-thumb {
-			position: absolute;
-			width: 13px;
-			height: 13px;
-			border-radius: 50%;
-			border: 2px solid var(--color-pure);
-			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
-			transform: translate(-50%, -50%);
-			pointer-events: none;
-		}
+	.color-field__strip-track-fill {
+		position: absolute;
+		inset: 0;
+	}
 
-		// Two vertical strips side by side, each stretched (flex default align-items: stretch) to
-		// the rails container's own height, which in turn matches the plane's height via the grid
-		// row's align-items: stretch above.
-		&__rails {
-			display: flex;
-			flex-direction: row;
-			gap: $x-space-xs;
-			min-width: 0;
-		}
+	.color-field__strip-thumb {
+		position: absolute;
+		left: 50%;
+		width: 13px;
+		height: 13px;
+		border-radius: 50%;
+		border: 2px solid var(--color-pure);
+		box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+		transform: translate(-50%, -50%);
+		pointer-events: none;
+	}
 
-		&__strip {
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			gap: calc($x-space-xs / 2);
-			min-width: 2.2em;
-		}
+	// Fixed width (not just min-width) sized for the widest either rail ever shows ("360°",
+	// "100%") - letting this fluctuate with digit count (e.g. "86%" -> "100%") resizes the
+	// __rails auto grid column, which shrinks the plane's own 1fr column and, via its
+	// aspect-ratio, its height - a one-character value change must never move the plane.
+	.color-field__strip-val {
+		flex: 0 0 auto;
+		width: 2.4em;
+		text-align: center;
+		font-size: $x-font-size-xs;
+		color: var(--color-add-var-text);
+		font-variant-numeric: tabular-nums;
+	}
 
-		&__strip-label {
-			flex: 0 0 auto;
-			font-size: $x-font-size-xs;
-			color: var(--color-add-var-text);
-			text-transform: uppercase;
-		}
+	.color-field__raw {
+		grid-column: 1 / -1;
+		margin-top: calc($x-space-xs / 2);
+		font-size: $x-font-size-xs;
 
-		&__strip-track {
-			position: relative;
-			flex: 1;
-			width: 10px;
-			border-radius: 6px;
-			border: 1px solid var(--color-panel-header-border);
+		summary {
 			cursor: pointer;
-			touch-action: none;
-			overflow: hidden;
-
-			&:focus-visible {
-				outline: 2px solid var(--color-primary);
-				outline-offset: 1px;
-			}
-
-			// Alpha rail only - a checkerboard sits BEHIND the transparent-to-opaque gradient fill,
-			// same convention every other transparency UI (browser devtools, design tools) uses.
-			&--checker {
-				background-image:
-					linear-gradient(45deg, var(--color-panel-header-border) 25%, transparent 25%),
-					linear-gradient(-45deg, var(--color-panel-header-border) 25%, transparent 25%),
-					linear-gradient(45deg, transparent 75%, var(--color-panel-header-border) 75%),
-					linear-gradient(-45deg, transparent 75%, var(--color-panel-header-border) 75%);
-				background-size: 8px 8px;
-				background-position: 0 0, 0 4px, 4px -4px, -4px 0;
-			}
-		}
-
-		&__strip-track-fill {
-			position: absolute;
-			inset: 0;
-		}
-
-		&__strip-thumb {
-			position: absolute;
-			left: 50%;
-			width: 13px;
-			height: 13px;
-			border-radius: 50%;
-			border: 2px solid var(--color-pure);
-			box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
-			transform: translate(-50%, -50%);
-			pointer-events: none;
-		}
-
-		// Fixed width (not just min-width) sized for the widest either rail ever shows ("360°",
-		// "100%") - letting this fluctuate with digit count (e.g. "86%" -> "100%") resizes the
-		// __rails auto grid column, which shrinks the plane's own 1fr column and, via its
-		// aspect-ratio, its height - a one-character value change must never move the plane.
-		&__strip-val {
-			flex: 0 0 auto;
-			width: 2.4em;
-			text-align: center;
-			font-size: $x-font-size-xs;
 			color: var(--color-add-var-text);
-			font-variant-numeric: tabular-nums;
-		}
+			list-style: none;
 
-		&__raw {
-			grid-column: 1 / -1;
-			margin-top: calc($x-space-xs / 2);
-			font-size: $x-font-size-xs;
-
-			summary {
-				cursor: pointer;
-				color: var(--color-add-var-text);
-				list-style: none;
-
-				&::-webkit-details-marker {
-					display: none;
-				}
-
-				&:hover {
-					color: var(--color-text);
-				}
-
-				&::before {
-					content: '▸ ';
-				}
+			&::-webkit-details-marker {
+				display: none;
 			}
 
-			&[open] summary::before {
-				content: '▾ ';
+			&:hover {
+				color: var(--color-text);
+			}
+
+			&::before {
+				content: '▸ ';
 			}
 		}
 
-		&__raw-input {
-			all: unset;
-			display: block;
-			width: 100%;
-			margin-top: calc($x-space-xs / 2);
-			padding: calc($x-space-xs / 2) $x-space-xs;
-			border-radius: 2px;
-			background: var(--color-panel-header-fill);
-			color: var(--color-text);
-			box-sizing: border-box;
+		&[open] summary::before {
+			content: '▾ ';
+		}
+	}
 
-			&--invalid {
-				outline: 1px solid var(--color-danger);
-			}
+	.color-field__raw-input {
+		all: unset;
+		display: block;
+		width: 100%;
+		margin-top: calc($x-space-xs / 2);
+		padding: calc($x-space-xs / 2) $x-space-xs;
+		border-radius: 2px;
+		background: var(--color-panel-header-fill);
+		color: var(--color-text);
+		box-sizing: border-box;
+
+		&--invalid {
+			outline: 1px solid var(--color-danger);
 		}
 	}
 </style>
