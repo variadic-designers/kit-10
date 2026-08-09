@@ -310,7 +310,7 @@ export type UiNode = UiBoxNode | UiTextNode | UiImgNode | UiShapeNode | UiSprite
 // One weight-range + style a font family actually has. Assembled host-side (Editor.svelte)
 // from Fontavious's `family_facts` and handed to Charter in on_resolve's `fontFacts` map,
 // where resolve_font_weight snaps requested weights to what the family can really render.
-// camelCase: JS-authored input (see the wire-format pitfall in CLAUDE.md).
+// camelCase: JS-authored input (see the wire-format pitfall in AGENTS.md).
 export interface FontFactVariant {
 	weightMin: number;
 	weightMax: number;
@@ -372,7 +372,7 @@ export interface OnResolveResult {
 // Panel manifest published by a plugin via `kit10_panel_publish`. The editor's panels are
 // generic renderers over this shape - topology lives plugin-side, live metadata (view names,
 // locked) stays in the editor's own DB query and is joined against `id` at render time. Wire
-// keys are snake_case (plugin-authored output, see CLAUDE.md's camelCase pitfall).
+// keys are snake_case (plugin-authored output, see AGENTS.md's camelCase pitfall).
 export interface PanelOp {
 	name: string;
 	label: string;

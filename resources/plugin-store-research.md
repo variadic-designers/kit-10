@@ -5,7 +5,7 @@ the plugin architecture as it exists today, names every boundary and seam, then 
 gaps a store has to close and a recommended direction. Grounded in the current code; file
 references are load-bearing.
 
-Related: `PLUGINS.md` (the contract), `CLAUDE.md` §4/§5 (Plugin Manager + Charter), VISION.md
+Related: `PLUGINS.md` (the contract), `AGENTS.md` §4/§5 (Plugin Manager + Charter), VISION.md
 Principles 1 & 3 (which already anticipate this).
 
 **Status (2026-07-26): §4 gaps 1–3 shipped.** The manifest is no longer just `{wasm}` - it now
@@ -37,7 +37,7 @@ the grounding/reasoning; treat §4/§5's checklist items above as done, not as r
   store - out of scope here.
 - **Interpreter** occupies a single slot: `activePlugin` in `manager.svelte.ts`. `loadPlugin`
   overwrites it unconditionally (that's why utility plugins live in a separate `Map` - a second
-  `loadPlugin` would evict Charter; see CLAUDE.md §4).
+  `loadPlugin` would evict Charter; see AGENTS.md §4).
 - **Utility** plugins never touch `activePlugin`/the resolve loop. Each has its own serial call
   chain keyed by name (`utilityQueues`) - Extism instances aren't re-entrant.
 
@@ -57,7 +57,7 @@ Extism plugins    sandboxed translation/data logic (Charter, Fontavious, Tenner)
 Vellum            UiNode[] → pixels
 ```
 
-Invariants that keep these clean (all in CLAUDE.md, do not regress):
+Invariants that keep these clean (all in AGENTS.md, do not regress):
 - Resolver is **name-neutral** about composition (`view-list` type, never the string `children`).
 - Charter declares *opinions* (`composition_field_keys`, `ops`); host does generic graph math.
 - Editor never names a provider plugin (§3); plugins never name each other.
@@ -195,7 +195,7 @@ Ordered roughly by how load-bearing they are for "add + configure plugins".
    `kind` enum - a plugin could then both interpret *and* export.
 
 7. **No compat/versioning contract.** `content_hash` is computed but never *read*. The wire
-   format has no version marker anywhere (CLAUDE.md's Oklab note: "shape is the only safety
+   format has no version marker anywhere (AGENTS.md's Oklab note: "shape is the only safety
    net"). A store distributing third-party wasm across host versions needs an explicit
    **wire-format version + min-host-version** in the descriptor, checked at install/load.
 

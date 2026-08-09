@@ -14,7 +14,7 @@ struct GetProjectExportInput {
 // struct for exportProject's row shapes. Tenner doesn't need to interpret any individual
 // field -- it only re-emits the same structure as YAML -- so there's nothing to keep in sync
 // if Manager's exportProject shape changes, and no camelCase/snake_case mismatch risk (the
-// exact class of bug CLAUDE.md's Common Pitfalls warns about for structs that DO need to
+// exact class of bug AGENTS.md's Common Pitfalls warns about for structs that DO need to
 // match field-for-field).
 #[derive(Debug, Clone, Serialize, Deserialize, ToBytes, FromBytes, Default)]
 #[encoding(Json)]

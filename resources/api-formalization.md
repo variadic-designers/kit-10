@@ -56,7 +56,7 @@ There are only **two real wire boundaries** (Charter↔Vellum, Editor↔Charter)
   Charter's struct exactly")
 - Oklab matrices - a 4th copy in `src/lib/color/oklch.ts`
 
-Every drift bug in CLAUDE.md's "Common Pitfalls" list traces to this triplication. The
+Every drift bug in AGENTS.md's "Common Pitfalls" list traces to this triplication. The
 existing tests catch the *loud* classes cheaply; the one genuinely **silent** class is
 field-name drift on `#[serde(default)]` fields, which no current test closes.
 

@@ -35,7 +35,7 @@ function remapTokenValue(
 }
 
 // Same situation as TokenValue.view_id, for the "children" render-entry property: its value is
-// a literal JSON-array-of-view-ids string (see CLAUDE.md's render_entries note), not a real FK,
+// a literal JSON-array-of-view-ids string (see AGENTS.md's render_entries note), not a real FK,
 // so it needs the same manual remap. Every other property's value is passed through untouched.
 function remapRenderEntryValue(
 	property: string,
@@ -361,7 +361,7 @@ export interface QueryAxisValue {
 	// any axis_args / axes.default_value rows that currently hold the old literal string --
 	// axis_args stores a denormalized copy of the literal (matchesArg compares by string, not by
 	// axis_value_id), so without this a rename silently orphans every view's current selection
-	// for that axis. See CLAUDE.md's "in-place value editing" note for the full reasoning.
+	// for that axis. See AGENTS.md's "in-place value editing" note for the full reasoning.
 	updateAxisValue: (axisValueId: string, value: AxisValueType) => Promise<void>;
 	// Count of layer_axis_values rows referencing this value -- used by the UI to warn before a
 	// delete that would otherwise detach live layer conditions (see deleteAxisValueSafe).
@@ -1683,7 +1683,7 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				})
 				.execute();
 
-			// Insertion order follows the schema's FK dependency graph (see CLAUDE.md's migration
+			// Insertion order follows the schema's FK dependency graph (see AGENTS.md's migration
 			// for the exact references) -- every table below only ever points at ids already
 			// inserted by the time it's reached.
 

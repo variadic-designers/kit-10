@@ -60,7 +60,7 @@ instances of one idea.
 Generalize them into **one post-layout dynamic channel**: a per-node
 `translate / rotate / scale / opacity / color-override / content-override` applied *after*
 taffy as a transform, exactly the mechanism `NodePosition::Absolute` already uses (a pure
-post-layout translation, never mapped onto taffy's own `Position` - see CLAUDE.md's
+post-layout translation, never mapped onto taffy's own `Position` - see AGENTS.md's
 Position-vs-Sizing pitfall). Animating this channel never touches taffy, never re-resolves,
 never round-trips through Charter.
 
@@ -198,7 +198,7 @@ modules, expose them to third-party plugins via a deliberate host-fn surface
 host fn) so plugins beyond Charter and WebCodium can consume the same interpolation, easing,
 deformation, and arc-length primitives instead of re-implementing them.
 
-Follow the existing host-fn discipline (CLAUDE.md): typed structs deriving
+Follow the existing host-fn discipline (AGENTS.md): typed structs deriving
 `ToBytes / FromBytes` with `#[encoding(Json)]`, `#[serde(rename_all = "camelCase")]` on every
 boundary-crossing struct (a mismatch fails deserialization silently), and capability-gating via
 the manifest's `capabilities.hostFns`. This surface is **additive** and gated behind the

@@ -18,7 +18,7 @@
 // single-URL-per-variant convention the hand-authored catalogue already used.
 //
 // Rerun: `node plugins/fontavious/generate-catalogue.mjs` -> rewrites catalogue.json. Then
-// rebuild+copy the wasm (see CLAUDE.md deploy pitfall).
+// rebuild+copy the wasm (see AGENTS.md deploy pitfall).
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';

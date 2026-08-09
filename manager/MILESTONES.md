@@ -381,7 +381,7 @@ New `hovered: bool` wire field on every `UiNode` variant, independent from `sele
 
 ## M11: Composition - children, name-neutral resolution, clone-per-view
 
-Turned view composition (which views nest inside which) into a first-class, plugin-agnostic system, and built the component/instance model on top. See CLAUDE.md's Common Pitfalls (children/composition bullets) for the load-bearing contracts.
+Turned view composition (which views nest inside which) into a first-class, plugin-agnostic system, and built the component/instance model on top. See AGENTS.md's Common Pitfalls (children/composition bullets) for the load-bearing contracts.
 
 ### [x] M11.1 - Pointer drag-and-drop view nesting
 
@@ -452,7 +452,7 @@ M4 panels can be migrated in parallel once their respective M2 + M3 deps are don
 
 ## M12: Post-M11 Shipped Work
 
-Landed on `main` after the M11 composition work. Durable contracts for each live in CLAUDE.md; this section is the progress record only.
+Landed on `main` after the M11 composition work. Durable contracts for each live in AGENTS.md; this section is the progress record only.
 
 ### [x] M12.1 - Composition-alias decoupling
 

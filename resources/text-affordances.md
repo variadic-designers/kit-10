@@ -5,7 +5,7 @@
 > channel is live: Fontavious's `family_facts`, the host-assembled
 > `fontFacts` map on `on_resolve`, Charter's `resolve_font_weight` +
 > `snap_text_weights`, and the `font_requests` output driving the editor's
-> font fetching - see CLAUDE.md's weight-snapping note for the
+> font fetching - see AGENTS.md's weight-snapping note for the
 > implementation. `font-weight` is now `inputType: "weight"` -
 > `WeightField.svelte` renders a segmented row of named-weight buttons
 > (same grammar as `arrange`'s tabs), filtered to the resolved family's
@@ -16,7 +16,7 @@
 > offset/thickness, not a guessed baseline), and Charter's
 > `parse_text_align`/`parse_text_decoration` + `inputType: "align"`/
 > `"decoration"` give them real four- and three-icon segmented panel
-> controls - see CLAUDE.md's Phase 3 note for the implementation. Three
+> controls - see AGENTS.md's Phase 3 note for the implementation. Three
 > deliberate deviations from the plan below, all "UX first, not
 > data-integrity yet": **facts are catalogue-only** - the Vellum
 > `font_facts`-from-loaded-bytes oracle (Phase 1's uploaded-font leg) is
@@ -36,7 +36,7 @@
 > `f32` wire field (`taf_can_do` commit 3a50b8b - `TextData`/
 > `TextAreaData.line_height`, threaded through `shape_area`,
 > `measure_text_node`, `hash_area`, the `TextMeasureKey` cache, and
-> `project_text_area`'s zoom scaling - see CLAUDE.md's Phase 4 note) and
+> `project_text_area`'s zoom scaling - see AGENTS.md's Phase 4 note) and
 > Charter's `compile_line_height` (same only-when-unset rule as
 > `compile_arrange`; a bare number is a CSS-style multiplier of
 > `font-size`, a `px` value is absolute, unset derives the ratio ramp).
@@ -115,7 +115,7 @@ no decoration, no line-height, no letter-spacing.
 Vec<String>` (family names) and family-only `is_font_loaded(name)`. The old
   `is_font_variant_loaded` (swash `wght`-axis introspection) was removed when
   the resolve-time scan moved to asking Fontavious `variant_url` instead -
-  Vellum stopped answering catalogue-shaped questions (see CLAUDE.md's
+  Vellum stopped answering catalogue-shaped questions (see AGENTS.md's
   Fontavious section). Phase 1 re-adds introspection but with a different
   contract: _describe the bytes you loaded_, never _what exists in the world_.
 - **Fontavious's catalogue already models weight as a range**
@@ -194,7 +194,7 @@ Implementation cautions, learned the hard way elsewhere in this repo:
 
 Each phase is independently shippable. Phases 1, 3 and 4 touch the Vellum
 wire, so each is a two-repo commit (source → `taf_can_do`, rebuilt artifacts
-→ `kit10`) per CLAUDE.md's WASM-deploy pitfall.
+→ `kit10`) per AGENTS.md's WASM-deploy pitfall.
 
 ### Phase 1 - Weight honesty (the font-facts channel)
 
@@ -369,7 +369,7 @@ pretending the five properties are actually one property underneath.
 - _Payoff:_ the text category shrinks from 5 typography rows + Highlight's
   4 rows (9 total) down to 1 typography control + Fill + Content +
   Highlight - matching the layout category's post-arrangement density
-  (CLAUDE.md: `box_categories()`'s layout category went from ~19 fields to
+  (AGENTS.md: `box_categories()`'s layout category went from ~19 fields to
   4).
 
 ### Phase 6 - True single-layer collapse (contingency, not a default target)
@@ -453,6 +453,6 @@ thing" at a glance).
 - [charter.md](./charter.md) - raw-CSS-as-debt, the earn-an-opinion north star
 - [text.md](./text.md) - Vellum's glyph rendering internals (MTSDF/bitmap),
   the layer _below_ everything here
-- CLAUDE.md - Fontavious section (catalogue/variant model, why Vellum stopped
+- AGENTS.md - Fontavious section (catalogue/variant model, why Vellum stopped
   answering catalogue questions), WASM deploy pitfall, `compile_resize`/
   `compile_arrange` precedents

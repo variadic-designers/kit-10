@@ -1183,7 +1183,7 @@ export async function fetchResolutionRows(
 //
 // Consumed by Charter's `occurrence_map` (see plugins/charter/src/lib.rs's OverriddenOccurrence
 // struct) and by the Editor's occurrence-aware selection/drag/navigation (view-tree.ts) -- both
-// keyed by `occurrenceKey`, not just `viewId`, per CLAUDE.md's occurrence-key architecture.
+// keyed by `occurrenceKey`, not just `viewId`, per AGENTS.md's occurrence-key architecture.
 export interface OverriddenOccurrence {
 	occurrenceKey: string;
 	viewId: string;

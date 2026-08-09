@@ -166,7 +166,7 @@ struct SuggestionSource {
 // OTHER properties beyond its own (direction, gap, grid cell-min, plus the raw escape-hatch
 // fields for each tab's "Advanced" disclosure) -- this struct is how it declares them as data
 // instead of the editor hardcoding property names (see the "Editor Plugin Agnosticism" note in
-// CLAUDE.md). `gap`/`cell_min` carry full FieldDefs (not just key strings) so the editor can hand
+// AGENTS.md). `gap`/`cell_min` carry full FieldDefs (not just key strings) so the editor can hand
 // them straight to the existing generic StyleField component, exactly like `advanced`/
 // `grid_advanced` already must.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -202,7 +202,7 @@ struct ArrangeKeys {
 
 // Declared only on the two "resize" FieldDefs (width/height in box_categories). Phase 4 of
 // layout-affordances: min/max limits matter only when a dimension can actually vary with context
-// (Fill, or a fixed percent of a parent that isn't self-sized -- see CLAUDE.md's `min_width`
+// (Fill, or a fixed percent of a parent that isn't self-sized -- see AGENTS.md's `min_width`
 // percent-floor note), so instead of four permanent top-level rows they ride the resize control
 // as its own inline follow-ons, revealed exactly when meaningful. Full FieldDefs, same reason as
 // ArrangeKeys: the editor hands them straight to the generic StyleField, hardcoding nothing.
@@ -310,7 +310,7 @@ struct OnResolveResult {
 // icon strings for the editor's panel.
 //
 // No rename_all - plugin-authored output the editor reads, same snake_case rule as
-// OnResolveResult (see the camelCase pitfall in CLAUDE.md).
+// OnResolveResult (see the camelCase pitfall in AGENTS.md).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct PanelItem {
     id: String,
@@ -318,7 +318,7 @@ struct PanelItem {
     // this item's primitive has no `children` field (e.g. Text/Image) - editor hides the DnD
     // nesting affordance in that case. The alias itself comes from the resolved `children`
     // property's `token_alias`, since that's what the editor's `api.upsertViewToken` writes-by-alias
-    // call already targets (see CLAUDE.md's View-token override pitfalls).
+    // call already targets (see AGENTS.md's View-token override pitfalls).
     #[serde(default)]
     write_alias: Option<String>,
     // Ops the plugin declares available on this item - drives the editor's right-click context
@@ -401,7 +401,7 @@ fn encode_viewport_data_binary(data: &[UiNode]) -> Option<String> {
     let mut buf = Vec::new();
     // rmp_serde serializes structs as arrays by default, but Vellum's deserializer
     // expects maps (struct-variant format). with_struct_map() fixes this - see
-    // CLAUDE.md's "bincode was unmaintained" and the rmp_serde replace note.
+    // AGENTS.md's "bincode was unmaintained" and the rmp_serde replace note.
     let mut ser = rmp_serde::Serializer::new(&mut buf).with_struct_map();
     data.serialize(&mut ser).ok()?;
     Some(base64::Engine::encode(
@@ -3333,7 +3333,7 @@ fn build_views_panel_manifest(parsed: &OnResolveInput) -> PanelManifest {
             // freshly composed Box) - the editor's `write_alias ?? 'children'` fallback (see
             // Views.svelte) writes the canonical alias name on first use. The alias itself, when
             // present, comes from the resolved property's `token_alias`, which is what the
-            // editor's `api.upsertViewToken` already targets (see CLAUDE.md's View-token
+            // editor's `api.upsertViewToken` already targets (see AGENTS.md's View-token
             // override pitfalls); Charter only surfaces the value here, it doesn't invent or
             // remap it.
             let write_alias = view.resolved_kits.iter().find_map(|k| {
@@ -3404,7 +3404,7 @@ pub fn on_resolve(input: String) -> FnResult<String> {
     // the *channel* is separate from `OnResolveResult`'s return value. Decoupling lets a future
     // plugin publish a panel manifest on whatever cadence it wants (e.g. a non-Charter utility
     // plugin refreshing its own panel without a full resolve), and keeps `OnResolveResult` focused
-    // on viewport data + categories instead of accumulating per-panel fields. See CLAUDE.md's
+    // on viewport data + categories instead of accumulating per-panel fields. See AGENTS.md's
     // panel-manifest section.
     let manifest = build_views_panel_manifest(&parsed);
     let _ = unsafe {
@@ -5189,7 +5189,7 @@ mod parse_color_tests {
 
     #[test]
     fn hsl_and_hsla_are_now_supported_not_black() {
-        // Closes the documented CLAUDE.md pitfall: hsl() used to fall through to black.
+        // Closes the documented AGENTS.md pitfall: hsl() used to fall through to black.
         let red_hsl = parse_color("hsl(0, 100%, 50%)");
         let red_hex = parse_color("#ff0000");
         assert!(
@@ -5203,7 +5203,7 @@ mod parse_color_tests {
 
     #[test]
     fn transparent_keyword_is_zero_alpha_not_black() {
-        // Closes the other documented CLAUDE.md pitfall: `transparent` used to fall through to
+        // Closes the other documented AGENTS.md pitfall: `transparent` used to fall through to
         // opaque black.
         let got = parse_color("transparent");
         assert_eq!(got, OklabColor::new(0.0, 0.0, 0.0, 0.0));
@@ -5433,7 +5433,7 @@ mod sprite_batch_tests {
         assert!(data.sprites.is_empty());
     }
 
-    // Regression guard for the camelCase-mismatch pitfall (CLAUDE.md): SpriteInstance/
+    // Regression guard for the camelCase-mismatch pitfall (AGENTS.md): SpriteInstance/
     // SpriteBatchData cross into the wire the same way ShapeData/PathSegment already do (no
     // #[serde(rename_all = "camelCase")] anywhere in kit10-scene's wire types) -- asserting on
     // the ACTUAL SERIALIZED JSON key names, not just Rust field names, is what would catch it if
@@ -6571,7 +6571,7 @@ mod wire_schema_tests {
 }
 
 // `merge_kits` (this file) and manager's `flattenKitResults` (manager/src/resolve/resolve.ts)
-// are two independent implementations of the SAME rule - CLAUDE.md documents "keep in lockstep
+// are two independent implementations of the SAME rule - AGENTS.md documents "keep in lockstep
 // by hand," with no automated enforcement prior to this test. Both load the same
 // ../../fixtures/kit-flatten-golden.json and must agree with its `expected` block; a future
 // divergence in either implementation now fails a test instead of silently drifting.

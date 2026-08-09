@@ -92,7 +92,7 @@ function makeSeedHelpers(api: Api, projectId: string) {
 	// path) as a real project asset row, computing its real sha256 checksum for idempotent
 	// upsert-by-checksum. This is as far as manager-side seeding can go: the actual bytes only
 	// ever live in the browser's IndexedDB via app-side code (`assetBytes`,
-	// `src/lib/editor/asset-bytes.ts`), which this package cannot import (see CLAUDE.md's
+	// `src/lib/editor/asset-bytes.ts`), which this package cannot import (see AGENTS.md's
 	// manager/app boundary). The editor's image-reload scan (`Editor.svelte`, mirrors the
 	// existing font-fetch scan) is what actually fetches `link` and caches the bytes into
 	// IndexedDB + Vellum, the first time any view resolves a `src` pointing at this asset's id --
@@ -553,7 +553,7 @@ export async function seedDemoProject(
 		background: 'oklch(100% 0 0)',
 		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
 		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
-		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		// the compile_arrange Stack-Column pitfall in AGENTS.md.
 		width: 'fill'
 	});
 	const heroKit = await boxKit('Hero', {
@@ -807,7 +807,7 @@ export async function seedJuiceLandingPage(
 		makeSeedHelpers(api, proj.id);
 
 	// A polyline approximating a circle, in a text node's own local space (Deform::ArclengthPath's
-	// coordinate convention - see CLAUDE.md's text-on-path note): `n` points is plenty for a badge
+	// coordinate convention - see AGENTS.md's text-on-path note): `n` points is plenty for a badge
 	// this small, since Vellum arc-length-samples the polyline rather than needing a true curve.
 	function circlePoints(cx: number, cy: number, r: number, n = 48): [number, number][] {
 		const pts: [number, number][] = [];
@@ -995,7 +995,7 @@ export async function seedJuiceLandingPage(
 		background: 'oklch(100% 0 0)',
 		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
 		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
-		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		// the compile_arrange Stack-Column pitfall in AGENTS.md.
 		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
@@ -1562,7 +1562,7 @@ export async function seedGymLandingPage(
 		background: 'oklch(100% 0 0)',
 		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
 		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
-		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		// the compile_arrange Stack-Column pitfall in AGENTS.md.
 		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '20px' });
@@ -2047,7 +2047,7 @@ export async function seedMerchLandingPage(
 		background: 'oklch(100% 0 0)',
 		// A top-level Page section: Page's own Stack (column) has no explicit align-items, so this
 		// must spell out Fill itself rather than lean on the old implicit-stretch fallback -- see
-		// the compile_arrange Stack-Column pitfall in CLAUDE.md.
+		// the compile_arrange Stack-Column pitfall in AGENTS.md.
 		width: 'fill'
 	});
 	const navLinksKit = await boxKit('Nav Links', { arrange: 'cluster', gap: '24px' });

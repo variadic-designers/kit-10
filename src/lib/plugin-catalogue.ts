@@ -88,7 +88,7 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 		version: '0.1.0',
 		// Bootstrapped by manager/src/plugins-bootstrap.ts (registerBuiltinPlugins) like
 		// Fontavious/Tenner, so every project's HTML export resolves to it by default with no
-		// manual /store install -- see CLAUDE.md's plugins/webcodium/ note.
+		// manual /store install -- see AGENTS.md's plugins/webcodium/ note.
 		status: 'installed',
 		firstParty: true,
 		activation: 'lazy',

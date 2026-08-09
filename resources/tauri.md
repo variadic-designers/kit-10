@@ -18,7 +18,7 @@ The editor's UI (Svelte panels, dialogs, forms) is plain CSS/DOM - any OS webvie
 
 ## Why Pattern B is realistic for KIT•10 specifically
 
-`taf_can_do` (Vellum) already has a **`standalone` feature flag** (winit/pollster) used for the native demo binary - see the Vellum section of `CLAUDE.md`. That's the native-rendering groundwork Pattern B needs already sitting in the codebase; it would need to become a raw-window-handle overlay hosted inside a Tauri window instead of its own standalone winit window, but this isn't starting from zero. This path would make Linux a first-class target instead of a "use the browser" carve-out.
+`taf_can_do` (Vellum) already has a **`standalone` feature flag** (winit/pollster) used for the native demo binary - see the Vellum section of `AGENTS.md`. That's the native-rendering groundwork Pattern B needs already sitting in the codebase; it would need to become a raw-window-handle overlay hosted inside a Tauri window instead of its own standalone winit window, but this isn't starting from zero. This path would make Linux a first-class target instead of a "use the browser" carve-out.
 
 ## Open questions / not yet done
 

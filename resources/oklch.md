@@ -72,7 +72,7 @@ owns the surface"); nothing in the editor/Charter changed.
   (`pipeline.rs::wgsl`), the compiler folds it away when false. Deliberately
   *not* a `SceneUniforms` field: several shaders declare only a short prefix of
   that shared buffer, so a trailing uniform would be a byte-layout minefield
-  (see CLAUDE.md). Every surface-writing shader (`shader`/`grid`/`hatch`/
+  (see AGENTS.md). Every surface-writing shader (`shader`/`grid`/`hatch`/
   `glyph`/`image`/`composite`) applies `to_output_gamut`; `composite` is the
   one special case - `content_tex` already holds P3, so it pulls content back
   with `from_output_gamut`, runs its overlay math in sRGB as before, and

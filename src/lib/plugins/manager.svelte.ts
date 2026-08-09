@@ -97,7 +97,7 @@ export function createPluginManager(api: Api) {
 	// `compositionFieldKeys` / `viewIcons` flat state (Charter now bundles topology + icon +
 	// write-alias into one PanelManifest per panel-id, so the editor's panel can render purely
 	// off this map instead of re-deriving topology client-side). Keyed by panel_id ("views"
-	// today; additive for future plugin-driven panels - see CLAUDE.md's panel-manifest section).
+	// today; additive for future plugin-driven panels - see AGENTS.md's panel-manifest section).
 	let panelManifests = $state<Map<string, PanelManifest>>(new Map());
 	let viewportData = $state<string>('[]');
 	// MessagePack-binary path: when Charter emits viewport_data_binary, this is the
@@ -568,7 +568,7 @@ export function createPluginManager(api: Api) {
 				// Plugin publishes a panel manifest. The manifest lands in the `panelManifests` $state
 				// map keyed by `panel_id`, so any editor panel that derives off `pluginManager.panelManifest(id)`
 				// re-renders the moment a plugin (e.g. Charter, from inside `on_resolve`) writes a new
-				// manifest. Decoupled from `OnResolveResult`'s return shape on purpose: see CLAUDE.md's
+				// manifest. Decoupled from `OnResolveResult`'s return shape on purpose: see AGENTS.md's
 				// panel-manifest section - a future plugin refreshing its own panel doesn't need a full
 				// resolve cycle, and `OnResolveResult` stays focused on viewport data + categories.
 				kit10_panel_publish(cp: any, inputOffs: bigint) {
@@ -639,7 +639,7 @@ export function createPluginManager(api: Api) {
 			// host fn, which Charter calls from inside `on_resolve`'s body (see lib.rs). That write
 			// lands directly in the `panelManifests` $state map, so this function's `$state` writes
 			// and the host fn's writes both happen before any panel subtends. Decoupled on
-			// purpose: see CLAUDE.md - "Charter owns panel manifests."
+			// purpose: see AGENTS.md - "Charter owns panel manifests."
 		}
 	}
 

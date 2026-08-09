@@ -43,7 +43,7 @@
 	const resizeKeys = $derived(field.resizeKeys as ResizeKeys);
 
 	// Limits only matter when the dimension can actually vary with context: Fill (shares free
-	// space) or a fixed % of the parent (see CLAUDE.md's min_width percent-floor note). A fixed
+	// space) or a fixed % of the parent (see AGENTS.md's min_width percent-floor note). A fixed
 	// px/hug dimension IS its own limit, so the pair stays hidden then -- revealed exactly when
 	// meaningful, the same "the selector is the revealer" grammar as Arrangement's tabs.
 	const value = $derived(resolvedMap.get(field.key)?.value);

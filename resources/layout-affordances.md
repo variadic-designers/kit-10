@@ -7,7 +7,7 @@
 Gap → repeat(auto-fit, minmax(min,1fr))` opinion, and the min/max limit
 > fold (Phase 4: `ResizeKeys` on the width/height `resize` fields +
 > `ResizeField.svelte` revealing the pair when the dimension is Fill/`%` or
-> a limit is already set) are all live - see CLAUDE.md's Charter section for
+> a limit is already set) are all live - see AGENTS.md's Charter section for
 > the implementation. Two deliberate deviations from the phased roadmap
 > below: **Grid shipped with its real auto-fit opinion immediately**
 > (skipping the Phase 1 raw-fields stub - Vellum's `TrackSize` gained an
@@ -225,7 +225,7 @@ Each phase is independently shippable and follows the `compile_resize` template 
 ### Phase 4 - Size limits (min/max) as contextual disclosure
 
 - The four raw `min-/max-width/height` fields clutter every box while mattering only
-  sometimes (notably the percent-of-auto-parent floor - see CLAUDE.md's `min_width`
+  sometimes (notably the percent-of-auto-parent floor - see AGENTS.md's `min_width`
   note). Fold them into the **resize** control: when a dimension is Fill or Fixed-`%`,
   reveal an optional, **labeled** "won't shrink below / grow past" pair, tied to
   exactly when it's meaningful.
@@ -294,5 +294,5 @@ for how each phase's fields retire.
 - [charter.md](./charter.md) - the spectrum this sits on (Framer philosophy, DOM-control
   architecture, Webflow-grade cascade respect)
 - [figma.md](./figma.md) · [framer.md](./framer.md) · [penpot.md](./penpot.md) · [webflow.md](./webflow.md)
-- CLAUDE.md - Charter "opinionated translation layer" note, `compile_resize`, the
+- AGENTS.md - Charter "opinionated translation layer" note, `compile_resize`, the
   retired item-flex precedent, and the `min_width` percent-floor rationale Phase 4 leans on

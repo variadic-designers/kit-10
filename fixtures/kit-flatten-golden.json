@@ -1,5 +1,5 @@
 {
-	"_comment": "Cross-language golden fixture for kit-flattening (higher conditionCount wins outright regardless of kit order; later kit only breaks a genuine tie). Consumed by manager/src/resolve/resolve.test.ts (flattenKitResults) AND plugins/charter/src/lib.rs (merge_kits) - both must agree on `expected`. See CLAUDE.md's note on keeping the two in lockstep.",
+	"_comment": "Cross-language golden fixture for kit-flattening (higher conditionCount wins outright regardless of kit order; later kit only breaks a genuine tie). Consumed by manager/src/resolve/resolve.test.ts (flattenKitResults) AND plugins/charter/src/lib.rs (merge_kits) - both must agree on `expected`. See AGENTS.md's note on keeping the two in lockstep.",
 	"kits": [
 		{
 			"kitId": "kit-a",

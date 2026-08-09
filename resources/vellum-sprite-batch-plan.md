@@ -146,7 +146,7 @@ populates for images, no new resource-loading concept needed. The one new piece 
 (packed atlas vs. `ImageCache`'s per-image standalone texture) and a new wasm-exported entry point,
 `vellum.load_sprite(id, bytes, tint_hint)`. Detecting an unresolved `sprite_id` referenced by a
 resolved `SpriteBatchData` and fetching+loading it is the exact same shape as `Editor.svelte`'s
-existing image-reload scan (CLAUDE.md's "Image Reload Scan" note) - reuse that scan's structure, add a
+existing image-reload scan (AGENTS.md's "Image Reload Scan" note) - reuse that scan's structure, add a
 sprite-id variant.
 
 **Layout (`layout/mod.rs`)**: `SpriteBatch` is sized and treated as a leaf exactly like `Shape` -

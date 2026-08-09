@@ -1358,7 +1358,7 @@ describe('range overlap matching', () => {
 });
 
 // `flattenKitResults` (here) and Charter's `merge_kits` (plugins/charter/src/lib.rs) are two
-// independent implementations of the SAME rule, documented in CLAUDE.md as "must be kept in
+// independent implementations of the SAME rule, documented in AGENTS.md as "must be kept in
 // lockstep by hand" with no automated cross-language enforcement -- this is that enforcement.
 // Both load ../../../fixtures/kit-flatten-golden.json and must agree with its `expected` block.
 // Unlike every other test in this file, this one bypasses the DB/resolver entirely and constructs

@@ -415,7 +415,7 @@
 	// The token alias a parent view's children live under - the plugin's manifest carries, per
 	// item, the `write_alias` to write when that item's children list changes (overriding any
 	// kit-declared `children` by alias during resolution; self-declares when no kit declares one -
-	// see CLAUDE.md). `write_alias` is null when this view's primitive has no children field
+	// see AGENTS.md). `write_alias` is null when this view's primitive has no children field
 	// (Text/Image) - drops onto such a view are rejected by `canDrop` before they reach here, but
 	// guard anyway so a stale manifest can't crash a write.
 	function childrenAlias(parentViewId: string): string {

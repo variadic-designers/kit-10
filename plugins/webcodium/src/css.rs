@@ -230,7 +230,7 @@ pub(crate) fn with_reset(generated: &str) -> String {
 }
 
 // One `@font-face` block per distinct (family, style, URL) -- always emitted as `format("woff2")`
-// since that's the only format Fontavious ever fetches (see CLAUDE.md's Fontavious section: it
+// since that's the only format Fontavious ever fetches (see AGENTS.md's Fontavious section: it
 // streams WOFF2 exclusively). A request with no resolved link (kit10_get_font_links found no URL
 // for it -- a catalogue miss, or an uncatalogued family) is simply absent from `links`, so it's
 // skipped here too: the exported `font-family: "X";` declaration elsewhere in the stylesheet still
@@ -238,7 +238,7 @@ pub(crate) fn with_reset(generated: &str) -> String {
 // always did before this feature existed.
 //
 // Grouped by URL, not by request: several distinct (family, weight, style) requests can legitimately
-// resolve to the SAME url (CLAUDE.md's Fontavious section -- "most catalogued families are variable
+// resolve to the SAME url (AGENTS.md's Fontavious section -- "most catalogued families are variable
 // fonts where one URL covers a continuous range"). Emitting one block per REQUEST repeated the
 // identical file's `src` once per weight -- four blocks for Inter 400/500/600/700 all pointing at
 // the same variable woff2. Two requests can only ever share a url by construction of what
@@ -354,7 +354,7 @@ fn squircle_radius(node: &UiNode) -> Option<f32> {
 // ordinary CSS cascade (same selector, later in source order, same specificity: last declaration
 // wins per-property). MUST say `superellipse(4)` explicitly, never the bare `squircle` keyword -
 // that keyword means `superellipse(2)`, a visibly rounder curve than this codebase's own
-// `SQUIRCLE_N = 4` (see CLAUDE.md's WebCodium section), which would make a supporting browser show
+// `SQUIRCLE_N = 4` (see AGENTS.md's WebCodium section), which would make a supporting browser show
 // a DIFFERENT shape than the fallback it's meant to enhance. A non-supporting browser skips this
 // whole block via feature detection, leaving the fallback declaration untouched.
 //

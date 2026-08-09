@@ -26,7 +26,7 @@ export interface PreferenceOption {
 }
 
 // One preference a plugin declares. Snake_case on the wire (Rust-authored, read by JS) -- same
-// convention as OnResolveResult; see CLAUDE.md's camelCase-vs-snake_case pitfall.
+// convention as OnResolveResult; see AGENTS.md's camelCase-vs-snake_case pitfall.
 export interface PreferenceDef {
 	// Stable id, unique within the declaring plugin. Storage key is `<plugin>:<id>`.
 	id: string;

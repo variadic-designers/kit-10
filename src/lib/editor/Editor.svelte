@@ -418,7 +418,7 @@
 	// ids, root set, per-view icon, write-alias for DnD) bundled into one PanelManifest. The editor
 	// reads `pluginManager.panelManifest('views')` and renders a tree from that -- instead of the
 	// old pairing of `compositionFieldKeys` + `viewIcons` + client-side DAG re-derivation. See
-	// CLAUDE.md's panel-manifest section: Charter owns panel contents, the editor's panels are
+	// AGENTS.md's panel-manifest section: Charter owns panel contents, the editor's panels are
 	// generic renderers over the manifest shape.
 	const viewsPanelManifest = $derived(pluginManager?.panelManifest('views'));
 	// Charter's own nesting opinion (which resolved-property keys carry child viewRefs) -- the
@@ -618,7 +618,7 @@
 	// those forever would just spam the catalogue lookup for something that will never change.
 	// Anything else (a worker call rejecting, an unreachable CDN, a transient network blip) is
 	// exactly the "real bug that looks identical to a catalogue miss" case -- those ARE worth
-	// retrying, because they very plausibly succeed a moment later on their own (see CLAUDE.md's
+	// retrying, because they very plausibly succeed a moment later on their own (see AGENTS.md's
 	// "self-correcting on the facts re-resolve" note for the specific resolve-racing-ahead case).
 	// Shared by BOTH the facts scan and the fetch scan below.
 	function isPermanentFontFailure(err: unknown): boolean {
@@ -719,7 +719,7 @@
 	// font-family field renders this so a total failure (bad catalogue entry, unreachable CDN,
 	// cache fault) is visible in the panel instead of only in the console / IndexedDB devtools.
 	// A single missing weight of an otherwise-loaded family is NOT an error (documented,
-	// expected behavior -- see CLAUDE.md's "not every font has every weight" note): `ready` is
+	// expected behavior -- see AGENTS.md's "not every font has every weight" note): `ready` is
 	// sticky and a later per-weight miss never downgrades it back to `error`.
 	let fontStatus = $state<Record<string, FontLoadStatus>>({});
 

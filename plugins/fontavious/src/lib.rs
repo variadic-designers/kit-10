@@ -95,7 +95,7 @@ struct PreferenceDef {
     id: String,
     label: String,
     // "toggle" for all of Fontavious's prefs. Single-word key, so no camelCase concern (the wire
-    // shape the host reads -- see CLAUDE.md's snake_case/camelCase pitfall).
+    // shape the host reads -- see AGENTS.md's snake_case/camelCase pitfall).
     kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<String>,

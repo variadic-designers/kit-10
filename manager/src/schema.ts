@@ -152,7 +152,7 @@ export interface PluginManifest {
 
 // Stamped into exportProject's output and checked by importProjectData -- bump this whenever
 // the DB2026_07_30 interface below is renamed for an actual schema change (not for every minor
-// edit; this project doesn't yet have a real migration chain, see CLAUDE.md).
+// edit; this project doesn't yet have a real migration chain, see AGENTS.md).
 export const CURRENT_SCHEMA_VERSION = '2026-07-30';
 
 // --- Schema tables ---

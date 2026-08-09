@@ -18,7 +18,7 @@ export function getVellumInstance(): VellumModule | null {
 
 // Vellum renders on demand (Viewport.svelte registers its own requestRender as the
 // requester on mount) rather than via a perpetual requestAnimationFrame loop -- see the
-// DPR-awareness/render-loop notes in CLAUDE.md. Anything outside Viewport.svelte that mutates
+// DPR-awareness/render-loop notes in AGENTS.md. Anything outside Viewport.svelte that mutates
 // state Vellum's canvas depends on -- currently just `load_font`, called directly against
 // getVellumInstance() from here and StyleField.svelte, entirely outside Viewport's own
 // data/theme/pan/zoom effects -- needs to ask for a repaint through here, or the newly-loaded

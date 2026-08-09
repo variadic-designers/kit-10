@@ -3,7 +3,7 @@ import type { FamilyFacts } from './types.js';
 // Mirrors Charter's `resolve_font_weight` (plugins/charter/src/lib.rs) exactly, so the panel's
 // idea of "the working weight" for a family never disagrees with what actually renders. Charter
 // applies this at render time, per Text node, and deliberately never rewrites the stored kit
-// value -- substitution is a render decision (see CLAUDE.md). WeightField runs the identical
+// value -- substitution is a render decision (see AGENTS.md). WeightField runs the identical
 // algorithm client-side purely to DISPLAY the rendered weight: it highlights resolveFontWeight
 // (the on-screen weight), not the raw stored value, so a stored 600 against a family that only
 // ships [400,700] highlights 700 (matching the canvas) instead of highlighting nothing. Because

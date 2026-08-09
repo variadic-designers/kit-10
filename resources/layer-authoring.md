@@ -2,7 +2,7 @@
 
 How a designer builds and fills **Layers** (conditional style rules) from the Axes + Render panels,
 end to end. Shipped 2026-07-19. All editor + manager; no Charter/Vellum rebuild. This is the fuller
-writeup behind the concise notes in `CLAUDE.md` (§3 Editor UI, §2 Manager).
+writeup behind the concise notes in `AGENTS.md` (§3 Editor UI, §2 Manager).
 
 ## Mental model
 
@@ -87,7 +87,7 @@ If you ever "simplify" this back to storing a layer id, you reintroduce that exa
   the pipette banner for "delete this layer" are all natural adds. Keep gestures consistent: alt-click =
   destructive-remove in *both* panels (row → one property, dot → whole layer).
 
-- **Preview before commit.** `CLAUDE.md`'s "hover/preview intermediary value" note (a Charter `on_field_preview`
+- **Preview before commit.** `AGENTS.md`'s "hover/preview intermediary value" note (a Charter `on_field_preview`
   sibling to `on_selection_change`) pairs naturally with painting: hovering a property's track dot while
   holding a Layer could live-preview the paint in Vellum before the click commits. Reuse that patch-and-
   rebuild path, never mutate `last_resolve_input`.

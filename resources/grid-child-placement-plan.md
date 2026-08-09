@@ -230,7 +230,7 @@ type (~line 23) and thread it straight into `<ArrangeField>` (~line 359-367).
   follow-up, not in scope here.
 - A view referenced by multiple different Grid parents (DAG): the dropdown's option list reflects
   the *currently selected occurrence's* parent (best-effort), but the write is still view-scoped -
-  identical to how every other Render-panel field already behaves per CLAUDE.md's "Active stays
+  identical to how every other Render-panel field already behaves per AGENTS.md's "Active stays
   view-level" rule. Not a new limitation introduced by this change.
 
 ## Verification (once implemented)

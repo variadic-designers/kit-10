@@ -18,7 +18,7 @@ real integration points, so the substrate gets built low-risk-first.
 >   transform (`GlyphTransform`), text-*on*-path (per-glyph path placement, `shape_area`'s
 >   `glyph_path_transform`), and the `Deform` wire contract (`kit10-scene` v0.2.6, only
 >   `ArclengthPath` interpreted so far) are all DONE. Charter authors it via a `text-path` (+
->   `text-path-offset`) property, a raw JSON-array escape hatch - see CLAUDE.md's own note. This
+>   `text-path-offset`) property, a raw JSON-array escape hatch - see AGENTS.md's own note. This
 >   was the one milestone that touched Charter and did the `kit10-scene` bump (dual wasm rebuild,
 >   both repos deployed).
 > - **M6 (host-fns):** not started.
@@ -71,7 +71,7 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
 - New `#[wasm_bindgen]` exports in `taf_can_do/src/lib.rs`: `set_node_dynamic(index, translate,
   rotate, scale, opacity)` + a clear/reset. Apply post-layout into `layout_result` each frame,
   extending the existing `translate_layout_result_subtree` path, and **re-derive
-  selection/hover/hatch caches inside the same apply** (CLAUDE.md's "any per-frame cache split
+  selection/hover/hatch caches inside the same apply** (AGENTS.md's "any per-frame cache split
   from the dragged layout must be re-derived or it lags" rule).
 - Drive via the reserved `continuousMode` flag in `Viewport.svelte` + a rAF loop, gated so it
   only paints while dynamic state is active; every mutation pairs with `requestRender()`.
@@ -113,7 +113,7 @@ UI, GSAP exporter), content-reflow layout tweening, and Pillar E (Scene3d / SDF)
 
 ### M6 - Plugin-facing host-fns (Pillar F). Additive.
 - Expose `kit10-motion`'s lerp/ease + Pillar C's deform/arc-length as capability-gated host-fns
-  (typed `ToBytes/FromBytes` + `#[serde(rename_all = "camelCase")]`, per CLAUDE.md host-fn
+  (typed `ToBytes/FromBytes` + `#[serde(rename_all = "camelCase")]`, per AGENTS.md host-fn
   discipline). Gated behind M1/M5 landing; a re-export of proven internals, never a parallel
   impl.
 - Proof-of-life: a test/plugin calls `kit10_ease` and gets GSAP-identical output.

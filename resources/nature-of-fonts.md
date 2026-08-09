@@ -8,7 +8,7 @@
 > and **(3)** how does Fontavious grow from ~40 families to something a
 > Figma/Framer/Webflow refugee feels at home in. See also
 > `resources/text-affordances.md` (the weight/leading/align work) and
-> CLAUDE.md's Fontavious + Vellum sections for the code that exists today.
+> AGENTS.md's Fontavious + Vellum sections for the code that exists today.
 
 ---
 
@@ -41,7 +41,7 @@ that matter to us:
   (`wght`, `wdth`, `opsz`, `slnt`, `ital`, plus custom axes) interpolated
   from named masters. One variable file at `wght 400..700` replaces what used
   to be four static weight files - _this is the fact Fontavious's
-  `weightMin`/`weightMax` range models_ (CLAUDE.md's catalogue note). A true
+  `weightMin`/`weightMax` range models_ (AGENTS.md's catalogue note). A true
   variable font serves **any** weight in its range from **one URL**; a
   static-only family (Lato, Poppins from Google) is the degenerate case:
   one file per discrete weight, `weightMin == weightMax`.
@@ -139,7 +139,7 @@ pull the file out violates the ToS. So Adobe Fonts is architecturally
 **incompatible with Fontavious's fetch-the-bytes model** - there is no legal
 URL that returns the raw WOFF2. If a user wants an Adobe font in KIT•10, the
 only lawful paths are (a) they buy a self-hosting license from the underlying
-foundry and _upload_ the file (the deferred upload path in CLAUDE.md), or
+foundry and _upload_ the file (the deferred upload path in AGENTS.md), or
 (b) we never touch it. **Do not add Adobe/Typekit families to the catalogue.**
 
 ---
@@ -189,7 +189,7 @@ commercial tier; that tier needs an actual license the _user_ holds.
    small "you must have the right to use this font" affirmation, the same
    posture Figma/Framer take. This is the _only_ lawful route for commercial
    type, and it's why the Vellum `font_facts`-from-loaded-bytes oracle is on
-   the roadmap (CLAUDE.md): an uploaded font has no catalogue entry, so its
+   the roadmap (AGENTS.md): an uploaded font has no catalogue entry, so its
    weight/axis facts must be read from the bytes.
 
 3. **Foundry-hosted, token-metered (Adobe-style).** Not fetch-the-bytes at
@@ -305,7 +305,7 @@ as "the answer for the exported build," not "the answer for the live canvas."
 
 ## 5. Fonts in the build process - where they belong when KIT•10 exports code
 
-CLAUDE.md frames Vellum as preview-only and CSS/export as "a separate plugin's
+AGENTS.md frames Vellum as preview-only and CSS/export as "a separate plugin's
 concern." When that export plugin exists (React/Vue/Svelte/HTML output), font
 handling is a _first-class build concern_, and the ecosystem has converged on
 a clear answer that KIT•10 should emit.
@@ -366,7 +366,7 @@ they're a private caching detail that can 404 on version bump. Export should
 name the font by **family + weight + style** and let the target's own font
 mechanism (Fontsource/next/font/Bunny) resolve delivery. Same family/weight/
 style triple Charter's `font_requests` already emits - the export plugin
-consumes that, not the URL cache. One more instance of the CLAUDE.md rule:
+consumes that, not the URL cache. One more instance of the AGENTS.md rule:
 the URL cache is the canvas's supply chain, not a portable fact.
 
 ---
@@ -462,7 +462,7 @@ allowlist, not manual work.
 
 - **Stale-URL handling.** A larger, generated catalogue makes 404s a _when_,
   not _if_ (Google version bumps). `fetch_font` already errors cleanly and the
-  editor logs it as non-fatal (`console.warn`, per CLAUDE.md's font-error
+  editor logs it as non-fatal (`console.warn`, per AGENTS.md's font-error
   note). Consider a fallback: on a gstatic 404, re-resolve that one family via
   the CSS2 API live and retry - turns a permanent tofu into a self-heal.
   Alternatively, adopt **Bunny as a mirror vendor** and fall back host-to-host
@@ -471,7 +471,7 @@ allowlist, not manual work.
   italics, consider fetching the **Latin `unicode-range` subset** face (what
   CSS2 already offers per-range) instead of the full multi-script face.
 - **Vendor allowlist.** Adding Fontshare/Bunny means their hosts join the
-  Extism `allowedHosts` in `loadUtilityPlugin` (CLAUDE.md's Fontavious note) -
+  Extism `allowedHosts` in `loadUtilityPlugin` (AGENTS.md's Fontavious note) -
   `fonts.gstatic.com`, `fonts.bunny.net`, `api.fontshare.com`/`cdn.fontshare.com`.
 - **Search UX at scale.** `search_fonts` is a linear substring scan - fine at
   40, still fine at a few hundred, but a large catalogue wants **category
@@ -484,7 +484,7 @@ allowlist, not manual work.
 
 No catalogue, however large, covers commercial type or a client's bespoke
 brand font. The **user-upload path** (deferred, but architecturally sketched
-in CLAUDE.md - the Vellum `font_facts`-from-loaded-bytes oracle) is what makes
+in AGENTS.md - the Vellum `font_facts`-from-loaded-bytes oracle) is what makes
 Fontavious _complete_ rather than merely _large_: catalogue for the 95% case,
 upload for the long tail, and the licensing obligation for uploads sits with
 the user who holds the license (§3.2, lane 2). Catalogue breadth reduces how
@@ -503,7 +503,7 @@ often upload is needed; it never eliminates the need.
 > me these bytes cheaply"; the host owns the storage.
 
 Today the fetched WOFF2 bytes live only in Vellum's session memory and the
-editor's in-memory URL `Set` (CLAUDE.md); a reload drops both, so every
+editor's in-memory URL `Set` (AGENTS.md); a reload drops both, so every
 family re-fetches from scratch. We want to persist the _bytes_ across
 reloads **without** turning that cache into a redistribution/exposure vector
 for the proprietary tier. The two acts are genuinely different under every
@@ -527,7 +527,7 @@ it that way _by construction_, not by convention.
 ### 7.1 A dedicated IndexedDB object store, keyed by resolved URL
 
 Persistence belongs **host-side** (editor / plugin-manager), not in
-Fontavious's Extism KV store - that store is in-memory (CLAUDE.md host-fn
+Fontavious's Extism KV store - that store is in-memory (AGENTS.md host-fn
 table) and dies on reload, the very problem we're solving. Use a dedicated
 IndexedDB object store rather than the Cache Storage API: Cache Storage only
 holds `Request`/`Response` pairs, whereas an IDB record can carry the

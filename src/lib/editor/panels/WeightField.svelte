@@ -22,7 +22,7 @@
 		field: FieldDef;
 		track: (key: string) => TrackInfo;
 		resolvedMap: Map<string, ResolvedProperty>;
-		// family -> weight ranges, from Editor.svelte's font-facts channel (see CLAUDE.md's
+		// family -> weight ranges, from Editor.svelte's font-facts channel (see AGENTS.md's
 		// weight-snapping note). Absent/uncatalogued family means no filtering opinion -- same
 		// "no facts, no opinion" rule Charter's resolve_font_weight applies to rendering.
 		fontFacts?: Record<string, FamilyFacts>;
@@ -60,7 +60,7 @@
 	// The weight actually on screen. Charter's resolve_font_weight snaps a requested weight the
 	// family can't ship (Lato 600) to the nearest real one (700) at RENDER time WITHOUT rewriting
 	// the stored value -- that's the deliberate design (substitution is a render decision, see
-	// CLAUDE.md). So the panel must highlight what renders, not the raw stored value: otherwise a
+	// AGENTS.md). So the panel must highlight what renders, not the raw stored value: otherwise a
 	// stored 600 against a [400,700] family highlights nothing (600 isn't a button), which reads
 	// as "the weight control is broken / nothing selected." Mirroring the exact snap here keeps
 	// the selected button in lock-step with the glyphs on the canvas -- and because the stored

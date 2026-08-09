@@ -24,7 +24,7 @@ mechanism** → **verdict** → citation. Verdicts:
 (`Auto | Px(f32) | Percent(f32)`) is a reduced 3-way length analog, and Vellum pins every taffy
 `Style.box_sizing` to `ContentBox` permanently (`taf_can_do/src/layout/mod.rs:675`) - `border-box`
 would shrink content as padding grows, overflowing text. WebCodium is explicitly forbidden from ever
-emitting a `box-sizing` rule (`kit10/CLAUDE.md:173`), since a CSS reset defaulting to `border-box`
+emitting a `box-sizing` rule (`kit10/AGENTS.md:173`), since a CSS reset defaulting to `border-box`
 would silently conflict. **Deliberate subset** - content-box is a real CSS value, just permanently
 fixed rather than exposed.
 
@@ -51,9 +51,9 @@ resolves; unmatched names fall back to `auto`, `grid-mastery-plan.md:60-64`) and
 **Positioning.** CSS `position: static/relative/absolute/fixed/sticky` + `inset`/z-index. The four
 `NodePosition` variants (`kit10-scene/src/lib.rs:295-325`): `Relative` (static), `Nudged{dx,dy}`
 (paint-time-only translation, stays in flow - genuinely equivalent to `position:relative`+top/left,
-`CLAUDE.md:346`), `Absolute{x,y}` (world-space, root-only, drag-hint-driven only), `Anchored{dx,dy}`
+`AGENTS.md:346`), `Absolute{x,y}` (world-space, root-only, drag-hint-driven only), `Anchored{dx,dy}`
 (leaves flow, resolves against the *parent's* resolved rect via a third layout pass). None of the
-four are ever mapped onto taffy's real `Position`/`inset` (`CLAUDE.md:346,488`) - CSS
+four are ever mapped onto taffy's real `Position`/`inset` (`AGENTS.md:346,488`) - CSS
 `position:absolute` couples "leave flow" with shrink-to-fit sizing that collapses text to zero
 width, so KIT•10 deliberately reimplements it as an independent-tree-plus-post-layout-translation
 instead. `Anchored` is closer to "`position:absolute` on a `position:relative` parent" than to the
@@ -63,7 +63,7 @@ equivalent exists for `position:fixed`/`sticky`, real `inset`, or z-index/stacki
 **Structural divergence by design**, with `fixed`/`sticky`/`z-index` as flat gaps.
 
 **Corner shape.** Real 2026 CSS `corner-shape: superellipse(n)` (Chromium-only). Vellum's SDF
-renders a true superellipse, `n` fixed at 4 (`CLAUDE.md:315`). WebCodium emits
+renders a true superellipse, `n` fixed at 4 (`AGENTS.md:315`). WebCodium emits
 `@supports (corner-shape: superellipse(4))` as the same keyword/exponent for supporting browsers
 (`plugins/webcodium/src/css.rs:361-367`) - faithful there. The fallback path uses a proportionally
 area-matched circular `border-radius` (`SQUIRCLE_AREA_MATCH_SCALE ≈ 0.583`, `css.rs:273-290`), a
@@ -78,8 +78,8 @@ the container's job via gap/padding. **Field alive, authoring surface deliberate
 
 **Paint order / z-ordering.** CSS stacking contexts make paint order z-index/DOM-position sensitive.
 Vellum's is explicitly not: one global pass per primitive type (all boxes, then shapes, then images,
-then text - `CLAUDE.md:359`) - any text anywhere paints above any box anywhere regardless of
-nesting. Traded batching-for-performance against z-correctness; flagged in CLAUDE.md as "not yet
+then text - `AGENTS.md:359`) - any text anywhere paints above any box anywhere regardless of
+nesting. Traded batching-for-performance against z-correctness; flagged in AGENTS.md as "not yet
 fixed," not a permanent design choice. **Structural divergence, currently unfixed** (see Backlog #1).
 
 ---
@@ -103,16 +103,16 @@ freely mix axes of any kind - CSS never lets a media query and container query c
 `excluded_from_export` (an axis kept out of exported CSS, collapsed to its default) has no CSS
 analog at all - closer to a build-time flag. **Deliberate reduced/generalized subset.**
 
-**Tokens vs CSS custom properties.** `tokens.value` (`scalar`/`view` union, `CLAUDE.md:52`) maps
+**Tokens vs CSS custom properties.** `tokens.value` (`scalar`/`view` union, `AGENTS.md:52`) maps
 onto `--x` semantics for the scalar case, and `render_root_variables`
 (`plugins/webcodium/src/variants.rs:1114-1135`) genuinely emits `:root { --alias: value; }` for
 **project**-scope tokens, substituted via real `var(--alias)`
 (`resolve_properties_with_tokens`, `variants.rs:250`). But kit/view-scoped tokens are literal-baked,
-not emitted as custom properties (`CLAUDE.md:175`) - only one scope tier is faithful; CSS custom
+not emitted as custom properties (`AGENTS.md:175`) - only one scope tier is faithful; CSS custom
 properties have no such scope tiering at all. A `view`-typed token has no CSS counterpart (it's a
 structural DAG reference, not styling data). **Faithful-but-partial** (see Backlog #4).
 
-**View composition vs Web Components/`<use>`.** The occurrence model (`CLAUDE.md:476`,
+**View composition vs Web Components/`<use>`.** The occurrence model (`AGENTS.md:476`,
 `occurrence_map`/`ViewOccurrence`) - one view referenced by N parents, each independently resolving/
 selecting/overriding via `token_axis_overrides` - behaves closer to SVG `<use>` (shared definition,
 independently-styleable instances) than a Web Component (no shadow-DOM/slot boundary at all -
@@ -173,13 +173,13 @@ faithful only to the small paint-primitive subset a CSS framework actually needs
 KIT•10 collapses style resolution entirely upstream: Charter's `build_viewport` bakes already-
 resolved values straight into `UiNode` before Vellum ever sees it - there is no separate stylesheet
 object model on the render side, only a per-node `taffy::Style` derived at layout time. Painting is
-GPU/SDF-based (`fwidth`-based AA, MSAA off on web, `CLAUDE.md:313`) rather than a CPU rasterizer.
+GPU/SDF-based (`fwidth`-based AA, MSAA off on web, `AGENTS.md:313`) rather than a CPU rasterizer.
 **Structural divergence** - style resolution happens once, upstream, with no live CSSOM equivalent.
 
 **Interaction model.** No in-scene DOM-event system exists - no bubbling/capturing, no
 `addEventListener`, no event object. Selection/hover/drag are entirely host-orchestrated: the Svelte
 editor calls `vellum.set_hover`/`start_node_drag`/`update_node_drag`/`end_node_drag` directly on the
-Rust API (`CLAUDE.md:378,351`). `rebuild_selection_instances` is a pure rendering overlay (outline +
+Rust API (`AGENTS.md:378,351`). `rebuild_selection_instances` is a pure rendering overlay (outline +
 corner handles) run every frame - directly analogous to a devtools element-inspector overlay, not a
 live pseudo-class. There is no `:hover`/`:focus-visible` state a Box/Shape remembers itself; hover
 state is always pushed in from outside. **Total gap** vs DOM events/CSS pseudo-classes; faithful
@@ -215,7 +215,7 @@ deliberate-subset and faithful verdicts are documented architectural decisions, 
    out-of-order alpha blending, only correct submission order does. One honest cost found while
    benchmarking: the common "Box wraps one Text label" shape gets zero run-merging benefit (`2N`
    draw calls for N labeled elements, same as the fully-fragmented worst case) - merging only pays
-   off with 3+ consecutive same-kind layers (real nested containers). See CLAUDE.md's updated
+   off with 3+ consecutive same-kind layers (real nested containers). See AGENTS.md's updated
    paint-order note and `bench.rs`'s `bench_paint_runs` for the measured spectrum.
 
 2. **Accessibility/semantic export** (large, scope undecided). Zero ARIA/semantic-HTML concept
@@ -230,7 +230,7 @@ deliberate-subset and faithful verdicts are documented architectural decisions, 
    a CSS sprite sheet. Natural next primitive-support step for WebCodium once prioritized.
 
 4. **Kit/view-scoped tokens don't emit as CSS custom properties** (WebCodium, small effort). Only
-   project-scope tokens do today. CLAUDE.md already documents the exact mechanism
+   project-scope tokens do today. AGENTS.md already documents the exact mechanism
    (`resolve_properties_with_tokens`'s project-tokens-map gate) that would need extending to cover
    the other two scopes - the smallest, most mechanical item here.
 
