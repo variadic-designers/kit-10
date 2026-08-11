@@ -17,13 +17,23 @@ export function debug_text_on_path_selected(): boolean;
 
 export function debug_tween_selected(tx: number, ty: number, sx: number, sy: number, rot: number, opacity: number, duration: number, ease: string): boolean;
 
+export function end_grid_gutter_drag(): Float32Array;
+
 export function end_node_drag(): Float32Array;
+
+export function end_node_resize(): Float32Array;
 
 export function ensure_index_visible(index: number): boolean;
 
 export function get_pan(): Float32Array;
 
 export function get_selection(x: number, y: number): number | undefined;
+
+export function grid_gutter_cursor(gutter: number): string;
+
+export function hit_test_grid_gutter(x: number, y: number): number;
+
+export function hit_test_resize_handle(x: number, y: number): number;
 
 export function initialize(canvas_id: string, width: number, height: number): Promise<void>;
 
@@ -42,6 +52,8 @@ export function load_sprite(id: string, bytes: Uint8Array): void;
 export function render(): void;
 
 export function resize(width: number, height: number): void;
+
+export function resize_handle_cursor(handle: number): string;
 
 export function set_colors(grid_r: number, grid_g: number, grid_b: number, grid_a: number, bg_r: number, bg_g: number, bg_b: number, bg_a: number): void;
 
@@ -68,9 +80,17 @@ export function set_show_box_model(on: boolean): void;
 
 export function set_zoom(zoom: number): void;
 
+export function start_grid_gutter_drag(index: number, gutter: number, screen_x: number, screen_y: number): boolean;
+
 export function start_node_drag(index: number, screen_x: number, screen_y: number): boolean;
 
+export function start_node_resize(index: number, handle: number, screen_x: number, screen_y: number): boolean;
+
+export function update_grid_gutter_drag(screen_x: number, screen_y: number): Float32Array;
+
 export function update_node_drag(screen_x: number, screen_y: number): Float32Array;
+
+export function update_node_resize(screen_x: number, screen_y: number): Float32Array;
 
 export function zoom_in(): void;
 
@@ -92,10 +112,15 @@ export interface InitOutput {
     readonly debug_motion_path_selected: (a: number, b: number, c: number) => number;
     readonly debug_text_on_path_selected: () => number;
     readonly debug_tween_selected: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+    readonly end_grid_gutter_drag: (a: number) => void;
     readonly end_node_drag: (a: number) => void;
+    readonly end_node_resize: (a: number) => void;
     readonly ensure_index_visible: (a: number) => number;
     readonly get_pan: (a: number) => void;
     readonly get_selection: (a: number, b: number) => number;
+    readonly grid_gutter_cursor: (a: number, b: number) => void;
+    readonly hit_test_grid_gutter: (a: number, b: number) => number;
+    readonly hit_test_resize_handle: (a: number, b: number) => number;
     readonly initialize: (a: number, b: number, c: number, d: number) => number;
     readonly is_animating: () => number;
     readonly is_font_loaded: (a: number, b: number) => number;
@@ -105,6 +130,7 @@ export interface InitOutput {
     readonly load_sprite: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly render: () => void;
     readonly resize: (a: number, b: number) => void;
+    readonly resize_handle_cursor: (a: number, b: number) => void;
     readonly set_colors: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
     readonly set_data: (a: number, b: number) => void;
     readonly set_data_binary: (a: number, b: number) => void;
@@ -115,17 +141,21 @@ export interface InitOutput {
     readonly set_position_snap_px: (a: number) => void;
     readonly set_show_box_model: (a: number) => void;
     readonly set_zoom: (a: number) => void;
+    readonly start_grid_gutter_drag: (a: number, b: number, c: number, d: number) => number;
     readonly start_node_drag: (a: number, b: number, c: number) => number;
+    readonly start_node_resize: (a: number, b: number, c: number, d: number) => number;
+    readonly update_grid_gutter_drag: (a: number, b: number, c: number) => void;
     readonly update_node_drag: (a: number, b: number, c: number) => void;
+    readonly update_node_resize: (a: number, b: number, c: number) => void;
     readonly zoom_in: () => void;
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_10768: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9315: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9315_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9315_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_10770: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_10895: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9430: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9430_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9430_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_10897: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;
