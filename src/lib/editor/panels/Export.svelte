@@ -82,6 +82,29 @@
 	// all), so a plain object default is enough, no need to seed every known target up front.
 	let compressed: Record<string, boolean> = $state({});
 
+	// Per-target, per-option current value (string-encoded, same convention preferences.ts's
+	// value map uses) -- keyed by target like `compressed` above. Export.svelte never knows what
+	// any of these options MEAN (page size, DPI, ...); it only knows `ExportCapability.options`'
+	// generic id/kind/default/options shape (schema.ts), the same "plugin declares a capability
+	// as data, host renders it generically" idiom the Settings-menu's PreferenceDef already uses
+	// (src/lib/plugins/preferences.ts) -- see that file's module doc comment.
+	let optionValues: Record<string, Record<string, string>> = $state({});
+
+	function optionValue(target: string, opt: { id: string; default: string }): string {
+		return optionValues[target]?.[opt.id] ?? opt.default;
+	}
+
+	function setOptionValue(target: string, optId: string, value: string) {
+		optionValues[target] = { ...optionValues[target], [optId]: value };
+	}
+
+	function collectedOptions(group: ExportTargetGroup): Record<string, string> {
+		const defs = group.effective?.options ?? [];
+		const out: Record<string, string> = {};
+		for (const def of defs) out[def.id] = optionValue(group.target, def);
+		return out;
+	}
+
 	function runExport(group: ExportTargetGroup) {
 		const provider = group.effective;
 		if (!provider || !projectId) return;
@@ -89,8 +112,18 @@
 		const variant = useCompressed ? provider.compressedVariant! : provider;
 		const name = projectName ?? 'export';
 		const viewIds = flaggedViewsFor(group).map((v) => v.viewId);
+		const payload = {
+			project_id: projectId,
+			view_ids: viewIds,
+			options: collectedOptions(group)
+		};
+		// compressedVariant is ALWAYS base64 regardless of the primary capability's own `binary`
+		// flag (see ExportCapability.compressedVariant's doc comment); otherwise fall back to the
+		// primary `fn`'s own declared encoding (`binary` -- e.g. PDF's export_pdf, whose only
+		// output IS binary with no plain-text variant, see ExportCapability.binary's doc comment).
+		const encoding = useCompressed || provider.binary ? 'base64' : 'text';
 		callUtilityPlugin
-			?.(provider.id, variant.fn, JSON.stringify({ project_id: projectId, view_ids: viewIds }))
+			?.(provider.id, variant.fn, JSON.stringify(payload))
 			.then((result) => {
 				const text = (result as { text(): string }).text();
 				return downloadExportResult(
@@ -98,7 +131,7 @@
 					provider.multiFile,
 					`${name}.${variant.fileExtension}`,
 					variant.mimeType,
-					useCompressed ? 'base64' : 'text'
+					encoding
 				);
 			})
 			.catch((err) => console.error(`[${provider.id}] ${variant.fn} failed:`, err));
@@ -157,6 +190,42 @@
 								<input type="checkbox" bind:checked={compressed[group.target]} />
 								Compressed
 							</label>
+						{/if}
+
+						{#if group.effective?.options?.length}
+							<div class="export-target__options">
+								{#each group.effective.options as opt (opt.id)}
+									{@const current = optionValue(group.target, opt)}
+									<label class="export-target__option">
+										<span>{opt.label}</span>
+										{#if opt.kind === 'toggle'}
+											<input
+												type="checkbox"
+												checked={current === 'true'}
+												onchange={(e) =>
+													setOptionValue(group.target, opt.id, String(e.currentTarget.checked))}
+											/>
+										{:else if opt.kind === 'select'}
+											<select
+												value={current}
+												onchange={(e) => setOptionValue(group.target, opt.id, e.currentTarget.value)}
+											>
+												{#each opt.options ?? [] as choice (choice.value)}
+													<option value={choice.value}>{choice.label}</option>
+												{/each}
+											</select>
+										{:else}
+											<input
+												type="number"
+												value={current}
+												min={opt.min}
+												max={opt.max}
+												onchange={(e) => setOptionValue(group.target, opt.id, e.currentTarget.value)}
+											/>
+										{/if}
+									</label>
+								{/each}
+							</div>
 						{/if}
 
 						<button
@@ -239,6 +308,32 @@
 			font-size: $x-font-size-xs;
 			color: var(--color-text-muted);
 			cursor: pointer;
+		}
+
+		&__options {
+			flex-basis: 100%;
+			display: flex;
+			flex-wrap: wrap;
+			gap: $x-space-xs $x-space-sm;
+		}
+
+		&__option {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			@include fonts-stack('Satoshi-Light', sans);
+			font-size: $x-font-size-xs;
+			color: var(--color-text-muted);
+
+			select,
+			input[type='number'] {
+				background: var(--color-surface);
+				color: var(--color-text);
+				border: 1px solid var(--color-bg);
+				border-radius: calc($x-space-xs / 2);
+				padding: calc($x-space-xs / 4) $x-space-xs;
+				font-size: $x-font-size-xs;
+			}
 		}
 
 		&__run {

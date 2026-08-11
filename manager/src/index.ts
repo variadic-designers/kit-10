@@ -100,6 +100,7 @@ export { registerBuiltinPlugins, type BuiltinPlugins } from './plugins-bootstrap
 export { type TokenValue, type TokenValueScalar, type TokenValueView } from './schema.js';
 export {
 	type ExportCapability,
+	type ExportOptionDef,
 	type ImportCapability,
 	type PluginCapabilities,
 	type PluginManifest,

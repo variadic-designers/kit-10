@@ -19,7 +19,7 @@ import type {
 	WriteRenderEntryResult
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
-import { base64ToBytes } from '../base64.js';
+import { base64ToBytes, bytesToBase64 } from '../base64.js';
 import { getCachedFont, putCachedFont } from './font-cache.js';
 import { buildInterpreterOutputPayload } from './interpreter-output.js';
 import { get } from 'svelte/store';
@@ -398,6 +398,41 @@ export function createPluginManager(api: Api) {
 					}
 				},
 
+				// Same resolution as kit10_get_asset_links, but fetches the actual pixel bytes rather
+				// than just a URL -- for an exporter (the PDF plugin) that has to embed image data
+				// directly into its own output file, not reference it the way an <img src> can. Bytes
+				// travel base64-encoded inside the JSON envelope (the same convention Tenner's
+				// compressedVariant/Charter's viewport_data_binary already use to carry real binary
+				// through a String-typed plugin_fn boundary) since this is a batch response keyed by
+				// asset id, not a single-blob return like kit10_font_cache_get's raw-bytes shape.
+				// Best-effort per asset: no known link, or the fetch itself failing, just omits that
+				// one id from `bytes` rather than failing the whole batch -- same tolerance as
+				// kit10_get_asset_links already has for an asset with no link at all.
+				async kit10_get_asset_bytes(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { asset_ids } = JSON.parse(rawJson) as { asset_ids: string[] };
+
+					try {
+						const assets = await api.getAssetsByIds(asset_ids);
+						const bytes: Record<string, string> = {};
+						await Promise.all(
+							assets.map(async (asset) => {
+								if (!asset.link) return;
+								try {
+									const url = resolveAbsoluteAssetLink(asset.link);
+									const buf = await fetch(url).then((r) => r.arrayBuffer());
+									bytes[asset.id] = bytesToBase64(new Uint8Array(buf));
+								} catch {
+									// best-effort -- see this function's own doc comment
+								}
+							})
+						);
+						return cp.store(JSON.stringify({ success: true, bytes }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
 				// Resolves a batch of (family, weight, style) font requests to the real URL Fontavious
 				// would fetch for each -- the same no-hardcoded-provider mechanism as
 				// kit10_get_asset_links, just routed through Fontavious's own catalogue instead of the
@@ -434,6 +469,41 @@ export function createPluginManager(api: Api) {
 						}
 					}
 					return cp.store(JSON.stringify({ success: true, links }));
+				},
+
+				// Same resolution as kit10_get_font_links, but fetches the actual WOFF2 bytes rather
+				// than just a URL -- an exporter that embeds real fonts into its own output (the PDF
+				// plugin) needs the bytes, not a reference a browser could dereference on its own.
+				// Calls Fontavious's `fetch_font` (not `variant_url`) -- guarantees a real fetch on a
+				// cache miss (kit10_font_cache_get is read-only against the cache, no fallback fetch),
+				// same cache-then-CDN posture the live editor's own font loading already gets. Bytes
+				// travel base64-encoded in the JSON envelope, same convention as kit10_get_asset_bytes
+				// above. Best-effort per request, same tolerance as kit10_get_font_links.
+				async kit10_get_font_bytes(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { requests } = JSON.parse(rawJson) as {
+						requests: { family: string; weight: number; style: string }[];
+					};
+
+					const bytes: { family: string; weight: number; style: string; base64: string }[] = [];
+					await Promise.all(
+						requests.map(async (req) => {
+							try {
+								const result = await callUtilityPlugin(
+									'fontavious',
+									'fetch_font',
+									JSON.stringify({ value: req.family, weight: req.weight, style: req.style })
+								);
+								const raw = (result as { bytes(): Uint8Array }).bytes();
+								if (raw && raw.length > 0) {
+									bytes.push({ ...req, base64: bytesToBase64(raw) });
+								}
+							} catch {
+								// best-effort -- see this function's own doc comment
+							}
+						})
+					);
+					return cp.store(JSON.stringify({ success: true, bytes }));
 				},
 
 				// Resolves the exporting project's own PROJECT-scope tokens (kit_id AND view_id both

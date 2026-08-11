@@ -1,0 +1,39 @@
+[package]
+name = "pdf"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+extism-pdk = "1.4.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+kit10-scene = { git = "ssh://git@github.com/Variadic-Designs/kit10-scene.git", tag = "v0.2.8" }
+# Pinned to match Vellum's own taffy version exactly (taf_can_do/Cargo.lock) -- this crate ports
+# taf_can_do/src/layout/mod.rs's apply_box_extra/build_taffy_tree/run_full_layout logic nearly
+# verbatim (see layout.rs's module doc comment), so staying on the same taffy minor avoids a
+# silent API-shape mismatch between the ported code and what's actually available.
+taffy = { version = "0.10", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "detailed_layout_info"] }
+krilla = "0.4"
+rustybuzz = "0.20"
+ttf-parser = "0.25"
+woff2 = "0.3"
+base64 = "0.22"
+
+# woff2 0.3.0's own code is ambiguous against bytes>=1.6's newer `try_get_*` inherent methods
+# (collides with its own SafeBuf trait) -- pinned back to the last version before that collision,
+# verified against a throwaway wasm32-unknown-unknown build spike. Revisit when woff2 ships a fix.
+[dependencies.bytes]
+version = "=1.5.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+
+# woff2 0.3.0 has a real off-by-one in its own compressed-size validation that fails on every
+# real-world WOFF2 file tested (see vendor/woff2/README-KIT10-PATCH.md) -- no newer crates.io
+# release exists to pick up instead, so this vendors a one-line-patched copy in the meantime.
+[patch.crates-io]
+woff2 = { path = "vendor/woff2" }

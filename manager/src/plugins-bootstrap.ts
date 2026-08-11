@@ -101,6 +101,85 @@ const WEBCODIUM_MANIFEST: PluginManifest = {
 	}
 };
 
+// Same manifest shape as plugin-catalogue.ts's pdf entry (kept in sync by hand, same posture as
+// WebCodium's own comment above).
+const PDF_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/pdf.wasm' }],
+	provides: {
+		exports: [
+			{
+				label: 'Export PDF',
+				fn: 'export_pdf',
+				fileExtension: 'pdf',
+				mimeType: 'application/pdf',
+				target: 'pdf',
+				viewScoped: true,
+				// export_pdf's only output IS binary (base64-encoded PDF bytes, no plain-text variant)
+				// -- without this, the download path writes the base64 TEXT itself as the .pdf file's
+				// contents instead of decoding it back to real bytes (see ExportCapability.binary's own
+				// doc comment). A real bug this project shipped once already.
+				binary: true,
+				// Mirrors plugins/pdf/src/page.rs's PageSize/Orientation/FitMode/dpi exactly (see that
+				// module's doc comments for what each option actually controls) -- Export.svelte
+				// renders this list generically, it has no idea these are PDF-specific.
+				options: [
+					{
+						id: 'page_size',
+						label: 'Page size',
+						kind: 'select',
+						default: 'fit',
+						options: [
+							{ value: 'fit', label: 'Fit to artwork' },
+							{ value: 'letter', label: 'US Letter (8.5 × 11 in)' },
+							{ value: 'legal', label: 'US Legal (8.5 × 14 in)' },
+							{ value: 'tabloid', label: 'Tabloid (11 × 17 in)' },
+							{ value: 'a3', label: 'A3' },
+							{ value: 'a4', label: 'A4' },
+							{ value: 'a5', label: 'A5' }
+						]
+					},
+					{
+						id: 'orientation',
+						label: 'Orientation',
+						kind: 'select',
+						default: 'auto',
+						options: [
+							{ value: 'auto', label: 'Match artwork' },
+							{ value: 'portrait', label: 'Portrait' },
+							{ value: 'landscape', label: 'Landscape' }
+						]
+					},
+					{
+						id: 'fit_mode',
+						label: 'Artwork fit',
+						kind: 'select',
+						default: 'fit_to_page',
+						options: [
+							{ value: 'fit_to_page', label: 'Fit to page (scaled, centered)' },
+							{ value: 'actual_size', label: 'Actual size (may overflow the page)' },
+							{ value: 'fill_and_crop', label: 'Fill page and crop overflow' }
+						]
+					},
+					{ id: 'dpi', label: 'DPI', kind: 'number', default: '150', min: 72, max: 600 },
+					// Reflows content to the chosen paper size (Percent widths/flex-wrap/flex-basis
+					// re-resolve against the new width, same as a browser reflowing on viewport
+					// resize) instead of laying the artwork out once at its own natural size and
+					// scaling/cropping the result to fit -- see plugins/pdf/src/page.rs's own doc
+					// comment on PdfOptions.reflow. On by default; irrelevant for "Fit to artwork".
+					{ id: 'reflow', label: 'Reflow to page size', kind: 'toggle', default: 'true' }
+				]
+			}
+		]
+	},
+	// Box/Text/Img all shipped (see plugins/pdf/src/lib.rs's own doc comment) -- Shape/SpriteBatch
+	// are the remaining follow-up. kit10_get_asset_bytes backs Img embedding (the actual pixel
+	// bytes, not just a URL); kit10_get_font_bytes backs Text embedding (real WOFF2 bytes via
+	// Fontavious's fetch_font, decompressed + parsed in plugins/pdf/src/fonts.rs).
+	capabilities: {
+		hostFns: ['kit10_get_interpreter_output', 'kit10_get_asset_bytes', 'kit10_get_font_bytes']
+	}
+};
+
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that
 // URL right now, so it never drifts the way a hand-maintained version string would (both
 // plugins are still sitting at an untouched Cargo.toml "0.1.0"). Best-effort only: a fetch
@@ -124,6 +203,7 @@ export interface BuiltinPlugins {
 	fontavious: PluginRow;
 	tenner: PluginRow;
 	webcodium: PluginRow;
+	pdf: PluginRow;
 }
 
 // Registers KIT-10's built-in plugins into the DB-backed catalogue (idempotent -- upserts
@@ -132,11 +212,12 @@ export interface BuiltinPlugins {
 export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<BuiltinPlugins> {
 	const api: Api = queryBuilder(dialect);
 
-	const [charterHash, fontaviousHash, tennerHash, webcodiumHash] = await Promise.all([
+	const [charterHash, fontaviousHash, tennerHash, webcodiumHash, pdfHash] = await Promise.all([
 		hashUrl(CHARTER_MANIFEST.wasm[0]!.url),
 		hashUrl(FONTAVIOUS_MANIFEST.wasm[0]!.url),
 		hashUrl(TENNER_MANIFEST.wasm[0]!.url),
-		hashUrl(WEBCODIUM_MANIFEST.wasm[0]!.url)
+		hashUrl(WEBCODIUM_MANIFEST.wasm[0]!.url),
+		hashUrl(PDF_MANIFEST.wasm[0]!.url)
 	]);
 
 	const charter = await api.registerPlugin({
@@ -182,8 +263,19 @@ export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<Bu
 		contentHash: webcodiumHash
 	});
 
-	if (!charter || !fontavious || !tenner || !webcodium)
+	// Lazy, same posture as WebCodium -- an occasional explicit export action, registered here
+	// (rather than requiring a manual /store install) so every project's PDF export resolves to
+	// it by default with no per-project hints.exportProfile write needed.
+	const pdf = await api.registerPlugin({
+		name: 'pdf',
+		kind: 'utility',
+		activation: 'lazy',
+		manifest: PDF_MANIFEST,
+		contentHash: pdfHash
+	});
+
+	if (!charter || !fontavious || !tenner || !webcodium || !pdf)
 		throw new Error('Failed to register builtin plugins');
 
-	return { charter, fontavious, tenner, webcodium };
+	return { charter, fontavious, tenner, webcodium, pdf };
 }

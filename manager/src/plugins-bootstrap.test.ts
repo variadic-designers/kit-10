@@ -18,8 +18,8 @@ describe('registerBuiltinPlugins', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('registers charter as an interpreter and fontavious/tenner/webcodium as utilities, all hashed', async () => {
-		const { charter, fontavious, tenner, webcodium } = await registerBuiltinPlugins(ctx.db);
+	it('registers charter as an interpreter and fontavious/tenner/webcodium/pdf as utilities, all hashed', async () => {
+		const { charter, fontavious, tenner, webcodium, pdf } = await registerBuiltinPlugins(ctx.db);
 
 		expect(charter.name).toBe('charter');
 		expect(charter.kind).toBe('interpreter');
@@ -105,6 +105,70 @@ describe('registerBuiltinPlugins', () => {
 			}
 		});
 		expect(webcodium.content_hash).toMatch(/^[0-9a-f]{64}$/);
+
+		expect(pdf.name).toBe('pdf');
+		expect(pdf.kind).toBe('utility');
+		expect(pdf.manifest).toEqual({
+			wasm: [{ url: '/pdf.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export PDF',
+						fn: 'export_pdf',
+						fileExtension: 'pdf',
+						mimeType: 'application/pdf',
+						target: 'pdf',
+						viewScoped: true,
+						binary: true,
+						options: [
+							{
+								id: 'page_size',
+								label: 'Page size',
+								kind: 'select',
+								default: 'fit',
+								options: [
+									{ value: 'fit', label: 'Fit to artwork' },
+									{ value: 'letter', label: 'US Letter (8.5 × 11 in)' },
+									{ value: 'legal', label: 'US Legal (8.5 × 14 in)' },
+									{ value: 'tabloid', label: 'Tabloid (11 × 17 in)' },
+									{ value: 'a3', label: 'A3' },
+									{ value: 'a4', label: 'A4' },
+									{ value: 'a5', label: 'A5' }
+								]
+							},
+							{
+								id: 'orientation',
+								label: 'Orientation',
+								kind: 'select',
+								default: 'auto',
+								options: [
+									{ value: 'auto', label: 'Match artwork' },
+									{ value: 'portrait', label: 'Portrait' },
+									{ value: 'landscape', label: 'Landscape' }
+								]
+							},
+							{
+								id: 'fit_mode',
+								label: 'Artwork fit',
+								kind: 'select',
+								default: 'fit_to_page',
+								options: [
+									{ value: 'fit_to_page', label: 'Fit to page (scaled, centered)' },
+									{ value: 'actual_size', label: 'Actual size (may overflow the page)' },
+									{ value: 'fill_and_crop', label: 'Fill page and crop overflow' }
+								]
+							},
+							{ id: 'dpi', label: 'DPI', kind: 'number', default: '150', min: 72, max: 600 },
+							{ id: 'reflow', label: 'Reflow to page size', kind: 'toggle', default: 'true' }
+						]
+					}
+				]
+			},
+			capabilities: {
+				hostFns: ['kit10_get_interpreter_output', 'kit10_get_asset_bytes', 'kit10_get_font_bytes']
+			}
+		});
+		expect(pdf.content_hash).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it('is idempotent -- re-running upserts the same rows instead of duplicating', async () => {
@@ -112,7 +176,7 @@ describe('registerBuiltinPlugins', () => {
 		await registerBuiltinPlugins(ctx.db);
 
 		const all = await ctx.db.selectFrom('plugins').selectAll().execute();
-		expect(all).toHaveLength(4);
+		expect(all).toHaveLength(5);
 	});
 
 	it('falls back to a null content_hash if the fetch fails, without throwing', async () => {

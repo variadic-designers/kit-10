@@ -123,6 +123,40 @@ export interface ExportCapability {
 		fileExtension: string;
 		mimeType: string;
 	};
+	// Plugin-declared, host-rendered run-time export options (e.g. PDF's page size/orientation/
+	// fit-mode/DPI) -- the same "declare capability as data, host renders + stores it" idiom as
+	// the Settings-menu's PreferenceDef (src/lib/plugins/preferences.ts, app-side and therefore
+	// not importable from this package -- this is a deliberately structurally-identical, self-
+	// contained copy of that same small shape). Never hardcode a specific option id/label in
+	// editor UI (VISION.md's 1st Principle); Export.svelte iterates this list generically and
+	// folds the collected values into ExportInput's `options` string-encoded bag. Absent/empty =
+	// no options, same additive posture as `multiFile`/`viewScoped`.
+	options?: ExportOptionDef[];
+	// When true, this capability's PRIMARY `fn` (not `compressedVariant`, which is always
+	// base64 regardless of this flag) returns base64-encoded binary rather than plain text --
+	// the export-side counterpart of `ImportCapability.binary` below, for a plugin (PDF) whose
+	// only real output IS binary, with no meaningful plain-text variant to make `compressedVariant`
+	// the right fit. Extism `plugin_fn` results are always String-typed, so real binary has to
+	// travel as base64 either way (see Tenner's `export_project_gz` doc comment) -- this flag is
+	// what tells the download path to decode it back to bytes instead of writing the base64 TEXT
+	// itself as the file's contents. Absent/false = today's plain-text behavior, unchanged.
+	binary?: boolean;
+}
+
+export interface ExportOptionDef {
+	// Stable id, unique within the declaring provider. Becomes the key in the `options` bag sent
+	// to the plugin function.
+	id: string;
+	label: string;
+	kind: 'toggle' | 'select' | 'number';
+	// Default value as a string (booleans as "true"/"false", numbers as their decimal text) --
+	// same one-wire-type convention PreferenceDef uses.
+	default: string;
+	// select-only.
+	options?: { value: string; label: string }[];
+	// number-only bounds (inclusive).
+	min?: number;
+	max?: number;
 }
 
 export interface ImportCapability {

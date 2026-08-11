@@ -120,6 +120,83 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 		}
 	},
 	{
+		id: 'pdf',
+		name: 'PDF',
+		author: 'KIT•10',
+		kind: 'utility',
+		icon: 'fa-solid fa-file-pdf',
+		tagline: 'Export a view as a print-quality PDF, one page per view - Box/Text/Img today.',
+		provides: ['Export: PDF'],
+		capabilities: ['reads-design'],
+		version: '0.1.0',
+		// Bootstrapped by manager/src/plugins-bootstrap.ts (registerBuiltinPlugins) like
+		// Tenner/WebCodium, so every project's PDF export resolves to it by default with no
+		// manual /store install.
+		status: 'installed',
+		firstParty: true,
+		activation: 'lazy',
+		manifest: {
+			wasm: [{ url: '/pdf.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export PDF',
+						fn: 'export_pdf',
+						fileExtension: 'pdf',
+						mimeType: 'application/pdf',
+						target: 'pdf',
+						viewScoped: true,
+						binary: true,
+						options: [
+							{
+								id: 'page_size',
+								label: 'Page size',
+								kind: 'select',
+								default: 'fit',
+								options: [
+									{ value: 'fit', label: 'Fit to artwork' },
+									{ value: 'letter', label: 'US Letter (8.5 × 11 in)' },
+									{ value: 'legal', label: 'US Legal (8.5 × 14 in)' },
+									{ value: 'tabloid', label: 'Tabloid (11 × 17 in)' },
+									{ value: 'a3', label: 'A3' },
+									{ value: 'a4', label: 'A4' },
+									{ value: 'a5', label: 'A5' }
+								]
+							},
+							{
+								id: 'orientation',
+								label: 'Orientation',
+								kind: 'select',
+								default: 'auto',
+								options: [
+									{ value: 'auto', label: 'Match artwork' },
+									{ value: 'portrait', label: 'Portrait' },
+									{ value: 'landscape', label: 'Landscape' }
+								]
+							},
+							{
+								id: 'fit_mode',
+								label: 'Artwork fit',
+								kind: 'select',
+								default: 'fit_to_page',
+								options: [
+									{ value: 'fit_to_page', label: 'Fit to page (scaled, centered)' },
+									{ value: 'actual_size', label: 'Actual size (may overflow the page)' },
+									{ value: 'fill_and_crop', label: 'Fill page and crop overflow' }
+								]
+							},
+							{ id: 'dpi', label: 'DPI', kind: 'number', default: '150', min: 72, max: 600 },
+							{ id: 'reflow', label: 'Reflow to page size', kind: 'toggle', default: 'true' }
+						]
+					}
+				]
+			},
+			capabilities: {
+				hostFns: ['kit10_get_interpreter_output', 'kit10_get_asset_bytes', 'kit10_get_font_bytes']
+			}
+		}
+	},
+	{
 		id: 'glyphet',
 		name: 'Glyphet',
 		author: 'Community',

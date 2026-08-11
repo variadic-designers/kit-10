@@ -278,6 +278,17 @@ Resolves a batch of asset ids to their `link` (a real URL -- a static path, or a
 
 ---
 
+### `kit10_get_asset_bytes(input: string) -> string`
+
+Same resolution as `kit10_get_asset_links`, but fetches the actual pixel bytes rather than just a URL -- for an exporter that embeds real image data into its own output file (the PDF plugin) instead of referencing it the way an `<img src>` can. Bytes travel base64-encoded inside the JSON envelope (the same convention Tenner's `compressedVariant`/Charter's `viewport_data_binary` already use to carry real binary through a String-typed `plugin_fn` boundary). Best-effort per asset: no known link, or the fetch itself failing, just omits that one id from `bytes` rather than failing the whole batch.
+
+```json
+// in:  { "asset_ids": ["uuid", ...] }
+// out: { "success": true, "bytes": { "<assetId>": "<base64>" } }
+```
+
+---
+
 ### `kit10_get_font_links(input: string) -> string`
 
 Resolves a batch of `(family, weight, style)` font requests to the real URL Fontavious would fetch for each -- backs WebCodium's `@font-face` export support. Routes through the SAME `variant_url` export the editor's own font-fetch scan (`Editor.svelte`'s `loadVariant`) already uses, so an export can never disagree with what the live editor actually loads. No hardcoded provider or URL anywhere in the calling plugin -- every link comes from Fontavious's own catalogue. Best-effort per request: a catalogue miss or uncatalogued family just omits that entry from `links`, never fails the whole batch.
@@ -285,6 +296,17 @@ Resolves a batch of `(family, weight, style)` font requests to the real URL Font
 ```json
 // in:  { "requests": [{ "family": "Inter", "weight": 700, "style": "normal" }] }
 // out: { "success": true, "links": [{ "family": "Inter", "weight": 700, "style": "normal", "url": "https://..." }] }
+```
+
+---
+
+### `kit10_get_font_bytes(input: string) -> string`
+
+Same resolution as `kit10_get_font_links`, but fetches the actual WOFF2 bytes rather than just a URL -- an exporter that embeds real fonts into its own output (the PDF plugin) needs the bytes, not a reference a browser could dereference on its own. Calls Fontavious's `fetch_font` (not `variant_url`) -- guarantees a real fetch on a cache miss (`kit10_font_cache_get` is read-only against the cache, no fallback fetch), same cache-then-CDN posture the live editor's own font loading already gets. Bytes travel base64-encoded in the JSON envelope, same convention as `kit10_get_asset_bytes` above. Best-effort per request, same tolerance as `kit10_get_font_links`.
+
+```json
+// in:  { "requests": [{ "family": "Inter", "weight": 700, "style": "normal" }] }
+// out: { "success": true, "bytes": [{ "family": "Inter", "weight": 700, "style": "normal", "base64": "<base64>" }] }
 ```
 
 ---
