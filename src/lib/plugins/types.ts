@@ -116,8 +116,13 @@ export interface ResizeKeys {
 // Declared only on "radius" FieldDefs (border-radius) -- the companion boolean squircle-mode
 // property, ridden as the same control's own inline toggle button rather than a second visible
 // row. Mirrors Charter's RadiusKeys struct exactly (camelCase, see plugins/charter/src/lib.rs).
+//
+// `overflow` (CSS `overflow: hidden` semantics) is only ever populated on Box's own border-radius
+// field -- Text/Img are leaves with no real children to clip, so their radius fields never set it
+// and RadiusField.svelte simply skips rendering the toggle when it's absent.
 export interface RadiusKeys {
 	squircle: FieldDef;
+	overflow?: FieldDef;
 }
 
 // Declared only on the "position" FieldDef -- the companion x/y offset property, revealed as an

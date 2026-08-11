@@ -117,6 +117,11 @@
           "type": "number",
           "format": "float"
         },
+        "overflow_hidden": {
+          "description": "CSS `overflow: hidden` semantics: `false` (default, matches every scene saved before\nthis field existed) never clips - a child can paint past this box's own edges even\nwith `corner_radius` set, same as a plain CSS box with `border-radius` and no\n`overflow` declaration. `true` clips this box's whole subtree to its own\nrounded/squircle shape (`corner_radius`/`squircle` above), same shape it already paints\nits own fill/border into.",
+          "type": "boolean",
+          "default": false
+        },
         "padding": {
           "description": "`[top, right, bottom, left]`.",
           "type": "array",

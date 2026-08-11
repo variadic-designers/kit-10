@@ -36,6 +36,12 @@
 
 	const radiusValue = $derived(parseFloat(resolvedMap.get(field.key)?.value ?? '0') || 0);
 	const isSquircle = $derived(resolvedMap.get(radiusKeys.squircle.key)?.value === '1');
+	// Absent on Text/Img's own radius field (see RadiusKeys.overflow's own doc, types.ts) -- no
+	// children to clip there, so the toggle just doesn't render.
+	const overflowField = $derived(radiusKeys.overflow);
+	const isOverflowHidden = $derived(
+		overflowField != null && resolvedMap.get(overflowField.key)?.value === 'hidden'
+	);
 
 	function nudgeRadius(delta: number) {
 		const next = Math.max(0, radiusValue + delta);
@@ -50,6 +56,12 @@
 			{ onFieldUpdate, api }
 		);
 	}
+
+	function toggleOverflow() {
+		const key = overflowField?.key;
+		if (!key) return;
+		commitFieldValue(track(key), key, isOverflowHidden ? '' : 'hidden', { onFieldUpdate, api });
+	}
 </script>
 
 <FieldRow
@@ -63,6 +75,9 @@
 			{radiusValue}px
 			<i class="fa-solid {isSquircle ? 'fa-shapes' : 'fa-square-full'}" title={isSquircle ? 'Squircle' : 'Circular'}
 			></i>
+			{#if overflowField && isOverflowHidden}
+				<i class="fa-solid fa-eye-slash" title="Clips children (overflow: hidden)"></i>
+			{/if}
 		</span>
 	{/snippet}
 
@@ -98,6 +113,21 @@
 			>
 				<i class="fa-solid {isSquircle ? 'fa-shapes' : 'fa-square-full'}"></i>
 			</button>
+
+			{#if overflowField}
+				<button
+					type="button"
+					class="radius-toggle"
+					class:radius-toggle--sel={isOverflowHidden}
+					title={isOverflowHidden
+						? 'Clips children to this shape (click to let them overflow)'
+						: 'Children can overflow this shape (click to clip them)'}
+					aria-pressed={isOverflowHidden}
+					onclick={toggleOverflow}
+				>
+					<i class="fa-solid {isOverflowHidden ? 'fa-eye-slash' : 'fa-eye'}"></i>
+				</button>
+			{/if}
 		</div>
 	{/snippet}
 </FieldRow>

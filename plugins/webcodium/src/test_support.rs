@@ -10,6 +10,7 @@ use kit10_scene::{
 pub(crate) fn test_box(parent_id: Option<usize>) -> BoxData {
     BoxData {
         parent_id,
+        overflow_hidden: false,
         width: Extent::Px(200.0),
         height: Extent::Auto,
         min_width: Extent::Auto,

@@ -559,28 +559,29 @@ examples in the sections below are illustrative. `Required: -` means the field i
 
 #### `BoxData`
 
-| Field            | Type         | Required |
-| ---------------- | ------------ | -------- |
-| `bg_color`       | OklabColor   | ✓        |
-| `border_color`   | OklabColor   | ✓        |
-| `border_width`   | number       | ✓        |
-| `corner_radius`  | number       | ✓        |
-| `extra`          | BoxExtra     | -        |
-| `flex_direction` | FlexDir      | ✓        |
-| `height`         | Extent       | ✓        |
-| `hovered`        | boolean      | -        |
-| `max_height`     | Extent       | -        |
-| `max_width`      | Extent       | -        |
-| `min_height`     | Extent       | -        |
-| `min_width`      | Extent       | -        |
-| `opacity`        | number       | ✓        |
-| `padding`        | [number × 4] | ✓        |
-| `parent_id`      | integer?     | -        |
-| `selected`       | integer      | -        |
-| `shadow`         | BoxShadow?   | -        |
-| `show_border`    | boolean      | ✓        |
-| `squircle`       | boolean      | -        |
-| `width`          | Extent       | ✓        |
+| Field             | Type         | Required |
+| ----------------- | ------------ | -------- |
+| `bg_color`        | OklabColor   | ✓        |
+| `border_color`    | OklabColor   | ✓        |
+| `border_width`    | number       | ✓        |
+| `corner_radius`   | number       | ✓        |
+| `extra`           | BoxExtra     | -        |
+| `flex_direction`  | FlexDir      | ✓        |
+| `height`          | Extent       | ✓        |
+| `hovered`         | boolean      | -        |
+| `max_height`      | Extent       | -        |
+| `max_width`       | Extent       | -        |
+| `min_height`      | Extent       | -        |
+| `min_width`       | Extent       | -        |
+| `opacity`         | number       | ✓        |
+| `overflow_hidden` | boolean      | -        |
+| `padding`         | [number × 4] | ✓        |
+| `parent_id`       | integer?     | -        |
+| `selected`        | integer      | -        |
+| `shadow`          | BoxShadow?   | -        |
+| `show_border`     | boolean      | ✓        |
+| `squircle`        | boolean      | -        |
+| `width`           | Extent       | ✓        |
 
 #### `TextData`
 
@@ -872,12 +873,13 @@ Size fields (`width`/`height`/`min_width`/`min_height`/`max_width`/`max_height`)
     "squircle": false,
     "opacity": 1.0,
     "shadow": null,
+    "overflow_hidden": false,
     "selected": 0,
     "hovered": false
   }
 }
 ```
-(`extra: BoxExtra` - gap/align/flex/`flex_basis`/grid/position - is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary - Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection. `squircle: true` renders corners as a superellipse instead of a circular arc, at the same `corner_radius`.)
+(`extra: BoxExtra` - gap/align/flex/`flex_basis`/grid/position - is omitted here; it defaults when absent. `selected` is `0|1|2` = none/secondary/primary - Charter sets it, Vellum owns how it's drawn; `hovered` is independent of selection. `squircle: true` renders corners as a superellipse instead of a circular arc, at the same `corner_radius`. `overflow_hidden: true` clips this box's whole subtree to its own `corner_radius`/`squircle` shape - matches real CSS `overflow: hidden`, never implied by `corner_radius` alone.)
 
 **Text node:**
 ```json

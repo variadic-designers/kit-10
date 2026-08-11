@@ -217,10 +217,18 @@ struct ResizeKeys {
 // property riding the SAME visible Radius row as its own inline toggle button, never a second
 // top-level row -- same side-channel shape as ResizeKeys' min/max. The boolean is carried as an
 // ordinary resolved property, parsed truthy on "1" (see extract_paint_props), empty/absent = off.
+//
+// `overflow` is the same side-channel shape for CSS `overflow: hidden` (see `BoxData.
+// overflow_hidden`'s own doc, kit10-scene) -- `Option` because it's only ever populated on
+// `box_categories`' border-radius field. A Box is the only primitive with real children to clip
+// (Text/Img are leaves - see AGENTS.md's "Box is a pure container" note), so Text/Img's own
+// radius fields leave this `None` and `RadiusField.svelte` simply doesn't render the toggle then.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RadiusKeys {
     squircle: FieldDef,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    overflow: Option<FieldDef>,
 }
 
 // Declared only on the "position" FieldDef. `position` itself is a 3-way Flow/Nudge/Anchor
@@ -1734,6 +1742,10 @@ fn build_box_node(
         squircle: paint.squircle,
         opacity,
         shadow: None,
+        // CSS keyword vocabulary ("hidden"/"visible"), not the "1" boolean-ish sentinel
+        // `border-radius-squircle` uses -- `overflow` is a real CSS property name, not a
+        // companion flag, so it reads like one.
+        overflow_hidden: get_prop(props, "overflow").as_deref() == Some("hidden"),
         extra,
         selected: 0,
         hovered: false,
@@ -2361,6 +2373,7 @@ fn box_categories() -> Vec<FieldCategory> {
                     .with_input_type("radius")
                     .with_radius_keys(RadiusKeys {
                         squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
+                        overflow: Some(FieldDef::new("overflow", Some("Overflow"))),
                     }),
                 FieldDef::new("outline", None),
                 FieldDef::new("opacity", Some("Opacity")),
@@ -2445,6 +2458,7 @@ fn text_categories() -> Vec<FieldCategory> {
                 FieldDef::new("border-radius", Some("Radius"))
                     .with_input_type("radius")
                     .with_radius_keys(RadiusKeys {
+                        overflow: None,
                         squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
                     }),
                 FieldDef::new("padding", Some("Padding"))
@@ -2497,6 +2511,7 @@ fn image_categories() -> Vec<FieldCategory> {
                 FieldDef::new("border-radius", Some("Radius"))
                     .with_input_type("radius")
                     .with_radius_keys(RadiusKeys {
+                        overflow: None,
                         squircle: FieldDef::new("border-radius-squircle", Some("Squircle")),
                     }),
                 FieldDef::new("padding", Some("Padding"))
@@ -2600,6 +2615,7 @@ fn sprite_batch_categories() -> Vec<FieldCategory> {
 
 fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32; 4]) -> UiNode {
     UiNode::Box(BoxData {
+        overflow_hidden: false,
         parent_id,
         width: Extent::Auto,
         height: Extent::Auto,
@@ -2627,6 +2643,7 @@ fn transparent_box(parent_id: Option<usize>, flex_direction: &str, padding: [f32
 // entirely (see build_viewport). Always a root (parent_id: None).
 fn absolute_box(flex_direction: &str, pos: [f32; 2]) -> UiNode {
     UiNode::Box(BoxData {
+        overflow_hidden: false,
         parent_id: None,
         width: Extent::Auto,
         height: Extent::Auto,
@@ -5019,6 +5036,43 @@ mod text_paint_properties_tests {
     }
 
     #[test]
+    fn build_box_node_reads_overflow_hidden_from_the_overflow_property() {
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("overflow".to_string(), prop("hidden"));
+
+        let node = build_box_node(&props, None, None, None);
+        let UiNode::Box(box_data) = node else {
+            panic!("expected a Box node");
+        };
+        assert!(box_data.overflow_hidden);
+    }
+
+    #[test]
+    fn build_box_node_defaults_overflow_hidden_to_false_when_unset() {
+        // Matches real CSS: border-radius alone never clips - `overflow: hidden` is required too.
+        let props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        let node = build_box_node(&props, None, None, None);
+        let UiNode::Box(box_data) = node else {
+            panic!("expected a Box node");
+        };
+        assert!(!box_data.overflow_hidden);
+    }
+
+    #[test]
+    fn build_box_node_ignores_any_other_overflow_value() {
+        // Only the literal "hidden" keyword turns clipping on - "visible"/"scroll"/"auto"/garbage
+        // all read as not-hidden, same "unrecognized value is the safe default" posture every
+        // other keyword-valued property here already follows.
+        let mut props: std::collections::HashMap<String, ResolvedProperty> = Default::default();
+        props.insert("overflow".to_string(), prop("visible"));
+        let node = build_box_node(&props, None, None, None);
+        let UiNode::Box(box_data) = node else {
+            panic!("expected a Box node");
+        };
+        assert!(!box_data.overflow_hidden);
+    }
+
+    #[test]
     fn build_box_node_with_no_fill_is_fully_transparent_not_a_gray_placeholder() {
         // No `background` prop -> transparent, matching CSS (a <div> with no background is
         // transparent). Boxes used to fall back to opaque neutral-gray; that's gone.
@@ -5063,6 +5117,7 @@ mod text_paint_properties_tests {
         use super::{encode_viewport_data_binary, BoxData, UiNode};
 
         let data = vec![UiNode::Box(BoxData {
+            overflow_hidden: false,
             parent_id: None,
             width: Extent::Auto,
             height: Extent::Auto,

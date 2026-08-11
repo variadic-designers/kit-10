@@ -71,6 +71,7 @@ pub(crate) mod test_support {
     pub(crate) fn test_box(parent_id: Option<usize>) -> BoxData {
         BoxData {
             parent_id,
+            overflow_hidden: false,
             width: Extent::Auto,
             height: Extent::Auto,
             min_width: Extent::Auto,
