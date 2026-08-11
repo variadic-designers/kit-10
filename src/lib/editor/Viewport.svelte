@@ -8,7 +8,10 @@
 	import { keybinds, matchKey, matchMouse, matchWheel, isTextEntryTarget } from './keybinds.js';
 	import { buildViewTree, resolveDragTargetViewId, type ViewOccurrence } from './view-tree.js';
 	import type { Api, OverriddenOccurrence } from 'manager';
-	import type { ResolvedView } from '$lib/plugins/types.js';
+	import type { FieldUpdate, ResolvedView } from '$lib/plugins/types.js';
+	import { commitFieldValue } from './panels/field-commit.js';
+	import { resolveFieldTarget } from './panels/resolve-field-target.js';
+	import { parseTrackList, serializeTrackList } from './panels/grid-tracks.js';
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let vellum: any;
 
@@ -24,6 +27,7 @@
 		overriddenOccurrences = [],
 		compositionKeys = [],
 		beginPendingResolve = () => {},
+		onFieldUpdate,
 		editorActivity = $bindable(),
 		selection = $bindable(),
 		hoveredViewId = $bindable(null),
@@ -53,6 +57,11 @@
 		// its stale result) before the position write's own resolve even reaches pluginQueue, since
 		// that resolve needs a real DB round-trip first while hover only needs one 0ms timer.
 		beginPendingResolve?: () => void;
+		// Canvas resize-handle commit path (persistViewSize/commitResizedField) writes through
+		// this exactly like the Render panel's own ResizeField/StyleField do, via field-commit.ts's
+		// commitFieldValue -- see persistViewSize's own doc for why this must be the SAME write
+		// path rather than a second one.
+		onFieldUpdate?: (update: FieldUpdate) => void;
 		editorActivity: EditorActivity;
 		selection: EditorSelection;
 		hoveredViewId?: string | null;
@@ -139,6 +148,72 @@
 	let downY = 0;
 	const CLICK_DRAG_THRESHOLD_PX = 4;
 
+	// Resize-handle drag (grow/shrink the PRIMARY selection along its Fixed-sizing axes -- see
+	// vellum.hit_test_resize_handle's own doc). Unlike node-drag, a handle grab is never
+	// ambiguous with a click (there's no competing "click the handle to select" behavior), so
+	// this commits to a resize gesture immediately on pointerdown, no candidate-arming/
+	// CLICK_DRAG_THRESHOLD_PX dance needed.
+	let resizingNode = false;
+	let resizeViewId: string | null = null;
+
+	// Writes one axis of a canvas resize through the SAME path ResizeField/StyleField's manual
+	// "Fixed" text input already uses (field-commit.ts's commitFieldValue) -- token-backed
+	// properties edit the shared token, literals write the render entry, exactly as a manual
+	// edit would, so a canvas drag and a typed value produce byte-identical writes (same
+	// token-vs-literal branching, same undo behavior) rather than a second, divergent path.
+	//
+	// `resolveFieldTarget` looks up `width`/`height`'s CommitTarget from `viewId`'s own
+	// `resolvedKits` (found in `resolvedViews`, the same per-project resolve data Editor.svelte
+	// slices for the ACTIVE view to feed Styles.svelte's `track()`) -- resizing works on
+	// whichever view is primary-selected on the canvas, independent of which view the Render
+	// panel currently has open, so this can't just reuse Styles.svelte's own narrower prop.
+	async function commitResizedField(viewId: string, property: 'width' | 'height', px: number) {
+		const resolvedKits = resolvedViews.find((v) => v.viewId === viewId)?.resolvedKits ?? null;
+		const target = resolveFieldTarget(resolvedKits, property);
+		if (!target) return;
+		commitFieldValue(target, property, `${Math.round(px)}px`, { onFieldUpdate, api: api ?? undefined });
+	}
+
+	// Persists a resized view's new Fixed-axis width/height, called once per axis
+	// update_node_resize/end_node_resize reports as actually active (see their own Vellum-side
+	// doc for why an inactive axis's size entry must never be read, let alone committed).
+	async function persistViewSize(viewId: string, width: number, height: number, widthActive: boolean, heightActive: boolean) {
+		if (!api) return;
+		if (widthActive) await commitResizedField(viewId, 'width', width);
+		if (heightActive) await commitResizedField(viewId, 'height', height);
+	}
+
+	// Grid-gutter drag (redistribute two adjacent `fr` tracks inside the PRIMARY selection's own
+	// Grid, along a gutter -- see vellum.hit_test_grid_gutter's own doc). Same "no candidate-
+	// arming needed" posture as the resize-handle drag above: a gutter grab is never ambiguous
+	// with a click. `gutterAxis`/`gutterTrackIndex` are captured at grab time (0/1 = column/row,
+	// matching Vellum's own packed-tag convention) since `end_grid_gutter_drag` only returns the
+	// pair's final `[fr_a, fr_b]`, not which property/pair they belong to.
+	let resizingGutter = false;
+	let gutterViewId: string | null = null;
+	let gutterAxis: 0 | 1 | null = null;
+	let gutterTrackIndex: number | null = null;
+
+	// Writes a dragged gutter's new `fr` pair back into `viewId`'s `grid-template-columns`/`rows`
+	// property, through the exact same read-parse-edit-serialize-commit shape `GridTracksField.svelte`
+	// itself performs for a manual edit -- `parseTrackList`/`serializeTrackList` (grid-tracks.ts)
+	// plus `commitFieldValue`, so a canvas drag and manual list-editing stay perfectly consistent
+	// (same undo behavior, same token-vs-literal branching).
+	async function commitGutterDrag(viewId: string, axis: 0 | 1, trackIndex: number, frA: number, frB: number) {
+		const property = axis === 0 ? 'grid-template-columns' : 'grid-template-rows';
+		const resolvedKits = resolvedViews.find((v) => v.viewId === viewId)?.resolvedKits ?? null;
+		const target = resolveFieldTarget(resolvedKits, property);
+		if (!target) return;
+		const tracks = parseTrackList(target.value);
+		// Defensive - the pair Vellum just dragged must still be the two `fr` entries it started
+		// as. Guards against a stale/out-of-sync read (e.g. the track list changed by some other
+		// path between drag-start and drag-end) silently corrupting the wrong tracks.
+		if (tracks[trackIndex]?.kind !== 'fr' || tracks[trackIndex + 1]?.kind !== 'fr') return;
+		tracks[trackIndex] = { ...tracks[trackIndex], value: frA };
+		tracks[trackIndex + 1] = { ...tracks[trackIndex + 1], value: frB };
+		commitFieldValue(target, property, serializeTrackList(tracks), { onFieldUpdate, api: api ?? undefined });
+	}
+
 	let hoverRaf = 0;
 
 	// On-demand rendering: only paint a frame when something Vellum-visible actually changed
@@ -162,13 +237,7 @@
 	}
 
 	function requestRender() {
-		// Gated on hasData -- the first real set_data() call, not just "vellum itself finished
-		// initializing" -- so nothing ever paints before there's real content to show. Without
-		// this, calls that can legitimately fire before that (ResizeObserver's own initial
-		// callback, the colors-applied-on-init call) would paint an empty background+grid frame
-		// visible through/around the loading logo overlay while PGlite/Charter are still
-		// resolving, instead of the single clean reveal once real data lands.
-		if (!vellum || rafId || !hasData) return;
+		if (!vellum || rafId) return;
 		rafId = requestAnimationFrame(renderFrame);
 	}
 
@@ -365,7 +434,9 @@
 
 	// Dev A/B toggle for Tier-1 pixel snapping (crisp snap-to-grid vs. the default smooth SDF-AA
 	// look). The `canvas.pixelSnap` keybind flips it; must request a repaint here since
-	// set_pixel_snap only sets a flag the next frame reads (rendering is on-demand).
+	// set_pixel_snap only sets a flag the next frame reads (rendering is on-demand). Deliberately
+	// left off by default -- see Vellum's own `pixel_snap` field doc (render/mod.rs) for why: a
+	// real glyph-clipping bug in the snap implementation, not yet root-caused.
 	let pixelSnap = false;
 
 	// True when the pan keybind is a mouse gesture that uses the held-Space modifier -- only then does
@@ -603,6 +674,47 @@
 		downX = e.clientX;
 		downY = e.clientY;
 
+		// A grid-gutter or resize-handle grab takes priority over EVERYTHING else (node-drag,
+		// pan) -- there's no ambiguity to arm a candidate for the way a body-hit has (see the
+		// class doc on dragCandidateViewId): grabbing either only ever means "start dragging it".
+		// Primary button only -- unlike node-drag/pan (both keybind-configurable, via matchMouse),
+		// neither is rebindable, so neither must hijack a right-click (context menu) or a
+		// middle-click (commonly bound to pan) that merely happens to land on a small hit zone.
+		// Both hit-tests are scoped to the PRIMARY selection (see their own Vellum-side docs), so
+		// this is a cheap no-op whenever nothing selected/interactive is under the cursor. Gutter
+		// checked first since it's the more specific target (only present on a Grid container;
+		// the two never spatially overlap in practice - gutters are strictly interior, resize
+		// handles sit on the box's outer boundary - so order is low-risk either way).
+		if (vellum && e.button === 0 && selection.selectedViewPrimary) {
+			const rect = canvas.getBoundingClientRect();
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
+
+			const gutter = vellum.hit_test_grid_gutter(x, y);
+			if (gutter >= 0) {
+				const index = resolveNodeIndex(selection.selectedViewPrimary, selection.selectedOccurrencePrimary);
+				if (index !== -1 && vellum.start_grid_gutter_drag(index, gutter, x, y)) {
+					resizingGutter = true;
+					gutterViewId = selection.selectedViewPrimary;
+					gutterAxis = (gutter >> 16) as 0 | 1;
+					gutterTrackIndex = gutter & 0xffff;
+					canvas.setPointerCapture(e.pointerId);
+					return;
+				}
+			}
+
+			const handle = vellum.hit_test_resize_handle(x, y);
+			if (handle >= 0) {
+				const index = resolveNodeIndex(selection.selectedViewPrimary, selection.selectedOccurrencePrimary);
+				if (index !== -1 && vellum.start_node_resize(index, handle, x, y)) {
+					resizingNode = true;
+					resizeViewId = selection.selectedViewPrimary;
+					canvas.setPointerCapture(e.pointerId);
+					return;
+				}
+			}
+		}
+
 		// A pointerdown landing on a draggable root view takes priority over panning -- arm a
 		// *candidate* rather than committing to a drag immediately, so a plain click still
 		// selects (see onPointerMove/onPointerUp for where the candidate either commits past the
@@ -630,6 +742,20 @@
 	}
 
 	function onPointerMove(e: PointerEvent) {
+		if (resizingGutter && vellum) {
+			const rect = canvas.getBoundingClientRect();
+			vellum.update_grid_gutter_drag(e.clientX - rect.left, e.clientY - rect.top);
+			requestRender();
+			return;
+		}
+
+		if (resizingNode && vellum) {
+			const rect = canvas.getBoundingClientRect();
+			vellum.update_node_resize(e.clientX - rect.left, e.clientY - rect.top);
+			requestRender();
+			return;
+		}
+
 		if (dragCandidateViewId !== null && vellum) {
 			if (!draggingNode) {
 				const movedDistance = Math.hypot(e.clientX - downX, e.clientY - downY);
@@ -639,6 +765,7 @@
 			const x = e.clientX - rect.left;
 			const y = e.clientY - rect.top;
 			if (!draggingNode) {
+				canvas.style.cursor = ''; // clear any lingering resize-handle-hover cursor
 				const started = vellum.start_node_drag(dragCandidateIndex ?? -1, x, y);
 				if (!started) {
 					// Shouldn't happen (the node was hit-testable a moment ago) -- don't get stuck
@@ -655,6 +782,7 @@
 		}
 
 		if (panning && vellum) {
+			canvas.style.cursor = ''; // clear any lingering resize-handle-hover cursor
 			const dx = e.clientX - lastX;
 			const dy = e.clientY - lastY;
 			lastX = e.clientX;
@@ -667,12 +795,28 @@
 
 		// Hover hit-test, throttled to once per animation frame -- a canvas pointermove can
 		// fire far more often than that, and get_selection's rect scan is wasted work between
-		// frames.
+		// frames. Also drives the resize-handle/grid-gutter cursor affordance (nwse-resize,
+		// ew-resize, etc.) so it's visible BEFORE the user presses down, same throttle -- cheap,
+		// and both hit-tests are no-ops whenever nothing's selected/interactive, so this costs
+		// nothing in the common case.
 		if (!vellum || hoverRaf) return;
 		hoverRaf = requestAnimationFrame(() => {
 			hoverRaf = 0;
 			const rect = canvas.getBoundingClientRect();
-			const occ = resolveOccurrenceAt(e.clientX - rect.left, e.clientY - rect.top);
+			const x = e.clientX - rect.left;
+			const y = e.clientY - rect.top;
+			if (selection.selectedViewPrimary) {
+				const gutter = vellum.hit_test_grid_gutter(x, y);
+				if (gutter >= 0) {
+					canvas.style.cursor = vellum.grid_gutter_cursor(gutter);
+				} else {
+					const handle = vellum.hit_test_resize_handle(x, y);
+					canvas.style.cursor = handle >= 0 ? vellum.resize_handle_cursor(handle) : '';
+				}
+			} else {
+				canvas.style.cursor = '';
+			}
+			const occ = resolveOccurrenceAt(x, y);
 			hoveredViewId = occ?.viewId ?? null;
 			hoveredOccurrenceKey = occ?.occurrenceKey ?? null;
 		});
@@ -681,6 +825,39 @@
 	function onPointerUp(e: PointerEvent) {
 		panning = false;
 		canvas.releasePointerCapture(e.pointerId);
+
+		if (resizingGutter && vellum) {
+			// [fr_a, fr_b] -- see vellum.end_grid_gutter_drag's own doc. axis/trackIndex were
+			// captured at grab time (onPointerDown), since the drag result itself doesn't carry
+			// them.
+			const result = vellum.end_grid_gutter_drag();
+			resizingGutter = false;
+			const viewId = gutterViewId;
+			const axis = gutterAxis;
+			const trackIndex = gutterTrackIndex;
+			gutterViewId = null;
+			gutterAxis = null;
+			gutterTrackIndex = null;
+			if (viewId && axis !== null && trackIndex !== null && result.length === 2) {
+				void commitGutterDrag(viewId, axis, trackIndex, result[0], result[1]);
+			}
+			return; // a completed gutter drag never also fires click-selection
+		}
+
+		if (resizingNode && vellum) {
+			// [width, height, width_active, height_active] -- see vellum.end_node_resize's own
+			// doc for why the trailing two flags are load-bearing: an inactive axis's size entry
+			// is an inert placeholder, never a real committed value, so persistViewSize must be
+			// told which axis(es) to actually write.
+			const result = vellum.end_node_resize();
+			resizingNode = false;
+			const viewId = resizeViewId;
+			resizeViewId = null;
+			if (viewId && result.length === 4) {
+				void persistViewSize(viewId, result[0], result[1], result[2] !== 0, result[3] !== 0);
+			}
+			return; // a completed resize never also fires click-selection
+		}
 
 		if (draggingNode && vellum) {
 			// The SNAPPED position (end_node_drag may start a settle animation easing the raw
@@ -725,6 +902,10 @@
 		}
 		hoveredViewId = null;
 		hoveredOccurrenceKey = null;
+		// Not reachable mid-resize/mid-drag: pointer capture (set on grab) suppresses
+		// pointerleave for the capturing pointer until release, so this only ever fires while
+		// merely hovering -- safe to unconditionally clear the resize-handle-hover cursor.
+		canvas.style.cursor = '';
 	}
 
 	function onWheel(e: WheelEvent) {
@@ -910,6 +1091,14 @@
 		pointer-events: none;
 		opacity: 1;
 		transition: opacity 0.4s ease;
+		// requestRender() used to be gated on hasData (never paint before real content lands),
+		// specifically so this overlay was covering nothing but a black, never-yet-presented
+		// canvas. That gate got removed -- painting whenever asked, immediately, is simpler and
+		// the canvas now shows its correct themed background+grid from the first frame. This
+		// background stays anyway: a plain, correct fallback while the canvas/WebGPU are still
+		// spinning up, cheap insurance against the same class of "wrong color shows through"
+		// issue that motivated it originally.
+		background: var(--color-bg);
 
 		// The transition name lives on ::after, not this inset:0 wrapper -- the View
 		// Transitions API morphs between the *captured box geometry* of the old and new

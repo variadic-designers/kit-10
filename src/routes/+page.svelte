@@ -6,10 +6,31 @@
 
 	import { initializeReducedMotion } from '$lib/reduced-motion.js';
 	import { page } from '$app/state';
+	import { preloadCode } from '$app/navigation';
+	import { onMount } from 'svelte';
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
 		initializeReducedMotion(page.data.reducedMotion);
+	});
+
+	// `data-sveltekit-preload-data="hover"` (app.html) already warms /edit's route chunk on
+	// hover, which covers a normal mouse click -- but a fast click with little hover dwell time,
+	// or Enter/keyboard activation of the CTA, skips that window entirely, showing a few-ms
+	// first-load flash while the chunk fetches (see the edit-loading placeholder's own doc for
+	// the view-transition side of this). Warming it during idle time instead of immediately
+	// means it doesn't compete with the landing page's own critical rendering, and lands well
+	// before a real visitor reaches for "Get Started" regardless of how they trigger it --
+	// without blocking anything an instant-bounce visitor would have paid for.
+	onMount(() => {
+		const idle = (globalThis as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+		const cancel = idle
+			? idle(() => preloadCode('/edit'))
+			: setTimeout(() => preloadCode('/edit'), 1000);
+		return () => {
+			if (idle) (globalThis as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(cancel as number);
+			else clearTimeout(cancel as ReturnType<typeof setTimeout>);
+		};
 	});
 
 	const year = new Date().getFullYear();
