@@ -1010,6 +1010,7 @@
 			{overriddenOccurrences}
 			{compositionKeys}
 			{beginPendingResolve}
+			onFieldUpdate={pluginManager?.fieldUpdate}
 			bind:editorActivity
 			bind:selection
 			bind:hoveredViewId
