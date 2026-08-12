@@ -119,4 +119,16 @@ describe('KEYBIND_DEFAULTS', () => {
 		expect(KEYBIND_DEFAULTS['layer.delete']).toEqual(mouse('Mouse0', { alt: true }));
 		expect(KEYBIND_DEFAULTS['axis.cycleValue']).toEqual(wheel({ shift: true }));
 	});
+
+	// view.nudgeUp/Down deliberately share their default with nav.prevSibling/nextSibling
+	// (Editor.svelte's onNavKey tries the nudge first and only falls through to sibling-nav when
+	// the active selection isn't out of flow) - Left/Right have no such default overlap.
+	it('nudges the active selection with the arrow keys, overlapping sibling-nav defaults on up/down', () => {
+		expect(KEYBIND_DEFAULTS['view.nudgeUp']).toEqual(key('ArrowUp'));
+		expect(KEYBIND_DEFAULTS['view.nudgeDown']).toEqual(key('ArrowDown'));
+		expect(KEYBIND_DEFAULTS['view.nudgeLeft']).toEqual(key('ArrowLeft'));
+		expect(KEYBIND_DEFAULTS['view.nudgeRight']).toEqual(key('ArrowRight'));
+		expect(KEYBIND_DEFAULTS['view.nudgeUp']).toEqual(KEYBIND_DEFAULTS['nav.prevSibling']);
+		expect(KEYBIND_DEFAULTS['view.nudgeDown']).toEqual(KEYBIND_DEFAULTS['nav.nextSibling']);
+	});
 });

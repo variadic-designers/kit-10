@@ -36,6 +36,10 @@ export type KeybindAction =
 	| 'nav.nextSibling'
 	| 'canvas.pan'
 	| 'view.drag'
+	| 'view.nudgeUp'
+	| 'view.nudgeDown'
+	| 'view.nudgeLeft'
+	| 'view.nudgeRight'
 	| 'canvas.toggleBoxModel'
 	| 'canvas.pixelSnap'
 	| 'canvas.focusView'
@@ -90,6 +94,17 @@ export const KEYBIND_ACTIONS: KeybindActionDef[] = [
 	// hit-target logic with no binding at all) lets a user later require e.g. Alt+drag to move a
 	// view, freeing plain left-drag to always pan even over content, without touching canvas.pan.
 	{ id: 'view.drag', label: 'Move view', group: CANVAS, allow: ['mouse'], default: mouse('Mouse0') },
+	// Nudges the selected view by keyboard when (and only when) it's out of normal flow -- Nudge/
+	// Anchor mode (writes `position-offset`) or a root view already drag-placed (Absolute, writes
+	// `hints.vellum.position`) - see onNavKey's own doc in Editor.svelte. Deliberately overlaps
+	// nav.prevSibling/nav.nextSibling's own ArrowUp/ArrowDown defaults: onNavKey tries nudge FIRST
+	// and only falls through to sibling-nav when the current selection isn't non-flow, so the same
+	// physical key does the contextually useful thing either way. ArrowLeft/ArrowRight have no
+	// competing default, so they're unambiguous out of the box.
+	{ id: 'view.nudgeUp', label: 'Nudge view up', group: CANVAS, allow: ['key'], default: key('ArrowUp') },
+	{ id: 'view.nudgeDown', label: 'Nudge view down', group: CANVAS, allow: ['key'], default: key('ArrowDown') },
+	{ id: 'view.nudgeLeft', label: 'Nudge view left', group: CANVAS, allow: ['key'], default: key('ArrowLeft') },
+	{ id: 'view.nudgeRight', label: 'Nudge view right', group: CANVAS, allow: ['key'], default: key('ArrowRight') },
 	{
 		id: 'canvas.toggleBoxModel',
 		label: 'Toggle padding/gap overlay',

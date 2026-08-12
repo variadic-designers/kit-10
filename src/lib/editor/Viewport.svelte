@@ -8,6 +8,7 @@
 	import { keybinds, matchKey, matchMouse, matchWheel, isTextEntryTarget } from './keybinds.js';
 	import { buildViewTree, resolveDragTargetViewId, type ViewOccurrence } from './view-tree.js';
 	import type { Api, OverriddenOccurrence } from 'manager';
+	import { flattenKitResults } from 'manager';
 	import type { FieldUpdate, ResolvedView } from '$lib/plugins/types.js';
 	import { commitFieldValue } from './panels/field-commit.js';
 	import { resolveFieldTarget } from './panels/resolve-field-target.js';
@@ -342,6 +343,120 @@
 				| Record<string, unknown>
 				| undefined) ?? {};
 		await api.updateViewHints(viewId, { vellum: { ...current, position: [x, y] } });
+	}
+
+	// Arrow-key nudge (Editor.svelte's onNavKey calls in via bind:this, since only this component
+	// has `vellum`/`resolveNodeIndex` - the nav-vs-nudge DECISION has to live in Editor.svelte
+	// regardless, see its own onNavKey doc, since it's the first `keydown` listener registered on
+	// `window` and must claim/release the key before its own sibling-nav fallthrough runs).
+	//
+	// Gives INSTANT visual feedback via the dynamic layer (`vellum.set_node_dynamic`, Pillar A) -
+	// no DB round trip per keystroke, so holding an arrow key feels exactly as smooth as a mouse
+	// drag - then coalesces every accumulated delta into ONE persist after the key's been idle for
+	// `NUDGE_FLUSH_DELAY_MS`, instead of one full write+resolve per repeat event (which is what
+	// made holding the key laggy: each keystroke used to round-trip the DB and re-run Charter's
+	// on_resolve before the next repeat event could even be processed).
+	//
+	// Safe to leave the dynamic-layer transform active across the whole session with no explicit
+	// clear: taf_can_do's `set_data` contract wipes every `node_dynamics` entry on the NEXT resolve
+	// ("a fresh resolve supersedes every dynamic-layer transform, same contract as node_drag") - by
+	// the time that resolve lands, the persisted delta is already baked into the new resolved
+	// position, so the hand-back is seamless with no double-counted offset or flash.
+	type NudgeSession = {
+		viewId: string;
+		occurrenceKey: string;
+		index: number;
+		isNudgeAnchor: boolean;
+		dx: number;
+		dy: number;
+		flushTimer: ReturnType<typeof setTimeout> | null;
+	};
+	let nudgeSession: NudgeSession | null = null;
+	const NUDGE_FLUSH_DELAY_MS = 200;
+
+	export function nudgeSelection(dx: number, dy: number): boolean {
+		if (!vellum) return false;
+		const viewId = editorActivity.activeViewId;
+		if (!viewId) return false;
+		const view = resolvedViews.find((v) => v.viewId === viewId);
+		if (!view) return false;
+		const occurrenceKey = selection.selectedOccurrencePrimary ?? viewId;
+
+		const position = flattenKitResults(view.resolvedKits).get('position')?.value;
+		const isNudgeAnchor = position === 'nudge' || position === 'anchor';
+		const isRoot = !viewTree.referencedViewIds.has(viewId);
+		const currentPos = (view.hints?.vellum as Record<string, unknown> | undefined)?.position;
+		const isAbsoluteRoot = isRoot && Array.isArray(currentPos) && currentPos.length === 2;
+		if (!isNudgeAnchor && !isAbsoluteRoot) return false;
+
+		const index = resolveNodeIndex(viewId, occurrenceKey);
+		if (index === -1) return false;
+
+		if (
+			!nudgeSession ||
+			nudgeSession.viewId !== viewId ||
+			nudgeSession.occurrenceKey !== occurrenceKey
+		) {
+			if (nudgeSession?.flushTimer) clearTimeout(nudgeSession.flushTimer);
+			nudgeSession = { viewId, occurrenceKey, index, isNudgeAnchor, dx: 0, dy: 0, flushTimer: null };
+		}
+		nudgeSession.dx += dx;
+		nudgeSession.dy += dy;
+		vellum.set_node_dynamic(index, nudgeSession.dx, nudgeSession.dy, 1, 1, 0, 1);
+		requestRender();
+
+		if (nudgeSession.flushTimer) clearTimeout(nudgeSession.flushTimer);
+		nudgeSession.flushTimer = setTimeout(() => void flushNudgeSession(view), NUDGE_FLUSH_DELAY_MS);
+		return true;
+	}
+
+	async function flushNudgeSession(view: ResolvedView) {
+		if (!nudgeSession) return;
+		const { viewId, isNudgeAnchor, dx, dy } = nudgeSession;
+		nudgeSession = null;
+		if (isNudgeAnchor) {
+			await nudgeOffsetProperty(view, dx, dy);
+			return;
+		}
+		if (!api) return;
+		const currentHints = (view.hints?.vellum as Record<string, unknown> | undefined) ?? {};
+		const currentPos = currentHints.position as [number, number] | undefined;
+		if (!Array.isArray(currentPos)) return;
+		beginPendingResolve();
+		await api.updateViewHints(viewId, {
+			vellum: { ...currentHints, position: [currentPos[0] + dx, currentPos[1] + dy] }
+		});
+	}
+
+	// Mirrors Styles.svelte's own `track()` null-layer fallback for a never-authored property:
+	// `position-offset` is only ever written the FIRST time an offset actually moves (switching to
+	// Nudge/Anchor mode alone never seeds it), so it's routinely absent from `flattenKitResults`
+	// entirely right after a mode switch. Paints a brand-new entry onto the active kit's (Compose/
+	// Axes panel's live selection if it's one of this view's own composed kits, else the highest-
+	// priority kit - exactly `track()`'s own `activeKitId` derivation) unconditional layer.
+	async function nudgeOffsetProperty(view: ResolvedView, dx: number, dy: number) {
+		if (!api) return;
+		const existing = flattenKitResults(view.resolvedKits).get('position-offset');
+		let target: { sourceLayerId: string | null; isToken: boolean; tokenId: string | null };
+		if (existing) {
+			target = existing;
+		} else {
+			const kitId =
+				editorActivity.activeKitId &&
+				view.resolvedKits.some((k) => k.kitId === editorActivity.activeKitId)
+					? editorActivity.activeKitId
+					: (view.resolvedKits.at(-1)?.kitId ?? null);
+			if (!kitId) return;
+			const nullLayerId = await api.getNullLayerId(kitId);
+			if (!nullLayerId) return;
+			target = { sourceLayerId: nullLayerId, isToken: false, tokenId: null };
+		}
+		const [curDx = 0, curDy = 0] = (existing?.value ?? '')
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean)
+			.map((n) => parseFloat(n) || 0);
+		commitFieldValue(target, 'position-offset', `${curDx + dx} ${curDy + dy}`, { onFieldUpdate, api });
 	}
 
 	function resolveEffective(t: Theme): 'light' | 'dark' {

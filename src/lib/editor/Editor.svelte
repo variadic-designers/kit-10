@@ -449,6 +449,22 @@
 		return areaNamesFromParentMap(flattenKitResults(parentView.resolvedKits));
 	});
 
+	// Arrow-key nudge for the active selection, but ONLY when it's out of normal document flow --
+	// Nudge/Anchor mode or a root view already drag-placed out of flow (Absolute). A plain flow
+	// child has nothing here to move (its position is entirely derived from layout), so
+	// viewportRef.nudgeSelection returns false and onNavKey falls through to sibling-nav instead -
+	// same key, contextually different action.
+	//
+	// The actual move (decision details, instant dynamic-layer preview, debounced persist) lives in
+	// Viewport.svelte's own `nudgeSelection` (bound below via viewportRef) - only that component
+	// has the `vellum` instance a smooth keyboard nudge needs. The NAV-VS-NUDGE claim still has to
+	// happen here though: this is the first `keydown` listener registered on `window` (Viewport
+	// registers its own imperatively, inside an async onMount, strictly later), so if the decision
+	// lived downstream instead, sibling-nav would already have claimed the arrow key by the time
+	// Viewport's own listener ever saw it.
+	const NUDGE_STEP = 4;
+	let viewportRef: Viewport | undefined = $state();
+
 	// Keyboard navigation of the View composition tree ([ parent, ] child, ↑/↓ siblings). Lives here
 	// (Editor is always mounted) rather than in the Views panel (which can be collapsed), and reuses
 	// the same `buildViewTree` graph math the panel uses + the shared `selectView` funnel, so the
@@ -465,6 +481,17 @@
 		if (matchKey(e, binds['panel.toggleLayers'])) {
 			e.preventDefault();
 			updatePanelVisibility({ showLayersPanel: !$panelVisibility.showLayersPanel });
+			return;
+		}
+
+		let nudgeDx = 0;
+		let nudgeDy = 0;
+		if (matchKey(e, binds['view.nudgeUp'])) nudgeDy = -NUDGE_STEP;
+		else if (matchKey(e, binds['view.nudgeDown'])) nudgeDy = NUDGE_STEP;
+		else if (matchKey(e, binds['view.nudgeLeft'])) nudgeDx = -NUDGE_STEP;
+		else if (matchKey(e, binds['view.nudgeRight'])) nudgeDx = NUDGE_STEP;
+		if ((nudgeDx !== 0 || nudgeDy !== 0) && viewportRef?.nudgeSelection(nudgeDx, nudgeDy)) {
+			e.preventDefault();
 			return;
 		}
 
@@ -999,6 +1026,7 @@
 		{@const api = editorReady ? queryBuilder(editorReady.dialect) : null}
 
 		<Viewport
+			bind:this={viewportRef}
 			data={pluginManager?.viewportData ?? '[]'}
 			dataBinary={pluginManager?.viewportDataBinary ?? null}
 			nodeViewIds={pluginManager?.nodeViewIds ?? []}
