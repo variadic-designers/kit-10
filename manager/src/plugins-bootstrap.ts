@@ -10,12 +10,15 @@ const CHARTER_MANIFEST: PluginManifest = {
 };
 
 // Runtime font-file hosts fetch_font is allowed to reach. gstatic serves the OFL/Google tier;
-// cdn.fontshare.com serves the free-proprietary Fontshare tier (Satoshi, Clash, etc.). The
+// cdn.fontshare.com serves the free-proprietary Fontshare tier (Satoshi, Clash, etc.);
+// cdn.jsdelivr.net serves the Font Awesome (OFL) icon-font tier -- jsDelivr mirrors the published
+// @fortawesome/fontawesome-free npm package (pinned to an exact version in catalogue.json), since
+// Font Awesome has no vendor CDN of its own for the free/no-account tier. The
 // Fontshare *API* host (api.fontshare.com) is deliberately NOT here -- it's only used by the
 // build-time catalogue generator, never by the plugin at runtime. Single source of truth for
 // both the declared `capabilities.hosts` (below) and the actual Extism `allowedHosts` option
 // (FONTAVIOUS_OPTIONS) -- these used to be two independent literals that could silently drift.
-const FONTAVIOUS_HOSTS = ['fonts.gstatic.com', 'cdn.fontshare.com'];
+const FONTAVIOUS_HOSTS = ['fonts.gstatic.com', 'cdn.fontshare.com', 'cdn.jsdelivr.net'];
 const FONTAVIOUS_MANIFEST: PluginManifest = {
 	wasm: [{ url: '/fontavious.wasm' }],
 	capabilities: {

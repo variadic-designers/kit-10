@@ -35,11 +35,11 @@ describe('registerBuiltinPlugins', () => {
 			wasm: [{ url: '/fontavious.wasm' }],
 			capabilities: {
 				hostFns: ['kit10_font_cache_get', 'kit10_font_cache_put', 'kit10_kv_get'],
-				hosts: ['fonts.gstatic.com', 'cdn.fontshare.com']
+				hosts: ['fonts.gstatic.com', 'cdn.fontshare.com', 'cdn.jsdelivr.net']
 			}
 		});
 		expect(fontavious.options).toEqual({
-			allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com']
+			allowedHosts: ['fonts.gstatic.com', 'cdn.fontshare.com', 'cdn.jsdelivr.net']
 		});
 		expect(fontavious.content_hash).toMatch(/^[0-9a-f]{64}$/);
 

@@ -463,12 +463,17 @@ mod catalogue_tests {
 
     // Every variant URL must be an https font file on a KNOWN vendor host (kept in lockstep with
     // Fontavious's `allowedHosts` in manager/src/plugins-bootstrap.ts -- a URL on a host we can't
-    // fetch from is a dead entry). google -> gstatic, fontshare -> cdn.fontshare.com.
+    // fetch from is a dead entry). google -> gstatic, fontshare -> cdn.fontshare.com, fontawesome
+    // -> jsDelivr's npm mirror (Font Awesome ships no CDN of its own for the free/no-account
+    // tier; jsDelivr just mirrors the published @fortawesome/fontawesome-free npm package,
+    // pinned to an exact version - same "vendor's own CDN" posture as every other entry, just one
+    // level indirected through npm's registry instead of a font foundry's own domain).
     #[test]
     fn every_variant_url_is_on_an_allowed_vendor_host() {
         for entry in catalogue() {
             let allowed_host = match entry.vendor.as_str() {
                 "fontshare" => "https://cdn.fontshare.com/",
+                "fontawesome" => "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@",
                 _ => "https://fonts.gstatic.com/", // google + default
             };
             for variant in &entry.variants {

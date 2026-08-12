@@ -3497,4 +3497,39 @@
 			}
 		]
 	}
+,
+	{
+		"family": "Font Awesome 7 Free",
+		"vendor": "fontawesome",
+		"licenseTier": "ofl",
+		"category": "icons",
+		"variants": [
+			{
+				"weightMin": 900,
+				"weightMax": 900,
+				"style": "normal",
+				"url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/webfonts/fa-solid-900.woff2"
+			},
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/webfonts/fa-regular-400.woff2"
+			}
+		]
+	},
+	{
+		"family": "Font Awesome 7 Brands",
+		"vendor": "fontawesome",
+		"licenseTier": "ofl",
+		"category": "icons",
+		"variants": [
+			{
+				"weightMin": 400,
+				"weightMax": 400,
+				"style": "normal",
+				"url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/webfonts/fa-brands-400.woff2"
+			}
+		]
+	}
 ]
