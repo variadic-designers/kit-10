@@ -3,7 +3,6 @@ import { defineConfig, type Plugin } from 'vitest/config';
 import { searchForWorkspaceRoot } from 'vite';
 
 import { sveltekit } from '@sveltejs/kit/vite';
-import k10 from './plugin/vite-kit10-plugin.js';
 import crossOriginIsolation from 'vite-plugin-cross-origin-isolation';
 
 // The editor's client-only stack (manager/Kysely/PGlite, Vellum's WASM loader, the
@@ -59,7 +58,6 @@ function clientOnlyManualChunks(): Plugin {
 
 export default defineConfig({
 	plugins: [
-		k10(),
 		sveltekit(),
 		devtoolsJson(),
 		crossOriginIsolation(),
