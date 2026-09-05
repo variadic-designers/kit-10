@@ -58,7 +58,8 @@ async function fetchResolutionRowsLegacy(
 		tokenAxisOverrides: [],
 		layers: [],
 		conditions: [],
-		entries: []
+		entries: [],
+		tokenLayerValues: []
 	};
 
 	// RT1: views
@@ -208,7 +209,8 @@ async function fetchResolutionRowsLegacy(
 		tokenAxisOverrides: tokenAxisOverrides as ResolutionRows['tokenAxisOverrides'],
 		layers,
 		conditions: conditions as ResolutionRows['conditions'],
-		entries: entries as ResolutionRows['entries']
+		entries: entries as ResolutionRows['entries'],
+		tokenLayerValues: []
 	};
 }
 

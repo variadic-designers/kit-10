@@ -84,6 +84,7 @@ export interface DB2026_04_21 {
 	layers: LayersTable;
 	layer_axis_values: LayerAxisValuesTable;
 	render_entries: RenderEntriesTable;
+	token_layer_values: TokenLayerValuesTable;
 
 	tokens: TokensTable;
 	token_axis_overrides: TokenAxisOverridesTable;
@@ -205,6 +206,14 @@ export interface RenderEntriesTable {
 	value: string | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	token_id: string | null;
+}
+
+export interface TokenLayerValuesTable {
+	id: Generated<string>;
+	token_id: string;
+	layer_id: string;
+	value: JSONColumnType<TokenValue> | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 }
 
 // ------------------------------
@@ -472,6 +481,23 @@ export async function up(dialect: DAny) {
 		)
 		.execute();
 
+	// A kit-scoped token's own axis-conditioned value, painted onto a layer the exact same way a
+	// render_entries row is - `layer_id` references the SAME `layers` table properties use (a
+	// layer is just "this kit, under this condition set"; a property override and a token override
+	// for the same condition set can share one layer row). Deliberately skips render_snippets'
+	// indirection - that exists purely to group arbitrary style-rule properties under one layer,
+	// which doesn't apply to an atomic token value. One row per (token, layer) pair.
+	await dialect.schema
+		.createTable('token_layer_values')
+		.ifNotExists()
+		.addColumn('id', 'uuid', (col) => col.primaryKey().defaultTo(sql<string>`uuid_generate_v7()`))
+		.addColumn('token_id', 'uuid', (col) => col.notNull().references('tokens.id').onDelete('cascade'))
+		.addColumn('layer_id', 'uuid', (col) => col.notNull().references('layers.id').onDelete('cascade'))
+		.addColumn('value', 'jsonb')
+		.addColumn('hints', 'jsonb', (col) => col.defaultTo(sql`'{}'::jsonb`))
+		.addUniqueConstraint('one_value_per_token_per_layer', ['token_id', 'layer_id'])
+		.execute();
+
 	await dialect.schema
 		.createTable('plugins')
 		.ifNotExists()
@@ -523,6 +549,7 @@ export async function up(dialect: DAny) {
 export async function down(dialect: DAny) {
 	await dialect.schema.dropTable('assets').ifExists().cascade().execute();
 	await dialect.schema.dropTable('plugins').ifExists().cascade().execute();
+	await dialect.schema.dropTable('token_layer_values').ifExists().cascade().execute();
 	await dialect.schema.dropTable('render_entries').ifExists().cascade().execute();
 	await dialect.schema.dropTable('layer_axis_values').ifExists().cascade().execute();
 	await dialect.schema.dropTable('render_snippets').ifExists().cascade().execute();

@@ -11,7 +11,8 @@ import {
 	type TokenAxisOverrideRow,
 	type LayerRow,
 	type ConditionRow,
-	type EntryRow
+	type EntryRow,
+	type TokenLayerValueRow
 } from './resolve.js';
 import type { TokenValue } from '../schema.js';
 
@@ -87,6 +88,11 @@ const entryKeys: Record<keyof EntryRow, true> = {
 	token_alias: true,
 	token_value: true
 };
+const tokenLayerValueKeys: Record<keyof TokenLayerValueRow, true> = {
+	token_id: true,
+	layer_id: true,
+	value: true
+};
 
 function assertExact(row: object | undefined, keymap: Record<string, true>, label: string) {
 	expect(row, `${label}: rowset is empty -- seed must populate it for this guard to work`).toBeDefined();
@@ -125,7 +131,7 @@ describe('batched fetch key-set matches row interfaces', () => {
 
 		// project / kit / view scoped tokens (each needs a non-null alias to be selected)
 		const projTok = (await api.createToken(proj.id, 'colors.primary', s('#3b82f6')))!;
-		await api.createToken(proj.id, 'colors.kit', s('#111111'), { kitId: kit.id });
+		const kitTok = (await api.createToken(proj.id, 'colors.kit', s('#111111'), { kitId: kit.id }))!;
 
 		// null baseline layer + a conditioned layer -> layers, conditions, entries
 		const nullLayer = (await api.createLayer(kit.id))!;
@@ -137,6 +143,7 @@ describe('batched fetch key-set matches row interfaces', () => {
 		await api.addAxisValueToLayer(darkLayer.id, dark.id);
 		const darkSnippet = (await api.createRenderSnippet(darkLayer.id))!;
 		await api.createRenderEntry(darkSnippet.id, 'background', '#1e293b');
+		await api.paintTokenValue(kitTok.id, kit.id, [dark.id], s('#eeeeee'));
 
 		// view + composition + axis arg + view-scoped token
 		const view = (await api.createViewInProject(proj.id, 'Dark'))!;
@@ -168,5 +175,6 @@ describe('batched fetch key-set matches row interfaces', () => {
 		assertExact(rows.tokenAxisOverrides[0], tokenAxisOverrideKeys, 'TokenAxisOverride');
 		assertExact(rows.conditions[0], conditionKeys, 'Condition');
 		assertExact(rows.entries[0], entryKeys, 'Entry');
+		assertExact(rows.tokenLayerValues[0], tokenLayerValueKeys, 'TokenLayerValue');
 	});
 });

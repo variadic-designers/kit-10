@@ -785,6 +785,48 @@ describe('range overlap matching', () => {
 			expect(flat.get('color')!.value).toBe('#ef4444');
 		});
 
+		it('a kit-scoped token with a layered override resolves to the override under matching axis_args, and to its base value otherwise', async () => {
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Token Layer Values'))!;
+
+			const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+			const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			await ctx.api.consumeAxis(kit.id, axis.id);
+			const kitToken = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6'), { kitId: kit.id }))!;
+
+			const layer = (await ctx.api.createLayer(kit.id))!;
+			const snippet = (await ctx.api.createRenderSnippet(layer.id))!;
+			await ctx.api.createRenderEntry(snippet.id, 'color', null, kitToken.id);
+
+			const { layerId } = (await ctx.api.paintTokenValue(kitToken.id, kit.id, [dark.id], s('#ef4444')))!;
+
+			const lightView = (await ctx.api.createViewInProject(proj.id, 'Light'))!;
+			await ctx.api.attachKitToComposition(kit.id, lightView.id);
+			const darkView = (await ctx.api.createViewInProject(proj.id, 'Dark'))!;
+			await ctx.api.attachKitToComposition(kit.id, darkView.id);
+			await ctx.api.setAxisArg(darkView.id, kit.id, axis.id, { type: 'literal', value: 'dark' });
+
+			// Slow path
+			const lightResults = await resolveManySlowPath(ctx.db, lightView.id);
+			expect(flattenKitResults(lightResults).get('color')!.value).toBe('#3b82f6');
+			const darkResults = await resolveManySlowPath(ctx.db, darkView.id);
+			expect(flattenKitResults(darkResults).get('color')!.value).toBe('#ef4444');
+
+			// Batched path
+			const views = await resolveManyViews(ctx.db, proj.id);
+			const lightBatched = flattenKitResults(views.find((v) => v.viewId === lightView.id)!.resolvedKits);
+			const darkBatched = flattenKitResults(views.find((v) => v.viewId === darkView.id)!.resolvedKits);
+			expect(lightBatched.get('color')!.value).toBe('#3b82f6');
+			expect(darkBatched.get('color')!.value).toBe('#ef4444');
+
+			// Removing the override reverts both views' resolution back to the base value.
+			await ctx.api.deleteTokenLayerValue(kitToken.id, layerId);
+			const afterDelete = await resolveManySlowPath(ctx.db, darkView.id);
+			expect(flattenKitResults(afterDelete).get('color')!.value).toBe('#3b82f6');
+		});
+
 		it('view token overrides both project and kit tokens with same alias', async () => {
 			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
 			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'View Override'))!;
@@ -1022,6 +1064,58 @@ describe('range overlap matching', () => {
 			expect(occurrence.viewId).toBe(target.id);
 			const occFlat = flattenKitResults(occurrence.resolvedKits);
 			expect(occFlat.get('color')?.value).toBe('#000000');
+		});
+
+		it('a kit token whose layered override matches under the occurrence\'s merged args re-resolves for that occurrence only', async () => {
+			// The occurrence path reuses the target view's token-substitution scope, which used to
+			// mean the BASE-arg maps wholesale. Once kit tokens gained their own axis-conditioned
+			// values (token_layer_values), that reuse was wrong: the occurrence's merged args change
+			// which layered override matches, so its substituted token value must re-match too --
+			// alias winners unchanged, only the layered VALUE differs.
+			const ws = (await ctx.api.getAllWorkspaces().execute())[0]!;
+			const proj = (await ctx.api.createProjectInWorkspace(ws.workspaceId, 'Occurrence Token Layer'))!;
+
+			const themeAxis = (await ctx.api.createAxis(proj.id, 'theme', '', 'categorical', [
+				'light',
+				'dark'
+			]))!;
+			const themeDark = (await ctx.api.createAxisValue(themeAxis.id, {
+				type: 'literal',
+				value: 'dark'
+			}))!;
+
+			const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+			await ctx.api.consumeAxis(kit.id, themeAxis.id);
+
+			// Kit token 'accent': base blue, layered override red on theme:dark.
+			const accent = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6'), { kitId: kit.id }))!;
+			await ctx.api.paintTokenValue(accent.id, kit.id, [themeDark.id], s('#ef4444'));
+
+			// The kit's color entry references the kit token.
+			const nullLayer = (await ctx.api.createLayer(kit.id))!;
+			const nullSnippet = (await ctx.api.createRenderSnippet(nullLayer.id))!;
+			await ctx.api.createRenderEntry(nullSnippet.id, 'color', null, accent.id);
+
+			// The target view never picks dark itself -- its own resolution stays on the base value.
+			const target = (await ctx.api.createViewInProject(proj.id, 'Target'))!;
+			await ctx.api.attachKitToComposition(kit.id, target.id);
+
+			const parent = (await ctx.api.createViewInProject(proj.id, 'Parent'))!;
+			const { id: tokenId } = await ctx.api.addViewRef(proj.id, parent.id, 'children', target.id);
+			await ctx.api.setTokenAxisOverride(tokenId, themeAxis.id, { type: 'literal', value: 'dark' });
+
+			const rows = await fetchResolutionRows(ctx.db, proj.id);
+			const { views, overriddenOccurrences } = resolveViewsFromRows(rows);
+
+			const targetView = views.find((v) => v.viewId === target.id)!;
+			expect(flattenKitResults(targetView.resolvedKits).get('color')?.value).toBe('#3b82f6');
+
+			expect(overriddenOccurrences).toHaveLength(1);
+			const occurrence = overriddenOccurrences[0]!;
+			expect(occurrence.occurrenceKey).toBe(tokenId);
+			// The occurrence's theme:dark merged args make the kit token's layered override match,
+			// so the substituted color resolves to the override, not the base.
+			expect(flattenKitResults(occurrence.resolvedKits).get('color')?.value).toBe('#ef4444');
 		});
 
 		it('a project with zero axis overrides anywhere produces an empty overriddenOccurrences array', async () => {

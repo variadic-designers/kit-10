@@ -227,6 +227,7 @@ export interface DB2026_07_30 {
 	layers: LayersTable;
 	layer_axis_values: LayerAxisValuesTable;
 	render_entries: RenderEntriesTable;
+	token_layer_values: TokenLayerValuesTable;
 
 	tokens: TokensTable;
 	token_axis_overrides: TokenAxisOverridesTable;
@@ -359,6 +360,18 @@ export interface RenderEntriesTable {
 	value: string | null;
 	hints: JSONColumnType<Record<string, unknown>> | null;
 	token_id: string | null;
+}
+
+// A kit-scoped token's own axis-conditioned value, painted onto a layer the exact same way a
+// render_entries row is (see the migration's own doc comment on this table for the full reasoning:
+// a layer is just "this kit, under this condition set", shared between property AND token
+// overrides - no render_snippets indirection, a token value is atomic, no grouping needed).
+export interface TokenLayerValuesTable {
+	id: Generated<string>;
+	token_id: string;
+	layer_id: string;
+	value: JSONColumnType<TokenValue> | null;
+	hints: JSONColumnType<Record<string, unknown>> | null;
 }
 
 // ------------------------------

@@ -148,21 +148,10 @@
 		return api.getKitsExceptFromViewId(activity.activeViewId);
 	});
 
-	$effect(() => {
-		const viewId = editorActivity.activeViewId;
-		const rows = kitsQuery.rows;
-
-		if (!viewId) {
-			editorActivity.activeKitId = null;
-			return;
-		}
-
-		if (kitsQuery.isFetching) return;
-
-		if (!rows.some((k) => k.kitId === editorActivity.activeKitId)) {
-			editorActivity.activeKitId = rows[0]?.kitId ?? null;
-		}
-	});
+	// activeKitId auto-select (first composed kit for the active view) moved to Editor.svelte -
+	// it's always mounted, unlike this panel, so other panels (e.g. the Tokens panel's Kit Tokens
+	// section) can rely on activeKitId being populated without a hidden dependency on Compose ever
+	// having rendered. See Editor.svelte's own kitsQuery/activeKitId effect.
 </script>
 
 <Panel name="Compose" contextMenuContent={composeContextMenuContent} tooltip="Compose Current View">
