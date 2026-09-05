@@ -14,7 +14,8 @@ function emptyRows(): ResolutionRows {
 		tokenAxisOverrides: [],
 		layers: [],
 		conditions: [],
-		entries: []
+		entries: [],
+		tokenLayerValues: []
 	};
 }
 
@@ -29,7 +30,8 @@ function clone(rows: ResolutionRows): ResolutionRows {
 		tokenAxisOverrides: [...rows.tokenAxisOverrides],
 		layers: [...rows.layers],
 		conditions: [...rows.conditions],
-		entries: [...rows.entries]
+		entries: [...rows.entries],
+		tokenLayerValues: [...rows.tokenLayerValues]
 	};
 }
 
@@ -111,6 +113,10 @@ describe('rowsKey (input-level dedup)', () => {
 						token_alias: null,
 						token_value: null
 					})
+			],
+			[
+				'tokenLayerValues',
+				(r) => r.tokenLayerValues.push({ token_id: 't1', layer_id: 'l1', value: null })
 			]
 		];
 

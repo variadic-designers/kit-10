@@ -157,6 +157,28 @@
 		projectsWithHintsQuery.rows.find((p) => p.projectId === editorActivity.activeProjectId)
 	);
 
+	// Auto-selects the active view's first composed kit as editorActivity.activeKitId - moved here
+	// (from Compose.svelte) because Editor is always mounted, unlike a collapsible panel. Other
+	// panels (e.g. the Tokens panel's Kit Tokens section, gated on activeKitId) must be able to
+	// rely on this running regardless of whether Compose has ever rendered for the current view -
+	// same "lives in Editor because it's always mounted" reasoning as onNavKey below.
+	const activeKitQuery = liveQuery((api, activity) => api.getKitCompositionByViewId(activity.activeViewId));
+	$effect(() => {
+		const viewId = editorActivity.activeViewId;
+		const rows = activeKitQuery.rows;
+
+		if (!viewId) {
+			editorActivity.activeKitId = null;
+			return;
+		}
+
+		if (activeKitQuery.isFetching) return;
+
+		if (!rows.some((k) => k.kitId === editorActivity.activeKitId)) {
+			editorActivity.activeKitId = rows[0]?.kitId ?? null;
+		}
+	});
+
 	$effect(() => {
 		const projectId = editorActivity.activeProjectId;
 		const editor = editorLoading;

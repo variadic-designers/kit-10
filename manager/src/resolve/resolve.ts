@@ -21,7 +21,8 @@ export const RESOLUTION_RELEVANT_TABLES = [
 	'axis_values',
 	'axes_consumed',
 	'render_snippets',
-	'render_entries'
+	'render_entries',
+	'token_layer_values'
 ] as const;
 
 export interface ResolvedKit {
@@ -268,6 +269,36 @@ function matchLayers(
 	return result;
 }
 
+// Pure in-memory matching for ONE kit-scoped token's layered override: same condition-matching and
+// specificity tie-break as matchLayers, but resolves to a single TokenValue for one token_id rather
+// than a full property map. Unlike render entries (grouped per layer via render_snippets),
+// token_layer_values has no grouping indirection -- one row IS one condition-set's value, so this
+// just picks the most specific row whose layer's conditions all match, or undefined if none match
+// (the caller falls back to the token's own base `value` column, same fallback semantics as an
+// unconditioned property).
+function matchTokenLayers(
+	entries: { layerId: string; value: TokenValue }[],
+	layerDataMap: Map<string, LayerData>,
+	axisArgs: Record<string, ArgValue>
+): TokenValue | undefined {
+	let best: { value: TokenValue; specificity: number[] } | undefined;
+	for (const entry of entries) {
+		const data = layerDataMap.get(entry.layerId);
+		if (!data) continue;
+		const allMatch = data.conditions.every((c) => {
+			const arg = axisArgs[c.axisId];
+			if (!arg) return false;
+			return matchesArg(c.axisValue, arg);
+		});
+		if (!allMatch) continue;
+		const specificity = computeSpecificity(data.conditions);
+		if (!best || compareSpecificity(specificity, best.specificity) > 0) {
+			best = { value: entry.value, specificity };
+		}
+	}
+	return best?.value;
+}
+
 // Fetch conditions and entries for a set of layer IDs in parallel.
 async function fetchLayerData(db: SchemaDialect, layerIds: string[]) {
 	return Promise.all([
@@ -417,13 +448,17 @@ function buildKitLayerDataMaps(
 	return kitLayerDataMaps;
 }
 
-// Resolves all kits in one pass: 3 queries total instead of 3 per kit.
-async function resolveAll(
+// Fetch + assemble per-kit LayerData maps for a set of kits -- shared by resolveAll and
+// resolveManySlowPath (the latter also needs the maps directly to match token_layer_values
+// overrides, not just render-entry properties).
+async function fetchKitLayerData(
 	db: SchemaDialect,
-	kitIds: string[],
-	argsByKit: Map<string, Record<string, ArgValue>>
-): Promise<Map<string, Map<string, ResolvedProperty>>> {
-	if (kitIds.length === 0) return new Map();
+	kitIds: string[]
+): Promise<{
+	layers: { id: string; kit_id: string }[];
+	kitLayerDataMaps: Map<string, Map<string, LayerData>>;
+}> {
+	if (kitIds.length === 0) return { layers: [], kitLayerDataMaps: new Map() };
 
 	const layers = await db
 		.selectFrom('layers')
@@ -432,22 +467,13 @@ async function resolveAll(
 		.execute();
 
 	if (layers.length === 0) {
-		return new Map(kitIds.map((id) => [id, new Map()]));
+		return { layers, kitLayerDataMaps: new Map(kitIds.map((id) => [id, new Map()])) };
 	}
 
 	const allLayerIds = layers.map((l) => l.id);
 	const [conditions, entries] = await fetchLayerData(db, allLayerIds);
 
-	const kitLayerDataMaps = buildKitLayerDataMaps(kitIds, layers, conditions, entries);
-
-	const results = new Map<string, Map<string, ResolvedProperty>>();
-	for (const kitId of kitIds) {
-		results.set(
-			kitId,
-			matchLayers(kitId, kitLayerDataMaps.get(kitId)!, argsByKit.get(kitId) ?? {})
-		);
-	}
-	return results;
+	return { layers, kitLayerDataMaps: buildKitLayerDataMaps(kitIds, layers, conditions, entries) };
 }
 
 // DO NOT make this alias-cascade token_id-authoritative (i.e. "an entry's value only ever comes
@@ -490,17 +516,23 @@ interface ScopableTokenRow {
 function applyScopeTokenRows(
 	rows: ScopableTokenRow[],
 	scalarMap: Map<string, string>,
-	viewRefMap: Map<string, { viewId: string; tokenId: string }[]>
+	viewRefMap: Map<string, { viewId: string; tokenId: string }[]>,
+	// Only ever passed for kit-scoped rows (a layer, and therefore a token_layer_values row, belongs
+	// to exactly one kit) -- when it returns a value for a given row's token id, that value stands in
+	// for the row's own base `value` column for the rest of this row's processing, exactly like a
+	// layer-matched render entry overrides its property's unconditioned value.
+	resolveLayerOverride?: (tokenId: string) => TokenValue | undefined
 ): void {
 	const viewAcc = new Map<string, ScopableTokenRow[]>();
 	for (const t of rows) {
-		if (!t.value) continue;
-		if (t.value.type === 'scalar') {
-			if (t.alias) scalarMap.set(t.alias, t.value.value);
-		} else if (t.value.type === 'view') {
+		const value = resolveLayerOverride?.(t.id) ?? t.value;
+		if (!value) continue;
+		if (value.type === 'scalar') {
+			if (t.alias) scalarMap.set(t.alias, value.value);
+		} else if (value.type === 'view') {
 			if (!t.composition_alias) continue;
 			const arr = viewAcc.get(t.composition_alias) ?? [];
-			arr.push(t);
+			arr.push({ ...t, value });
 			viewAcc.set(t.composition_alias, arr);
 		}
 	}
@@ -518,7 +550,10 @@ async function gatherScopedTokens(
 	projectId: string | undefined,
 	// ordered by kit priority_index ASC - determines which kit wins alias conflicts
 	kitIds: string[],
-	viewId: string
+	viewId: string,
+	kitLayerDataMaps: Map<string, Map<string, LayerData>>,
+	argsByKit: Map<string, Record<string, ArgValue>>,
+	tokenLayerValuesByToken: Map<string, { layerId: string; value: TokenValue }[]>
 ): Promise<ScopedTokenMaps & { viewTokens: ScopableTokenRow[] }> {
 	const scalarMap = new Map<string, string>();
 	const viewRefMap = new Map<string, { viewId: string; tokenId: string }[]>();
@@ -579,7 +614,12 @@ async function gatherScopedTokens(
 		tokensByKit.get(t.kit_id)!.push(t);
 	}
 	for (const kitId of kitIds) {
-		applyScopeTokenRows(tokensByKit.get(kitId) ?? [], scalarMap, viewRefMap);
+		const layerDataMap = kitLayerDataMaps.get(kitId) ?? new Map();
+		const args = argsByKit.get(kitId) ?? {};
+		applyScopeTokenRows(tokensByKit.get(kitId) ?? [], scalarMap, viewRefMap, (tokenId) => {
+			const entries = tokenLayerValuesByToken.get(tokenId);
+			return entries ? matchTokenLayers(entries, layerDataMap, args) : undefined;
+		});
 	}
 
 	applyScopeTokenRows(viewTokens, scalarMap, viewRefMap);
@@ -679,12 +719,15 @@ export async function resolveManySlowPath(
 	const allKitIds = compositions.map((c) => c.kit_id);
 	const projectId = compositions[0]?.project_id;
 
-	// axisArgs, project-wide compositions, and token scopes are independent -- fetch in parallel.
+	// axisArgs, project-wide compositions, and kit layer data are independent -- fetch in parallel.
 	// axis_args and compositions are fetched PROJECT-WIDE (not scoped to `viewId` alone) since a
 	// 'linked' axis_args value (drag-to-lock) can point at any other view in the project, and
 	// resolveAllLinkedArgs needs the full project-wide compositions set to tell a dangling link
-	// (source kit no longer composed by that view) apart from a genuinely unset one.
-	const [axisArgsRows, projectCompositionsRows, tokenMap] = await Promise.all([
+	// (source kit no longer composed by that view) apart from a genuinely unset one. Layer data is
+	// fetched here (rather than inside gatherScopedTokens) because gatherScopedTokens now also needs
+	// it -- a kit-scoped token's layer override match requires the same LayerData + resolved axisArgs
+	// a property's own layer match does.
+	const [axisArgsRows, projectCompositionsRows, { layers, kitLayerDataMaps }] = await Promise.all([
 		projectId
 			? db
 					.selectFrom('axis_args')
@@ -701,7 +744,7 @@ export async function resolveManySlowPath(
 					.select(['compositions.view_id', 'compositions.kit_id'])
 					.execute()
 			: Promise.resolve([]),
-		gatherScopedTokens(db, projectId, allKitIds, viewId)
+		fetchKitLayerData(db, allKitIds)
 	]);
 
 	const argsByViewKit = new Map<string, Record<string, ArgValue>>();
@@ -719,7 +762,39 @@ export async function resolveManySlowPath(
 		argsByKit.set(kitId, resolvedArgsByViewKit.get(`${viewId}::${kitId}`) ?? {});
 	}
 
-	const resolvedByKit = await resolveAll(db, allKitIds, argsByKit);
+	const layerIds = layers.map((l) => l.id);
+	const tokenLayerValueRows = layerIds.length
+		? await db
+				.selectFrom('token_layer_values')
+				.where('token_layer_values.layer_id', 'in', layerIds)
+				.select(['token_layer_values.token_id', 'token_layer_values.layer_id', 'token_layer_values.value'])
+				.execute()
+		: [];
+	const tokenLayerValuesByToken = new Map<string, { layerId: string; value: TokenValue }[]>();
+	for (const r of tokenLayerValueRows) {
+		if (!r.value) continue;
+		const arr = tokenLayerValuesByToken.get(r.token_id) ?? [];
+		arr.push({ layerId: r.layer_id, value: r.value as TokenValue });
+		tokenLayerValuesByToken.set(r.token_id, arr);
+	}
+
+	const tokenMap = await gatherScopedTokens(
+		db,
+		projectId,
+		allKitIds,
+		viewId,
+		kitLayerDataMaps,
+		argsByKit,
+		tokenLayerValuesByToken
+	);
+
+	const resolvedByKit = new Map<string, Map<string, ResolvedProperty>>();
+	for (const kitId of allKitIds) {
+		resolvedByKit.set(
+			kitId,
+			matchLayers(kitId, kitLayerDataMaps.get(kitId) ?? new Map(), argsByKit.get(kitId) ?? {})
+		);
+	}
 
 	const results: ResolvedKit[] = [];
 	for (const comp of compositions) {
@@ -929,7 +1004,8 @@ export function rowsKey(rows: ResolutionRows): string {
 		rows.tokenAxisOverrides,
 		rows.layers,
 		rows.conditions,
-		rows.entries
+		rows.entries,
+		rows.tokenLayerValues
 	]);
 }
 
@@ -950,6 +1026,7 @@ export interface ResolutionRows {
 	layers: LayerRow[];
 	conditions: ConditionRow[];
 	entries: EntryRow[];
+	tokenLayerValues: TokenLayerValueRow[];
 }
 
 // These row interfaces describe the exact jsonb the batched fetch emits per branch.
@@ -1019,9 +1096,14 @@ export interface EntryRow {
 	token_alias: string | null;
 	token_value: TokenValue | null;
 }
+export interface TokenLayerValueRow {
+	token_id: string;
+	layer_id: string;
+	value: TokenValue | null;
+}
 
 // Fetches every rowset resolution needs in a SINGLE IPC crossing into the PGlite
-// worker. One UNION ALL query returns all 9 rowsets tagged, replacing the 4 sequential
+// worker. One UNION ALL query returns all 11 rowsets tagged, replacing the 4 sequential
 // await groups (RT1→RT2→RT3→RT4) the original resolveManyViews used. Two CTEs
 // (project_view_ids, project_kit_ids) compute the viewIds/kitIds filters once and every
 // branch references them, so no intermediate round-trip is needed to learn them and the
@@ -1128,6 +1210,13 @@ export async function fetchResolutionRows(
 		JOIN layers l ON l.id = rs.layer_id
 		LEFT JOIN tokens t ON t.id = re.token_id
 		WHERE l.kit_id IN (SELECT kit_id FROM project_kit_ids)
+		UNION ALL
+		SELECT 'token_layer_values' AS tag, jsonb_build_object(
+			'token_id', tlv.token_id, 'layer_id', tlv.layer_id, 'value', tlv.value
+		) AS data
+		FROM token_layer_values tlv
+		JOIN layers l ON l.id = tlv.layer_id
+		WHERE l.kit_id IN (SELECT kit_id FROM project_kit_ids)
 	`.execute(db);
 	mark('resolve:fetch:end');
 	measure('resolve:fetch:start', 'resolve:fetch:end', 'fetch (single crossing)');
@@ -1146,7 +1235,8 @@ export async function fetchResolutionRows(
 		token_axis_overrides: [] as TokenAxisOverrideRow[],
 		layers: [] as LayerRow[],
 		conditions: [] as ConditionRow[],
-		entries: [] as EntryRow[]
+		entries: [] as EntryRow[],
+		token_layer_values: [] as TokenLayerValueRow[]
 	};
 	for (const row of result.rows as { tag: keyof typeof grouped; data: unknown }[]) {
 		(grouped[row.tag] as unknown[] | undefined)?.push(row.data);
@@ -1167,7 +1257,8 @@ export async function fetchResolutionRows(
 		tokenAxisOverrides: grouped.token_axis_overrides,
 		layers: grouped.layers,
 		conditions: grouped.conditions,
-		entries: grouped.entries
+		entries: grouped.entries,
+		tokenLayerValues: grouped.token_layer_values
 	};
 }
 
@@ -1337,6 +1428,16 @@ export function resolveViewsFromRows(rows: ResolutionRows): {
 		}
 	}
 
+	// Group kit-scoped token layer overrides by token id, so a per-comp lookup below is a plain
+	// Map.get instead of a re-filter of the whole rowset per view.
+	const tokenLayerValuesByToken = new Map<string, { layerId: string; value: TokenValue }[]>();
+	for (const r of rows.tokenLayerValues) {
+		if (!r.value) continue;
+		const arr = tokenLayerValuesByToken.get(r.token_id) ?? [];
+		arr.push({ layerId: r.layer_id, value: r.value });
+		tokenLayerValuesByToken.set(r.token_id, arr);
+	}
+
 	// Build token maps
 	const baseScalarMap = new Map<string, string>();
 	const baseViewRefMap = new Map<string, { viewId: string; tokenId: string }[]>();
@@ -1374,23 +1475,40 @@ export function resolveViewsFromRows(rows: ResolutionRows): {
 	const validCompositions = new Set(rows.compositions.map((c) => `${c.view_id}::${c.kit_id}`));
 	const resolvedArgsByViewKit = resolveAllLinkedArgs(argsByViewKit, validCompositions);
 
-	// Keeps each view's own resolved token maps around so an overriding reference INTO that view
-	// can reuse its target's token-substitution scope unchanged (an axis override only changes
-	// Layer matching, never which tokens win by alias).
-	const tokenMapsByView = new Map<string, ScopedTokenMaps>();
+	// Builds one view's full token-substitution scope: base (project) tokens, then each composed
+	// kit's tokens in composition order (later kit wins alias conflicts), then the view's own
+	// tokens. `argsFor` supplies the per-(view, kit) axis args a kit token's LAYER override matches
+	// against -- the plain path passes the view's own resolved args; the overridden-occurrence path
+	// below passes its merged args so a kit token's layered override re-matches against what that
+	// occurrence actually renders. Alias winners never change (same rows, same order) -- only the
+	// resolved VALUE of a kit token carrying a matching layered override can differ.
+	const buildTokenMaps = (
+		viewId: string,
+		argsFor: (kitId: string) => Record<string, ArgValue>
+	): ScopedTokenMaps => {
+		const comps = compsByView.get(viewId) ?? [];
+		const scalarMap = new Map(baseScalarMap);
+		const viewRefMap = new Map(baseViewRefMap);
+		for (const comp of comps) {
+			const layerDataMap = kitLayerDataMaps.get(comp.kit_id) ?? new Map();
+			const args = argsFor(comp.kit_id);
+			applyScopeTokenRows(tokensByKit.get(comp.kit_id) ?? [], scalarMap, viewRefMap, (tokenId) => {
+				const entries = tokenLayerValuesByToken.get(tokenId);
+				return entries ? matchTokenLayers(entries, layerDataMap, args) : undefined;
+			});
+		}
+		applyScopeTokenRows(tokensByView.get(viewId) ?? [], scalarMap, viewRefMap);
+		return { scalarMap, viewRefMap };
+	};
 
 	mark('resolve:match:start');
 	const views: ResolvedViewData[] = rows.viewRows.map((v) => {
 		const comps = compsByView.get(v.id) ?? [];
 
 		// Token resolution order: project → kit (in composition order) → view
-		const scalarMap = new Map(baseScalarMap);
-		const viewRefMap = new Map(baseViewRefMap);
-		for (const comp of comps) {
-			applyScopeTokenRows(tokensByKit.get(comp.kit_id) ?? [], scalarMap, viewRefMap);
-		}
-		applyScopeTokenRows(tokensByView.get(v.id) ?? [], scalarMap, viewRefMap);
-		tokenMapsByView.set(v.id, { scalarMap, viewRefMap });
+		const { scalarMap, viewRefMap } = buildTokenMaps(v.id, (kitId) => {
+			return resolvedArgsByViewKit.get(`${v.id}::${kitId}`) ?? {};
+		});
 
 		const resolvedKits: ResolvedKit[] = comps.map((comp) => {
 			const args = resolvedArgsByViewKit.get(`${v.id}::${comp.kit_id}`) ?? {};
@@ -1442,10 +1560,20 @@ export function resolveViewsFromRows(rows: ResolutionRows): {
 
 			const targetViewId = t.value.view_id;
 			const targetComps = compsByView.get(targetViewId) ?? [];
-			const targetTokenMaps = tokenMapsByView.get(targetViewId) ?? {
-				scalarMap: baseScalarMap,
-				viewRefMap: baseViewRefMap
-			};
+			// The occurrence's OWN token scope: rebuilt with the merged args (not the target view's
+			// base-arg maps) so a kit token whose layered override matches under the override's
+			// values re-resolves for this occurrence. With zero token_layer_values rows this is
+			// byte-identical to the target view's own maps -- the only thing that can differ is a
+			// kit token's layered VALUE, never the alias winners.
+			const targetTokenMaps = targetComps.length
+				? buildTokenMaps(targetViewId, (kitId) =>
+						mergeAxisOverrides(
+							resolvedArgsByViewKit.get(`${targetViewId}::${kitId}`) ?? {},
+							override,
+							resolvedArgsByViewKit
+						)
+					)
+				: { scalarMap: baseScalarMap, viewRefMap: baseViewRefMap };
 			const resolvedKits: ResolvedKit[] = targetComps.map((comp) => {
 				const baseArgs = resolvedArgsByViewKit.get(`${targetViewId}::${comp.kit_id}`) ?? {};
 				const args = mergeAxisOverrides(baseArgs, override, resolvedArgsByViewKit);

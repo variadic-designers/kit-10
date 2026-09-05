@@ -92,7 +92,8 @@ const EXPORTED_ARRAY_FIELDS = [
 	'layers',
 	'renderSnippets',
 	'renderEntries',
-	'layerAxisValues'
+	'layerAxisValues',
+	'tokenLayerValues'
 ] as const;
 
 // Deliberately typed as (data: any): void, not a type-narrowing assertion function -- the
@@ -516,6 +517,47 @@ export interface QueryTokenAxisOverrides {
 	) => SelectQueryBuilder<Schema, 'axis_args' | 'kits', { viewId: string; kitId: string; axisId: string; value: any }>;
 }
 
+// A kit-scoped token's own axis-conditioned value - the token-side counterpart of QueryRenderEntry,
+// sharing the SAME `layers` a kit's render entries use (see TokenLayerValuesTable's own doc
+// comment, schema.ts). Only meaningful for kit-scoped tokens; a layer belongs to exactly one kit.
+export interface QueryTokenLayerValues {
+	// Find-or-create the kit's layer for `axisValueIds` (reusing createLayerWithConditions's exact-
+	// match rule) and upsert this token's value onto it. Backs the Tokens panel's pipette paint
+	// target the same way createLayerWithConditions backs Styles.svelte's pipetteDrop.
+	paintTokenValue: (
+		tokenId: string,
+		kitId: string,
+		axisValueIds: string[],
+		value: TokenValue
+	) => Promise<{ layerId: string; created: boolean } | undefined>;
+	// Update this token's value on a layer it's ALREADY on (the layer already exists -- no find-or-
+	// create needed, unlike paintTokenValue). Backs editing a kit token's displayed value while an
+	// override is the one actively resolving: editing must land on that override, not silently fall
+	// through to the base `tokens.value` column.
+	updateTokenLayerValue: (tokenId: string, layerId: string, value: TokenValue) => Promise<void>;
+	// Delete this token's value from a layer it's already on, then GC the layer if it's now empty of
+	// both render entries and token layer values (gcLayerIfEmptyAndConditioned, shared with
+	// removePropertyFromLayer). Returns whether the layer itself was removed.
+	deleteTokenLayerValue: (tokenId: string, layerId: string) => Promise<{ layerDeleted: boolean }>;
+	// Every layered value for every kit-scoped token in one kit, joined with its layer's own
+	// condition set - mirrors getLayerConditionsByKitId's join shape exactly, plus the token's value.
+	// Backs the Tokens panel's per-token "which layer is this coming from" display.
+	getTokenLayerValuesByKitId: (
+		kitId: string | null
+	) => SelectQueryBuilder<
+		Schema,
+		'token_layer_values' | 'layers' | 'layer_axis_values' | 'axis_values',
+		{
+			tokenId: string;
+			layerId: string;
+			value: TokenValue | null;
+			axisValueId: string;
+			axisId: string;
+			axisValue: any;
+		}
+	>;
+}
+
 export interface QueryLayer {
 	createLayer: (
 		kitId: string
@@ -916,6 +958,7 @@ export interface Api
 		QueryAxisConsumed,
 		QueryAxisArgs,
 		QueryTokenAxisOverrides,
+		QueryTokenLayerValues,
 		QueryLayer,
 		QueryRenderSnippet,
 		QueryRenderEntry,
@@ -1445,10 +1488,13 @@ async function withTransaction<T>(
 	return db.transaction().execute(fn);
 }
 
-// A conditioned layer (>=1 condition) left with zero render entries across its snippet is dead
-// weight -- delete it (cascade drops its snippet + conditions). The null/base layer (0 conditions)
-// is never GC'd -- it's the fallback write target and may legitimately be empty. Shared by
-// removePropertyFromLayer and moveRenderEntryToLayer. Returns whether the layer was removed.
+// A conditioned layer (>=1 condition) left with zero render entries across its snippet AND zero
+// token layer values is dead weight -- delete it (cascade drops its snippet + conditions + token
+// layer values). The null/base layer (0 conditions) is never GC'd -- it's the fallback write
+// target and may legitimately be empty. Shared by removePropertyFromLayer, moveRenderEntryToLayer,
+// and deleteTokenLayerValue -- a layer can hold both property AND token overrides for the same
+// condition set (see TokenLayerValuesTable's own doc comment), so removing one kind must never GC
+// a layer the other kind still needs. Returns whether the layer was removed.
 async function gcLayerIfEmptyAndConditioned(trx: SchemaDialect, layerId: string): Promise<boolean> {
 	const conds = await trx
 		.selectFrom('layer_axis_values')
@@ -1466,6 +1512,14 @@ async function gcLayerIfEmptyAndConditioned(trx: SchemaDialect, layerId: string)
 		.limit(1)
 		.execute();
 	if (remaining.length > 0) return false;
+
+	const remainingTokenValues = await trx
+		.selectFrom('token_layer_values')
+		.where('layer_id', '=', layerId)
+		.select('id')
+		.limit(1)
+		.execute();
+	if (remainingTokenValues.length > 0) return false;
 
 	await trx.deleteFrom('layers').where('id', '=', layerId).execute();
 	return true;
@@ -1632,6 +1686,14 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							.selectAll()
 							.where('layer_axis_values.layer_id', 'in', layerIds)
 							.execute();
+			const tokenLayerValues =
+				layerIds.length === 0
+					? []
+					: await trx
+							.selectFrom('token_layer_values')
+							.selectAll()
+							.where('token_layer_values.layer_id', 'in', layerIds)
+							.execute();
 
 			return {
 				schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -1648,7 +1710,8 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 				layers,
 				renderSnippets,
 				renderEntries,
-				layerAxisValues
+				layerAxisValues,
+				tokenLayerValues
 			};
 		});
 	},
@@ -1896,6 +1959,24 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 							value: remapRenderEntryValue(e.property, e.value, viewIdMap),
 							hints: (e.hints ?? {}) as any,
 							token_id: e.token_id ? (tokenIdMap.get(e.token_id) ?? null) : null
+						}))
+					)
+					.execute();
+			}
+
+			// Kit-scoped tokens' axis-conditioned values (same `layers` the render entries above sit
+			// on). The value blob is a full TokenValue, so a `view`-typed override remaps its target
+			// view id the same way the tokens table's own values do above.
+			if (data.tokenLayerValues?.length) {
+				await trx
+					.insertInto('token_layer_values')
+					.values(
+						data.tokenLayerValues.map((tlv: any) => ({
+							id: newId(),
+							token_id: tokenIdMap.get(tlv.token_id)!,
+							layer_id: layerIdMap.get(tlv.layer_id)!,
+							value: remapTokenValue(tlv.value, viewIdMap) as any,
+							hints: (tlv.hints ?? {}) as any
 						}))
 					)
 					.execute();
@@ -2686,6 +2767,71 @@ export const queryBuilder = (db: SchemaDialect): Api => ({
 			if (!result) return undefined;
 			return { layerId: result.layerId, created: result.created };
 		});
+	},
+
+	paintTokenValue: async (tokenId: string, kitId: string, axisValueIds: string[], value: TokenValue) => {
+		return await withTransaction(db, async (trx) => {
+			const result = await findOrCreateLayer(trx, kitId, axisValueIds);
+			if (!result) return undefined;
+			await trx
+				.insertInto('token_layer_values')
+				.values({ token_id: tokenId, layer_id: result.layerId, value: value as any })
+				.onConflict((oc) => oc.columns(['token_id', 'layer_id']).doUpdateSet({ value: value as any }))
+				.execute();
+			return { layerId: result.layerId, created: result.created };
+		});
+	},
+
+	updateTokenLayerValue: async (tokenId: string, layerId: string, value: TokenValue) => {
+		await db
+			.insertInto('token_layer_values')
+			.values({ token_id: tokenId, layer_id: layerId, value: value as any })
+			.onConflict((oc) => oc.columns(['token_id', 'layer_id']).doUpdateSet({ value: value as any }))
+			.execute();
+	},
+
+	deleteTokenLayerValue: async (tokenId: string, layerId: string) => {
+		return await withTransaction(db, async (trx) => {
+			await trx
+				.deleteFrom('token_layer_values')
+				.where('token_id', '=', tokenId)
+				.where('layer_id', '=', layerId)
+				.execute();
+			const layerDeleted = await gcLayerIfEmptyAndConditioned(trx, layerId);
+			return { layerDeleted };
+		});
+	},
+
+	getTokenLayerValuesByKitId: (kitId: string | null) => {
+		if (!kitId)
+			return db
+				.selectFrom('token_layer_values')
+				.innerJoin('layers', 'layers.id', 'token_layer_values.layer_id')
+				.innerJoin('layer_axis_values', 'layer_axis_values.layer_id', 'layers.id')
+				.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+				.where('layers.id', '=', '00000000-0000-0000-0000-000000000000')
+				.select([
+					'token_layer_values.token_id as tokenId',
+					'token_layer_values.layer_id as layerId',
+					'token_layer_values.value',
+					'axis_values.id as axisValueId',
+					'axis_values.axis_id as axisId',
+					'axis_values.value as axisValue'
+				]);
+		return db
+			.selectFrom('token_layer_values')
+			.innerJoin('layers', 'layers.id', 'token_layer_values.layer_id')
+			.innerJoin('layer_axis_values', 'layer_axis_values.layer_id', 'layers.id')
+			.innerJoin('axis_values', 'axis_values.id', 'layer_axis_values.axis_value_id')
+			.where('layers.kit_id', '=', kitId)
+			.select([
+				'token_layer_values.token_id as tokenId',
+				'token_layer_values.layer_id as layerId',
+				'token_layer_values.value',
+				'axis_values.id as axisValueId',
+				'axis_values.axis_id as axisId',
+				'axis_values.value as axisValue'
+			]);
 	},
 
 	// Atomically relocate a property's render entry(ies) from sourceLayerId to a different (existing

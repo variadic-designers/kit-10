@@ -995,6 +995,103 @@ describe('api', () => {
 		expect(byProp).toEqual({ color: '#ffffff', padding: '4px', gap: '8px' });
 	});
 
+	// ---- Token Layer Values ----
+
+	it('paintTokenValue finds-or-creates a layer and upserts the token value onto it', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const token = (await ctx.api.createToken(proj.id, 'spacing-lg', s('16px'), { kitId: kit.id }))!;
+
+		const first = await ctx.api.paintTokenValue(token.id, kit.id, [dark.id], s('24px'));
+		expect(first).toBeDefined();
+		expect(first!.created).toBe(true);
+
+		const rows = await ctx.api.getTokenLayerValuesByKitId(kit.id).execute();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]!.tokenId).toBe(token.id);
+		expect(rows[0]!.layerId).toBe(first!.layerId);
+		expect(rows[0]!.value).toEqual(s('24px'));
+		expect(rows[0]!.axisValueId).toBe(dark.id);
+
+		// Painting again onto the SAME condition set reuses the layer and updates the value, never
+		// duplicating the row (the one_value_per_token_per_layer unique constraint backs this).
+		const second = await ctx.api.paintTokenValue(token.id, kit.id, [dark.id], s('32px'));
+		expect(second!.layerId).toBe(first!.layerId);
+		expect(second!.created).toBe(false);
+
+		const afterUpdate = await ctx.api.getTokenLayerValuesByKitId(kit.id).execute();
+		expect(afterUpdate).toHaveLength(1);
+		expect(afterUpdate[0]!.value).toEqual(s('32px'));
+	});
+
+	it('updateTokenLayerValue writes onto a layer that already has this token\'s override, without touching the base token value', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'plan'))!;
+		const elite = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'elite' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'brand'))!;
+		const token = (await ctx.api.createToken(proj.id, 'unique-name', s('FORGE'), { kitId: kit.id }))!;
+
+		const painted = (await ctx.api.paintTokenValue(token.id, kit.id, [elite.id], s('FORGE')))!;
+		await ctx.api.updateTokenLayerValue(token.id, painted.layerId, s('FORGE PREMIUM'));
+
+		const rows = await ctx.api.getTokenLayerValuesByKitId(kit.id).execute();
+		expect(rows).toHaveLength(1);
+		expect(rows[0]!.value).toEqual(s('FORGE PREMIUM'));
+
+		// The base token value is untouched -- editing the active override must never fall through
+		// to it (the exact bug this API exists to prevent: typing a new value while a condition is
+		// active silently landing on the base column instead of that condition's own override).
+		const baseToken = await ctx.db.selectFrom('tokens').selectAll().where('id', '=', token.id).executeTakeFirst();
+		expect(baseToken!.value).toEqual(s('FORGE'));
+	});
+
+	it('deleteTokenLayerValue removes the override and GCs the layer if left empty', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const token = (await ctx.api.createToken(proj.id, 'spacing-lg', s('16px'), { kitId: kit.id }))!;
+
+		const painted = (await ctx.api.paintTokenValue(token.id, kit.id, [dark.id], s('24px')))!;
+		const result = await ctx.api.deleteTokenLayerValue(token.id, painted.layerId);
+		expect(result.layerDeleted).toBe(true); // conditioned layer left with no entries or token values
+
+		const layer = await ctx.db.selectFrom('layers').selectAll().where('id', '=', painted.layerId).executeTakeFirst();
+		expect(layer).toBeUndefined();
+	});
+
+	it('a layer shared by a render entry AND a token layer value is only GC\'d once BOTH are gone', async () => {
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'p'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'button'))!;
+		const token = (await ctx.api.createToken(proj.id, 'spacing-lg', s('16px'), { kitId: kit.id }))!;
+
+		const painted = (await ctx.api.paintTokenValue(token.id, kit.id, [dark.id], s('24px')))!;
+		const snippets = await ctx.api.getRenderSnippetsByLayerId(painted.layerId).execute();
+		await ctx.api.createRenderEntry(snippets[0]!.snippetId, 'padding', '4px');
+
+		// Removing the token value alone must NOT GC the layer - the render entry still needs it.
+		const afterTokenRemoved = await ctx.api.deleteTokenLayerValue(token.id, painted.layerId);
+		expect(afterTokenRemoved.layerDeleted).toBe(false);
+		const stillThere = await ctx.db.selectFrom('layers').selectAll().where('id', '=', painted.layerId).executeTakeFirst();
+		expect(stillThere).toBeDefined();
+
+		// Now remove the render entry too - the layer is finally empty.
+		const afterPropertyRemoved = await ctx.api.removePropertyFromLayer(painted.layerId, 'padding');
+		expect(afterPropertyRemoved.layerDeleted).toBe(true);
+	});
+
 	// ---- Render Snippets (now point to layers) ----
 
 	it('creates and deletes render snippets on a layer', async () => {
@@ -1563,6 +1660,42 @@ it('creates, updates, and deletes render entries', async () => {
 		expect(linkedArg.value.view_id).not.toBe(sourceView.id);
 		expect(linkedArg.value.kit_id).toBe(newKitId);
 		expect(linkedArg.value.kit_id).not.toBe(kit.id);
+	});
+
+	it('preserves kit-token layer overrides (token_layer_values) across export/import', async () => {
+		// Regression test: token_layer_values shipped without an export/import branch, so a kit
+		// token's axis-conditioned override silently vanished on every project export -- the only
+		// write path that survives a DB reseed, and the one the seed/backup flows rely on.
+		const allWs = await ctx.api.getAllWorkspaces().execute();
+		const wsId = allWs[0]!.workspaceId;
+		const proj = (await ctx.api.createProjectInWorkspace(wsId, 'token-override-export'))!;
+		const axis = (await ctx.api.createAxis(proj.id, 'theme'))!;
+		const dark = (await ctx.api.createAxisValue(axis.id, { type: 'literal', value: 'dark' }))!;
+		const kit = (await ctx.api.createKitInProject(proj.id, 'Button'))!;
+		const token = (await ctx.api.createToken(proj.id, 'accent', s('#3b82f6'), { kitId: kit.id }))!;
+		await ctx.api.consumeAxis(kit.id, axis.id);
+		const painted = (await ctx.api.paintTokenValue(token.id, kit.id, [dark.id], s('#ef4444')))!;
+
+		const exported = await ctx.api.exportProject(proj.id);
+		expect(exported.tokenLayerValues).toHaveLength(1);
+
+		const imported = (await ctx.api.importProjectData(wsId, exported))!;
+		expect(imported.warnings).toEqual([]);
+
+		const reimported = await ctx.api.exportProject(imported.id);
+		expect(reimported.tokenLayerValues).toHaveLength(1);
+		const tlv = reimported.tokenLayerValues[0]!;
+		expect(tlv.value).toEqual(s('#ef4444'));
+		// Both halves of the (token, layer) pair must be remapped to the imported project's ids.
+		expect(tlv.token_id).not.toBe(token.id);
+		expect(tlv.layer_id).not.toBe(painted.layerId);
+		const newToken = reimported.tokens.find((t: any) => t.alias === 'accent')!;
+		const newLayer = reimported.layers[0]!;
+		expect(tlv.token_id).toBe(newToken.id);
+		expect(tlv.layer_id).toBe(newLayer.id);
+		expect(newLayer.kit_id).toBe(reimported.kits.find((k: any) => k.name === 'Button')!.id);
+		// The layer's own condition set must survive too, so the override still matches theme=dark.
+		expect(reimported.layerAxisValues).toHaveLength(1);
 	});
 
 	it('exports a project with views but no kits yet without an empty-IN syntax error', async () => {

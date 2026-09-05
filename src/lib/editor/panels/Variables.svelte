@@ -51,6 +51,9 @@
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
 	import { draggable, dropZone, type DragPayload } from '../dnd.svelte.ts';
+	import { paintTarget } from '../pipette.svelte.ts';
+	import { layerDotColor, trackTitle } from './layer-color.ts';
+	import { keybinds, matchMouse } from '../keybinds.js';
 
 	type TokenRow = {
 		tokenId: string;
@@ -87,6 +90,117 @@
 	const activeKitQuery = liveQuery((api, activity) => {
 		return api.getKitCompositionByViewId(activity.activeViewId);
 	});
+
+	// Kit-scoped tokens' layered (axis-conditioned) overrides -- the token-panel equivalent of a
+	// render property's own layer track. One row per (token, layer, condition), so a multi-condition
+	// layer's override shows up as multiple rows sharing a layerId -- grouped back into one entry per
+	// layer below.
+	const tokenLayerValuesQuery = liveQuery((api, activity) => {
+		return api.getTokenLayerValuesByKitId(activity.activeKitId);
+	});
+
+	type TokenLayerCondition = { axisId: string; axisValue: any };
+	type TokenLayerOverride = { layerId: string; value: TokenValue | null; conditions: TokenLayerCondition[] };
+
+	const tokenLayerOverridesByToken = $derived.by(() => {
+		const byToken = new Map<string, Map<string, TokenLayerOverride>>();
+		for (const row of tokenLayerValuesQuery.rows) {
+			let byLayer = byToken.get(row.tokenId);
+			if (!byLayer) {
+				byLayer = new Map();
+				byToken.set(row.tokenId, byLayer);
+			}
+			let entry = byLayer.get(row.layerId);
+			if (!entry) {
+				entry = { layerId: row.layerId, value: row.value, conditions: [] };
+				byLayer.set(row.layerId, entry);
+			}
+			entry.conditions.push({ axisId: row.axisId, axisValue: row.axisValue });
+		}
+		const result = new Map<string, TokenLayerOverride[]>();
+		for (const [tokenId, byLayer] of byToken) result.set(tokenId, [...byLayer.values()]);
+		return result;
+	});
+
+	// Client-side mirror of resolve.ts's formatAxisValue -- display-only, for the track dot's tooltip.
+	function formatAxisValueDisplay(v: any): string {
+		if (!v) return '?';
+		if (v.type === 'literal' || v.type === 'discrete') return v.value;
+		if (v.type === 'range') {
+			return v.operator === 'between' ? `${v.threshold}–${v.threshold_high ?? v.threshold}` : `${v.operator} ${v.threshold}`;
+		}
+		return '?';
+	}
+
+	// Literal-first approximation of resolve.ts's matchesArg: the active axis pick is always read as
+	// a literal string here (currentAxisValueByAxisId, same as the Axes-panel display), so this only
+	// needs to check that literal against a condition's stored axis_value (literal/discrete equality,
+	// or falling inside a range condition's threshold).
+	function conditionMatchesCurrent(condition: TokenLayerCondition, currentLiteral: string | null): boolean {
+		if (currentLiteral === null) return false;
+		const v = condition.axisValue;
+		if (!v) return false;
+		if (v.type === 'literal' || v.type === 'discrete') return v.value === currentLiteral;
+		if (v.type === 'range') {
+			const num = parseFloat(currentLiteral);
+			if (isNaN(num)) return false;
+			if (v.operator === 'between') return num >= v.threshold && num <= (v.threshold_high ?? v.threshold);
+			if (v.operator === '>=') return num >= v.threshold;
+			if (v.operator === '<=') return num <= v.threshold;
+			if (v.operator === '>') return num > v.threshold;
+			if (v.operator === '<') return num < v.threshold;
+		}
+		return false;
+	}
+
+	// Same "every condition must match, most conditions wins" specificity rule as resolve.ts's
+	// matchLayers/matchTokenLayers -- the live client-side mirror of which layer override (if any)
+	// currently sources a kit token's resolved value, so the track dot can show that layer's real
+	// color instead of a static placeholder.
+	function activeTokenLayerOverride(tokenId: string): TokenLayerOverride | null {
+		const overrides = tokenLayerOverridesByToken.get(tokenId);
+		if (!overrides || overrides.length === 0) return null;
+		let best: TokenLayerOverride | null = null;
+		for (const ov of overrides) {
+			const allMatch = ov.conditions.every((c) =>
+				conditionMatchesCurrent(c, currentAxisValueByAxisId.get(c.axisId) ?? null)
+			);
+			if (!allMatch) continue;
+			if (!best || ov.conditions.length > best.conditions.length) best = ov;
+		}
+		return best;
+	}
+
+	// Pipette: mirrors Styles.svelte's pipetteDrop for kit-level tokens -- while a paint target is
+	// held (set up in the Axes panel), clicking a kit token's track dot resolve-or-creates the layer
+	// for the held axis selection and copies the token's CURRENT (actively resolved) value onto it as
+	// that layer's override, so the override starts from what's on screen.
+	const held = $derived(paintTarget());
+
+	async function tokenPipetteDrop(tokenId: string, currentValue: TokenValue | null) {
+		const h = paintTarget();
+		const kitId = editorActivity.activeKitId;
+		if (!h || !h.ready || !kitId) return;
+		await api.paintTokenValue(tokenId, kitId, h.axisValueIds, currentValue ?? { type: 'scalar', value: '' });
+	}
+
+	// Typing a new value into a kit token's value box must land wherever that value is CURRENTLY
+	// being sourced from -- the active layer override if one matches right now, otherwise the base
+	// column -- exactly like editing a render property always writes to its actual source layer.
+	// Without this, editing while a condition's override is active would silently write the BASE
+	// value instead (the override would then look "stuck" at whatever it was seeded with, and the
+	// typed text would only show up once the condition stops matching).
+	async function commitTokenValue(
+		tokenId: string,
+		activeOverride: TokenLayerOverride | null,
+		draft: string
+	) {
+		if (activeOverride) {
+			await api.updateTokenLayerValue(tokenId, activeOverride.layerId, { type: 'scalar', value: draft });
+		} else {
+			await api.updateTokenValue(tokenId, { type: 'scalar', value: draft });
+		}
+	}
 
 	// The active (view, kit) pair's OWN current axis picks -- what the Axes panel would show as
 	// "selected" right now for this view/kit. Backs the kit-level drag chips below: dragging one
@@ -169,6 +283,21 @@
 		return ov.value.type === 'literal' ? ov.value.value : null;
 	}
 
+	// The active (view, kit)'s CURRENT literal pick per axis id, resolving through a 'linked' arg the
+	// same way resolveLinkedArg/mergeAxisOverrides do server-side. Shared by activeKitAxes (display)
+	// and the kit-token layer track below (which layer, if any, matches the current selection).
+	const currentAxisValueByAxisId = $derived.by(() => {
+		const map = new Map<string, string | null>();
+		for (const arg of activeAxisArgsQuery.rows) {
+			const resolved =
+				arg.value?.type === 'linked'
+					? resolveLinkedArg(arg.value.view_id, arg.value.kit_id, arg.axisId, argsByViewKitAll)
+					: arg.value;
+			map.set(arg.axisId, resolved?.type === 'literal' ? resolved.value : null);
+		}
+		return map;
+	});
+
 	// Read-only, one row per axis the ACTIVE kit consumes, each carrying the ACTIVE view's CURRENT
 	// pick for that (view, kit, axis) -- `null` when this view/kit has no axis_arg set (unset).
 	// Dragged onto a `view`-typed token elsewhere in the panel: "make this child match what I (the
@@ -181,14 +310,7 @@
 	// "unset" instead of the true live value.
 	const activeKitAxes = $derived.by(() => {
 		if (!editorActivity.activeViewId || !editorActivity.activeKitId) return [];
-		const currentByAxisId = new Map<string, string | null>();
-		for (const arg of activeAxisArgsQuery.rows) {
-			const resolved =
-				arg.value?.type === 'linked'
-					? resolveLinkedArg(arg.value.view_id, arg.value.kit_id, arg.axisId, argsByViewKitAll)
-					: arg.value;
-			currentByAxisId.set(arg.axisId, resolved?.type === 'literal' ? resolved.value : null);
-		}
+		const currentByAxisId = currentAxisValueByAxisId;
 		const seen = new Map<
 			string,
 			{
@@ -426,6 +548,7 @@
 			name: 'add',
 			displayText: 'Add View Token',
 			icon: 'fa-regular fa-window-maximize',
+			disabled: !editorActivity.activeViewId,
 			onClick: () => {
 				addingScope = 'view';
 			}
@@ -434,6 +557,7 @@
 			name: 'add',
 			displayText: 'Add Kit Token',
 			icon: 'fa-solid fa-puzzle-piece',
+			disabled: !editorActivity.activeKitId,
 			onClick: () => {
 				addingScope = 'kit';
 			}
@@ -667,13 +791,47 @@
 								{token.tokenAlias ?? 'Unnamed'}
 							</Renameable>
 						</span>
+						{@const activeOverride =
+							scopeClass === 'token--kit' ? activeTokenLayerOverride(token.tokenId) : null}
+						{@const displayedValue = activeOverride?.value ?? token.tokenValue}
 						{#if showTrack}
+							{@const trackKeys = activeOverride?.conditions.map((c) => c.axisId) ?? []}
 							<button
 								class="token__track"
-								title="{scopeLabel}-scoped token · a same-alias View-scoped token would override this"
+								class:token__track--paintable={scopeClass === 'token--kit' && !!held && held.ready}
+								style="--track-color: {scopeClass === 'token--kit'
+									? layerDotColor(trackKeys, true)
+									: 'var(--color-text)'}; {scopeClass === 'token--kit' && held?.ready
+									? `--held: ${held.color};`
+									: ''}"
+								title={scopeClass === 'token--kit'
+									? held?.ready
+										? `Painting onto ${held.label} · click to give this token a per-layer value here`
+										: activeOverride
+											? trackTitle(
+													activeOverride.conditions.map((c) => ({
+														axisId: c.axisId,
+														value: formatAxisValueDisplay(c.axisValue)
+													})),
+													Object.fromEntries(axisNameById)
+												) + ' · click while holding a layer to repaint'
+											: 'Base value · click while holding a layer to paint a per-layer override'
+									: `${scopeLabel}-scoped token · a same-alias View-scoped token would override this`}
 								type="button"
+								onclick={(e) => {
+									if (scopeClass !== 'token--kit') return;
+									if (matchMouse(e, $keybinds['property.remove'], false)) {
+										if (activeOverride) api.deleteTokenLayerValue(token.tokenId, activeOverride.layerId);
+										return;
+									}
+									tokenPipetteDrop(token.tokenId, activeOverride?.value ?? token.tokenValue);
+								}}
 							>
-								<i class="fa-solid fa-circle-dot"></i>
+								<i
+									class="fa-solid {scopeClass === 'token--kit' && activeOverride
+										? 'fa-circle'
+										: 'fa-circle-dot'}"
+								></i>
 							</button>
 						{/if}
 						{#if editingValue[token.tokenId] === true}
@@ -683,20 +841,20 @@
 								bind:value={draftValue[token.tokenId]}
 								onblur={() => {
 									const draft = draftValue[token.tokenId];
-									if (draft !== undefined && draft !== tokenStr(token.tokenValue)) {
-										api.updateTokenValue(token.tokenId, { type: 'scalar', value: draft });
+									if (draft !== undefined && draft !== tokenStr(displayedValue)) {
+										commitTokenValue(token.tokenId, activeOverride, draft);
 									}
 									editingValue[token.tokenId] = false;
 								}}
 								onkeydown={(e) => {
 									if (e.key === 'Enter') {
 										const draft = draftValue[token.tokenId];
-										if (draft !== undefined && draft !== tokenStr(token.tokenValue)) {
-											api.updateTokenValue(token.tokenId, { type: 'scalar', value: draft });
+										if (draft !== undefined && draft !== tokenStr(displayedValue)) {
+											commitTokenValue(token.tokenId, activeOverride, draft);
 										}
 										editingValue[token.tokenId] = false;
 									} else if (e.key === 'Escape') {
-										draftValue[token.tokenId] = tokenStr(token.tokenValue) ?? '';
+										draftValue[token.tokenId] = tokenStr(displayedValue) ?? '';
 										editingValue[token.tokenId] = false;
 									}
 								}}
@@ -704,13 +862,22 @@
 						{:else}
 							<button
 								class="token__value"
-								class:token__value--new={!token.tokenValue}
+								class:token__value--new={!displayedValue}
+								title={activeOverride
+									? `Editing this token's value while ${trackTitle(
+											activeOverride.conditions.map((c) => ({
+												axisId: c.axisId,
+												value: formatAxisValueDisplay(c.axisValue)
+											})),
+											Object.fromEntries(axisNameById)
+										)} is active edits that override, not the base value`
+									: undefined}
 								onclick={() => {
-									draftValue[token.tokenId] = tokenStr(token.tokenValue) ?? '';
+									draftValue[token.tokenId] = tokenStr(displayedValue) ?? '';
 									editingValue[token.tokenId] = true;
 								}}
 							>
-								{tokenStr(token.tokenValue) ?? '+'}
+								{tokenStr(displayedValue) ?? '+'}
 							</button>
 						{/if}
 					{/if}
@@ -1338,9 +1505,26 @@
 	.token__track {
 		all: unset;
 		font-size: $x-font-size-sm;
-		color: var(--color-text);
+		color: var(--track-color, var(--color-text));
 		padding-inline: calc($x-space-xs / 2);
 		cursor: pointer;
+	}
+
+	// While a layer is held, a kit token's track dot becomes the paint target -- same glow/crosshair
+	// convention as Styles.svelte's .field-slot--paintable, so painting a token's per-layer value
+	// reads as the identical gesture as painting a property's.
+	.token__track--paintable {
+		cursor: crosshair;
+		border-radius: 50%;
+		outline: 2px solid color-mix(in oklch, var(--held) 55%, transparent);
+		outline-offset: 1px;
+		transition: scale 120ms ease-out;
+
+		&:hover {
+			outline-color: var(--held);
+			background: color-mix(in oklch, var(--held) 22%, transparent);
+			scale: 1.2;
+		}
 	}
 
 	.token__name {
