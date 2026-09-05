@@ -1,32 +1,34 @@
 <p align="center">
-  <img src="static/favicon.svg" alt="KIT•10 Logo" width="200" />
+  <img src="static/favicon.svg" alt="KIT•10 Logo" width="100" />
 </p>
 
 # KIT•10
 
-Write the rule once. Every variant follows.
+[DRY][DontRepeatYourself] UI.
 
-KIT•10 (pronounced **"kitten"**) is a design system editor built around one idea: instead of drawing every variant by hand, you describe your intention once and let the system derive the rest.
+KIT•10 is a design system editor.
+
+In current web, styles apply on a class basis. If you're `.theme--dark` you get a black background and `.theme--light` otherwise. __Tokens__ allowed you to have one `.theme` and consume one token `var(--clr-background)`. That looks great at first until you have to iterate for all the variants and edge cases like `.theme--dark--high-contrast` + `.theme--disabled` where not just background gets a rewrite but `font-family`, `flex-direction` fields too. That's one where css despite powerful, falls short for designers.
 
 ---
 
 ## Start by drawing
 
-Open the editor. Draw your button. Style it however you want - that's your default, and it already exists with no setup required.
+Open the editor. Right click Views and add Box, give it a text inside.
+1. Create a Kit named Button for the Box
+2. Create a Kit named ButtonLabel for the Text
+3. For Text: Go to Render panel, write "Button" in Text.Content. Go ham on which Font and weight.
+4. For Box: Go to Render panel, put Fill color to white. Change the Box.Radius
 
 When you need a secondary variant, you don't duplicate anything. You drag that background color to an axis - **Emphasis → primary** - then add a second entry for **Emphasis → secondary**. The system now understands that background changes with emphasis, and it produces every combination automatically.
 
-Add an axis for viewport width and every rule you've written now applies across every breakpoint. You wrote a handful of rules. The system handles everything they imply.
+Add an axis for viewport width and every rule you've written now applies across every breakpoint.
 
 ---
 
 ## Why does this exist?
 
 You've been there: your button needs a light version, a dark version, a compact version, a dark-compact version, a disabled version, a dark-disabled version - and now you're maintaining 27 components for 3 axes.
-
-You could use design tokens - but tokens only say *what* a value is, not *why* it changes. `color-primary: blue` doesn't tell you it should turn grey when disabled, or that it should get bigger on desktop. And global tokens can't express that some values only make sense in certain contexts.
-
-KIT•10 lets you say **when**, **why**, and **where**. More conditions means higher priority. `dark + compact` overrides `dark`, which overrides the default. Add a fourth axis? One more rule. Not twelve more variants.
 
 ---
 
@@ -50,3 +52,5 @@ The system resolves your rules to properties. What those properties mean - CSS v
 ## License
 
 *TBD*. Rights reserved until chosen.
+
+[DontRepeatYourself]: https://en.wikipedia.org/wiki/Don%27t_repeat_yourself
