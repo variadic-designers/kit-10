@@ -1,8 +1,0 @@
-{
-	"permissions": {
-		"allow": [
-			"Bash(.claude/scripts/cargo.sh *)",
-			"Bash(.claude/scripts/js.sh *)"
-		]
-	}
-}
