@@ -66,6 +66,7 @@
 	],
 	"dependencies": {
 		"@fortawesome/fontawesome-free": "^7.3.1",
+		"gsap": "^3.15.0",
 		"manager": "workspace:*"
 	}
 }

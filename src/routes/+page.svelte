@@ -1,3 +1,13 @@
+<script module lang="ts">
+	import { armLandingPrehide } from '$lib/landing-choreography.js';
+
+	// Arms the above-the-fold pre-hide guard as early as the route chunk exists, so the
+	// entrance choreography never plays catch-up against already-painted content. See
+	// landing-choreography.ts for how the guard is lifted (choreography, failsafe timer,
+	// or never added at all under reduced motion).
+	armLandingPrehide();
+</script>
+
 <script lang="ts">
 	import { getTheme, initializeTheme } from '$lib/theming.js';
 	import DarkModeToggle from '$lib/components/DarkModeToggle.svelte';
@@ -8,10 +18,27 @@
 	import { page } from '$app/state';
 	import { preloadCode } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { startLandingChoreography } from '$lib/landing-choreography.js';
+
+  let landingElement: HTMLElement;
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
 		initializeReducedMotion(page.data.reducedMotion);
+
+		// One choreography instance per mount: entrance, the pinned hero scrub, and every
+		// section reveal live in a single gsap context, and the returned disposer reverts
+		// it, killing all tweens and ScrollTriggers this mount created.
+		let cancelled = false;
+		let dispose: (() => void) | undefined;
+		startLandingChoreography(landingElement).then((cleanup) => {
+			if (cancelled) cleanup();
+			else dispose = cleanup;
+		});
+		return () => {
+			cancelled = true;
+			dispose?.();
+		};
 	});
 
 	// `data-sveltekit-preload-data="hover"` (app.html) already warms /edit's route chunk on
@@ -117,7 +144,7 @@
 	/>
 </svelte:head>
 
-<div id="landing" data-prefers-color-scheme data-compel-color-scheme={getTheme()}>
+<div id="landing" data-prefers-color-scheme data-compel-color-scheme={getTheme()} bind:this={landingElement}>
 	<nav>
 		<a href="/" class="branding">
 			<img src="/favicon.svg" alt="KIT•10" />
@@ -181,7 +208,7 @@
 		</section>
 
 		<!-- 1 · Handoff -->
-		<section class="section">
+		<section class="section section--handoff">
 			<div class="section-text">
 				<h2>Handoff hell, gone</h2>
 				<p class="lead">KIT 10 nudges you to map out forms into rules, bound by conditions. Call it variants, call it a state machine. 
@@ -458,7 +485,7 @@
 			<div class="section-graphic">
 				<svg class="g-graph" viewBox="0 0 360 300" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 					<!-- edges -->
-					<g stroke="var(--color-border)" stroke-width="2">
+					<g class="g-graph__edges" stroke="var(--color-border)" stroke-width="2">
 						<line x1="180" y1="150" x2="180" y2="52" />
 						<line x1="180" y1="150" x2="280" y2="118" />
 						<line x1="180" y1="150" x2="242" y2="235" />
@@ -635,6 +662,11 @@
 
 	#landing {
 		color: var(--color-text);
+		// The page's one background. Sections used to paint their own --color-bg, but with
+		// those transparent (hero fades over the page, sections sit directly on it) dark
+		// mode showed the browser's default white through every gap. Paint here instead,
+		// on the element that owns the scheme vars, so one rule covers every theme.
+		background-color: var(--color-bg);
 
 		a,
 		button {
@@ -649,6 +681,30 @@
 		h3 {
 			@include fonts-stack('Satoshi-Regular', sans);
 		}
+	}
+
+	// Pre-hide guard for the entrance choreography: landing-choreography.ts adds the class
+	// to <html> before first paint and lifts it the moment the timeline has installed its
+	// real initial states, so only a window with no visible pop remains. Only the
+	// above-the-fold pieces hide here; everything further down is handled by the reveals'
+	// own from-states, and the whole rule is inert under reduced motion (the class is
+	// never added, and the media query keeps it honest even if it were).
+	@media (prefers-reduced-motion: no-preference) {
+		html.landing-anim-pending {
+			#landing > nav,
+			#landing .hero-content,
+			#landing .hero-visual {
+				opacity: 0;
+			}
+		}
+	}
+
+	// The headline is split into per-word wrappers by the choreography so each word can
+	// rise on its own; inline-block keeps those transforms from being ignored on inline
+	// text while wrapping behavior stays word-for-word identical.
+	.hero h1 .hero-word,
+	.hero h1 .hero-word-inner {
+		display: inline-block;
 	}
 
 	nav {
@@ -682,13 +738,14 @@
 	}
 
 	.hero {
+    z-index: 1;
 		display: grid;
 		place-items: center;
-		min-height: calc(100vh - 80px);
-		min-height: calc(100dvh - 80px);
+		min-height: calc(100vh - 100px);
+		min-height: calc(100dvh - 100px);
 		padding: $x-space-12 $x-space-6;
 		gap: $x-space-12;
-		background-color: var(--color-bg);
+		// background-color: var(--color-bg);
 
 		@include layout-respond('lg') {
 			grid-template-columns: 1.1fr 0.9fr;
@@ -759,13 +816,20 @@
 		}
 	}
 
+  // Section parts
+  .section {
+    &--handoff {
+      position: relative;
+      z-index: 2;
+    }
+  }
+
 	.section {
-		min-height: 100vh;
-		min-height: 100dvh;
+		min-height: 80vh;
+		min-height: 80dvh;
 		display: grid;
 		align-content: center;
 		padding: $x-space-8 $x-space-6;
-		background-color: var(--color-bg);
 		gap: $x-space-6;
 
 		@include layout-respond('lg') {
