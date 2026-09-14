@@ -1,10 +1,10 @@
 <script module lang="ts">
-	import { armLandingPrehide } from '$lib/landing-choreography.js';
+	import { armLandingPrehide } from '$lib/landing-choreography/index.js';
 
 	// Arms the above-the-fold pre-hide guard as early as the route chunk exists, so the
 	// entrance choreography never plays catch-up against already-painted content. See
-	// landing-choreography.ts for how the guard is lifted (choreography, failsafe timer,
-	// or never added at all under reduced motion).
+	// landing-choreography/guards.ts for how the guard is lifted (choreography, failsafe
+	// timer, or never added at all under reduced motion).
 	armLandingPrehide();
 </script>
 
@@ -18,9 +18,9 @@
 	import { page } from '$app/state';
 	import { preloadCode } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { startLandingChoreography } from '$lib/landing-choreography.js';
+	import { startLandingChoreography, trackVisitorCursor } from '$lib/landing-choreography/index.js';
 
-  let landingElement: HTMLElement;
+	let landingElement: HTMLElement;
 
 	$effect(() => {
 		initializeTheme(page.data.theme);
@@ -31,6 +31,7 @@
 		// it, killing all tweens and ScrollTriggers this mount created.
 		let cancelled = false;
 		let dispose: (() => void) | undefined;
+
 		startLandingChoreography(landingElement).then((cleanup) => {
 			if (cancelled) cleanup();
 			else dispose = cleanup;
@@ -41,6 +42,11 @@
 		};
 	});
 
+	// The Guest cursor is input feedback for the whole mount, deliberately outside the
+	// GSAP system and exempt from the reduced-motion bail. The returned disposer is
+	// onMount's cleanup (visitor-cursor.ts).
+	onMount(() => trackVisitorCursor(landingElement));
+
 	// `data-sveltekit-preload-data="hover"` (app.html) already warms /edit's route chunk on
 	// hover, which covers a normal mouse click -- but a fast click with little hover dwell time,
 	// or Enter/keyboard activation of the CTA, skips that window entirely, showing a few-ms
@@ -50,12 +56,16 @@
 	// before a real visitor reaches for "Get Started" regardless of how they trigger it --
 	// without blocking anything an instant-bounce visitor would have paid for.
 	onMount(() => {
-		const idle = (globalThis as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+		const idle = (globalThis as { requestIdleCallback?: (cb: () => void) => number })
+			.requestIdleCallback;
 		const cancel = idle
 			? idle(() => preloadCode('/edit'))
 			: setTimeout(() => preloadCode('/edit'), 1000);
 		return () => {
-			if (idle) (globalThis as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(cancel as number);
+			if (idle)
+				(globalThis as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(
+					cancel as number
+				);
 			else clearTimeout(cancel as ReturnType<typeof setTimeout>);
 		};
 	});
@@ -76,7 +86,11 @@
 	let args = $state<Args>({ emphasis: 'primary', state: 'default' });
 
 	const axes = [
-		{ id: 'emphasis', label: 'Emphasis', options: ['primary', 'secondary', 'tertiary', 'disabled'] },
+		{
+			id: 'emphasis',
+			label: 'Emphasis',
+			options: ['primary', 'secondary', 'tertiary', 'disabled']
+		},
 		{ id: 'state', label: 'State', options: ['default', 'hover'] }
 	] as const;
 
@@ -102,7 +116,15 @@
 	// - and disabled has no hover layer, so it correctly ignores hover.
 	type Layer = { when: Partial<Args>; set: Record<string, string> };
 	const layers: Layer[] = [
-		{ when: {}, set: { background: 'primary', color: 'text.onPrimary', padding: 'pad.cozy', radius: 'radius.md' } },
+		{
+			when: {},
+			set: {
+				background: 'primary',
+				color: 'text.onPrimary',
+				padding: 'pad.cozy',
+				radius: 'radius.md'
+			}
+		},
 		{ when: { emphasis: 'secondary' }, set: { background: 'secondary', color: 'text.brand' } },
 		{ when: { emphasis: 'tertiary' }, set: { background: 'tertiary', color: 'text.brand' } },
 		{ when: { emphasis: 'disabled' }, set: { background: 'disabled', color: 'text.disabled' } },
@@ -134,6 +156,29 @@
 			`padding:${val(resolved.padding?.token)}; border-radius:${val(resolved.radius?.token)};`
 	);
 	const isColor = (prop: string) => prop === 'background' || prop === 'color';
+
+	// The cursors floating over the page. Guest is the visitor's own cursor, tracked by
+	// landing-choreography/visitor-cursor.ts; the rest are choreography props.
+	type Character = { role: string; name: string; you?: boolean };
+	const characters: Character[] = [
+		{
+			role: 'Client',
+			name: 'Guest',
+			you: true
+		},
+		{
+			role: 'Motion Designer',
+			name: 'Doyle'
+		},
+		{
+			role: 'Interaction Designer',
+			name: 'Jamie'
+		},
+		{
+			role: 'Product Manager',
+			name: 'Craig'
+		}
+	];
 </script>
 
 <svelte:head>
@@ -144,7 +189,23 @@
 	/>
 </svelte:head>
 
-<div id="landing" data-prefers-color-scheme data-compel-color-scheme={getTheme()} bind:this={landingElement}>
+<div
+	id="landing"
+	data-prefers-color-scheme
+	data-compel-color-scheme={getTheme()}
+	bind:this={landingElement}
+>
+	{#each characters as character, i}
+		<div
+			class="cursor cursor__{character.name.toLowerCase()} cursor-{i}"
+			class:cursor--you={character.you}
+		>
+			<i class="cursor__char fa-solid fa-location-arrow"></i>
+			<span class="cursor__name">{character.name}</span>
+			<span class="cursor__role">{character.role}</span>
+		</div>
+	{/each}
+
 	<nav>
 		<a href="/" class="branding">
 			<img src="/favicon.svg" alt="KIT•10" />
@@ -164,12 +225,13 @@
 		<section class="hero">
 			<div class="hero-content">
 				<h1>
-					Actually build <span class="hero-accent">Scalable</span> Design <span class="hero-accent">Workflows</span>
+					Actually build <span class="hero-accent">Scalable</span> Design
+					<span class="hero-accent">Workflows</span>
 				</h1>
 
 				<p class="hero-sub">
-					UI is multidimensional. <strong>KIT&bull;10</strong> turns that into rules, once, and every variant,
-					every state, every theme just resolves.
+					UI is multidimensional. <strong>KIT&bull;10</strong> turns that into rules, once, and every
+					variant, every state, every theme just resolves.
 				</p>
 				<div class="hero-cta">
 					<a href="/edit" class="btn-primary btn-lg">Get Started</a>
@@ -211,12 +273,22 @@
 		<section class="section section--handoff">
 			<div class="section-text">
 				<h2>Handoff hell, gone</h2>
-				<p class="lead">KIT 10 nudges you to map out forms into rules, bound by conditions. Call it variants, call it a state machine. 
-        Said rules gives enough context to manifest as <strong>code</strong>.</p>
+				<p class="lead">
+					KIT 10 nudges you to map out forms into rules, bound by conditions. Call it variants, call
+					it a state machine. Said rules gives enough context to manifest as <strong>code</strong>.
+				</p>
 				<ul class="ticks">
-					<li><i class="fa-solid fa-xmark"></i> Design says one thing. Code says it again, differently.</li>
-					<li><i class="fa-solid fa-xmark"></i> Every change is re-translated by hand - the <strong>handoff</strong> tax.</li>
-					<li><i class="fa-solid fa-check"></i> KIT•10 gives both sides one model. The conditions <em>are</em> the code.</li>
+					<li>
+						<i class="fa-solid fa-xmark"></i> Design says one thing. Code says it again, differently.
+					</li>
+					<li>
+						<i class="fa-solid fa-xmark"></i> Every change is re-translated by hand - the
+						<strong>handoff</strong> tax.
+					</li>
+					<li>
+						<i class="fa-solid fa-check"></i> KIT•10 gives both sides one model. The conditions
+						<em>are</em> the code.
+					</li>
 				</ul>
 			</div>
 			<div class="section-graphic">
@@ -247,8 +319,9 @@
 			<div class="section-text section-text--center">
 				<h2>Change a condition. Watch it resolve.</h2>
 				<p class="lead">
-					One Kit, a handful of rules. Flip an axis - the winning value is recomputed <em>per
-						property</em>. No variant was ever drawn by hand.
+					One Kit, a handful of rules. Flip an axis - the winning value is recomputed <em
+						>per property</em
+					>. No variant was ever drawn by hand.
 				</p>
 			</div>
 
@@ -313,11 +386,16 @@
 		<section class="section section--block">
 			<div class="section-text section-text--center">
 				<h2>Five parts, built up</h2>
-				<p class="lead">Follow one Button from a choice to a screen - each piece builds on the last.</p>
+				<p class="lead">
+					Follow one Button from a choice to a screen - each piece builds on the last.
+				</p>
 			</div>
 			<div class="anatomy">
 				<div class="anatomy__step">
-					<div class="anatomy__head"><span class="anatomy__num">1</span><h3>Axes</h3></div>
+					<div class="anatomy__head">
+						<span class="anatomy__num">1</span>
+						<h3>Axes</h3>
+					</div>
 					<p class="anatomy__def">The choices a design can vary by.</p>
 					<div class="anatomy__ex">
 						<div class="ex-axis">
@@ -334,15 +412,20 @@
 				<i class="fa-solid fa-arrow-down anatomy__arrow"></i>
 
 				<div class="anatomy__step">
-					<div class="anatomy__head"><span class="anatomy__num">2</span><h3>Tokens</h3></div>
-					<p class="anatomy__def">Named values the rules reuse - set once, and every rule follows.</p>
+					<div class="anatomy__head">
+						<span class="anatomy__num">2</span>
+						<h3>Tokens</h3>
+					</div>
+					<p class="anatomy__def">
+						Named values the rules reuse - set once, and every rule follows.
+					</p>
 					<div class="anatomy__ex ex-tokens">
 						<span class="ex-token"
 							><span class="ex-dot" style="background:oklch(62.3% 0.188 259.8)"></span>brand</span
 						>
 						<span class="ex-token"
-							><span class="ex-dot" style="background:oklch(54.6% 0.2152 262.9)"></span
-							>brand-strong</span
+							><span class="ex-dot" style="background:oklch(54.6% 0.2152 262.9)"
+							></span>brand-strong</span
 						>
 					</div>
 				</div>
@@ -350,17 +433,22 @@
 				<i class="fa-solid fa-arrow-down anatomy__arrow"></i>
 
 				<div class="anatomy__step">
-					<div class="anatomy__head"><span class="anatomy__num">3</span><h3>Layers</h3></div>
+					<div class="anatomy__head">
+						<span class="anatomy__num">3</span>
+						<h3>Layers</h3>
+					</div>
 					<p class="anatomy__def">
 						A rule: <em>when</em> these conditions hold, <em>set</em> these values.
 					</p>
 					<div class="anatomy__ex">
 						<div class="ex-rule">
-							<span class="ex-kw">when</span> {'{ }'} <span class="ex-arrow">→</span> background =
+							<span class="ex-kw">when</span>
+							{'{ }'} <span class="ex-arrow">→</span> background =
 							<span class="ex-tok">brand</span>
 						</div>
 						<div class="ex-rule ex-rule--win">
-							<span class="ex-kw">when</span> {'{ primary + hover }'}
+							<span class="ex-kw">when</span>
+							{'{ primary + hover }'}
 							<span class="ex-arrow">→</span> background = <span class="ex-tok">brand-strong</span>
 							<span class="ex-win">wins</span>
 						</div>
@@ -371,7 +459,10 @@
 				<i class="fa-solid fa-arrow-down anatomy__arrow"></i>
 
 				<div class="anatomy__step">
-					<div class="anatomy__head"><span class="anatomy__num">4</span><h3>Kits</h3></div>
+					<div class="anatomy__head">
+						<span class="anatomy__num">4</span>
+						<h3>Kits</h3>
+					</div>
 					<p class="anatomy__def">
 						One thing’s axes + rules, bundled and reusable - a spec, not a component.
 					</p>
@@ -387,8 +478,13 @@
 				<i class="fa-solid fa-arrow-down anatomy__arrow"></i>
 
 				<div class="anatomy__step">
-					<div class="anatomy__head"><span class="anatomy__num">5</span><h3>Views</h3></div>
-					<p class="anatomy__def">Kits placed together into an actual screen. Views can nest Views.</p>
+					<div class="anatomy__head">
+						<span class="anatomy__num">5</span>
+						<h3>Views</h3>
+					</div>
+					<p class="anatomy__def">
+						Kits placed together into an actual screen. Views can nest Views.
+					</p>
 					<div class="anatomy__ex">
 						<div class="ex-view">
 							<span class="ex-view__bar"><i></i><i></i><i></i></span>
@@ -434,7 +530,9 @@
 							<span class="g-tier__ex">later axis breaks the tie</span>
 						</div>
 					</div>
-					<div class="g-tiers__note"><i class="fa-solid fa-check-double"></i> exactly one winner</div>
+					<div class="g-tiers__note">
+						<i class="fa-solid fa-check-double"></i> exactly one winner
+					</div>
 				</div>
 
 				<div class="g-why">
@@ -475,15 +573,29 @@
 		<section class="section">
 			<div class="section-text">
 				<h2>Plugins around a tiny core</h2>
-				<p class="lead">The core only resolves intent into properties. Everything else is a plugin.</p>
+				<p class="lead">
+					The core only resolves intent into properties. Everything else is a plugin.
+				</p>
 				<ul class="ticks">
-					<li><i class="fa-solid fa-circle-nodes"></i> Interpreters translate. Renderers draw. Utilities add fonts, icons, export.</li>
-					<li><i class="fa-solid fa-shuffle"></i> Swap one, run two side by side, or write your own.</li>
+					<li>
+						<i class="fa-solid fa-circle-nodes"></i> Interpreters translate. Renderers draw. Utilities
+						add fonts, icons, export.
+					</li>
+					<li>
+						<i class="fa-solid fa-shuffle"></i> Swap one, run two side by side, or write your own.
+					</li>
 				</ul>
-				<a href="/store" class="section-link">Browse the plugin store <i class="fa-solid fa-arrow-right"></i></a>
+				<a href="/store" class="section-link"
+					>Browse the plugin store <i class="fa-solid fa-arrow-right"></i></a
+				>
 			</div>
 			<div class="section-graphic">
-				<svg class="g-graph" viewBox="0 0 360 300" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+				<svg
+					class="g-graph"
+					viewBox="0 0 360 300"
+					xmlns="http://www.w3.org/2000/svg"
+					aria-hidden="true"
+				>
 					<!-- edges -->
 					<g class="g-graph__edges" stroke="var(--color-border)" stroke-width="2">
 						<line x1="180" y1="150" x2="180" y2="52" />
@@ -528,8 +640,8 @@
 			<div class="section-text section-text--center">
 				<h2>Bring designs in. Own everything you ship out.</h2>
 				<p class="lead">
-					Import existing work, refine it as rules, and export code that’s <em>yours</em> - no
-					lock-in, no attribution, nothing phoning home.
+					Import existing work, refine it as rules, and export code that’s <em>yours</em> - no lock-in,
+					no attribution, nothing phoning home.
 				</p>
 			</div>
 			<div class="g-flow">
@@ -581,12 +693,7 @@
 
 		<div class="footer__team">
 			<h3 class="footer__team-title">The Team</h3>
-			<a
-				href="https://github.com/yorqat"
-				target="_blank"
-				rel="noopener"
-				class="footer__member"
-			>
+			<a href="https://github.com/yorqat" target="_blank" rel="noopener" class="footer__member">
 				<img
 					class="footer__avatar"
 					src="https://github.com/yorqat.png?size=96"
@@ -683,7 +790,7 @@
 		}
 	}
 
-	// Pre-hide guard for the entrance choreography: landing-choreography.ts adds the class
+	// Pre-hide guard for the entrance choreography: landing-choreography/guards.ts adds the class
 	// to <html> before first paint and lifts it the moment the timeline has installed its
 	// real initial states, so only a window with no visible pop remains. Only the
 	// above-the-fold pieces hide here; everything further down is handled by the reveals'
@@ -696,6 +803,155 @@
 			#landing .hero-visual {
 				opacity: 0;
 			}
+		}
+	}
+
+	// The Guest cursor takes over from the OS cursor once it joins the session (the
+	// first pointer move adds .cursor--engaged), so the real one hides only from then
+	// on - before that the visitor still sees their normal pointer. !important is the
+	// guarantee, not laziness: `#landing .btn-primary`-style rules tie this rule's
+	// specificity and win on source order (which is exactly how the button and link
+	// pointer cursors leaked through), and no future author rule may re-enable an OS
+	// cursor inside a page whose cursor is the Guest one. Landing-only by
+	// construction: #landing exists on this route alone.
+	#landing:has(.cursor--engaged) {
+		&,
+		& * {
+			cursor: none !important;
+		}
+	}
+
+	.cursor {
+		position: fixed;
+		display: flex;
+		flex-direction: column;
+		z-index: 999;
+		// Chrome, never a hit target: the live cursor sits exactly under the visitor's
+		// pointer, and the static ones already overlap hero content.
+		pointer-events: none;
+
+		&:nth-child(1) {
+			top: 50%;
+			left: 50%;
+
+			--cursor-clr: var(--color-primary);
+		}
+
+		&:nth-child(2) {
+			top: 20%;
+			left: 50%;
+
+			--cursor-clr: var(--color-warning);
+		}
+
+		&:nth-child(3) {
+			top: 50%;
+			left: 70%;
+
+			--cursor-clr: var(--color-success);
+		}
+
+		&:nth-child(4) {
+			top: 10%;
+			left: 20%;
+
+			--cursor-clr: var(--color-danger);
+		}
+
+		// The visitor's own cursor (Guest). Anchored at the viewport origin so the tracker
+		// can apply the pointer position as a plain translate3d; declared after the
+		// :nth-child rules so the equal-specificity tie on top/left resolves to 0/0.
+		// Hidden until the first pointer move joins the session.
+		&.cursor--you {
+			top: 0;
+			left: 0;
+			opacity: 0;
+			will-change: transform;
+		}
+
+		&.cursor--engaged {
+			opacity: 1;
+		}
+
+		@media (prefers-reduced-motion: no-preference) {
+			&.cursor--you {
+				transition: opacity 0.25s ease;
+			}
+		}
+
+		&__char {
+			font-size: $x-font-size-lg;
+			text-shadow: -2px 4px var(--cursor-clr);
+			transform: scaleX(-1) rotate(-16deg);
+
+			-webkit-text-stroke: 2px var(--cursor-clr);
+			color: white;
+		}
+
+		&__name,
+		&__role {
+			font-family: 'Satoshi-Light';
+			padding-left: 16px;
+		}
+
+		// ── Guest input forms (cursor--you only; the other three are props) ──
+		// The tracker (visitor-cursor.ts) owns when each state class is true, the
+		// stylesheet owns what each looks like, same division as cursor--engaged: hover
+		// earns the pointing hand the OS cursor would show, press squishes with a
+		// springier release, and active scrolling swaps to an up-down readout with a
+		// small bob. The separate `scale` and `translate` properties compose with the
+		// base `transform` instead of overwriting it, which is what lets press stack on
+		// top of whichever form is showing. Source order matters below: press beats
+		// hover's scale, scrolling beats both, since a page moving under the pointer is
+		// the most useful thing to read out.
+		&.cursor--you {
+			// Release springs back with overshoot; the entry squish declares its own fast
+			// transition, because CSS takes transition settings from the destination state.
+			.cursor__char {
+				transition: scale 260ms cubic-bezier(0.34, 1.7, 0.4, 1);
+			}
+
+			&.cursor--hover .cursor__char {
+				scale: 1.12;
+				transform: rotate(-15deg);
+
+				&::before {
+					content: '\f25a'; // fa-hand-pointer, codepoint verified against the installed FA package
+				}
+			}
+
+			&.cursor--press .cursor__char {
+				scale: 0.78;
+				transition: scale 70ms ease-out;
+			}
+
+			&.cursor--scrolling .cursor__char {
+				transform: none;
+
+				&::before {
+					content: '\f07d'; // fa-arrows-up-down, codepoint verified against the installed FA package
+				}
+			}
+
+			// The bob is continuous motion, so it is the one piece gated on reduced motion;
+			// press and hover are discrete state changes, like a hover color.
+			@media (prefers-reduced-motion: no-preference) {
+				&.cursor--scrolling .cursor__char {
+					animation: guest-cursor-bob 0.55s ease-in-out infinite;
+				}
+			}
+		}
+	}
+
+	// Rides the `translate` property, not `transform`, so it composes with the glyph's
+	// orientation instead of replacing it.
+	@keyframes guest-cursor-bob {
+		0%,
+		100% {
+			translate: 0 0;
+		}
+		50% {
+			translate: 0 -0.3em;
 		}
 	}
 
@@ -738,7 +994,7 @@
 	}
 
 	.hero {
-    z-index: 1;
+		z-index: 1;
 		display: grid;
 		place-items: center;
 		min-height: calc(100vh - 100px);
@@ -816,13 +1072,13 @@
 		}
 	}
 
-  // Section parts
-  .section {
-    &--handoff {
-      position: relative;
-      z-index: 2;
-    }
-  }
+	// Section parts
+	.section {
+		&--handoff {
+			position: relative;
+			z-index: 2;
+		}
+	}
 
 	.section {
 		min-height: 80vh;
@@ -1510,7 +1766,11 @@
 		padding: $x-space-4;
 		border-radius: $x-space-2;
 		border: 1px solid var(--color-border);
-		background: color-mix(in oklab, var(--color-primary) calc(var(--rank) * 7%), var(--color-surface));
+		background: color-mix(
+			in oklab,
+			var(--color-primary) calc(var(--rank) * 7%),
+			var(--color-surface)
+		);
 		width: calc(72% + var(--rank) * 9%);
 
 		&__rank {

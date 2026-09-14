@@ -6,7 +6,7 @@
 // parentless replaceWith being a no-op per spec.
 
 import { describe, expect, it, beforeAll } from 'vitest';
-import { splitWordsForReveal } from './landing-choreography.js';
+import { splitWordsForReveal } from './landing-choreography/index.js';
 
 const TEXT_NODE = 3;
 const ELEMENT_NODE = 1;
