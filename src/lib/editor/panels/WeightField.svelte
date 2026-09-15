@@ -154,13 +154,14 @@
 
 	// A wrapping row, not a fixed grid -- the option count varies with the resolved family's
 	// facts (a static two-weight family shows 2 buttons, a full variable family shows 9). The row
-	// itself carries the shared padding-block rhythm; only the chips' own horizontal gap remains
-	// a `gap` (that's inline spacing between chips, not vertical row-to-row rhythm).
+	// itself carries the shared half-step padding-block rhythm (FieldRow's, same on header and
+	// every body sub-row); only the chips' own horizontal gap remains a `gap` (that's inline
+	// spacing between chips, not vertical row-to-row rhythm).
 	.weight-field__options {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 2px;
-		padding-block: $x-space-xs;
+		padding-block: calc($x-space-xs / 2);
 	}
 
 	.weight-field__btn {

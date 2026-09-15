@@ -48,6 +48,13 @@
 		// same-named snippet block shadows it (TDZ error: the snippet is a function binding in the
 		// same scope as the rest of the component's script).
 		valueSlot: Snippet;
+		// A composite value control (segmented buttons, steppers) can't shrink the way a plain
+		// ellipsized text value can. Opting in lets the value box claim its content's min-content
+		// width instead of being squeezed into the fixed 40% column (where the unshrinkable
+		// control painted past the panel's right edge), and the header's own flex-wrap then drops
+		// it onto a full line of its own when even that can't fit beside the label - the same
+		// two-line behavior the pre-FieldRow token rows used.
+		valueHug?: boolean;
 		// A secondary, collapsible block for controls too big for the header (a segmented control,
 		// a stepper, a picker, a list). Omit for a field that fits entirely in the header.
 		body?: Snippet;
@@ -68,6 +75,7 @@
 		canDropToken,
 		onDropToken,
 		valueSlot,
+		valueHug = false,
 		body,
 		expanded = $bindable(true)
 	}: FieldRowProps = $props();
@@ -121,6 +129,7 @@
 			<button
 				type="button"
 				class="field-row__value field-row__value--expander"
+				class:field-row__value--hug={valueHug}
 				aria-expanded={expanded}
 				title={expanded ? 'Collapse' : 'Expand'}
 				onclick={toggleExpanded}
@@ -132,7 +141,7 @@
 				></i>
 			</button>
 		{:else}
-			<div class="field-row__value">
+			<div class="field-row__value" class:field-row__value--hug={valueHug}>
 				{@render valueSlot()}
 			</div>
 		{/if}
@@ -166,8 +175,13 @@
 		row-gap: 0;
 		justify-content: space-between;
 		align-items: center;
+		// Block padding is the same half-step the body sub-rows use (4px) - the value control's own
+		// `calc($x-space-xs / 2)` block padding supplies the rest of the row's height, so the
+		// visual gap between adjacent rows stays at 8px, matching the Tokens panel's rows and the
+		// pre-FieldRow option124 rows. A full $x-space-xs here doubled every row's height for no
+		// gain (16px dead air between rows).
 		gap: calc($x-space-xs / 2);
-		padding: $x-space-xs $x-space-sm;
+		padding: calc($x-space-xs / 2) $x-space-sm;
 		font-weight: 600;
 		user-select: none;
 
@@ -212,6 +226,15 @@
 		min-width: 0;
 	}
 
+	// Composite value controls (see the valueHug prop above): claim min-content instead of being
+	// squeezed into the 40% column with unshrinkable children painting past the panel edge. When
+	// even min-content can't fit beside the label, the header's flex-wrap moves the whole box to
+	// its own line; max-width: 100% keeps it inside the panel on that line too.
+	.field-row__value--hug {
+		min-width: min-content;
+		max-width: 100%;
+	}
+
 	// The value box doubling as the expand/collapse trigger: the chevron sits at ITS right edge
 	// (not a separate button before the label), so every expandable row's disclosure affordance
 	// reads from the same right-hand side the value column already occupies.
@@ -252,9 +275,11 @@
 
 	// One flat padding rhythm for the whole expanded body - sub-rows inside it (WeightField's
 	// options, PositionField's mode row, RadiusField's stepper, ...) each carry their own
-	// `padding-block: $x-space-xs` and rely on that shared rhythm for vertical spacing, rather
-	// than a `gap`/`margin-top` per component, so every row (header or body) reads as the same
-	// height regardless of which field is being edited.
+	// `padding-block: calc($x-space-xs / 2)` and rely on that shared rhythm for vertical spacing,
+	// rather than a `gap`/`margin-top` per component, so every row (header or body) reads as the
+	// same height regardless of which field is being edited. Matches the header's own 4px, so a
+	// row never doubles in height just because it grew a body; the value control's own 4px block
+	// padding supplies the rest, keeping the row-to-row gap at 8px like the Tokens panel.
 	.field-row__body {
 		padding-inline: $x-space-sm;
 		padding-block-end: calc($x-space-xs / 2);

@@ -152,7 +152,7 @@
 		display: flex;
 		align-items: center;
 		gap: $x-space-xs;
-		padding-block: $x-space-xs;
+		padding-block: calc($x-space-xs / 2);
 	}
 
 	.radius-stepper {

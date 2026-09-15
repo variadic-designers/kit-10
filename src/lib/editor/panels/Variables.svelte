@@ -47,6 +47,8 @@
 	import { contextMenu, type ContextMenuContentGenerator } from '$lib/components/contextMenu.js';
 	import Renameable from '$lib/components/Renameable.svelte';
 	import Panel from '../Panel.svelte';
+	import ColorSwatch from './ColorSwatch.svelte';
+	import ColorPicker from './ColorPicker.svelte';
 	import { type Api, type EditorState, type TokenValue, resolveLinkedArg } from 'manager';
 	import { liveQuery, type EditorActivity } from '../Editor.svelte';
 	import { tokenIcon, isColorValue, tokenStr } from './token-utils.ts';
@@ -343,6 +345,9 @@
 	let editingAlias = $state<Record<string, boolean>>({});
 	let editingValue = $state<Record<string, boolean>>({});
 	let draftValue = $state<Record<string, string>>({});
+	// Color tokens expand the shared ColorPicker below their row (the Render panel's ColorField
+	// expansion behavior) instead of dropping into the plain text input - per-token open/closed.
+	let colorExpanded = $state<Record<string, boolean>>({});
 
 	const viewName = $derived(
 		activeViewQuery.rows.find((v) => v.viewId === editorActivity.activeViewId)?.viewName ?? 'View'
@@ -863,6 +868,7 @@
 							<button
 								class="token__value"
 								class:token__value--new={!displayedValue}
+								class:token__value--color={isColorValue(displayedValue)}
 								title={activeOverride
 									? `Editing this token's value while ${trackTitle(
 											activeOverride.conditions.map((c) => ({
@@ -871,17 +877,50 @@
 											})),
 											Object.fromEntries(axisNameById)
 										)} is active edits that override, not the base value`
-									: undefined}
+									: isColorValue(displayedValue)
+										? 'Click to edit'
+										: undefined}
 								onclick={() => {
+									if (isColorValue(displayedValue)) {
+										// Same expansion behavior as the Render panel's ColorField: the
+										// swatch toggles the shared ColorPicker open below the row,
+										// rather than swapping to the plain text input.
+										colorExpanded[token.tokenId] = !colorExpanded[token.tokenId];
+										return;
+									}
 									draftValue[token.tokenId] = tokenStr(displayedValue) ?? '';
 									editingValue[token.tokenId] = true;
 								}}
 							>
-								{tokenStr(displayedValue) ?? '+'}
+								{#if isColorValue(displayedValue)}
+									<!-- Same swatch the Render panel's ColorField uses (shared ColorSwatch),
+									     so a color reads identically in both panels; the raw string stays
+									     available in the expanded picker's Raw value input. -->
+									<ColorSwatch value={tokenStr(displayedValue)} />
+								{:else}
+									{tokenStr(displayedValue) ?? '+'}
+								{/if}
 							</button>
 						{/if}
 					{/if}
 				</div>
+				{#if isColorValue(token.tokenValue) && colorExpanded[token.tokenId]}
+					<!-- Expanded color editor, sharing ColorField's exact picker. Sits OUTSIDE the .token
+					     row div above (a flex row - nesting it in there squeezed the picker into a
+					     sliver between the name and value controls) as a sibling in the column li, the
+					     same slot the axis-override list occupies for view tokens. Starts from the value
+					     currently being sourced (an active layer override when one matches, like the
+					     text-edit path) and commits through commitTokenValue, so an edit lands on the
+					     active override or the base column exactly where the current value came from. -->
+					{@const colorOverride =
+						scopeClass === 'token--kit' ? activeTokenLayerOverride(token.tokenId) : null}
+					<div class="token__color-picker">
+						<ColorPicker
+							value={tokenStr(colorOverride?.value ?? token.tokenValue)}
+							onCommit={(raw) => commitTokenValue(token.tokenId, colorOverride, raw)}
+						/>
+					</div>
+				{/if}
 				{#if token.tokenValue?.type === 'view'}
 					{@const viewValue = token.tokenValue}
 					{@const overrides = overridesByToken[token.tokenId] ?? []}
@@ -1342,6 +1381,14 @@
 		}
 	}
 
+	// Expanded shared ColorPicker for a color token (see colorExpanded). Same flat inline padding
+	// as the Render panel's .field-row__body, not the axis-override lists' deep inset - the
+	// picker's plane needs the width, and matching Render keeps the two expansions identical.
+	.token__color-picker {
+		padding-inline: $x-space-sm;
+		padding-bottom: calc($x-space-xs / 2);
+	}
+
 	.token__axis-override-value {
 		all: unset;
 		display: flex;
@@ -1567,6 +1614,13 @@
 		&--new {
 			cursor: pointer;
 			text-align: center;
+		}
+
+		// A color token's value box shows the shared ColorSwatch (the Render panel's ColorField
+		// swatch) instead of raw color text - flex so the swatch fills the box edge to edge.
+		&--color {
+			display: flex;
+			align-items: center;
 		}
 
 		&--readonly {

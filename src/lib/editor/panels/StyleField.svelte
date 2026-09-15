@@ -75,6 +75,18 @@
 		inputType === 'font' && value ? fontStatus?.[value] : undefined
 	);
 
+	// Composite value controls (segmented buttons, steppers) can't shrink the way a plain text
+	// value can - squeezed into FieldRow's fixed 40% column they painted past the panel's right
+	// edge. These inputTypes opt into FieldRow's valueHug: the value box claims min-content and
+	// wraps to its own full line when tight. Text/plain/font/asset values ellipsize or shrink and
+	// stay in the standard column.
+	const valueHug = $derived(
+		inputType === 'resize' ||
+			inputType === 'align' ||
+			inputType === 'decoration' ||
+			inputType === 'spacing'
+	);
+
 	const menu: ContextMenuContentGenerator = () => {
 		return [
 			{
@@ -467,6 +479,7 @@
 	onDetachToken={detach}
 	{canDropToken}
 	onDropToken={handleTokenDrop}
+	{valueHug}
 	body={inputType === 'text' ? textBody : undefined}
 	bind:expanded={textExpanded}
 >
@@ -504,12 +517,13 @@
 				}}
 			/>
 		{:else if inputType === 'text'}
-			<!-- Collapsed preview only - editing happens in the expanded textarea (textBody). A
-			     token-backed value shows the variable name here (short, and TokenBadge already
-			     names it in the header) rather than repeating the potentially-long raw text,
-			     which used to crowd the label out entirely on a long value. -->
+			<!-- Collapsed preview only - editing happens in the expanded textarea (textBody). Shows
+			     the RESOLVED value even when token-backed: the alias already lives in the header's
+			     TokenBadge, so repeating it here read as the same name twice in one row. The value
+			     box is width-capped (40% basis + ellipsis via FieldRow's value-content), so a long
+			     value truncates instead of crowding the label out. -->
 			<span class="style-value style-value--preview">
-				{isToken ? (tokenAlias ?? 'token') : value || 'Add value'}
+				{value || 'Add value'}
 			</span>
 		{:else if inputType === 'resize'}
 			<div class="style-value style-value--resize">
@@ -939,10 +953,12 @@
 		// Resize control container: lay out the segmented control + optional fixed input
 		// horizontally, and drop the plain-value button's own padding/hover/background. Unlike
 		// plain value boxes this is a composite (3 segments + a value input) whose intrinsic width
-		// can exceed the standard value column -- allow it to grow, or the Fixed value renders
-		// clipped off the panel's right edge.
+		// can exceed the standard value column -- FieldRow's valueHug gives the box min-content
+		// (wrapping it to its own line when tight) and this internal wrap is the last resort at
+		// extreme narrowness: the Fixed input drops below the segments instead of clipping.
 		&--resize {
 			display: flex;
+			flex-wrap: wrap;
 			align-items: center;
 			gap: $x-space-xs;
 			padding: 0;
@@ -959,6 +975,7 @@
 		// also a composite of small buttons rather than one plain value box.
 		&--spacing {
 			display: flex;
+			flex-wrap: wrap;
 			align-items: center;
 			gap: $x-space-xs;
 			padding: 0;

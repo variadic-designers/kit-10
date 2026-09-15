@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { clampToViewport } from './contextMenuStore.js';
 	// Generic search-and-pick input for any field a plugin marks with `suggestionsFrom` --
 	// this component has no knowledge of fonts, Fontavious, or any other specific plugin. It
 	// only ever calls callUtilityPlugin(pluginName, searchFn/fetchFn, ...) and reports back
@@ -84,12 +85,26 @@
 	// (a reasonable, correct place for it to live) has `overflow: hidden` for its own unrelated
 	// job of ellipsis-truncating plain text values, which would otherwise silently clip an
 	// absolutely-positioned dropdown to invisibility. `fixed` escapes any ancestor's overflow.
+	// After the first paint the panel is clamped back inside the viewport (the context menu's
+	// clampToViewport, same treatment ChildViewField's picker gets): the Render panel's value
+	// column sits near the screen's right edge, and a results list wider than the remaining
+	// space used to run clean off the right of the screen. Together with the panel's own
+	// max-width cap (see the style block) this also keeps the box a consistent width -- content
+	// wider than the cap ellipsizes instead of stretching the panel per-dropdown.
 	let panelStyle = $state('');
 
-	function positionPanel() {
+	async function positionPanel() {
 		if (!triggerRef) return;
 		const rect = triggerRef.getBoundingClientRect();
+		// Paint at the raw, un-clamped position first (correct in the common case, no visible
+		// jump), then correct once the panel's real content width/height is measurable.
 		panelStyle = `top:${rect.bottom}px; left:${rect.left}px; min-width:${rect.width}px;`;
+
+		await tick();
+		if (!panelRef || !open) return;
+		const panelRect = panelRef.getBoundingClientRect();
+		const clamped = clampToViewport(rect.left, rect.bottom, panelRect.width, panelRect.height);
+		panelStyle = `top:${clamped.y}px; left:${clamped.x}px; min-width:${rect.width}px;`;
 	}
 
 	// callUtilityPlugin's return type is whatever @extism/extism's Plugin.call resolves to --
@@ -117,6 +132,10 @@
 			results = [];
 		} finally {
 			if (gen === sessionGen) loading = false;
+			// Results (or an error/empty status) changed the panel's content, hence its width --
+			// re-clamp so a wide result set can't push the box off the right edge after the
+			// initial open-time clamp already ran.
+			if (gen === sessionGen && open) positionPanel();
 		}
 	}
 
@@ -298,6 +317,11 @@
 			border: 1px solid var(--color-panel-header-border);
 			border-radius: 4px;
 			box-shadow: 0 4px 12px oklch(0% 0 0 / 0.15);
+			// Without a cap the panel grows to fit its widest row (family name + note + badge), so
+			// every dropdown ended up a different width and long entries ran the box off the
+			// screen's right edge (see positionPanel's clamp for the position half of the fix).
+			// Same bounds ChildViewField's own floating picker uses.
+			max-width: min(22rem, calc(100vw - 1rem));
 
 			input {
 				all: unset;

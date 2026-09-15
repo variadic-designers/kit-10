@@ -226,7 +226,7 @@
 		display: flex;
 		align-items: center;
 		gap: $x-space-xs;
-		padding-block: $x-space-xs;
+		padding-block: calc($x-space-xs / 2);
 	}
 
 	// Inline follow-on directly beneath the mode row -- same fixed-slot grammar as ResizeField's
@@ -271,7 +271,7 @@
 		display: flex;
 		align-items: center;
 		gap: calc($x-space-xs / 2);
-		padding-block: $x-space-xs;
+		padding-block: calc($x-space-xs / 2);
 
 		&__label {
 			font-size: $x-font-size-xs;
