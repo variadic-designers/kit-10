@@ -1,7 +1,15 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export function begin_canvas_capture(): void;
+
 export function begin_flip(): void;
+
+export function canvas_capture_bytes(): Uint8Array;
+
+export function canvas_capture_meta(): Uint32Array;
+
+export function canvas_capture_ready(): boolean;
 
 export function clear_node_dynamic(index: number): void;
 
@@ -25,9 +33,13 @@ export function end_node_resize(): Float32Array;
 
 export function ensure_index_visible(index: number): boolean;
 
+export function frame_node_exact(index: number, padding_px: number, scale: number): boolean;
+
 export function get_pan(): Float32Array;
 
 export function get_selection(x: number, y: number): number | undefined;
+
+export function get_zoom(): number;
 
 export function grid_gutter_cursor(gutter: number): string;
 
@@ -104,7 +116,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly begin_canvas_capture: () => void;
     readonly begin_flip: () => void;
+    readonly canvas_capture_bytes: (a: number) => void;
+    readonly canvas_capture_meta: (a: number) => void;
+    readonly canvas_capture_ready: () => number;
     readonly clear_node_dynamic: (a: number) => void;
     readonly clear_node_dynamics: () => void;
     readonly commit_flip: (a: number, b: number, c: number) => number;
@@ -116,6 +132,7 @@ export interface InitOutput {
     readonly end_node_drag: (a: number) => void;
     readonly end_node_resize: (a: number) => void;
     readonly ensure_index_visible: (a: number) => number;
+    readonly frame_node_exact: (a: number, b: number, c: number) => number;
     readonly get_pan: (a: number) => void;
     readonly get_selection: (a: number, b: number) => number;
     readonly grid_gutter_cursor: (a: number, b: number) => void;
@@ -151,11 +168,12 @@ export interface InitOutput {
     readonly zoom_in_at: (a: number, b: number) => void;
     readonly zoom_out: () => void;
     readonly zoom_out_at: (a: number, b: number) => void;
-    readonly __wasm_bindgen_func_elem_10908: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9443: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9443_2: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_9443_3: (a: number, b: number, c: number, d: number) => void;
-    readonly __wasm_bindgen_func_elem_10910: (a: number, b: number, c: number, d: number) => void;
+    readonly get_zoom: () => number;
+    readonly __wasm_bindgen_func_elem_10972: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9494: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9494_2: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_9494_3: (a: number, b: number, c: number, d: number) => void;
+    readonly __wasm_bindgen_func_elem_10974: (a: number, b: number, c: number, d: number) => void;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_export3: (a: number) => void;

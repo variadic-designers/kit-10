@@ -180,6 +180,85 @@ const PDF_MANIFEST: PluginManifest = {
 	}
 };
 
+// Same manifest shape as plugin-catalogue.ts's snapshot entry (kept in sync by hand, same
+// posture as WebCodium/PDF's own comments above).
+const SNAPSHOT_MANIFEST: PluginManifest = {
+	wasm: [{ url: '/snapshot.wasm' }],
+	provides: {
+		exports: [
+			{
+				label: 'Export Image (WebP / PNG / JPEG)',
+				fn: 'export_view_images',
+				// Fallback only -- multiFile is set, so the plugin names every file itself from the
+				// ACTUAL encoded format (a lossy-WebP request on a browser without WebP encode
+				// support honestly becomes .png; see the plugin's encode_webp_lossy doc comment).
+				fileExtension: 'webp',
+				mimeType: 'image/webp',
+				target: 'image',
+				viewScoped: true,
+				// One file per flagged view -- a multi-file envelope is what lets the plugin own
+				// per-file names/extensions/mimes instead of one static fallback name.
+				multiFile: true,
+				// Every file's content is base64-encoded encoded-image bytes; without this the
+				// download path would write the base64 TEXT itself as the file contents (the
+				// real bug ExportCapability.binary's doc comment describes).
+				binary: true,
+				// Mirrors plugins/snapshot/src/lib.rs's parse_image_options exactly -- Export.svelte
+				// renders this list generically, it has no idea these are image-specific. Defaults:
+				// WebP + lossless (VP8L) + quality 90 + no padding + 1x resolution.
+				options: [
+					{
+						id: 'format',
+						label: 'Format',
+						kind: 'select',
+						default: 'webp',
+						options: [
+							{ value: 'webp', label: 'WebP' },
+							{ value: 'png', label: 'PNG' },
+							{ value: 'jpeg', label: 'JPEG' }
+						]
+					},
+					{
+						id: 'lossless',
+						label: 'Lossless (WebP)',
+						kind: 'toggle',
+						default: 'true'
+					},
+					{
+						id: 'quality',
+						label: 'Quality (JPEG / lossy WebP)',
+						kind: 'number',
+						default: '90',
+						min: 1,
+						max: 100
+					},
+					{
+						id: 'padding',
+						label: 'Padding (px)',
+						kind: 'number',
+						default: '0',
+						min: 0,
+						max: 512
+					},
+					{
+						id: 'scale',
+						label: 'Resolution scale',
+						kind: 'number',
+						default: '1',
+						min: 1,
+						max: 8
+					}
+				]
+			}
+		]
+	},
+	// kit10_capture_view_image rasterizes each flagged view through the host's own Vellum
+	// instance (the only thing that can produce GPU-captured pixels -- no plugin reaches the
+	// renderer directly). kit10_encode_image covers lossy WebP, the one format family with no
+	// pure-Rust non-copyleft encoder; the plugin encodes PNG/JPEG/lossless-WebP itself.
+	capabilities: { hostFns: ['kit10_capture_view_image', 'kit10_encode_image'] }
+};
+
 // Self-maintaining compatibility fingerprint -- hashes whatever's actually deployed at that
 // URL right now, so it never drifts the way a hand-maintained version string would (both
 // plugins are still sitting at an untouched Cargo.toml "0.1.0"). Best-effort only: a fetch
@@ -204,6 +283,7 @@ export interface BuiltinPlugins {
 	tenner: PluginRow;
 	webcodium: PluginRow;
 	pdf: PluginRow;
+	snapshot: PluginRow;
 }
 
 // Registers KIT-10's built-in plugins into the DB-backed catalogue (idempotent -- upserts
@@ -212,13 +292,15 @@ export interface BuiltinPlugins {
 export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<BuiltinPlugins> {
 	const api: Api = queryBuilder(dialect);
 
-	const [charterHash, fontaviousHash, tennerHash, webcodiumHash, pdfHash] = await Promise.all([
-		hashUrl(CHARTER_MANIFEST.wasm[0]!.url),
-		hashUrl(FONTAVIOUS_MANIFEST.wasm[0]!.url),
-		hashUrl(TENNER_MANIFEST.wasm[0]!.url),
-		hashUrl(WEBCODIUM_MANIFEST.wasm[0]!.url),
-		hashUrl(PDF_MANIFEST.wasm[0]!.url)
-	]);
+	const [charterHash, fontaviousHash, tennerHash, webcodiumHash, pdfHash, snapshotHash] =
+		await Promise.all([
+			hashUrl(CHARTER_MANIFEST.wasm[0]!.url),
+			hashUrl(FONTAVIOUS_MANIFEST.wasm[0]!.url),
+			hashUrl(TENNER_MANIFEST.wasm[0]!.url),
+			hashUrl(WEBCODIUM_MANIFEST.wasm[0]!.url),
+			hashUrl(PDF_MANIFEST.wasm[0]!.url),
+			hashUrl(SNAPSHOT_MANIFEST.wasm[0]!.url)
+		]);
 
 	const charter = await api.registerPlugin({
 		name: 'charter',
@@ -274,8 +356,19 @@ export async function registerBuiltinPlugins(dialect: SchemaDialect): Promise<Bu
 		contentHash: pdfHash
 	});
 
-	if (!charter || !fontavious || !tenner || !webcodium || !pdf)
+	// Lazy, same posture as WebCodium/PDF -- an occasional explicit export action, registered
+	// here (rather than requiring a manual /store install) so every project's image export
+	// resolves to it by default with no per-project hints.exportProfile write needed.
+	const snapshot = await api.registerPlugin({
+		name: 'snapshot',
+		kind: 'utility',
+		activation: 'lazy',
+		manifest: SNAPSHOT_MANIFEST,
+		contentHash: snapshotHash
+	});
+
+	if (!charter || !fontavious || !tenner || !webcodium || !pdf || !snapshot)
 		throw new Error('Failed to register builtin plugins');
 
-	return { charter, fontavious, tenner, webcodium, pdf };
+	return { charter, fontavious, tenner, webcodium, pdf, snapshot };
 }

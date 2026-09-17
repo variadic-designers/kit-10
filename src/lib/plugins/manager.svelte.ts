@@ -20,6 +20,9 @@ import type {
 } from './types.js';
 import { mark, measure } from '../editor/profile.js';
 import { base64ToBytes, bytesToBase64 } from '../base64.js';
+import { getVellumInstance } from '../editor/vellum-instance.js';
+import { captureViewImage } from './view-capture.js';
+import { encodeImageBrowser } from './image-encode.js';
 import { getCachedFont, putCachedFont } from './font-cache.js';
 import { buildInterpreterOutputPayload } from './interpreter-output.js';
 import { get } from 'svelte/store';
@@ -562,6 +565,93 @@ export function createPluginManager(api: Api) {
 					try {
 						const project = await api.importProjectData(workspace_id, data);
 						return cp.store(JSON.stringify({ success: true, project }));
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
+				// Rasterizes one view to straight-alpha RGBA via Vellum's one-shot canvas capture
+				// (see view-capture.ts for the call sequence and its chrome-free/transparent
+				// semantics). The EDITOR is the only thing that can do this -- the raster lives in
+				// the editor's own Vellum instance, which no plugin can reach -- so this host fn is
+				// deliberately FORMAT-IGNORANT: it hands back raw pixels and the calling plugin
+				// (snapshot) owns encoding, filenames, and mime types, same division of labor as
+				// kit10_get_interpreter_output owning zero HTML opinions. The response carries the
+				// view's display name too, so the plugin can name files without a second DB round
+				// trip. padding/scale pass straight through to captureViewImage (frame_node_exact's
+				// conventions). Not in the scene (never rendered -- hidden, or another project's
+				// view) is a per-call failure, never a whole-export abort.
+				async kit10_capture_view_image(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { view_id, project_id, padding_px, scale } = JSON.parse(rawJson) as {
+						view_id: string;
+						project_id: string;
+						padding_px?: number;
+						scale?: number;
+					};
+
+					const vellum = getVellumInstance();
+					if (!vellum) {
+						return cp.store(JSON.stringify({ success: false, error: 'Vellum not initialized' }));
+					}
+					// First node whose view id matches = the view's TOP-LEVEL cell (parents precede
+					// children in Charter's flat output, so its layout rect spans the whole subtree).
+					const viewIndex = nodeViewIds.indexOf(view_id);
+					if (viewIndex < 0) {
+						return cp.store(
+							JSON.stringify({ success: false, error: 'view is not present in the current scene' })
+						);
+					}
+
+					try {
+						const [capture, viewRows] = await Promise.all([
+							captureViewImage(vellum, viewIndex, { paddingPx: padding_px, scale }),
+							api.getViewsByProjectId(project_id).execute()
+						]);
+						const viewName = viewRows.find((v) => v.viewId === view_id)?.viewName;
+						return cp.store(
+							JSON.stringify({
+								success: true,
+								width: capture.width,
+								height: capture.height,
+								rgba_base64: bytesToBase64(capture.rgba),
+								view_name: viewName ?? ''
+							})
+						);
+					} catch (err) {
+						return cp.store(JSON.stringify({ success: false, error: String(err) }));
+					}
+				},
+
+				// Generic browser image encoder (lossy WebP's only home -- see image-encode.ts's
+				// module doc for why the Rust side can't do this family). Input is STRAIGHT-alpha
+				// RGBA (the caller unpremultiplied); output carries the mime ACTUALLY encoded, which
+				// may be an honest PNG downgrade on browsers that can't encode WebP.
+				async kit10_encode_image(cp: any, inputOffs: bigint) {
+					const rawJson = cp.read(inputOffs).text();
+					const { rgba_base64, width, height, mime, quality } = JSON.parse(rawJson) as {
+						rgba_base64: string;
+						width: number;
+						height: number;
+						mime: string;
+						quality?: number;
+					};
+
+					try {
+						const result = await encodeImageBrowser({
+							rgba: base64ToBytes(rgba_base64),
+							width,
+							height,
+							mime,
+							quality
+						});
+						return cp.store(
+							JSON.stringify({
+								success: true,
+								bytes_base64: bytesToBase64(result.bytes),
+								mime: result.mime
+							})
+						);
 					} catch (err) {
 						return cp.store(JSON.stringify({ success: false, error: String(err) }));
 					}

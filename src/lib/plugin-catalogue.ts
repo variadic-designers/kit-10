@@ -197,6 +197,67 @@ export const STORE_CATALOGUE: StorePlugin[] = [
 		}
 	},
 	{
+		id: 'snapshot',
+		name: 'Snapshot',
+		author: 'KIT•10',
+		kind: 'utility',
+		icon: 'fa-solid fa-image',
+		tagline: 'Export views as images. WebP (lossless by default), PNG, JPEG - rendered chrome-free with a real alpha channel.',
+		provides: ['Export: Image'],
+		capabilities: ['reads-design'],
+		version: '0.1.0',
+		// Bootstrapped by manager/src/plugins-bootstrap.ts (registerBuiltinPlugins) like
+		// Tenner/WebCodium/PDF, so every project's image export resolves to it by default with
+		// no manual /store install.
+		status: 'installed',
+		firstParty: true,
+		activation: 'lazy',
+		manifest: {
+			wasm: [{ url: '/snapshot.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export Image (WebP / PNG / JPEG)',
+						fn: 'export_view_images',
+						fileExtension: 'webp',
+						mimeType: 'image/webp',
+						target: 'image',
+						viewScoped: true,
+						multiFile: true,
+						binary: true,
+						options: [
+							{
+								id: 'format',
+								label: 'Format',
+								kind: 'select',
+								default: 'webp',
+								options: [
+									{ value: 'webp', label: 'WebP' },
+									{ value: 'png', label: 'PNG' },
+									{ value: 'jpeg', label: 'JPEG' }
+								]
+							},
+							{ id: 'lossless', label: 'Lossless (WebP)', kind: 'toggle', default: 'true' },
+							{
+								id: 'quality',
+								label: 'Quality (JPEG / lossy WebP)',
+								kind: 'number',
+								default: '90',
+								min: 1,
+								max: 100
+							},
+							{ id: 'padding', label: 'Padding (px)', kind: 'number', default: '0', min: 0, max: 512 },
+							{ id: 'scale', label: 'Resolution scale', kind: 'number', default: '1', min: 1, max: 8 }
+						]
+					}
+				]
+			},
+			capabilities: {
+				hostFns: ['kit10_capture_view_image', 'kit10_encode_image']
+			}
+		}
+	},
+	{
 		id: 'glyphet',
 		name: 'Glyphet',
 		author: 'Community',

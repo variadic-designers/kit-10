@@ -226,6 +226,28 @@ Emit a log message to the editor console.
 
 ---
 
+### `kit10_capture_view_image(input: string) -> string`
+
+Rasterizes one view to straight-alpha RGBA pixels via the host's own Vellum instance (the one-shot canvas capture: chrome-free, transparent background, output = the view's own design dimensions x `scale` plus `padding_px` margin -- never the canvas's size - see `src/lib/plugins/view-capture.ts`). This is the ONLY path to rendered pixels: no plugin can reach the renderer directly, so a rasterizing exporter (Snapshot) gets raw capture data here and owns every format/encoding opinion itself. The response carries the view's display name so the caller can name files without a second DB round trip. `padding_px` reserves margin in final-output pixels (scale-invariant); `scale` multiplies the view's design dimensions, rejected with `success: false` when the result would exceed the GPU's max texture dimension. Per-view failures (view not in the current scene, readback timeout) are per-call `success: false`, never whole-export failures.
+
+```json
+// in:  { "view_id": "uuid", "project_id": "uuid", "padding_px": 0, "scale": 1 }
+// out: { "success": true, "width": 1200, "height": 800, "rgba_base64": "<base64>", "view_name": "Card" }
+```
+
+---
+
+### `kit10_encode_image(input: string) -> string`
+
+Generic browser-side image encoder - the only home for lossy WebP, the one format family with no pure-Rust non-copyleft encoder for `wasm32-unknown-unknown` (libwebp is C). Input is STRAIGHT-alpha RGBA (the caller unpremultiplied). The response's `mime` is what was ACTUALLY encoded: Chrome produces real `image/webp`; Firefox/Safari (no WebP encoder) return `image/png` instead, and the caller names the file accordingly - never a mislabeled `.webp`.
+
+```json
+// in:  { "rgba_base64": "<base64>", "width": 1200, "height": 800, "mime": "image/webp", "quality": 0.9 }
+// out: { "success": true, "bytes_base64": "<base64>", "mime": "image/webp" }
+```
+
+---
+
 ### `kit10_kv_get(key: string) -> string`
 
 Read a value from the plugin's local key-value store. Returns an empty string if the key does not exist. The store is scoped to the plugin instance and persists across `on_resolve` calls within a session.

@@ -18,8 +18,8 @@ describe('registerBuiltinPlugins', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('registers charter as an interpreter and fontavious/tenner/webcodium/pdf as utilities, all hashed', async () => {
-		const { charter, fontavious, tenner, webcodium, pdf } = await registerBuiltinPlugins(ctx.db);
+	it('registers charter as an interpreter and fontavious/tenner/webcodium/pdf/snapshot as utilities, all hashed', async () => {
+		const { charter, fontavious, tenner, webcodium, pdf, snapshot } = await registerBuiltinPlugins(ctx.db);
 
 		expect(charter.name).toBe('charter');
 		expect(charter.kind).toBe('interpreter');
@@ -169,6 +169,53 @@ describe('registerBuiltinPlugins', () => {
 			}
 		});
 		expect(pdf.content_hash).toMatch(/^[0-9a-f]{64}$/);
+
+		expect(snapshot.name).toBe('snapshot');
+		expect(snapshot.kind).toBe('utility');
+		expect(snapshot.activation).toBe('lazy');
+		expect(snapshot.manifest).toEqual({
+			wasm: [{ url: '/snapshot.wasm' }],
+			provides: {
+				exports: [
+					{
+						label: 'Export Image (WebP / PNG / JPEG)',
+						fn: 'export_view_images',
+						fileExtension: 'webp',
+						mimeType: 'image/webp',
+						target: 'image',
+						viewScoped: true,
+						multiFile: true,
+						binary: true,
+						options: [
+							{
+								id: 'format',
+								label: 'Format',
+								kind: 'select',
+								default: 'webp',
+								options: [
+									{ value: 'webp', label: 'WebP' },
+									{ value: 'png', label: 'PNG' },
+									{ value: 'jpeg', label: 'JPEG' }
+								]
+							},
+							{ id: 'lossless', label: 'Lossless (WebP)', kind: 'toggle', default: 'true' },
+							{
+								id: 'quality',
+								label: 'Quality (JPEG / lossy WebP)',
+								kind: 'number',
+								default: '90',
+								min: 1,
+								max: 100
+							},
+							{ id: 'padding', label: 'Padding (px)', kind: 'number', default: '0', min: 0, max: 512 },
+							{ id: 'scale', label: 'Resolution scale', kind: 'number', default: '1', min: 1, max: 8 }
+						]
+					}
+				]
+			},
+			capabilities: { hostFns: ['kit10_capture_view_image', 'kit10_encode_image'] }
+		});
+		expect(snapshot.content_hash).toMatch(/^[0-9a-f]{64}$/);
 	});
 
 	it('is idempotent -- re-running upserts the same rows instead of duplicating', async () => {
@@ -176,7 +223,7 @@ describe('registerBuiltinPlugins', () => {
 		await registerBuiltinPlugins(ctx.db);
 
 		const all = await ctx.db.selectFrom('plugins').selectAll().execute();
-		expect(all).toHaveLength(5);
+		expect(all).toHaveLength(6);
 	});
 
 	it('falls back to a null content_hash if the fetch fails, without throwing', async () => {

@@ -1,7 +1,11 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const begin_canvas_capture: () => void;
 export const begin_flip: () => void;
+export const canvas_capture_bytes: (a: number) => void;
+export const canvas_capture_meta: (a: number) => void;
+export const canvas_capture_ready: () => number;
 export const clear_node_dynamic: (a: number) => void;
 export const clear_node_dynamics: () => void;
 export const commit_flip: (a: number, b: number, c: number) => number;
@@ -13,6 +17,7 @@ export const end_grid_gutter_drag: (a: number) => void;
 export const end_node_drag: (a: number) => void;
 export const end_node_resize: (a: number) => void;
 export const ensure_index_visible: (a: number) => number;
+export const frame_node_exact: (a: number, b: number, c: number) => number;
 export const get_pan: (a: number) => void;
 export const get_selection: (a: number, b: number) => number;
 export const grid_gutter_cursor: (a: number, b: number) => void;
@@ -48,11 +53,12 @@ export const zoom_in: () => void;
 export const zoom_in_at: (a: number, b: number) => void;
 export const zoom_out: () => void;
 export const zoom_out_at: (a: number, b: number) => void;
-export const __wasm_bindgen_func_elem_10908: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_9443: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_9443_2: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_9443_3: (a: number, b: number, c: number, d: number) => void;
-export const __wasm_bindgen_func_elem_10910: (a: number, b: number, c: number, d: number) => void;
+export const get_zoom: () => number;
+export const __wasm_bindgen_func_elem_10972: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_9494: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_9494_2: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_9494_3: (a: number, b: number, c: number, d: number) => void;
+export const __wasm_bindgen_func_elem_10974: (a: number, b: number, c: number, d: number) => void;
 export const __wbindgen_export: (a: number, b: number) => number;
 export const __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;
 export const __wbindgen_export3: (a: number) => void;
